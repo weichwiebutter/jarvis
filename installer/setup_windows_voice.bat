@@ -3,13 +3,16 @@ title Jarvis Voice Setup
 
 echo === JARVIS WINDOWS VOICE SETUP ===
 
-cd /d C:\
+set SOURCE=%~dp0
+set TARGET=C:\jarvis-voice
 
-if not exist C:\jarvis-voice mkdir C:\jarvis-voice
-cd /d C:\jarvis-voice
+if not exist %TARGET% mkdir %TARGET%
+
+copy "%SOURCE%requirements_voice.txt" "%TARGET%\requirements_voice.txt" /Y
+
+cd /d %TARGET%
 
 python -m venv .venv
-
 call .venv\Scripts\activate
 
 python -m pip install --upgrade pip
