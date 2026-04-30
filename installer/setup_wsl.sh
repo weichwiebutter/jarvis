@@ -5,7 +5,7 @@ MODEL_MAIN="llama3.2:3b"
 MODEL_SMALL="qwen3:0.6b"
 MODEL_ALT="qwen3.5:4b"
 
-echo "=== JARVIS WSL SETUP v2 ==="
+echo "=== JARVIS WSL SETUP v3 ==="
 
 echo "[1/8] Updating system..."
 sudo apt update
@@ -41,14 +41,13 @@ ollama pull "$MODEL_MAIN"
 ollama pull "$MODEL_SMALL"
 ollama pull "$MODEL_ALT"
 
-echo "[8/8] Preparing OpenJarvis..."
+echo "[8/8] Installing OpenJarvis..."
+
 if [ ! -d "OpenJarvis" ]; then
-  echo "OpenJarvis is not included in this repo."
-  echo "Please clone it manually:"
-  echo "cd ~/jarvis"
-  echo "git clone <OPENJARVIS_REPO_URL> OpenJarvis"
+  cd ~/jarvis
+  git clone https://github.com/weichwiebutter/OpenJarvis.git OpenJarvis
 else
-  echo "OpenJarvis folder found."
+  echo "OpenJarvis already exists."
 fi
 
 echo "Preparing feedback rules..."
@@ -67,10 +66,7 @@ chmod +x run_market_briefing.sh || true
 echo ""
 echo "=== WSL SETUP DONE ==="
 echo ""
-echo "Next tests:"
-echo "1) cd ~/jarvis"
-echo "2) ./run_market_briefing.sh"
-echo ""
-echo "If OpenJarvis is installed:"
-echo "cd ~/jarvis/OpenJarvis"
-echo "OLLAMA_MODEL=$MODEL_MAIN ./scripts/quickstart.sh"
+echo "Next steps:"
+echo "1) cd ~/jarvis/OpenJarvis"
+echo "2) OLLAMA_MODEL=$MODEL_MAIN ./scripts/quickstart.sh"
+echo "3) In neuem Terminal: cd ~/jarvis && ./run_market_briefing.sh"
