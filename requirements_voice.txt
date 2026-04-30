@@ -1,0 +1,7 @@
+faster-whisper
+sounddevice
+soundfile
+requests
+scipy
+pyttsx3
+keyboard
