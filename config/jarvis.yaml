@@ -1,0 +1,51 @@
+# Jarvis Autopilot Configuration
+# Local-first, WSL Backend, Windows Voice
+
+system:
+  name: Jarvis
+  timezone: Europe/Zurich
+  project_root: ~/jarvis
+
+backend:
+  health_url: http://127.0.0.1:8000/v1/models
+  chat_url: http://127.0.0.1:8000/v1/chat/completions
+  model: llama3.2:3b
+  openjarvis_dir: ~/jarvis/OpenJarvis
+  start_command: OLLAMA_MODEL=llama3.2:3b ./scripts/quickstart.sh
+  autostart: true
+  startup_timeout_seconds: 90
+
+briefings:
+  default_language: de
+  market_data_script: scripts/market_data.py
+  briefing_script: scripts/market_briefing.py
+  output_dir: ~/jarvis/obsidian/MarketBriefings
+  modes:
+    morning:
+      label: Morning Briefing
+      schedule_time: "06:30"
+      briefing_script_mode: morning
+      max_age_minutes: 90
+    midday:
+      label: Midday Briefing
+      schedule_time: "13:15"
+      briefing_script_mode: ny_preopen
+      max_age_minutes: 120
+
+logging:
+  run_log: ~/jarvis/logs/agent_runs.jsonl
+  openjarvis_log: ~/jarvis/logs/openjarvis.log
+
+memory:
+  preferences_file: ~/jarvis/memory/preferences.json
+  last_runs_file: ~/jarvis/memory/last_runs.json
+
+safety:
+  require_confirmation_for:
+    - trading
+    - email_send
+    - upload
+    - delete
+    - paid_api
+    - calendar_write
+  cloud_disabled_by_default: true

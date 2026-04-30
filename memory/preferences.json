@@ -1,0 +1,13 @@
+{
+  "briefing_language": "de",
+  "voice_summary_max_sentences": 6,
+  "style": "Trading-Desk, kurz, direkt, professionell",
+  "do_not_do_without_confirmation": [
+    "trading",
+    "email_send",
+    "upload",
+    "delete",
+    "paid_api",
+    "calendar_write"
+  ]
+}
