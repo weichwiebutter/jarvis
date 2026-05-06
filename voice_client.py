@@ -39,7 +39,7 @@ import whisper
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-JARVIS_CORE = PROJECT_ROOT / "agents" / "jarvis_core.py"
+JARVIS_CORE = PROJECT_ROOT / "agents" / "core" / "jarvis_core.py"
 
 LOG_DIR = PROJECT_ROOT / "logs"
 VOICE_LOG = LOG_DIR / "voice_client.log"

@@ -37,7 +37,7 @@ elif [ -d ".venv" ]; then
 fi
 
 tmux send-keys -t "$SESSION_NAME:jarvis" "echo 'Jarvis background session ready.'" C-m
-tmux send-keys -t "$SESSION_NAME:jarvis" "echo 'Use: python3 agents/jarvis_core.py --speak \"Hallo Jarvis\"'" C-m
+tmux send-keys -t "$SESSION_NAME:jarvis" "echo 'Use: python3 agents/core/jarvis_core.py --speak \"Hallo Jarvis\"'" C-m
 
 echo "Jarvis background session started: $SESSION_NAME"
 echo "Attach: tmux attach -t $SESSION_NAME"

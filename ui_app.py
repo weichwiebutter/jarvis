@@ -30,7 +30,7 @@ import whisper
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-JARVIS_CORE = PROJECT_ROOT / "agents" / "jarvis_core.py"
+JARVIS_CORE = PROJECT_ROOT / "agents" / "core" / "jarvis_core.py"
 BACKGROUND_SERVICE = PROJECT_ROOT / "service" / "background_service.py"
 START_SCRIPT = PROJECT_ROOT / "scripts" / "start_jarvis_ui.sh"
 STOP_SCRIPT = PROJECT_ROOT / "scripts" / "stop_jarvis.sh"

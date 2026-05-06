@@ -27,7 +27,7 @@ from typing import Optional
 
 
 # Paths
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOG_DIR = PROJECT_ROOT / "logs"
 LOG_FILE = LOG_DIR / "jarvis_core.log"
 
