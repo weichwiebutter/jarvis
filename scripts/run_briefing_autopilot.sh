@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# Force load environment
+source ~/.bashrc
+
 MODE="${1:-morning}"
 PROJECT_ROOT="${JARVIS_HOME:-$HOME/jarvis}"
 
@@ -12,4 +15,4 @@ if [ -d ".venv" ]; then
   source .venv/bin/activate
 fi
 
-python agents/briefing_agent.py --mode "$MODE"
+python3 agents/briefing_worker.py --mode "$MODE"

@@ -1,0 +1,83 @@
+{
+  "system_status": {
+    "description": "Check basic Jarvis system status.",
+    "type": "command",
+    "command": "cd /home/home/jarvis && git status --short && test -d OpenJarvis && echo 'OpenJarvis directory OK' || echo 'OpenJarvis directory missing'",
+    "requires_confirmation": false
+  },
+  "git_status": {
+    "description": "Show current git status.",
+    "type": "command",
+    "command": "cd /home/home/jarvis && git status",
+    "requires_confirmation": false
+  },
+  "morning_briefing": {
+    "description": "Generate structured Jarvis morning briefing through worker.",
+    "type": "command",
+    "command": "cd /home/home/jarvis && ./scripts/run_briefing_autopilot.sh morning",
+    "requires_confirmation": false
+  },
+  "midday_briefing": {
+    "description": "Generate structured Jarvis midday briefing through worker.",
+    "type": "command",
+    "command": "cd /home/home/jarvis && ./scripts/run_briefing_autopilot.sh midday",
+    "requires_confirmation": false
+  },
+  "llm_test_small": {
+    "description": "Test small local LLM routing through executor.",
+    "type": "llm",
+    "provider": "local",
+    "model_size": "small",
+    "prompt": "Antworte kurz auf Deutsch: Small Modell funktioniert.",
+    "requires_confirmation": false
+  },
+  "llm_test_large": {
+    "description": "Test large local LLM routing through executor.",
+    "type": "llm",
+    "provider": "local",
+    "model_size": "large",
+    "prompt": "Antworte ausführlicher auf Deutsch: Large Modell funktioniert.",
+    "requires_confirmation": false
+  },
+  "llm_test_openrouter": {
+    "description": "Test external LLM routing through OpenRouter.",
+    "type": "llm",
+    "provider": "openrouter",
+    "model_size": "external",
+    "model": "openai/gpt-4o-mini",
+    "prompt": "Antworte kurz auf Deutsch: OpenRouter Routing funktioniert.",
+    "requires_confirmation": false
+  },
+  "briefing_refine_large": {
+    "description": "Refine structured briefing content using the large LLM.",
+    "type": "llm",
+    "provider": "auto",
+    "model_size": "large",
+    "system_prompt": "Du bist Jarvis, ein lokales AI-System für Analyse und Entscheidungsunterstützung. Du veredelst strukturierte Daten zu einem klaren deutschen Bericht. Du erfindest keine Fakten. Wenn Daten fehlen, kennzeichnest du sie als Platzhalter oder Annahme.",
+    "prompt": "Veredle die übergebene strukturierte Vorlage zu einem klaren, nüchternen deutschen Bericht. Behalte die Sections bei. Verwende keine erfundenen Daten.",
+    "requires_confirmation": false
+  },
+  "memory_write": {
+    "description": "Write a structured memory entry dynamically.",
+    "type": "memory_write",
+    "requires_confirmation": true
+  },
+  "memory_read": {
+    "description": "Read structured Jarvis memory dynamically.",
+    "type": "memory_read",
+    "requires_confirmation": false
+  },
+  "memory_read_all": {
+    "description": "Read recent Jarvis memory entries.",
+    "type": "memory_read",
+    "limit": 20,
+    "requires_confirmation": false
+  },
+  "memory_read_voice": {
+    "description": "Read Jarvis memory entries related to voice.",
+    "type": "memory_read",
+    "query": "voice",
+    "limit": 20,
+    "requires_confirmation": false
+  }
+}

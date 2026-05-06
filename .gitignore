@@ -32,3 +32,11 @@ target/
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets
+config/settings.env
+*.env
+
+# Runtime data
+data/
+obsidian/
