@@ -393,7 +393,7 @@ def run_openrouter_llm_task(
     )
 
     try:
-        from agents.tool_adapters.openrouter_adapter import run_openrouter
+        from agents.adapters.openrouter_adapter import run_openrouter
 
         adapter_result = run_openrouter(prompt=prompt, model=model)
 
