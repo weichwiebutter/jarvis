@@ -1,9 +1,34 @@
+# Python
+venv/
 .venv/
-data/
-logs/
 __pycache__/
 *.pyc
-.env
-OpenJarvis/
-config/settings.env
-obsidian/MarketBriefings/
+
+# Logs
+logs/
+*.log
+
+# Runtime memory/state
+memory/*.json
+memory/briefings/
+
+# Audio
+*.mp3
+*.wav
+
+# Build/cache
+.cache/
+dist/
+build/
+node_modules/
+
+# Rust
+target/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
