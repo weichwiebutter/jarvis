@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """
-Jarvis Core - Hybrid Smart Routing + Orchestrator
+Jarvis Core - Hybrid Smart Routing + Hermes Contract
 
-Jarvis = Interface
-Hermes = externes Gehirn / selbstlernender Agent
+Jarvis = Oberfläche / Voice / Kontrolle
+Hermes = Gehirn / lernender Agent / Arbeitsverteilung
 Ollama = lokale Modellschicht
-Orchestrator = zentrale Agenten-/Domain-Entscheidung
 
-Modes:
-    auto   -> Jarvis entscheidet lokal oder Hermes
-    local  -> immer Ollama
-    hermes -> immer Hermes
+Wichtig:
+Jarvis entscheidet nicht langfristig selbst über Spezialagenten.
+Jarvis bereitet einen strukturierten Auftrag vor.
+Hermes verteilt später die Arbeit an Agenten.
 """
 
 from __future__ import annotations
@@ -25,10 +24,13 @@ import urllib.request
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
+import os
 from typing import Optional
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 LOG_DIR = PROJECT_ROOT / "logs"
 LOG_FILE = LOG_DIR / "jarvis_core.log"
 
@@ -143,16 +145,15 @@ def detect_intent(user_input: str) -> str:
 def complexity_score(user_input: str, intent: str, domain: str) -> int:
     text = normalize(user_input)
     score = 0
-    length = len(user_input)
 
-    if length > 120:
+    if len(user_input) > 120:
         score += 1
-    if length > 350:
+    if len(user_input) > 350:
         score += 2
-    if length > 800:
+    if len(user_input) > 800:
         score += 3
 
-    high_complexity_terms = [
+    high_terms = [
         "architektur",
         "roadmap",
         "masterplan",
@@ -173,7 +174,7 @@ def complexity_score(user_input: str, intent: str, domain: str) -> int:
         "orchestrator",
     ]
 
-    medium_complexity_terms = [
+    medium_terms = [
         "analysiere",
         "plane",
         "baue",
@@ -186,11 +187,11 @@ def complexity_score(user_input: str, intent: str, domain: str) -> int:
         "vergleich",
     ]
 
-    for term in high_complexity_terms:
+    for term in high_terms:
         if term in text:
             score += 2
 
-    for term in medium_complexity_terms:
+    for term in medium_terms:
         if term in text:
             score += 1
 
@@ -302,6 +303,54 @@ def choose_routing(user_input: str, requested_mode: str) -> RoutingDecision:
     )
 
 
+def build_available_agents() -> list[str]:
+    return [
+        "agents.business.business_agent.BusinessAgent",
+        "agents.coding.coding_agent.CodingAgent",
+        "agents.research.research_agent.ResearchAgent",
+        "agents.trading.trading_agent.TradingAgent",
+        "agents.memory.memory_agent.MemoryAgent",
+        "agents.office.office_agent.OfficeAgent",
+        "agents.improvement.improvement_agent.ImprovementAgent",
+        "agents.executor_agent.ExecutorAgent",
+    ]
+
+
+def build_hermes_contract(user_input: str, decision: RoutingDecision) -> dict:
+    from agents.core.hermes_contract import HermesContract
+
+    contract = HermesContract(
+        source="jarvis_core",
+        task=user_input,
+        domain=decision.domain,
+        intent=decision.intent,
+        complexity_score=decision.complexity_score,
+        available_agents=build_available_agents(),
+        allowed_tools=[
+            "ollama",
+            "openrouter",
+            "executor",
+            "memory",
+            "filesystem_with_approval",
+            "shell_with_approval",
+        ],
+        execution_policy="human_approval_required",
+        memory_enabled=True,
+        internet_allowed=False,
+        filesystem_allowed=False,
+        preferred_model=None,
+        metadata={
+            "agent_module": decision.agent_module,
+            "agent_class": decision.agent_class,
+            "routing_reason": decision.reason,
+            "jarvis_role": "interface_control_voice_status",
+            "hermes_role": "brain_learning_agent_work_distribution",
+        },
+    )
+
+    return contract.to_dict()
+
+
 def run_ollama(user_input: str, model: str, timeout: int = 180) -> tuple[bool, str, Optional[str]]:
     prompt = (
         "Du bist Jarvis, ein deutscher KI-Assistent. "
@@ -341,15 +390,20 @@ def run_ollama(user_input: str, model: str, timeout: int = 180) -> tuple[bool, s
 
 
 def run_hermes(user_input: str, decision: RoutingDecision, timeout: int = 600) -> tuple[bool, str, Optional[str]]:
+    contract = build_hermes_contract(user_input, decision)
+
     prompt = (
-        "Du bist Hermes, das Planungs- und Agentengehirn hinter Jarvis.\n"
-        "Jarvis hat die Anfrage bereits vorgeroutet.\n\n"
-        f"Domain: {decision.domain}\n"
-        f"Agent Module: {decision.agent_module}\n"
-        f"Agent Class: {decision.agent_class}\n"
-        f"Intent: {decision.intent}\n"
-        f"Complexity Score: {decision.complexity_score}\n\n"
-        f"User Task:\n{user_input}"
+        "Du bist Hermes, das lernende Agenten-Gehirn hinter Jarvis.\n\n"
+        "Wichtige Rollen:\n"
+        "- Jarvis ist NICHT der Chef-Agent.\n"
+        "- Jarvis ist Oberfläche, Voice, Status, Start/Stop und Kontrollschicht.\n"
+        "- Hermes ist Gehirn, Planung, Lernen und Arbeitsverteilung.\n"
+        "- Spezialagenten sind Werkzeuge/Spezialisten, die Hermes verwenden kann.\n\n"
+        "Du erhältst jetzt einen strukturierten Jarvis-Auftrag als JSON.\n"
+        "Nutze ihn, um die Aufgabe zu planen, zu delegieren oder zu beantworten.\n"
+        "Wenn Ausführung, Dateischreiben, Shell, Git, externe Kommunikation oder Kosten entstehen, fordere Freigabe an.\n\n"
+        "HermesContract JSON:\n"
+        f"{json.dumps(contract, indent=2, ensure_ascii=False)}"
     )
 
     try:
@@ -442,11 +496,10 @@ def handle_request(user_input: str, requested_mode: str = "auto", speak: bool = 
         )
 
         if not ok and requested_mode == "auto":
-            fallback_reason = f"Lokales Modell fehlgeschlagen, Fallback zu Hermes. Fehler: {error}"
             decision = RoutingDecision(
                 mode="hermes",
                 model=None,
-                reason=fallback_reason,
+                reason=f"Lokales Modell fehlgeschlagen, Fallback zu Hermes. Fehler: {error}",
                 complexity_score=decision.complexity_score,
                 intent=decision.intent,
                 domain=decision.domain,
@@ -488,13 +541,9 @@ def handle_request(user_input: str, requested_mode: str = "auto", speak: bool = 
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Jarvis Core - Hybrid Smart Routing + Orchestrator")
+    parser = argparse.ArgumentParser(description="Jarvis Core - Hybrid Smart Routing + Hermes Contract")
 
-    parser.add_argument(
-        "input",
-        nargs="*",
-        help="Message for Jarvis",
-    )
+    parser.add_argument("input", nargs="*", help="Message for Jarvis")
 
     parser.add_argument(
         "--mode",
