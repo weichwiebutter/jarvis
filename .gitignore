@@ -40,3 +40,6 @@ config/settings.env
 # Runtime data
 data/
 obsidian/
+
+# External reference repos
+OpenJarvis/
