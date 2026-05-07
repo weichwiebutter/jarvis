@@ -49,3 +49,6 @@ archive/
 
 # Hermes local runtime/workspace
 .hermes/
+# Local runtime files
+reports/
+backups/
