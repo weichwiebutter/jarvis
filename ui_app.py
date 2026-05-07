@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
 """
-Jarvis UI App V3
+Jarvis UI App V4
 
-Jarvis = Oberfläche
-Hermes = Gehirn
-Ollama = lokale GPU-Modelle
+Jarvis = Oberfläche / Voice / Kontrolle
+Hermes = Gehirn / lernender Agent / Delegation
+Ollama = lokale Modellschicht
 OpenRouter = externe Modellschicht
 
 Features:
 - Chat mit Jarvis
-- optionale Sprachausgabe
 - Browser-Mikrofon über Gradio
-- Audio -> Whisper -> Jarvis
 - System Start / Stop / Status
+- Delegation-Test über RuntimeRouter / DelegationExecutor
 """
 
 from __future__ import annotations
 
 import json
 import subprocess
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
@@ -212,15 +210,68 @@ def stop_jarvis_system() -> str:
         return f"Fehler beim Stop: {exc}"
 
 
+def run_delegation_test(
+    domain: str,
+    task: str,
+    approve_step: bool,
+    approve_executor: bool,
+) -> str:
+    task = task.strip()
+
+    if not task:
+        return "Bitte Aufgabe eingeben."
+
+    try:
+        from agents.core.delegation_contract import build_single_step_contract
+        from agents.core.delegation_executor import execute_delegation_contract
+
+        contract = build_single_step_contract(
+            objective=f"UI Delegation Test: {domain}",
+            domain=domain,
+            task=task,
+            requires_approval=True,
+            approval_reason="UI Delegation Test requires explicit approval.",
+            context={
+                "source": "jarvis_ui",
+                "category": "learnings",
+                "title": "UI Delegation Test",
+            },
+        )
+
+        result = execute_delegation_contract(
+            contract,
+            approve_all=approve_step,
+            approve_executor_tasks=approve_executor,
+        )
+
+        log_event(
+            {
+                "event": "delegation_test",
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "domain": domain,
+                "task": task,
+                "approve_step": approve_step,
+                "approve_executor": approve_executor,
+                "contract": contract,
+                "result": result,
+            }
+        )
+
+        return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+
+    except Exception as exc:
+        return f"Delegation-Test fehlgeschlagen: {exc}"
+
+
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="Jarvis Control Center") as app:
         gr.Markdown(
             """
             # Jarvis Control Center
 
-            **Jarvis = Oberfläche**  
-            **Hermes = Gehirn**  
-            **Ollama = lokale GPU-Modelle**  
+            **Jarvis = Oberfläche / Voice / Kontrolle**  
+            **Hermes = Gehirn / lernender Agent / Delegation**  
+            **Ollama = lokale Modellschicht**  
             **OpenRouter = externe Modellschicht**
             """
         )
@@ -305,6 +356,71 @@ def build_app() -> gr.Blocks:
                 outputs=[transcript_output, voice_response_output, voice_error_output],
             )
 
+        with gr.Tab("Delegation Test"):
+            gr.Markdown(
+                """
+                ## Hermes / Agent / Executor Test
+
+                Testet die neue sichere Runtime-Kette:
+
+                Hermes Contract → Delegation Executor → Runtime Router → Agent → Executor Bridge
+                """
+            )
+
+            with gr.Row():
+                with gr.Column(scale=3):
+                    delegation_domain = gr.Dropdown(
+                        label="Domain / Agent",
+                        choices=[
+                            "memory",
+                            "office",
+                            "research",
+                            "coding",
+                            "business",
+                            "trading",
+                            "improvement",
+                        ],
+                        value="memory",
+                    )
+
+                    delegation_task = gr.Textbox(
+                        label="Delegations-Aufgabe",
+                        value="Merk dir: Hermes ist das Gehirn.",
+                        lines=4,
+                    )
+
+                    approve_step = gr.Checkbox(
+                        label="Step-Freigabe erteilen",
+                        value=False,
+                    )
+
+                    approve_executor = gr.Checkbox(
+                        label="Executor-Freigabe erteilen",
+                        value=False,
+                    )
+
+                    delegation_submit = gr.Button(
+                        "Delegation testen",
+                        variant="primary",
+                    )
+
+                with gr.Column(scale=4):
+                    delegation_output = gr.Textbox(
+                        label="Delegation Ergebnis JSON",
+                        lines=24,
+                    )
+
+            delegation_submit.click(
+                fn=run_delegation_test,
+                inputs=[
+                    delegation_domain,
+                    delegation_task,
+                    approve_step,
+                    approve_executor,
+                ],
+                outputs=[delegation_output],
+            )
+
         with gr.Tab("System"):
             gr.Markdown("## Jarvis Systemsteuerung")
 
@@ -342,9 +458,11 @@ def build_app() -> gr.Blocks:
 
             - UI läuft über Gradio.
             - Background Service läuft über tmux.
-            - Jarvis Core routet hybrid: lokal via Ollama oder extern via Hermes/OpenRouter.
+            - Jarvis Core übergibt strukturierte Aufträge an Hermes.
+            - Hermes ist das Gehirn und entscheidet über Ollama, OpenRouter und Agenten.
             - Sprachausgabe läuft über Edge-TTS.
             - Spracheingabe läuft über Browser-Mikrofon und Whisper.
+            - Delegation Runtime ist approval-gesteuert.
             """
         )
 
