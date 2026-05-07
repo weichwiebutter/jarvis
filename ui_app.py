@@ -262,6 +262,61 @@ def run_delegation_test(
     except Exception as exc:
         return f"Delegation-Test fehlgeschlagen: {exc}"
 
+def run_hermes_decision_test(
+    task: str,
+    domain: str,
+    intent: str,
+    route: str,
+    approve_step: bool,
+    approve_executor: bool,
+) -> str:
+    task = task.strip()
+
+    if not task:
+        return "Bitte Aufgabe eingeben."
+
+    try:
+        from agents.core.hermes_decision import (
+            build_default_decision,
+            decision_to_delegation_contract,
+        )
+        from agents.core.delegation_executor import execute_delegation_contract
+
+        decision = build_default_decision(
+            objective=task,
+            domain=domain,
+            intent=intent,
+            route=route,
+            agent_domain=domain,
+            reasoning="UI HermesDecision Test.",
+        )
+
+        contract = decision_to_delegation_contract(decision)
+
+        result = execute_delegation_contract(
+            contract,
+            approve_all=approve_step,
+            approve_executor_tasks=approve_executor,
+        )
+
+        payload = {
+            "decision": decision,
+            "contract": contract,
+            "execution_result": result,
+        }
+
+        log_event(
+            {
+                "event": "hermes_decision_test",
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "payload": payload,
+            }
+        )
+
+        return json.dumps(payload, indent=2, ensure_ascii=False, default=str)
+
+    except Exception as exc:
+        return f"HermesDecision-Test fehlgeschlagen: {exc}"
 
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="Jarvis Control Center") as app:
@@ -419,6 +474,98 @@ def build_app() -> gr.Blocks:
                     approve_executor,
                 ],
                 outputs=[delegation_output],
+            )
+
+            gr.Markdown(
+                """
+                ---
+                ## Hermes Decision Test
+
+                Testet die nächste Ebene:
+
+                HermesDecision → DelegationContract → DelegationExecutor → RuntimeRouter → Agent → ExecutorBridge
+                """
+            )
+
+            with gr.Row():
+                with gr.Column(scale=3):
+                    decision_task = gr.Textbox(
+                        label="HermesDecision Aufgabe",
+                        value="Merk dir: Hermes entscheidet über Agenten.",
+                        lines=4,
+                    )
+
+                    decision_domain = gr.Dropdown(
+                        label="Domain",
+                        choices=[
+                            "memory",
+                            "office",
+                            "research",
+                            "coding",
+                            "business",
+                            "trading",
+                            "improvement",
+                        ],
+                        value="memory",
+                    )
+
+                    decision_intent = gr.Dropdown(
+                        label="Intent",
+                        choices=[
+                            "chat",
+                            "memory",
+                            "planning",
+                            "research",
+                            "coding",
+                            "analysis",
+                            "voice",
+                        ],
+                        value="memory",
+                    )
+
+                    decision_route = gr.Dropdown(
+                        label="Route",
+                        choices=[
+                            "agent",
+                            "ollama",
+                            "openrouter",
+                            "hermes",
+                        ],
+                        value="agent",
+                    )
+
+                    decision_approve_step = gr.Checkbox(
+                        label="Step-Freigabe erteilen",
+                        value=False,
+                    )
+
+                    decision_approve_executor = gr.Checkbox(
+                        label="Executor-Freigabe erteilen",
+                        value=False,
+                    )
+
+                    decision_submit = gr.Button(
+                        "HermesDecision testen",
+                        variant="primary",
+                    )
+
+                with gr.Column(scale=4):
+                    decision_output = gr.Textbox(
+                        label="HermesDecision Ergebnis JSON",
+                        lines=24,
+                    )
+
+            decision_submit.click(
+                fn=run_hermes_decision_test,
+                inputs=[
+                    decision_task,
+                    decision_domain,
+                    decision_intent,
+                    decision_route,
+                    decision_approve_step,
+                    decision_approve_executor,
+                ],
+                outputs=[decision_output],
             )
 
         with gr.Tab("System"):
