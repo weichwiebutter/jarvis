@@ -46,3 +46,6 @@ OpenJarvis/
 
 # Archived duplicates
 archive/
+
+# Hermes local runtime/workspace
+.hermes/
