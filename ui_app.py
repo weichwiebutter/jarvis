@@ -318,6 +318,36 @@ def run_hermes_decision_test(
     except Exception as exc:
         return f"HermesDecision-Test fehlgeschlagen: {exc}"
 
+def run_hermes_planner_test(objective: str) -> str:
+    objective = objective.strip()
+
+    if not objective:
+        return "Bitte Objective eingeben."
+
+    try:
+        from agents.core.hermes_planner import plan_objective
+
+        result = plan_objective(objective)
+
+        log_event(
+            {
+                "event": "hermes_planner_test",
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "objective": objective,
+                "result": result,
+            }
+        )
+
+        return json.dumps(
+            result,
+            indent=2,
+            ensure_ascii=False,
+            default=str,
+        )
+
+    except Exception as exc:
+        return f"HermesPlanner-Test fehlgeschlagen: {exc}"
+
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="Jarvis Control Center") as app:
         gr.Markdown(
@@ -568,6 +598,42 @@ def build_app() -> gr.Blocks:
                 outputs=[decision_output],
             )
 
+            gr.Markdown(
+                """
+                ---
+                ## Hermes Planner Test
+
+                Testet die Planungs-Ebene:
+
+                Objective → Hermes Planner
+                """
+            )
+
+            with gr.Row():
+                with gr.Column(scale=3):
+                    planner_objective = gr.Textbox(
+                        label="Hermes Planner Objective",
+                        value="Plane die nächsten Schritte für sichere Delegation.",
+                        lines=4,
+                    )
+
+                    planner_submit = gr.Button(
+                        "Hermes Planner testen",
+                        variant="primary",
+                    )
+
+                with gr.Column(scale=4):
+                    planner_output = gr.Textbox(
+                        label="Hermes Planner Ergebnis JSON",
+                        lines=24,
+                    )
+
+            planner_submit.click(
+                fn=run_hermes_planner_test,
+                inputs=[planner_objective],
+                outputs=[planner_output],
+            )
+
         with gr.Tab("System"):
             gr.Markdown("## Jarvis Systemsteuerung")
 
@@ -614,7 +680,6 @@ def build_app() -> gr.Blocks:
         )
 
     return app
-
 
 def main() -> None:
     app = build_app()
