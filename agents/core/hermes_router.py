@@ -250,6 +250,20 @@ def decide_route(task: str) -> dict[str, Any]:
         confidence += 0.15
     confidence = min(confidence, 0.98)
 
+    try:
+        from agents.core.provider_registry import recommend_provider
+
+        provider_recommendation = recommend_provider(
+            task=task,
+            intent=intent,
+            cost_sensitive=True,
+        )
+    except Exception as exc:
+        provider_recommendation = {
+            "ok": False,
+            "error": str(exc),
+        }
+
     decision = HermesRouteDecision(
         ok=True,
         task=task,
@@ -268,6 +282,7 @@ def decide_route(task: str) -> dict[str, Any]:
         metadata={
             "complexity_score": complexity,
             "router": "hermes_router",
+            "provider_recommendation": provider_recommendation,
             "jarvis_role": "interface_runtime_control",
             "hermes_role": "brain_decision_delegation",
         },
