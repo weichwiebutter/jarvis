@@ -373,6 +373,35 @@ def run_hermes_orchestrator_test(objective: str) -> str:
     except Exception as exc:
         return f"HermesOrchestrator-Test fehlgeschlagen: {exc}"
 
+def run_hermes_execution_test(objective: str, approve_all: bool) -> str:
+    objective = objective.strip()
+
+    if not objective:
+        return "Bitte Objective eingeben."
+
+    try:
+        from agents.core.hermes_execution_engine import execute_objective
+
+        result = execute_objective(
+            objective=objective,
+            approve_all=approve_all,
+        )
+
+        log_event(
+            {
+                "event": "hermes_execution_test",
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "objective": objective,
+                "approve_all": approve_all,
+                "result": result,
+            }
+        )
+
+        return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+
+    except Exception as exc:
+        return f"HermesExecution-Test fehlgeschlagen: {exc}"
+
 def run_manual_assist_test(
     provider: str,
     task: str,
@@ -778,6 +807,50 @@ def build_app() -> gr.Blocks:
                 fn=run_hermes_orchestrator_test,
                 inputs=[orchestrator_objective],
                 outputs=[orchestrator_output],
+            )
+
+            gr.Markdown(
+                """
+                ---
+                ## Hermes Execution Engine Test
+
+                Testet die kontrollierte Ausführung:
+
+                Objective → Orchestrator → Execution Engine
+                """
+            )
+
+            with gr.Row():
+                with gr.Column(scale=3):
+                    execution_objective = gr.Textbox(
+                        label="Hermes Execution Objective",
+                        value="Baue lokalen Privacy-Mode mit Ollama Offline-Fallback.",
+                        lines=4,
+                    )
+
+                    execution_approve_all = gr.Checkbox(
+                        label="Alle Schritte freigeben",
+                        value=False,
+                    )
+
+                    execution_submit = gr.Button(
+                        "Hermes Execution testen",
+                        variant="primary",
+                    )
+
+                with gr.Column(scale=4):
+                    execution_output = gr.Textbox(
+                        label="Hermes Execution Ergebnis JSON",
+                        lines=30,
+                    )
+
+            execution_submit.click(
+                fn=run_hermes_execution_test,
+                inputs=[
+                    execution_objective,
+                    execution_approve_all,
+                ],
+                outputs=[execution_output],
             )
 
             gr.Markdown(
