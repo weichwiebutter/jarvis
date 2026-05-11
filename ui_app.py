@@ -348,6 +348,31 @@ def run_hermes_planner_test(objective: str) -> str:
     except Exception as exc:
         return f"HermesPlanner-Test fehlgeschlagen: {exc}"
 
+def run_hermes_orchestrator_test(objective: str) -> str:
+    objective = objective.strip()
+
+    if not objective:
+        return "Bitte Objective eingeben."
+
+    try:
+        from agents.core.hermes_orchestrator import orchestrate_objective
+
+        result = orchestrate_objective(objective)
+
+        log_event(
+            {
+                "event": "hermes_orchestrator_test",
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "objective": objective,
+                "result": result,
+            }
+        )
+
+        return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+
+    except Exception as exc:
+        return f"HermesOrchestrator-Test fehlgeschlagen: {exc}"
+
 def run_manual_assist_test(
     provider: str,
     task: str,
@@ -717,6 +742,42 @@ def build_app() -> gr.Blocks:
                 fn=run_hermes_planner_test,
                 inputs=[planner_objective],
                 outputs=[planner_output],
+            )
+
+            gr.Markdown(
+                """
+                ---
+                ## Hermes Orchestrator Test
+
+                Testet die Multi-Step-Orchestrierung:
+
+                Objective → Hermes Orchestrator → Delegation Steps
+                """
+            )
+
+            with gr.Row():
+                with gr.Column(scale=3):
+                    orchestrator_objective = gr.Textbox(
+                        label="Hermes Orchestrator Objective",
+                        value="Baue Voice Interface mit Wake Word, Audio Visualizer und Memory.",
+                        lines=4,
+                    )
+
+                    orchestrator_submit = gr.Button(
+                        "Hermes Orchestrator testen",
+                        variant="primary",
+                    )
+
+                with gr.Column(scale=4):
+                    orchestrator_output = gr.Textbox(
+                        label="Hermes Orchestrator Ergebnis JSON",
+                        lines=30,
+                    )
+
+            orchestrator_submit.click(
+                fn=run_hermes_orchestrator_test,
+                inputs=[orchestrator_objective],
+                outputs=[orchestrator_output],
             )
 
             gr.Markdown(
