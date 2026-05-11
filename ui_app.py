@@ -402,6 +402,34 @@ def run_hermes_execution_test(objective: str, approve_all: bool) -> str:
     except Exception as exc:
         return f"HermesExecution-Test fehlgeschlagen: {exc}"
 
+def run_hermes_learning_feedback_test(objective: str) -> str:
+    objective = objective.strip()
+
+    if not objective:
+        return "Bitte Objective eingeben."
+
+    try:
+        from agents.core.hermes_execution_engine import execute_objective
+        from agents.core.hermes_learning_feedback import build_learning_feedback
+
+        execution_result = execute_objective(objective)
+        result = build_learning_feedback(execution_result)
+
+        log_event(
+            {
+                "event": "hermes_learning_feedback_test",
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "objective": objective,
+                "execution_result": execution_result,
+                "result": result,
+            }
+        )
+
+        return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+
+    except Exception as exc:
+        return f"HermesLearningFeedback-Test fehlgeschlagen: {exc}"
+
 def run_manual_assist_test(
     provider: str,
     task: str,
@@ -851,6 +879,42 @@ def build_app() -> gr.Blocks:
                     execution_approve_all,
                 ],
                 outputs=[execution_output],
+            )
+
+            gr.Markdown(
+                """
+                ---
+                ## Hermes Learning Feedback Test
+
+                Testet den Lern-Feedback-Loop:
+
+                Objective → Execution Engine → Learning Feedback
+                """
+            )
+
+            with gr.Row():
+                with gr.Column(scale=3):
+                    learning_objective = gr.Textbox(
+                        label="Hermes Learning Objective",
+                        value="Merk dir: Hermes ist das Gehirn.",
+                        lines=4,
+                    )
+
+                    learning_submit = gr.Button(
+                        "Hermes Learning Feedback testen",
+                        variant="primary",
+                    )
+
+                with gr.Column(scale=4):
+                    learning_output = gr.Textbox(
+                        label="Hermes Learning Feedback Ergebnis JSON",
+                        lines=30,
+                    )
+
+            learning_submit.click(
+                fn=run_hermes_learning_feedback_test,
+                inputs=[learning_objective],
+                outputs=[learning_output],
             )
 
             gr.Markdown(
