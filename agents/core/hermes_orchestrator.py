@@ -130,6 +130,17 @@ COMPLEXITY_KEYWORDS = [
     "komplett",
 ]
 
+DOMAIN_MATCH_QUERIES = {
+    "research": "research planning source analysis web research planning summary generation",
+    "business": "business strategy planning roadmap planning decision support process analysis",
+    "coding": "coding code planning python planning file change proposal test plan generation",
+    "memory": "memory write request learning capture context recall obsidian memory planning",
+    "improvement": (
+        "improvement system improvement architecture review quality analysis "
+        "voice system planning ui improvement planning"
+    ),
+}
+
 
 @dataclass(frozen=True)
 class StepBlueprint:
@@ -233,6 +244,50 @@ def _build_complex_step_blueprints(objective: str, domain_signals: list[str]) ->
     return blueprints
 
 
+def _build_single_step_contract_for_domain(
+    objective: str,
+    domain: str,
+    match: dict[str, Any],
+    planner_result: dict[str, Any],
+) -> dict[str, Any]:
+    agent = match.get("agent") or {}
+    agent_domain = str(agent.get("domain") or domain)
+
+    contract = DelegationContract(
+        source="hermes_orchestrator",
+        objective=objective,
+        created_by="hermes",
+        execution_policy="human_approval_required",
+        steps=[
+            DelegationStep(
+                step_id=1,
+                domain=agent_domain,
+                task=objective,
+                agent=str(agent.get("name", "")),
+                context={
+                    "source": "hermes_orchestrator",
+                    "parent_objective": objective,
+                    "intended_domain": domain,
+                    "matched_agent": agent,
+                    "matched_capabilities": match.get("matched", []),
+                    "match_score": match.get("score", 0),
+                },
+                requires_approval=True,
+                approval_reason="Hermes orchestration requires human approval before executing this step.",
+            )
+        ],
+        metadata={
+            "orchestrator": "hermes_orchestrator",
+            "planner_result": planner_result,
+            "agent_match": match,
+            "all_steps_require_approval": True,
+            "human_in_the_loop": True,
+        },
+    )
+
+    return contract.to_dict()
+
+
 def _build_agent_creation_response(
     objective: str,
     missing_task: str,
@@ -298,6 +353,47 @@ def _single_step_response(objective: str, planner_result: dict[str, Any]) -> dic
         "metadata": {
             "orchestrator": "hermes_orchestrator",
             "planner_result": planner_result,
+            "human_in_the_loop": True,
+            "timestamp": utc_now(),
+        },
+    }
+
+
+def _domain_signal_response(
+    objective: str,
+    domain: str,
+    planner_result: dict[str, Any],
+    overall_match: dict[str, Any],
+) -> dict[str, Any] | None:
+    match_query = DOMAIN_MATCH_QUERIES.get(domain, domain)
+    match = find_best_agent_for_task(match_query)
+
+    if not match.get("found"):
+        return None
+
+    contract = _build_single_step_contract_for_domain(
+        objective=objective,
+        domain=domain,
+        match=match,
+        planner_result=planner_result,
+    )
+
+    return {
+        "ok": True,
+        "objective": objective,
+        "mode": "single_step_delegation_contract",
+        "steps_total": len(contract.get("steps", [])),
+        "delegation_contract": contract,
+        "agent_creation_request": None,
+        "reasoning": (
+            "Hermes detected an existing domain signal and created a single "
+            "approval-controlled delegation contract."
+        ),
+        "metadata": {
+            "orchestrator": "hermes_orchestrator",
+            "planner_result": planner_result,
+            "domain_signal": domain,
+            "overall_match": overall_match,
             "human_in_the_loop": True,
             "timestamp": utc_now(),
         },
@@ -398,6 +494,20 @@ def orchestrate_objective(objective: str) -> dict[str, Any]:
         )
 
     if not _is_complex_objective(objective, domain_signals):
+        if planner_result.get("delegation_contract"):
+            return _single_step_response(objective, planner_result)
+
+        if domain_signals:
+            domain_response = _domain_signal_response(
+                objective=objective,
+                domain=domain_signals[0],
+                planner_result=planner_result,
+                overall_match=overall_match,
+            )
+
+            if domain_response is not None:
+                return domain_response
+
         return _single_step_response(objective, planner_result)
 
     blueprints = _build_complex_step_blueprints(objective, domain_signals)
