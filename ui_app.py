@@ -348,6 +348,42 @@ def run_hermes_planner_test(objective: str) -> str:
     except Exception as exc:
         return f"HermesPlanner-Test fehlgeschlagen: {exc}"
 
+def run_manual_assist_test(
+    provider: str,
+    task: str,
+) -> str:
+    task = task.strip()
+
+    if not task:
+        return "Bitte Aufgabe eingeben."
+
+    try:
+        from agents.core.manual_assist import build_manual_assist
+
+        result = build_manual_assist(
+            provider=provider,
+            task=task,
+            context={
+                "source": "jarvis_ui",
+                "project": "Jarvis/Hermes",
+            },
+        )
+
+        log_event(
+            {
+                "event": "manual_assist_test",
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "provider": provider,
+                "task": task,
+                "result": result,
+            }
+        )
+
+        return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+
+    except Exception as exc:
+        return f"Manual-Assist-Test fehlgeschlagen: {exc}"
+
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="Jarvis Control Center") as app:
         gr.Markdown(
@@ -634,6 +670,57 @@ def build_app() -> gr.Blocks:
                 outputs=[planner_output],
             )
 
+
+            gr.Markdown(
+                """
+                ---
+                ## Manual Assist Test
+
+                Erstellt Copy/Paste-Prompts für:
+
+                - Codex CLI
+                - ChatGPT Browser
+                - Gemini Browser
+                - Copilot Browser
+                """
+            )
+
+            with gr.Row():
+                with gr.Column(scale=3):
+                    manual_provider = gr.Dropdown(
+                        label="Manual Provider",
+                        choices=[
+                            "codex_cli",
+                            "chatgpt_manual",
+                            "gemini_manual",
+                            "copilot_manual",
+                        ],
+                        value="codex_cli",
+                    )
+
+                    manual_task = gr.Textbox(
+                        label="Manual Assist Aufgabe",
+                        value="Repariere ui_app.py und führe py_compile aus.",
+                        lines=4,
+                    )
+
+                    manual_submit = gr.Button(
+                        "Manual Assist Prompt erzeugen",
+                        variant="primary",
+                    )
+
+                with gr.Column(scale=4):
+                    manual_output = gr.Textbox(
+                        label="Manual Assist Ergebnis JSON",
+                        lines=30,
+                    )
+
+            manual_submit.click(
+                fn=run_manual_assist_test,
+                inputs=[manual_provider, manual_task],
+                outputs=[manual_output],
+            )
+
         with gr.Tab("System"):
             gr.Markdown("## Jarvis Systemsteuerung")
 
@@ -678,6 +765,7 @@ def build_app() -> gr.Blocks:
             - Delegation Runtime ist approval-gesteuert.
             """
         )
+
 
     return app
 
