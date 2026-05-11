@@ -12,9 +12,28 @@ Role:
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
+ADAPTIVE_CONFIDENCE_THRESHOLD = 0.35
+AGENT_DOMAINS = {
+    "memory",
+    "office",
+    "research",
+    "coding",
+    "business",
+    "trading",
+    "improvement",
+}
 
 
 def utc_now() -> str:
@@ -166,7 +185,156 @@ def estimate_complexity(task: str, intent: str, domain: str) -> int:
     return min(score, 10)
 
 
+def _adaptive_normalize(text: str) -> str:
+    return (
+        text.strip()
+        .lower()
+        .replace("ä", "ae")
+        .replace("ö", "oe")
+        .replace("ü", "ue")
+        .replace("ß", "ss")
+    )
+
+
+def _adaptive_tokens(text: str) -> set[str]:
+    normalized = _adaptive_normalize(text)
+    raw_tokens = "".join(char if char.isalnum() else " " for char in normalized).split()
+
+    return {token for token in raw_tokens if len(token) >= 3}
+
+
+def _adaptive_hint_score(task: str, hint: dict[str, Any]) -> float:
+    task_text = _adaptive_normalize(task)
+    objective = str(hint.get("objective_contains", "")).strip()
+    objective_text = _adaptive_normalize(objective)
+
+    if not objective_text:
+        return 0.0
+
+    if objective_text in task_text or task_text in objective_text:
+        return 1.0
+
+    task_tokens = _adaptive_tokens(task)
+    objective_tokens = _adaptive_tokens(objective)
+
+    if not task_tokens or not objective_tokens:
+        return 0.0
+
+    overlap = len(task_tokens & objective_tokens)
+    union = len(task_tokens | objective_tokens)
+
+    return overlap / union if union else 0.0
+
+
+def get_adaptive_routing_recommendation(task: str) -> dict[str, Any]:
+    """
+    Read persisted adaptive routing hints without calling adaptive fallback routing.
+
+    hermes_adaptive_routing.recommend_adaptive_route() calls decide_route() for
+    fallback decisions, so the router uses the read-only profile API directly to
+    avoid recursion.
+    """
+
+    try:
+        from agents.core.hermes_adaptive_routing import build_adaptive_routing_profile
+
+        profile = build_adaptive_routing_profile()
+        profile_summary = {
+            "has_learning_data": bool(profile.get("has_learning_data", False)),
+            "history_counts": profile.get("history_counts", {}),
+            "domain_counts": profile.get("domain_counts", {}),
+            "agent_counts": profile.get("agent_counts", {}),
+            "approval_policy_counts": profile.get("approval_policy_counts", {}),
+        }
+
+        if not profile.get("has_learning_data"):
+            return {
+                "ok": True,
+                "used": False,
+                "source": "fallback_router_no_learning_data",
+                "reason": "No persisted Hermes learning data available.",
+                "profile_summary": profile_summary,
+            }
+
+        scored_hints = [
+            (score, hint)
+            for hint in profile.get("routing_hints", [])
+            for score in [_adaptive_hint_score(task, hint)]
+            if score > 0
+        ]
+        scored_hints.sort(key=lambda item: item[0], reverse=True)
+
+        if not scored_hints:
+            return {
+                "ok": True,
+                "used": False,
+                "source": "fallback_router_no_adaptive_match",
+                "reason": "Learning data exists, but no adaptive hint matched this task.",
+                "profile_summary": profile_summary,
+            }
+
+        best_score, best_hint = scored_hints[0]
+
+        if best_score < ADAPTIVE_CONFIDENCE_THRESHOLD:
+            return {
+                "ok": True,
+                "used": False,
+                "source": "fallback_router_low_adaptive_confidence",
+                "reason": "Best adaptive hint did not pass the confidence threshold.",
+                "matched_hint": best_hint,
+                "matched_hint_score": round(best_score, 3),
+                "profile_summary": profile_summary,
+            }
+
+        preferred_domain = best_hint.get("preferred_domain")
+        preferred_agent = best_hint.get("preferred_agent")
+        approval_policy = best_hint.get("approval_policy")
+
+        if not any([preferred_domain, preferred_agent, approval_policy]):
+            return {
+                "ok": True,
+                "used": False,
+                "source": "fallback_router_unusable_adaptive_hint",
+                "reason": "Adaptive hint matched but did not contain usable routing fields.",
+                "matched_hint": best_hint,
+                "matched_hint_score": round(best_score, 3),
+                "profile_summary": profile_summary,
+            }
+
+        support = sum(
+            1
+            for _, hint in scored_hints
+            if hint.get("preferred_domain") == preferred_domain
+            or hint.get("preferred_agent") == preferred_agent
+            or hint.get("approval_policy") == approval_policy
+        )
+        confidence = min(0.95, 0.45 + best_score * 0.35 + min(support, 5) * 0.03)
+
+        return {
+            "ok": True,
+            "used": True,
+            "source": "adaptive_learning_history",
+            "preferred_domain": preferred_domain,
+            "preferred_agent": preferred_agent,
+            "approval_policy": approval_policy,
+            "confidence": round(confidence, 3),
+            "matched_hint": best_hint,
+            "matched_hint_score": round(best_score, 3),
+            "supporting_matches": support,
+            "profile_summary": profile_summary,
+        }
+
+    except Exception as exc:
+        return {
+            "ok": False,
+            "used": False,
+            "source": "adaptive_routing_error",
+            "warning": f"Adaptive routing failed; using normal router fallback: {exc}",
+        }
+
+
 def decide_route(task: str) -> dict[str, Any]:
+    adaptive_recommendation = get_adaptive_routing_recommendation(task)
     intent = detect_intent(task)
     domain = detect_domain(task, intent)
     complexity = estimate_complexity(task, intent, domain)
@@ -250,6 +418,39 @@ def decide_route(task: str) -> dict[str, Any]:
         confidence += 0.15
     confidence = min(confidence, 0.98)
 
+    if adaptive_recommendation.get("used"):
+        preferred_domain = adaptive_recommendation.get("preferred_domain")
+        approval_policy = adaptive_recommendation.get("approval_policy")
+
+        if preferred_domain in AGENT_DOMAINS:
+            domain = str(preferred_domain)
+            agent_domain = str(preferred_domain)
+            route = "agent"
+
+            if preferred_domain == "memory":
+                model_preference = None
+                memory_required = True
+                executor_required = True
+            elif preferred_domain in {"coding", "improvement"}:
+                model_preference = "local_large"
+            elif preferred_domain in {"research", "business", "trading"}:
+                model_preference = "external_reasoning"
+
+            reasoning_parts.append(
+                f"Adaptive routing history matched; prefer {preferred_domain}."
+            )
+
+        if approval_policy == "human_approval_required":
+            requires_approval = True
+            approval_reason = approval_reason or "Adaptive routing history recommends human approval."
+
+        confidence = max(
+            confidence,
+            float(adaptive_recommendation.get("confidence", confidence)),
+        )
+    elif adaptive_recommendation.get("warning"):
+        reasoning_parts.append(str(adaptive_recommendation["warning"]))
+
     try:
         from agents.core.provider_registry import recommend_provider
 
@@ -302,6 +503,22 @@ def decide_route(task: str) -> dict[str, Any]:
             "jarvis_role": "interface_runtime_control",
             "hermes_role": "brain_decision_delegation",
             "model_recommendation": model_recommendation,
+            "adaptive_routing": {
+                "checked": True,
+                "used": bool(adaptive_recommendation.get("used", False)),
+                "source": adaptive_recommendation.get("source"),
+                "warning": adaptive_recommendation.get("warning"),
+                "reason": adaptive_recommendation.get("reason"),
+                "preferred_domain": adaptive_recommendation.get("preferred_domain"),
+                "preferred_agent": adaptive_recommendation.get("preferred_agent"),
+                "approval_policy": adaptive_recommendation.get("approval_policy"),
+                "confidence": adaptive_recommendation.get("confidence"),
+                "matched_hint": adaptive_recommendation.get("matched_hint"),
+                "matched_hint_score": adaptive_recommendation.get("matched_hint_score"),
+                "supporting_matches": adaptive_recommendation.get("supporting_matches"),
+                "profile_summary": adaptive_recommendation.get("profile_summary", {}),
+                "fallback_active": not bool(adaptive_recommendation.get("used", False)),
+            },
         },
     )
 
