@@ -63,6 +63,87 @@ class HermesRouteDecision:
         return asdict(self)
 
 
+def build_hermes_brain_status(result: dict[str, Any]) -> dict[str, Any]:
+    metadata = result.get("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    adaptive_routing = metadata.get("adaptive_routing", {})
+    if not isinstance(adaptive_routing, dict):
+        adaptive_routing = {}
+
+    adaptive_used = bool(adaptive_routing.get("used", False))
+    fallback_active = adaptive_routing.get("fallback_active")
+    if fallback_active is None:
+        fallback_active = not adaptive_used
+
+    return {
+        "route": result.get("route"),
+        "intent": result.get("intent"),
+        "domain": result.get("domain"),
+        "agent_domain": result.get("agent_domain"),
+        "model_recommendation": compact_model_recommendation(
+            metadata.get("model_recommendation")
+        ),
+        "provider_recommendation": compact_provider_recommendation(
+            metadata.get("provider_recommendation")
+        ),
+        "confidence": result.get("confidence"),
+        "requires_approval": result.get("requires_approval"),
+        "memory_required": result.get("memory_required"),
+        "executor_required": result.get("executor_required"),
+        "adaptive_routing": {
+            "used": adaptive_used,
+            "source": adaptive_routing.get("source"),
+            "fallback_active": bool(fallback_active),
+        },
+    }
+
+
+def compact_model_recommendation(recommendation: Any) -> dict[str, Any] | None:
+    if not isinstance(recommendation, dict):
+        return None
+
+    model = recommendation.get("recommended_model", {})
+    if not isinstance(model, dict):
+        model = {}
+
+    return {
+        "ok": bool(recommendation.get("ok", False)),
+        "name": model.get("name"),
+        "provider": model.get("provider"),
+        "model_id": model.get("model_id"),
+        "model_type": model.get("model_type"),
+        "cost_profile": model.get("cost_profile"),
+        "local": model.get("local"),
+        "requires_api_key": model.get("requires_api_key"),
+        "reason": recommendation.get("reason"),
+        "error": recommendation.get("error"),
+    }
+
+
+def compact_provider_recommendation(recommendation: Any) -> dict[str, Any] | None:
+    if not isinstance(recommendation, dict):
+        return None
+
+    provider = recommendation.get("recommended_provider", {})
+    if not isinstance(provider, dict):
+        provider = {}
+
+    return {
+        "ok": bool(recommendation.get("ok", False)),
+        "name": provider.get("name"),
+        "provider_type": provider.get("provider_type"),
+        "mode": provider.get("mode"),
+        "cost_profile": provider.get("cost_profile"),
+        "automation_level": provider.get("automation_level"),
+        "requires_api_key": provider.get("requires_api_key"),
+        "requires_manual_copy": provider.get("requires_manual_copy"),
+        "reason": recommendation.get("reason"),
+        "error": recommendation.get("error"),
+    }
+
+
 def normalize(text: str) -> str:
     return text.strip().lower()
 
@@ -522,7 +603,10 @@ def decide_route(task: str) -> dict[str, Any]:
         },
     )
 
-    return decision.to_dict()
+    result = decision.to_dict()
+    result["hermes_brain_status"] = build_hermes_brain_status(result)
+
+    return result
 
 
 def main() -> int:
