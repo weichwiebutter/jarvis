@@ -384,6 +384,55 @@ def run_manual_assist_test(
     except Exception as exc:
         return f"Manual-Assist-Test fehlgeschlagen: {exc}"
 
+def run_provider_model_test(task: str, paid_ok: bool, offline: bool) -> str:
+    task = task.strip()
+
+    if not task:
+        return "Bitte Aufgabe eingeben."
+
+    try:
+        from agents.core.provider_registry import recommend_provider
+        from agents.core.model_registry import recommend_model
+        from agents.core.hermes_router import decide_route
+
+        route_decision = decide_route(task)
+
+        provider = recommend_provider(
+            task=task,
+            intent=route_decision.get("intent", ""),
+            cost_sensitive=not paid_ok,
+        )
+
+        model = recommend_model(
+            task=task,
+            intent=route_decision.get("intent", ""),
+            route=route_decision.get("route", ""),
+            cost_sensitive=not paid_ok,
+            offline=offline,
+        )
+
+        result = {
+            "task": task,
+            "paid_ok": paid_ok,
+            "offline": offline,
+            "route_decision": route_decision,
+            "provider_recommendation": provider,
+            "model_recommendation": model,
+        }
+
+        log_event(
+            {
+                "event": "provider_model_test",
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "result": result,
+            }
+        )
+
+        return json.dumps(result, indent=2, ensure_ascii=False, default=str)
+
+    except Exception as exc:
+        return f"Provider/Model-Test fehlgeschlagen: {exc}"
+
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="Jarvis Control Center") as app:
         gr.Markdown(
@@ -668,6 +717,54 @@ def build_app() -> gr.Blocks:
                 fn=run_hermes_planner_test,
                 inputs=[planner_objective],
                 outputs=[planner_output],
+            )
+
+            gr.Markdown(
+                """
+                ---
+                ## Provider / Model Test
+
+                Testet Provider-, Modell- und Router-Empfehlung.
+                """
+            )
+
+            with gr.Row():
+                with gr.Column(scale=3):
+                    provider_model_task = gr.Textbox(
+                        label="Provider/Model Aufgabe",
+                        value="Empfiehl Provider und Modell für eine lokale Coding-Aufgabe.",
+                        lines=4,
+                    )
+
+                    provider_model_paid_ok = gr.Checkbox(
+                        label="Kostenpflichtige APIs erlauben",
+                        value=False,
+                    )
+
+                    provider_model_offline = gr.Checkbox(
+                        label="Offline / nur lokal",
+                        value=False,
+                    )
+
+                    provider_model_submit = gr.Button(
+                        "Provider/Model testen",
+                        variant="primary",
+                    )
+
+                with gr.Column(scale=4):
+                    provider_model_output = gr.Textbox(
+                        label="Provider/Model Ergebnis JSON",
+                        lines=24,
+                    )
+
+            provider_model_submit.click(
+                fn=run_provider_model_test,
+                inputs=[
+                    provider_model_task,
+                    provider_model_paid_ok,
+                    provider_model_offline,
+                ],
+                outputs=[provider_model_output],
             )
 
 
