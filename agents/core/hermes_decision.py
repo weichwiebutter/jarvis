@@ -169,6 +169,18 @@ def decision_to_delegation_contract(decision: dict[str, Any]) -> dict[str, Any]:
             "executor_required": decision.get("executor_required"),
             "reasoning": decision.get("reasoning"),
             "router_decision": decision.get("metadata", {}).get("router_decision"),
+            "provider_recommendation": (
+                decision.get("metadata", {})
+                .get("router_decision", {})
+                .get("metadata", {})
+                .get("provider_recommendation")
+            ),
+            "model_recommendation": (
+                decision.get("metadata", {})
+                .get("router_decision", {})
+                .get("metadata", {})
+                .get("model_recommendation")
+            ),
         },
     )
 
