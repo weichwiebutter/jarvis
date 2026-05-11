@@ -112,18 +112,38 @@ AGENT_CAPABILITIES: dict[str, AgentCapability] = {
         class_name="TradingAgent",
         capabilities=[
             "market_analysis",
+            "multi_timeframe_analysis",
+            "pattern_detection",
+            "signal_alerting",
+            "prediction_feedback_learning",
+            "ctrader_integration_planned",
             "trading_briefing",
             "risk_analysis",
             "portfolio_review",
             "signal_interpretation",
         ],
-        description="Advisory-only trading and market analysis agent.",
+        description=(
+            "Hermes Trading Analyst erstellt Marktanalysen und Signale, "
+            "aber fuehrt keine Orders aus."
+        ),
+        safety_level="analysis_only_human_review",
+        can_execute_directly=False,
         requires_approval_for=[
             "broker_connection",
+            "ctrader_integration",
             "order_execution",
             "live_trading",
             "paid_market_data",
         ],
+        metadata={
+            "status": "planned_trading_analyst_capability",
+            "analysis_only": True,
+            "human_review_required": True,
+            "no_auto_trading": True,
+            "auto_order_execution_allowed": False,
+            "supported_markets": ["XAUUSD", "EURUSD", "GER40"],
+            "planned_agent_name": "hermes_trading_analyst",
+        },
     ),
     "office_agent": AgentCapability(
         name="office_agent",

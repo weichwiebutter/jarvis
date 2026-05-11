@@ -34,6 +34,35 @@ AGENT_DOMAINS = {
     "trading",
     "improvement",
 }
+TRADING_CONTEXT_TERMS = [
+    "aktie",
+    "börse",
+    "trading",
+    "portfolio",
+    "kurs",
+    "crypto",
+    "bitcoin",
+    "gold",
+    "xauusd",
+    "xau/usd",
+    "eurusd",
+    "eur/usd",
+    "ger40",
+    "dax",
+    "forex",
+    "cfd",
+    "ctrader",
+    "market analysis",
+    "marktanalyse",
+    "multi-timeframe",
+    "timeframe",
+    "false break",
+    "rejection",
+    "engulfing",
+    "morning star",
+    "evening star",
+    "signal",
+]
 
 
 def utc_now() -> str:
@@ -148,6 +177,10 @@ def normalize(text: str) -> str:
     return text.strip().lower()
 
 
+def has_trading_context(text: str) -> bool:
+    return any(term in text for term in TRADING_CONTEXT_TERMS)
+
+
 def detect_intent(task: str) -> str:
     text = normalize(task)
 
@@ -157,13 +190,16 @@ def detect_intent(task: str) -> str:
     if any(x in text for x in ["code", "python", "script", "debug", "funktion", "klasse", "api", "json", "bash"]):
         return "coding"
 
+    if has_trading_context(text):
+        return "trading"
+
     if any(x in text for x in ["analysiere", "analyse", "bewerte", "vergleich", "einschätzung"]):
         return "analysis"
 
     if any(x in text for x in ["recherchiere", "suche", "quelle", "news", "reddit", "internet", "web"]):
         return "research"
 
-    if any(x in text for x in ["aktie", "börse", "trading", "markt", "portfolio", "kurs", "crypto", "bitcoin", "gold", "xauusd"]):
+    if has_trading_context(text) or "markt" in text:
         return "trading"
 
     if any(x in text for x in ["plane", "planung", "roadmap", "architektur", "workflow", "strategie", "masterplan"]):
