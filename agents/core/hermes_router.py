@@ -264,6 +264,22 @@ def decide_route(task: str) -> dict[str, Any]:
             "error": str(exc),
         }
 
+    try:
+        from agents.core.model_registry import recommend_model
+
+        model_recommendation = recommend_model(
+            task=task,
+            intent=intent,
+            route=route,
+            cost_sensitive=True,
+            offline=False,
+        )
+    except Exception as exc:
+        model_recommendation = {
+            "ok": False,
+            "error": str(exc),
+        }
+
     decision = HermesRouteDecision(
         ok=True,
         task=task,
@@ -285,6 +301,7 @@ def decide_route(task: str) -> dict[str, Any]:
             "provider_recommendation": provider_recommendation,
             "jarvis_role": "interface_runtime_control",
             "hermes_role": "brain_decision_delegation",
+            "model_recommendation": model_recommendation,
         },
     )
 
