@@ -106,7 +106,11 @@ def build_hermes_brain_status(result: dict[str, Any]) -> dict[str, Any]:
     if fallback_active is None:
         fallback_active = not adaptive_used
 
-    return {
+    agent_dashboard_reference = build_agent_dashboard_reference(
+        str(result.get("agent_domain") or result.get("domain") or "")
+    )
+
+    brain_status = {
         "route": result.get("route"),
         "intent": result.get("intent"),
         "domain": result.get("domain"),
@@ -126,6 +130,84 @@ def build_hermes_brain_status(result: dict[str, Any]) -> dict[str, Any]:
             "source": adaptive_routing.get("source"),
             "fallback_active": bool(fallback_active),
         },
+        "agent_dashboard": agent_dashboard_reference,
+    }
+
+    if agent_dashboard_reference.get("warning"):
+        brain_status["warning"] = agent_dashboard_reference["warning"]
+
+    return brain_status
+
+
+def build_agent_dashboard_reference(active_agent_domain: str) -> dict[str, Any]:
+    active_agent_domain = active_agent_domain.strip().lower()
+
+    try:
+        from agents.core.hermes_agent_dashboard import build_agent_dashboard_status
+
+        dashboard_status = build_agent_dashboard_status()
+        agents = dashboard_status.get("agents", [])
+        if not isinstance(agents, list):
+            agents = []
+
+        matching_agents = [
+            compact_dashboard_agent(agent)
+            for agent in agents
+            if isinstance(agent, dict)
+            and str(agent.get("domain", "")).lower() == active_agent_domain
+        ]
+
+        safety_flags_for_active_domain = {}
+        if matching_agents:
+            safety_flags = matching_agents[0].get("safety_flags", {})
+            if isinstance(safety_flags, dict):
+                safety_flags_for_active_domain = safety_flags
+
+        return {
+            "active_agent_domain": active_agent_domain or None,
+            "available_agents_count": sum(
+                1
+                for agent in agents
+                if isinstance(agent, dict) and agent.get("status") == "available"
+            ),
+            "planned_agents_count": sum(
+                1
+                for agent in agents
+                if isinstance(agent, dict) and agent.get("status") == "planned"
+            ),
+            "matching_agents": matching_agents,
+            "safety_flags_for_active_domain": safety_flags_for_active_domain,
+        }
+    except Exception as exc:
+        return {
+            "active_agent_domain": active_agent_domain or None,
+            "available_agents_count": 0,
+            "planned_agents_count": 0,
+            "matching_agents": [],
+            "safety_flags_for_active_domain": {},
+            "warning": (
+                "Agent dashboard status unavailable; using router fallback: "
+                f"{exc}"
+            ),
+            "fallback_active": True,
+        }
+
+
+def compact_dashboard_agent(agent: dict[str, Any]) -> dict[str, Any]:
+    safety_flags = agent.get("safety_flags", {})
+    if not isinstance(safety_flags, dict):
+        safety_flags = {}
+
+    return {
+        "agent_id": agent.get("agent_id"),
+        "name": agent.get("name"),
+        "domain": agent.get("domain"),
+        "status": agent.get("status"),
+        "capabilities": agent.get("capabilities", []),
+        "safety_flags": safety_flags,
+        "description": agent.get("description"),
+        "can_execute": bool(agent.get("can_execute", False)),
+        "requires_approval": bool(agent.get("requires_approval", False)),
     }
 
 
