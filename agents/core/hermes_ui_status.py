@@ -80,6 +80,24 @@ def _import_developer_debug_builder(warnings: list[str]) -> Callable[[], dict[st
     return builder
 
 
+def _import_voice_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_voice_status"
+    function_name = "build_voice_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _safe_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -268,6 +286,69 @@ def _build_developer_debug_status(warnings: list[str]) -> dict[str, Any]:
     return status
 
 
+def _empty_voice_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "voice_status": {
+            "status": "unavailable",
+            "configured": False,
+            "enabled": False,
+            "read_only": True,
+            "services_started": False,
+            "audio_access_performed": False,
+        },
+        "wake_word_status": {
+            "status": "unavailable",
+            "enabled": False,
+            "active": False,
+            "service_started": False,
+        },
+        "microphone_status": {
+            "status": "not_checked",
+            "enabled": False,
+            "accessed": False,
+            "recording": False,
+        },
+        "transcription_status": {
+            "status": "unavailable",
+            "enabled": False,
+            "active": False,
+        },
+        "tts_status": {
+            "status": "unavailable",
+            "enabled": False,
+            "active": False,
+        },
+        "audio_visualizer_status": {
+            "status": "unavailable",
+            "enabled": False,
+            "active": False,
+        },
+        "planned_stack": {},
+        "warnings": warnings,
+    }
+
+
+def _build_voice_status(warnings: list[str]) -> dict[str, Any]:
+    builder = _import_voice_builder(warnings)
+    if builder is None:
+        return _empty_voice_status(warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_voice_status failed: {exc}"
+        warnings.append(warning)
+        return _empty_voice_status([warning])
+
+    if not isinstance(status, dict):
+        warning = "build_voice_status returned non-dict data."
+        warnings.append(warning)
+        return _empty_voice_status([warning])
+
+    return status
+
+
 def _build_learning_memory_panel(runtime: dict[str, Any], learning_memory: dict[str, Any]) -> dict[str, Any]:
     memory_status = _safe_dict(runtime.get("memory_status"))
     learning_warnings = [
@@ -299,6 +380,26 @@ def _build_learning_memory_panel(runtime: dict[str, Any], learning_memory: dict[
         "warnings": learning_warnings,
         "read_only": True,
         "placeholder": "Future Learning/Memory panel can show memory availability and learning status.",
+    }
+
+
+def _build_voice_panel(voice: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": _safe_dict(voice.get("voice_status")).get("status", "unavailable"),
+        "voice_status": _safe_dict(voice.get("voice_status")),
+        "wake_word_status": _safe_dict(voice.get("wake_word_status")),
+        "microphone_status": _safe_dict(voice.get("microphone_status")),
+        "transcription_status": _safe_dict(voice.get("transcription_status")),
+        "tts_status": _safe_dict(voice.get("tts_status")),
+        "audio_visualizer_status": _safe_dict(voice.get("audio_visualizer_status")),
+        "planned_stack": _safe_dict(voice.get("planned_stack")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(voice.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "placeholder": "Future Voice panel can show planned voice stack status without audio access.",
     }
 
 
@@ -350,6 +451,7 @@ def _build_ui_panels(
     brain: dict[str, Any],
     learning_memory: dict[str, Any],
     developer_debug: dict[str, Any],
+    voice: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -363,6 +465,7 @@ def _build_ui_panels(
         "runtime_control_panel": _build_runtime_control_panel(runtime, system_health),
         "learning_memory_panel": _build_learning_memory_panel(runtime, learning_memory),
         "developer_debug_panel": _build_developer_debug_panel(system_health, snapshot, developer_debug),
+        "voice_panel": _build_voice_panel(voice),
         "trading_panel": _build_trading_panel(agent_dashboard),
     }
 
@@ -371,6 +474,7 @@ def _fallback_status(
     warnings: list[str],
     learning_memory: dict[str, Any] | None = None,
     developer_debug: dict[str, Any] | None = None,
+    voice: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -389,6 +493,7 @@ def _fallback_status(
         "suggested_test_commands": [],
         "warnings": warnings,
     }
+    voice = voice or _empty_voice_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -416,8 +521,9 @@ def _fallback_status(
         "runtime": snapshot["runtime"],
         "learning_memory": learning_memory,
         "developer_debug": developer_debug,
+        "voice": voice,
         "system_health": system_health,
-        "ui_panels": _build_ui_panels(None, snapshot, brain, learning_memory, developer_debug),
+        "ui_panels": _build_ui_panels(None, snapshot, brain, learning_memory, developer_debug, voice),
     }
 
 
@@ -425,19 +531,20 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     warnings: list[str] = []
     learning_memory = _build_learning_memory_status(warnings)
     developer_debug = _build_developer_debug_status(warnings)
+    voice = _build_voice_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
-        return _fallback_status(warnings, learning_memory, developer_debug)
+        return _fallback_status(warnings, learning_memory, developer_debug, voice)
 
     try:
         snapshot = snapshot_builder(optional_task)
     except Exception as exc:
         warnings.append(f"build_hermes_system_snapshot failed: {exc}")
-        return _fallback_status(warnings, learning_memory, developer_debug)
+        return _fallback_status(warnings, learning_memory, developer_debug, voice)
 
     if not isinstance(snapshot, dict):
         warnings.append("build_hermes_system_snapshot returned non-dict data.")
-        return _fallback_status(warnings, learning_memory, developer_debug)
+        return _fallback_status(warnings, learning_memory, developer_debug, voice)
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
     existing_warnings = _get_warnings(system_health)
@@ -449,6 +556,10 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         if warning_text.strip() and warning_text not in merged_warnings:
             merged_warnings.append(warning_text)
     for warning in _safe_list(developer_debug.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip() and warning_text not in merged_warnings:
+            merged_warnings.append(warning_text)
+    for warning in _safe_list(voice.get("warnings")):
         warning_text = str(warning)
         if warning_text.strip() and warning_text not in merged_warnings:
             merged_warnings.append(warning_text)
@@ -465,8 +576,9 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "runtime": runtime,
         "learning_memory": learning_memory,
         "developer_debug": developer_debug,
+        "voice": voice,
         "system_health": system_health,
-        "ui_panels": _build_ui_panels(optional_task, snapshot, brain, learning_memory, developer_debug),
+        "ui_panels": _build_ui_panels(optional_task, snapshot, brain, learning_memory, developer_debug, voice),
     }
 
 
