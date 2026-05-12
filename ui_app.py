@@ -20,7 +20,7 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import gradio as gr
 import whisper
@@ -185,11 +185,11 @@ def get_service_status() -> str:
         return f"Fehler beim Status-Check: {exc}"
 
 
-def get_hermes_ui_status_for_display(optional_task: str = "") -> str:
+def _get_hermes_ui_status_payload(optional_task: str = "") -> dict[str, Any]:
     task = (optional_task or "").strip()
 
     if _build_hermes_ui_status is None:
-        payload = {
+        return {
             "ok": False,
             "error": "Hermes UI Status konnte nicht importiert werden.",
             "import_error": _HERMES_UI_STATUS_IMPORT_ERROR,
@@ -199,11 +199,10 @@ def get_hermes_ui_status_for_display(optional_task: str = "") -> str:
                 ],
             },
         }
-        return json.dumps(payload, indent=2, ensure_ascii=False, default=str)
 
     try:
         status = _build_hermes_ui_status(task or None)
-        display_status = {
+        return {
             "generated_at": status.get("generated_at"),
             "system_health": status.get("system_health"),
             "brain": status.get("brain"),
@@ -215,10 +214,9 @@ def get_hermes_ui_status_for_display(optional_task: str = "") -> str:
             "voice": status.get("voice"),
             "trading": status.get("trading"),
         }
-        return json.dumps(display_status, indent=2, ensure_ascii=False, default=str)
 
     except Exception as exc:
-        payload = {
+        return {
             "ok": False,
             "error": "Hermes UI Status konnte nicht aufgebaut werden.",
             "exception": str(exc),
@@ -226,7 +224,162 @@ def get_hermes_ui_status_for_display(optional_task: str = "") -> str:
                 "warnings": [f"build_hermes_ui_status failed: {exc}"],
             },
         }
-        return json.dumps(payload, indent=2, ensure_ascii=False, default=str)
+
+
+def _safe_status_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_status_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _status_badge(label: str, value: Any) -> str:
+    text = str(value if value is not None else "unknown")
+    normalized = text.lower()
+
+    if normalized in {"available", "ok", "ready", "true"}:
+        color = "#15803d"
+        background = "#dcfce7"
+    elif normalized in {"planned", "idle", "read_only", "not_checked"}:
+        color = "#1d4ed8"
+        background = "#dbeafe"
+    elif "warn" in normalized or normalized in {"unavailable", "error", "failed", "false"}:
+        color = "#b45309"
+        background = "#fef3c7"
+    else:
+        color = "#374151"
+        background = "#f3f4f6"
+
+    return (
+        f"<span style='display:inline-block;margin:2px 6px 2px 0;"
+        f"padding:3px 8px;border-radius:6px;background:{background};"
+        f"color:{color};font-weight:600;font-size:0.9em'>{label}: {text}</span>"
+    )
+
+
+def _format_bool(value: Any) -> str:
+    return "true" if bool(value) else "false"
+
+
+def _format_list(value: Any, limit: int = 8) -> str:
+    items = [str(item) for item in _safe_status_list(value)]
+    if not items:
+        return "-"
+    visible = items[:limit]
+    suffix = f" (+{len(items) - limit})" if len(items) > limit else ""
+    return ", ".join(visible) + suffix
+
+
+def _format_hermes_ui_status_markdown(status: dict[str, Any]) -> str:
+    system_health = _safe_status_dict(status.get("system_health"))
+    brain = _safe_status_dict(status.get("brain"))
+    agents = _safe_status_dict(status.get("agents"))
+    runtime = _safe_status_dict(status.get("runtime"))
+    learning_memory = _safe_status_dict(status.get("learning_memory"))
+    voice = _safe_status_dict(status.get("voice"))
+    trading = _safe_status_dict(status.get("trading"))
+    warnings = [str(w) for w in _safe_status_list(system_health.get("warnings")) if str(w).strip()]
+
+    runtime_hermes = _safe_status_dict(runtime.get("hermes_status"))
+    runtime_ollama = _safe_status_dict(runtime.get("ollama_status"))
+    runtime_memory = _safe_status_dict(runtime.get("memory_status"))
+    runtime_voice = _safe_status_dict(runtime.get("voice_status"))
+
+    agent_items = [
+        agent for agent in _safe_status_list(agents.get("agents"))
+        if isinstance(agent, dict)
+    ]
+    available_agents = [
+        str(agent.get("agent_id", agent.get("name", "unknown")))
+        for agent in agent_items
+        if agent.get("status") == "available"
+    ]
+    planned_agents = [
+        str(agent.get("agent_id", agent.get("name", "unknown")))
+        for agent in agent_items
+        if agent.get("status") == "planned"
+    ]
+
+    voice_status = _safe_status_dict(voice.get("voice_status"))
+    voice_stack = _safe_status_dict(voice.get("planned_stack"))
+
+    trading_feedback = _safe_status_dict(trading.get("prediction_feedback_learning"))
+    trading_ctrader = _safe_status_dict(trading.get("ctrader_integration"))
+
+    warning_block = (
+        "\n".join(f"- <span style='color:#b45309;font-weight:600'>{warning}</span>" for warning in warnings)
+        if warnings
+        else "- Keine Warnungen."
+    )
+
+    return f"""
+### Hermes Status Snapshot
+
+**Generated:** `{status.get("generated_at") or "-"}`
+
+#### System Health
+{_status_badge("Hermes", system_health.get("hermes_available"))}
+{_status_badge("Ollama", system_health.get("ollama_available"))}
+{_status_badge("Memory", system_health.get("memory_available"))}
+{_status_badge("Agents available", system_health.get("agents_available_count", 0))}
+{_status_badge("Agents planned", system_health.get("agents_planned_count", 0))}
+
+**Warnings**
+{warning_block}
+
+#### Hermes Brain
+{_status_badge("Route", brain.get("route", brain.get("status", "idle")))}
+{_status_badge("Domain", brain.get("domain", "-"))}
+{_status_badge("Intent", brain.get("intent", "-"))}
+{_status_badge("Confidence", brain.get("confidence", "-"))}
+{_status_badge("Approval", _format_bool(brain.get("requires_approval")))}
+
+#### Runtime Status
+{_status_badge("Hermes module", runtime_hermes.get("status", "-"))}
+{_status_badge("Ollama", runtime_ollama.get("status", "-"))}
+{_status_badge("Memory", runtime_memory.get("status", "-"))}
+{_status_badge("Voice", runtime_voice.get("status", "-"))}
+
+#### Agent Dashboard
+- Available: {_format_list(available_agents)}
+- Planned: {_format_list(planned_agents)}
+
+#### Learning / Memory
+{_status_badge("Memory", learning_memory.get("memory_available"))}
+{_status_badge("Learning", learning_memory.get("learning_available"))}
+{_status_badge("Routing hints", learning_memory.get("routing_hints_available"))}
+{_status_badge("Improvements", learning_memory.get("improvements_available"))}
+- Counts: `{json.dumps(_safe_status_dict(learning_memory.get("counts")), ensure_ascii=False)}`
+
+#### Voice Status
+{_status_badge("Voice", voice_status.get("status", "-"))}
+{_status_badge("Microphone", _safe_status_dict(voice.get("microphone_status")).get("status", "-"))}
+{_status_badge("Transcription", _safe_status_dict(voice.get("transcription_status")).get("status", "-"))}
+{_status_badge("TTS", _safe_status_dict(voice.get("tts_status")).get("status", "-"))}
+- Planned stack: `{json.dumps(voice_stack, ensure_ascii=False)}`
+
+#### Trading Panel Status
+{_status_badge("Status", trading.get("status", "planned"))}
+{_status_badge("Analysis only", _format_bool(trading.get("analysis_only", True)))}
+{_status_badge("No auto trading", _format_bool(trading.get("no_auto_trading", True)))}
+{_status_badge("Human review", _format_bool(trading.get("human_review_required", True)))}
+- Markets: {_format_list(trading.get("supported_markets"))}
+- Timeframes: `{json.dumps(_safe_status_dict(trading.get("planned_timeframes")), ensure_ascii=False)}`
+- Patterns: {_format_list(trading.get("planned_patterns"))}
+- Prediction feedback: `{trading_feedback.get("status", "-")}`
+- cTrader integration: `{trading_ctrader.get("status", "-")} / {trading_ctrader.get("mode", "-")}`
+"""
+
+
+def get_hermes_ui_status_for_display(optional_task: str = "") -> str:
+    status = _get_hermes_ui_status_payload(optional_task)
+    return json.dumps(status, indent=2, ensure_ascii=False, default=str)
+
+
+def get_hermes_ui_status_panels(optional_task: str = "") -> tuple[str, dict[str, Any]]:
+    status = _get_hermes_ui_status_payload(optional_task)
+    return _format_hermes_ui_status_markdown(status), status
 
 
 def start_jarvis_system() -> str:
@@ -1097,21 +1250,25 @@ def build_app() -> gr.Blocks:
                     )
 
                 with gr.Column(scale=5):
-                    hermes_status_output = gr.Textbox(
-                        label="Hermes UI Status JSON",
-                        lines=34,
+                    hermes_status_summary = gr.Markdown(
+                        value="Noch kein Hermes Status geladen. Klicke auf Refresh.",
                     )
 
+                    with gr.Accordion("Advanced JSON", open=False):
+                        hermes_status_json = gr.JSON(
+                            label="Hermes UI Status Raw JSON",
+                        )
+
             hermes_status_refresh.click(
-                fn=get_hermes_ui_status_for_display,
+                fn=get_hermes_ui_status_panels,
                 inputs=[hermes_status_task],
-                outputs=[hermes_status_output],
+                outputs=[hermes_status_summary, hermes_status_json],
             )
 
             hermes_status_refresh_empty.click(
-                fn=get_hermes_ui_status_for_display,
+                fn=get_hermes_ui_status_panels,
                 inputs=[],
-                outputs=[hermes_status_output],
+                outputs=[hermes_status_summary, hermes_status_json],
             )
 
         with gr.Tab("System"):
