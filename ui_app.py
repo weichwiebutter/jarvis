@@ -38,6 +38,13 @@ LOG_FILE = PROJECT_ROOT / "logs" / "ui_app.log"
 DEFAULT_WHISPER_MODEL = "base"
 _whisper_model = None
 
+try:
+    from agents.core.hermes_ui_status import build_hermes_ui_status as _build_hermes_ui_status
+    _HERMES_UI_STATUS_IMPORT_ERROR = ""
+except Exception as exc:
+    _build_hermes_ui_status = None
+    _HERMES_UI_STATUS_IMPORT_ERROR = str(exc)
+
 
 def ensure_dirs() -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -176,6 +183,50 @@ def get_service_status() -> str:
 
     except Exception as exc:
         return f"Fehler beim Status-Check: {exc}"
+
+
+def get_hermes_ui_status_for_display(optional_task: str = "") -> str:
+    task = (optional_task or "").strip()
+
+    if _build_hermes_ui_status is None:
+        payload = {
+            "ok": False,
+            "error": "Hermes UI Status konnte nicht importiert werden.",
+            "import_error": _HERMES_UI_STATUS_IMPORT_ERROR,
+            "system_health": {
+                "warnings": [
+                    f"agents.core.hermes_ui_status.build_hermes_ui_status unavailable: {_HERMES_UI_STATUS_IMPORT_ERROR}"
+                ],
+            },
+        }
+        return json.dumps(payload, indent=2, ensure_ascii=False, default=str)
+
+    try:
+        status = _build_hermes_ui_status(task or None)
+        display_status = {
+            "generated_at": status.get("generated_at"),
+            "system_health": status.get("system_health"),
+            "brain": status.get("brain"),
+            "agents": status.get("agents"),
+            "runtime": status.get("runtime"),
+            "ui_panels": status.get("ui_panels"),
+            "learning_memory": status.get("learning_memory"),
+            "developer_debug": status.get("developer_debug"),
+            "voice": status.get("voice"),
+            "trading": status.get("trading"),
+        }
+        return json.dumps(display_status, indent=2, ensure_ascii=False, default=str)
+
+    except Exception as exc:
+        payload = {
+            "ok": False,
+            "error": "Hermes UI Status konnte nicht aufgebaut werden.",
+            "exception": str(exc),
+            "system_health": {
+                "warnings": [f"build_hermes_ui_status failed: {exc}"],
+            },
+        }
+        return json.dumps(payload, indent=2, ensure_ascii=False, default=str)
 
 
 def start_jarvis_system() -> str:
@@ -1014,6 +1065,53 @@ def build_app() -> gr.Blocks:
                 fn=run_manual_assist_test,
                 inputs=[manual_provider, manual_task],
                 outputs=[manual_output],
+            )
+
+        with gr.Tab("Hermes Status"):
+            gr.Markdown(
+                """
+                ## Hermes Control Center
+
+                Read-only Status-Snapshot fuer Hermes Brain, Agent Dashboard,
+                Runtime, Learning/Memory, Developer/Debug, Voice und Trading.
+                Der Status wird nur manuell aktualisiert.
+                """
+            )
+
+            with gr.Row():
+                with gr.Column(scale=3):
+                    hermes_status_task = gr.Textbox(
+                        label="Optionaler Routing-Task",
+                        value="Analysiere XAUUSD auf M15",
+                        placeholder="Optional, z. B. Analysiere XAUUSD auf M15",
+                        lines=4,
+                    )
+
+                    hermes_status_refresh = gr.Button(
+                        "Refresh Hermes Status",
+                        variant="primary",
+                    )
+
+                    hermes_status_refresh_empty = gr.Button(
+                        "Refresh ohne Task",
+                    )
+
+                with gr.Column(scale=5):
+                    hermes_status_output = gr.Textbox(
+                        label="Hermes UI Status JSON",
+                        lines=34,
+                    )
+
+            hermes_status_refresh.click(
+                fn=get_hermes_ui_status_for_display,
+                inputs=[hermes_status_task],
+                outputs=[hermes_status_output],
+            )
+
+            hermes_status_refresh_empty.click(
+                fn=get_hermes_ui_status_for_display,
+                inputs=[],
+                outputs=[hermes_status_output],
             )
 
         with gr.Tab("System"):
