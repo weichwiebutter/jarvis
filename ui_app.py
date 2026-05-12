@@ -45,6 +45,15 @@ except Exception as exc:
     _build_hermes_ui_status = None
     _HERMES_UI_STATUS_IMPORT_ERROR = str(exc)
 
+try:
+    from agents.core.jarvis_home_dashboard_status import (
+        build_jarvis_home_dashboard_status as _build_jarvis_home_dashboard_status,
+    )
+    _JARVIS_HOME_DASHBOARD_IMPORT_ERROR = ""
+except Exception as exc:
+    _build_jarvis_home_dashboard_status = None
+    _JARVIS_HOME_DASHBOARD_IMPORT_ERROR = str(exc)
+
 
 def ensure_dirs() -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -380,6 +389,249 @@ def get_hermes_ui_status_for_display(optional_task: str = "") -> str:
 def get_hermes_ui_status_panels(optional_task: str = "") -> tuple[str, dict[str, Any]]:
     status = _get_hermes_ui_status_payload(optional_task)
     return _format_hermes_ui_status_markdown(status), status
+
+
+def _get_home_dashboard_payload() -> dict[str, Any]:
+    if _build_jarvis_home_dashboard_status is None:
+        return {
+            "ok": False,
+            "error": "Jarvis Home Dashboard Status konnte nicht importiert werden.",
+            "import_error": _JARVIS_HOME_DASHBOARD_IMPORT_ERROR,
+            "dashboard_version": "v1",
+            "online_status": {
+                "status": "unavailable",
+                "hermes_available": False,
+                "ollama_available": False,
+                "external_market_data_connected": False,
+                "weather_api_connected": False,
+                "services_started": False,
+                "runtime_files_written": False,
+            },
+            "primary_tiles": [],
+            "market_watch": {
+                "status": "planned",
+                "quote_only": True,
+                "no_auto_trading": True,
+                "symbols": {},
+            },
+            "weather": {
+                "status": "planned",
+                "source": "planned_weather_provider",
+                "api_called": False,
+            },
+            "active_agents": {
+                "status": "unavailable",
+                "agents": [],
+                "available_count": 0,
+                "planned_count": 0,
+            },
+            "taskline": {
+                "status": "planned/live_foundation",
+                "entries": [],
+            },
+            "runtime": {
+                "status": "unavailable",
+                "read_only": True,
+            },
+            "warnings": [
+                f"agents.core.jarvis_home_dashboard_status.build_jarvis_home_dashboard_status unavailable: {_JARVIS_HOME_DASHBOARD_IMPORT_ERROR}"
+            ],
+        }
+
+    try:
+        status = _build_jarvis_home_dashboard_status()
+        return status if isinstance(status, dict) else {
+            "ok": False,
+            "error": "Jarvis Home Dashboard Status lieferte keine Dict-Struktur.",
+            "dashboard_version": "v1",
+            "warnings": ["build_jarvis_home_dashboard_status returned non-dict data."],
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "Jarvis Home Dashboard Status konnte nicht aufgebaut werden.",
+            "exception": str(exc),
+            "dashboard_version": "v1",
+            "warnings": [f"build_jarvis_home_dashboard_status failed: {exc}"],
+        }
+
+
+def _home_dashboard_tile(title: str, status: Any, body: str) -> str:
+    return f"""
+<div style='border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;margin:4px 0;background:#ffffff'>
+  <div style='font-size:0.9em;color:#6b7280;font-weight:600'>{title}</div>
+  <div style='margin:6px 0'>{_status_badge("Status", status)}</div>
+  <div style='font-size:0.95em;line-height:1.45'>{body}</div>
+</div>
+"""
+
+
+def _format_market_tile(symbol: str, market_watch: dict[str, Any]) -> str:
+    symbols = _safe_status_dict(market_watch.get("symbols"))
+    symbol_status = _safe_status_dict(symbols.get(symbol))
+
+    body = (
+        f"Source: `{symbol_status.get('source', 'planned_ctrader_quote')}`<br>"
+        f"Live: `{symbol_status.get('live_status', 'planned')}`<br>"
+        f"{_status_badge('Quote only', _format_bool(symbol_status.get('quote_only', True)))}"
+        f"{_status_badge('No auto trading', _format_bool(market_watch.get('no_auto_trading', True)))}"
+    )
+
+    return _home_dashboard_tile(
+        symbol,
+        symbol_status.get("live_status", "planned"),
+        body,
+    )
+
+
+def _format_weather_tile(weather: dict[str, Any]) -> str:
+    body = (
+        f"Source: `{weather.get('source', 'planned_weather_provider')}`<br>"
+        f"{_status_badge('API called', _format_bool(weather.get('api_called', False)))}"
+    )
+    return _home_dashboard_tile("Wetter", weather.get("status", "planned"), body)
+
+
+def _format_runtime_tile(title: str, runtime_status: dict[str, Any]) -> str:
+    body = (
+        f"Module: `{runtime_status.get('module', '-')}`<br>"
+        f"Available: `{runtime_status.get('available', runtime_status.get('importable', '-'))}`"
+    )
+    return _home_dashboard_tile(title, runtime_status.get("status", "-"), body)
+
+
+def _format_agents_panel(active_agents: dict[str, Any]) -> str:
+    agents = [
+        agent for agent in _safe_status_list(active_agents.get("agents"))
+        if isinstance(agent, dict)
+    ]
+    available = [
+        str(agent.get("agent_id", agent.get("name", "unknown")))
+        for agent in agents
+        if agent.get("status") == "available"
+    ]
+    planned = [
+        str(agent.get("agent_id", agent.get("name", "unknown")))
+        for agent in agents
+        if agent.get("status") == "planned"
+    ]
+
+    return f"""
+### Active Agents
+{_status_badge("Status", active_agents.get("status", "unavailable"))}
+{_status_badge("Available", active_agents.get("available_count", 0))}
+{_status_badge("Planned", active_agents.get("planned_count", 0))}
+
+- Available: {_format_list(available, limit=10)}
+- Planned: {_format_list(planned, limit=10)}
+"""
+
+
+def _format_taskline_panel(taskline: dict[str, Any]) -> str:
+    entries = [
+        entry for entry in _safe_status_list(taskline.get("entries"))
+        if isinstance(entry, dict)
+    ]
+    lines = []
+    for entry in entries[:8]:
+        lines.append(
+            f"- **{entry.get('title', 'Timeline entry')}** "
+            f"`{entry.get('status', '-')}` / `{entry.get('category', '-')}`"
+        )
+
+    if not lines:
+        lines = ["- Keine Timeline-Einträge verfügbar."]
+
+    return f"""
+### Taskline / Timeline
+{_status_badge("Status", taskline.get("status", "planned/live_foundation"))}
+{_status_badge("Entries", len(entries))}
+
+{chr(10).join(lines)}
+"""
+
+
+def _format_runtime_summary_panel(runtime: dict[str, Any]) -> str:
+    hermes = _safe_status_dict(runtime.get("hermes_status"))
+    ollama = _safe_status_dict(runtime.get("ollama_status"))
+    memory = _safe_status_dict(runtime.get("memory_status"))
+    voice = _safe_status_dict(runtime.get("voice_status"))
+
+    return f"""
+### Runtime Kurzstatus
+{_status_badge("Runtime", runtime.get("status", "available"))}
+{_status_badge("Hermes", hermes.get("status", "-"))}
+{_status_badge("Ollama", ollama.get("status", "-"))}
+{_status_badge("Memory", memory.get("status", "-"))}
+{_status_badge("Voice", voice.get("status", "-"))}
+
+- Runtime paths: `{json.dumps(_safe_status_dict(runtime.get("runtime_paths")), ensure_ascii=False)}`
+"""
+
+
+def _format_home_dashboard_warnings(status: dict[str, Any]) -> str:
+    warnings = [
+        str(warning)
+        for warning in _safe_status_list(status.get("warnings"))
+        if str(warning).strip()
+    ]
+    online = _safe_status_dict(status.get("online_status"))
+    safety = _safe_status_dict(status.get("market_watch"))
+
+    warning_lines = (
+        "\n".join(f"- <span style='color:#b45309;font-weight:600'>{warning}</span>" for warning in warnings)
+        if warnings
+        else "- Keine Warnungen."
+    )
+
+    return f"""
+### Dashboard Safety / Warnings
+{_status_badge("Version", status.get("dashboard_version", "v1"))}
+{_status_badge("Read only", _format_bool(True))}
+{_status_badge("Services started", _format_bool(online.get("services_started", False)))}
+{_status_badge("Runtime writes", _format_bool(online.get("runtime_files_written", False)))}
+{_status_badge("Quote only", _format_bool(safety.get("quote_only", True)))}
+{_status_badge("No auto trading", _format_bool(safety.get("no_auto_trading", True)))}
+
+**Warnings**
+{warning_lines}
+"""
+
+
+def refresh_home_dashboard() -> tuple[
+    str,
+    str,
+    str,
+    str,
+    str,
+    str,
+    str,
+    str,
+    str,
+    dict[str, Any],
+]:
+    status = _get_home_dashboard_payload()
+    market_watch = _safe_status_dict(status.get("market_watch"))
+    weather = _safe_status_dict(status.get("weather"))
+    runtime = _safe_status_dict(status.get("runtime"))
+    active_agents = _safe_status_dict(status.get("active_agents"))
+    taskline = _safe_status_dict(status.get("taskline"))
+
+    hermes_status = _safe_status_dict(runtime.get("hermes_status"))
+    ollama_status = _safe_status_dict(runtime.get("ollama_status"))
+
+    return (
+        _format_market_tile("XAUUSD", market_watch),
+        _format_market_tile("EURUSD", market_watch),
+        _format_weather_tile(weather),
+        _format_runtime_tile("Hermes Status", hermes_status),
+        _format_runtime_tile("Ollama Status", ollama_status),
+        _format_agents_panel(active_agents),
+        _format_taskline_panel(taskline),
+        _format_runtime_summary_panel(runtime),
+        _format_home_dashboard_warnings(status),
+        status,
+    )
 
 
 def start_jarvis_system() -> str:
@@ -731,6 +983,85 @@ def build_app() -> gr.Blocks:
             **OpenRouter = externe Modellschicht**
             """
         )
+
+        with gr.Tab("Home Dashboard"):
+            gr.Markdown(
+                """
+                ## Jarvis Home Dashboard v1
+
+                Read-only Home-Status fuer Marktuebersicht, Wetter-Planung,
+                aktive Agenten, Taskline und Runtime. Aktualisierung erfolgt nur manuell.
+                """
+            )
+
+            home_refresh = gr.Button(
+                "Refresh Home Dashboard",
+                variant="primary",
+            )
+
+            with gr.Row():
+                with gr.Column(scale=1):
+                    home_xauusd_tile = gr.Markdown(
+                        value="### XAUUSD\nNoch nicht geladen.",
+                    )
+                with gr.Column(scale=1):
+                    home_eurusd_tile = gr.Markdown(
+                        value="### EURUSD\nNoch nicht geladen.",
+                    )
+                with gr.Column(scale=1):
+                    home_weather_tile = gr.Markdown(
+                        value="### Wetter\nNoch nicht geladen.",
+                    )
+
+            with gr.Row():
+                with gr.Column(scale=1):
+                    home_hermes_tile = gr.Markdown(
+                        value="### Hermes Status\nNoch nicht geladen.",
+                    )
+                with gr.Column(scale=1):
+                    home_ollama_tile = gr.Markdown(
+                        value="### Ollama Status\nNoch nicht geladen.",
+                    )
+                with gr.Column(scale=1):
+                    home_warnings_panel = gr.Markdown(
+                        value="### Dashboard Safety / Warnings\nNoch nicht geladen.",
+                    )
+
+            with gr.Row():
+                with gr.Column(scale=1):
+                    home_agents_panel = gr.Markdown(
+                        value="### Active Agents\nNoch nicht geladen.",
+                    )
+                with gr.Column(scale=1):
+                    home_taskline_panel = gr.Markdown(
+                        value="### Taskline / Timeline\nNoch nicht geladen.",
+                    )
+
+            home_runtime_panel = gr.Markdown(
+                value="### Runtime Kurzstatus\nNoch nicht geladen.",
+            )
+
+            with gr.Accordion("Advanced JSON", open=False):
+                home_dashboard_json = gr.JSON(
+                    label="Jarvis Home Dashboard Raw JSON",
+                )
+
+            home_refresh.click(
+                fn=refresh_home_dashboard,
+                inputs=[],
+                outputs=[
+                    home_xauusd_tile,
+                    home_eurusd_tile,
+                    home_weather_tile,
+                    home_hermes_tile,
+                    home_ollama_tile,
+                    home_agents_panel,
+                    home_taskline_panel,
+                    home_runtime_panel,
+                    home_warnings_panel,
+                    home_dashboard_json,
+                ],
+            )
 
         with gr.Tab("Chat"):
             with gr.Row():
