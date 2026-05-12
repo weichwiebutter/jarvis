@@ -98,6 +98,24 @@ def _import_voice_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] |
     return builder
 
 
+def _import_trading_panel_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_trading_panel_status"
+    function_name = "build_trading_panel_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _safe_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -349,6 +367,49 @@ def _build_voice_status(warnings: list[str]) -> dict[str, Any]:
     return status
 
 
+def _empty_trading_panel_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "status": "planned",
+        "analysis_only": True,
+        "no_auto_trading": True,
+        "human_review_required": True,
+        "supported_markets": [],
+        "planned_timeframes": {},
+        "planned_patterns": [],
+        "confidence_score": {},
+        "prediction_feedback_learning": {
+            "status": "planned",
+            "outcomes": [],
+        },
+        "ctrader_integration": {
+            "status": "planned",
+            "mode": "external_bridge_planned",
+        },
+        "warnings": warnings,
+    }
+
+
+def _build_trading_panel_status(warnings: list[str]) -> dict[str, Any]:
+    builder = _import_trading_panel_builder(warnings)
+    if builder is None:
+        return _empty_trading_panel_status(warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_trading_panel_status failed: {exc}"
+        warnings.append(warning)
+        return _empty_trading_panel_status([warning])
+
+    if not isinstance(status, dict):
+        warning = "build_trading_panel_status returned non-dict data."
+        warnings.append(warning)
+        return _empty_trading_panel_status([warning])
+
+    return status
+
+
 def _build_learning_memory_panel(runtime: dict[str, Any], learning_memory: dict[str, Any]) -> dict[str, Any]:
     memory_status = _safe_dict(runtime.get("memory_status"))
     learning_warnings = [
@@ -428,19 +489,33 @@ def _build_developer_debug_panel(
     }
 
 
-def _build_trading_panel(agent_dashboard: dict[str, Any]) -> dict[str, Any]:
+def _build_trading_panel(agent_dashboard: dict[str, Any], trading: dict[str, Any]) -> dict[str, Any]:
     trading_agent = _find_agent_by_domain(agent_dashboard, "trading")
     safety_flags = _safe_dict(trading_agent.get("safety_flags"))
+    trading_warnings = [
+        str(warning)
+        for warning in _safe_list(trading.get("warnings"))
+        if str(warning).strip()
+    ]
 
     return {
-        "status": "planned",
+        "status": trading.get("status", "planned"),
+        "analysis_only": bool(trading.get("analysis_only", True)),
+        "no_auto_trading": bool(trading.get("no_auto_trading", True)),
+        "human_review_required": bool(
+            trading.get("human_review_required", safety_flags.get("human_review_required", True))
+        ),
+        "supported_markets": _safe_list(trading.get("supported_markets")),
+        "planned_timeframes": _safe_dict(trading.get("planned_timeframes")),
+        "planned_patterns": _safe_list(trading.get("planned_patterns")),
+        "confidence_score": _safe_dict(trading.get("confidence_score")),
+        "prediction_feedback_learning": _safe_dict(trading.get("prediction_feedback_learning")),
+        "ctrader_integration": _safe_dict(trading.get("ctrader_integration")),
+        "warnings": trading_warnings,
         "agent_id": trading_agent.get("agent_id", "trading_agent"),
-        "analysis_only": True,
-        "no_auto_trading": True,
-        "human_review_required": bool(safety_flags.get("human_review_required", True)),
         "can_execute": False,
-        "prediction_feedback_learning": "planned",
         "capabilities": _safe_list(trading_agent.get("capabilities")),
+        "read_only": True,
         "placeholder": "Future Trading panel can show analysis and prediction feedback only, without order controls.",
     }
 
@@ -452,6 +527,7 @@ def _build_ui_panels(
     learning_memory: dict[str, Any],
     developer_debug: dict[str, Any],
     voice: dict[str, Any],
+    trading: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -466,7 +542,7 @@ def _build_ui_panels(
         "learning_memory_panel": _build_learning_memory_panel(runtime, learning_memory),
         "developer_debug_panel": _build_developer_debug_panel(system_health, snapshot, developer_debug),
         "voice_panel": _build_voice_panel(voice),
-        "trading_panel": _build_trading_panel(agent_dashboard),
+        "trading_panel": _build_trading_panel(agent_dashboard, trading),
     }
 
 
@@ -475,6 +551,7 @@ def _fallback_status(
     learning_memory: dict[str, Any] | None = None,
     developer_debug: dict[str, Any] | None = None,
     voice: dict[str, Any] | None = None,
+    trading: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -494,6 +571,7 @@ def _fallback_status(
         "warnings": warnings,
     }
     voice = voice or _empty_voice_status(warnings)
+    trading = trading or _empty_trading_panel_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -522,8 +600,9 @@ def _fallback_status(
         "learning_memory": learning_memory,
         "developer_debug": developer_debug,
         "voice": voice,
+        "trading": trading,
         "system_health": system_health,
-        "ui_panels": _build_ui_panels(None, snapshot, brain, learning_memory, developer_debug, voice),
+        "ui_panels": _build_ui_panels(None, snapshot, brain, learning_memory, developer_debug, voice, trading),
     }
 
 
@@ -532,19 +611,20 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     learning_memory = _build_learning_memory_status(warnings)
     developer_debug = _build_developer_debug_status(warnings)
     voice = _build_voice_status(warnings)
+    trading = _build_trading_panel_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
-        return _fallback_status(warnings, learning_memory, developer_debug, voice)
+        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading)
 
     try:
         snapshot = snapshot_builder(optional_task)
     except Exception as exc:
         warnings.append(f"build_hermes_system_snapshot failed: {exc}")
-        return _fallback_status(warnings, learning_memory, developer_debug, voice)
+        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading)
 
     if not isinstance(snapshot, dict):
         warnings.append("build_hermes_system_snapshot returned non-dict data.")
-        return _fallback_status(warnings, learning_memory, developer_debug, voice)
+        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading)
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
     existing_warnings = _get_warnings(system_health)
@@ -563,6 +643,10 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         warning_text = str(warning)
         if warning_text.strip() and warning_text not in merged_warnings:
             merged_warnings.append(warning_text)
+    for warning in _safe_list(trading.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip() and warning_text not in merged_warnings:
+            merged_warnings.append(warning_text)
     system_health["warnings"] = merged_warnings
 
     brain = _extract_brain(snapshot)
@@ -577,8 +661,9 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "learning_memory": learning_memory,
         "developer_debug": developer_debug,
         "voice": voice,
+        "trading": trading,
         "system_health": system_health,
-        "ui_panels": _build_ui_panels(optional_task, snapshot, brain, learning_memory, developer_debug, voice),
+        "ui_panels": _build_ui_panels(optional_task, snapshot, brain, learning_memory, developer_debug, voice, trading),
     }
 
 
