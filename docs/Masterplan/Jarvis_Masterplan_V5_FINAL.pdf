@@ -1,0 +1,628 @@
+%PDF-1.4
+1 0 obj
+<< /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> /F3 << /Type /Font /Subtype /Type1 /BaseFont /Courier >> >>
+endobj
+2 0 obj
+<< /Length 3772 >>
+stream
+0.10 0.10 0.10 rg
+BT /F2 9 Tf 1 0 0 1 64 806 Tm (Jarvis Masterplan V5) Tj ET
+0.25 0.43 0.85 RG 1.2 w 64 798 m 531 798 l S
+0.05 0.05 0.05 rg
+BT /F2 20 Tf 1 0 0 1 64.00 777.89 Tm (JARVIS MASTERPLAN V5 - SYSTEMDOKUMENTATION) Tj ET
+0.25 0.43 0.85 RG 2 w 64 749.89 m 531 749.89 l S
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 727.89 Tm (Stand: 12. Mai 2026) Tj ET
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 702.89 Tm (1. Vision & Ziel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 673.89 Tm (Jarvis ist das lokale AI Operating System.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 654.89 Tm (Es dient als zentrale Steuer-, Status- und Control-Schicht fuer digitale) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 641.89 Tm (Aufgaben, lokale Modelle, Agenten, Voice, Memory, Trading-Analyse und spaetere) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 628.89 Tm (Automatisierung.) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 609.89 Tm (Ziel:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 589.89 Tm (Ein lokales System, das nicht nur reagiert, sondern Aufgaben versteht, Kontext) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 576.89 Tm (bewertet, Agenten koordiniert, Entscheidungen vorbereitet und den Menschen als) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 563.89 Tm (Freigabeinstanz sichtbar im Prozess haelt.) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 544.89 Tm (Zielbild:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 524.89 Tm (Lokales AI Operating System mit Multi-Agent Runtime und Live Control Center.) Tj ET
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 499.89 Tm (2. Architekturuebersicht) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 470.89 Tm (Systemfluss:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 450.89 Tm (USER) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 431.89 Tm (-> Jarvis UI / Home Dashboard) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 412.89 Tm (-> Hermes Router) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 393.89 Tm (-> Hermes Brain Status) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 374.89 Tm (-> Planner / Agent Dashboard) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 355.89 Tm (-> Spezialagenten / Statusmodule) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 336.89 Tm (-> Executor / Runtime Control) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 317.89 Tm (-> System / Tools / Dateien) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 298.89 Tm (Jede Ebene hat eine klare Verantwortung.) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 279.89 Tm (Verantwortlichkeiten:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 259.89 Tm (- Jarvis: UI, Runtime, Voice, Status, Control Center) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 246.89 Tm (- Hermes: Brain, Router, Planner, Learning, Delegation) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 233.89 Tm (- Ollama: lokale Modellbereitstellung) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 220.89 Tm (- Agenten: Fachdomaenen und Analyse) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 207.89 Tm (- Executor: kontrollierte Ausfuehrung nach Freigabe) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 194.89 Tm (- Statusmodule: read-only Uebersicht fuer UI und Debugging) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 175.89 Tm (Aktuelle Kernmodule:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 155.89 Tm (- Hermes Adaptive Routing) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 142.89 Tm (- Hermes Brain Status) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 129.89 Tm (- Agent Dashboard Status) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 116.89 Tm (- Runtime Status) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 103.89 Tm (- System Snapshot) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 90.89 Tm (- UI Status Snapshot) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 77.89 Tm (- Learning/Memory Status) Tj ET
+0.55 0.55 0.55 rg
+BT /F1 8 Tf 1 0 0 1 64 34 Tm (Stand: 12. Mai 2026) Tj ET
+BT /F1 8 Tf 1 0 0 1 500 34 Tm (Seite 1) Tj ET
+endstream
+endobj
+3 0 obj
+<< /Type /Page /Parent 14 0 R /MediaBox [0 0 595.2756 841.8898] /Resources << /Font 1 0 R >> /Contents 2 0 R >>
+endobj
+4 0 obj
+<< /Length 4434 >>
+stream
+0.10 0.10 0.10 rg
+BT /F2 9 Tf 1 0 0 1 64 806 Tm (Jarvis Masterplan V5) Tj ET
+0.25 0.43 0.85 RG 1.2 w 64 798 m 531 798 l S
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 777.89 Tm (- Voice Status) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 764.89 Tm (- Trading Panel Status) Tj ET
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 739.89 Tm (3. Aktueller Systemstand) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 710.89 Tm (Bereits vorbereitet oder implementiert:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 690.89 Tm (- Hermes Router mit Adaptive Routing) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 677.89 Tm (- UI-freundlicher Hermes Brain Status) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 664.89 Tm (- Agent Dashboard mit bekannten und geplanten Agenten) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 651.89 Tm (- Runtime Status fuer Hermes, Ollama, Memory, Voice, Git und Runtime-Pfade) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 638.89 Tm (- System Snapshot als zentrale Statusaggregation) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 625.89 Tm (- UI Status Snapshot als JSON-Grundlage fuer Jarvis Panels) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 612.89 Tm (- Learning/Memory Status fuer vorhandene `.hermes/` Strukturen) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 599.89 Tm (- Developer/Debug Status fuer CLI-Checks und Modulverfuegbarkeit) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 586.89 Tm (- Voice Status als read-only Planungsstatus) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 573.89 Tm (- Trading Panel Status als sicherer Planungsstatus) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 560.89 Tm (- Trading Analyst Roadmap) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 547.89 Tm (- Gradio-basierte Jarvis UI mit Hermes Status Bereich) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 528.89 Tm (Neue oder geplante Agenten und Domaenen:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 508.89 Tm (- memory_agent) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 495.89 Tm (- coding_agent) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 482.89 Tm (- research_agent) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 469.89 Tm (- business_agent) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 456.89 Tm (- improvement_agent) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 443.89 Tm (- trading_agent / hermes_trading_analyst) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 424.89 Tm (Der Trading Analyst ist geplant, sichtbar und bewusst nicht ausfuehrend.) Tj ET
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 399.89 Tm (4. Architekturregeln) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 370.89 Tm (- Keine direkte Ausfuehrung durch Agenten.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 357.89 Tm (- Keine automatischen Commits.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 344.89 Tm (- Keine automatischen Pushes.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 331.89 Tm (- Keine Runtime-Daten im Git.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 318.89 Tm (- Keine automatischen Trades.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 305.89 Tm (- Keine Order-Funktion im Trading Analyst.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 292.89 Tm (- Statusmodule sind read-only-first.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 279.89 Tm (- Riskante Aktionen sind approval-gesteuert.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 266.89 Tm (- Human-in-the-loop bleibt Pflicht.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 253.89 Tm (- Fallbacks duerfen nicht durch UI-Statusfunktionen gebrochen werden.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 234.89 Tm (Alle Ausfuehrungen laufen ueber kontrollierte Schichten. Agenten duerfen) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 221.89 Tm (analysieren, planen und vorschlagen. Umsetzung bleibt getrennt und freigabepflichtig.) Tj ET
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 196.89 Tm (5. Mission Control) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 167.89 Tm (Jarvis Mission Control entwickelt sich zum Home Dashboard v1.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 148.89 Tm (Das Dashboard soll den Systemzustand dauerhaft sichtbar machen, ohne Services) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 135.89 Tm (automatisch zu starten oder Runtime-Dateien zu schreiben.) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 116.89 Tm (Permanente UI-Elemente:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 96.89 Tm (- XAUUSD) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 83.89 Tm (- EURUSD) Tj ET
+0.55 0.55 0.55 rg
+BT /F1 8 Tf 1 0 0 1 64 34 Tm (Stand: 12. Mai 2026) Tj ET
+BT /F1 8 Tf 1 0 0 1 500 34 Tm (Seite 2) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 14 0 R /MediaBox [0 0 595.2756 841.8898] /Resources << /Font 1 0 R >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Length 4175 >>
+stream
+0.10 0.10 0.10 rg
+BT /F2 9 Tf 1 0 0 1 64 806 Tm (Jarvis Masterplan V5) Tj ET
+0.25 0.43 0.85 RG 1.2 w 64 798 m 531 798 l S
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 777.89 Tm (- Wetter) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 764.89 Tm (- aktive Agenten) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 751.89 Tm (- Taskline) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 738.89 Tm (- Hermes/Ollama Status) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 719.89 Tm (Zentrale Statusquellen:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 699.89 Tm (- `build_hermes_ui_status\(\)`) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 686.89 Tm (- `build_hermes_system_snapshot\(\)`) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 673.89 Tm (- `build_agent_dashboard_status\(\)`) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 660.89 Tm (- `build_runtime_status\(\)`) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 647.89 Tm (- `build_learning_memory_status\(\)`) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 634.89 Tm (- `build_voice_status\(\)`) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 621.89 Tm (- `build_trading_panel_status\(\)`) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 602.89 Tm (Mission Control zeigt Status, Warnungen und naechste Aktionen. Es ersetzt keine) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 589.89 Tm (menschliche Freigabe.) Tj ET
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 564.89 Tm (6. Multi-Agent System) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 535.89 Tm (Jarvis bleibt der Einstiegspunkt.) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 516.89 Tm (Beispiel:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 496.89 Tm (User -> Jarvis -> Hermes -> Agent Dashboard -> passender Agentenkontext -> Ergebnis) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 477.89 Tm (Keine direkte Interaktion mit einzelnen Agenten ist notwendig.) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 458.89 Tm (Agent Dashboard:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 438.89 Tm (- listet bekannte und geplante Agenten) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 425.89 Tm (- zeigt Domain, Status und Capabilities) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 412.89 Tm (- zeigt Safety Flags) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 399.89 Tm (- markiert ausfuehrbare und nicht ausfuehrbare Agenten) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 386.89 Tm (- macht geplante Agenten frueh in der UI sichtbar) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 367.89 Tm (Trading Agent:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 347.89 Tm (- Status: planned) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 334.89 Tm (- Capabilities: market_analysis, multi_timeframe_analysis, pattern_detection,) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 321.89 Tm (  signal_alerting, prediction_feedback_learning,) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 308.89 Tm (  ctrader_integration_planned) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 295.89 Tm (- Safety: analysis_only, no_auto_trading, human_review_required) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 282.89 Tm (- can_execute: false) Tj ET
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 257.89 Tm (7. LLM Strategie) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 228.89 Tm (Hybrid-Ansatz:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 208.89 Tm (Small Model -> schnelle Klassifikation, Routing, Statuszusammenfassung) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 189.89 Tm (Large Model -> komplexe Planung, Review, Architekturentscheidungen) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 170.89 Tm (Lokale Prioritaet:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 150.89 Tm (- Ollama fuer lokale Modelle) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 137.89 Tm (- Privacy-Mode mit lokalem Fallback) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 124.89 Tm (- externe Provider nur ueber explizite Provider-Layer) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 105.89 Tm (Routing-Strategie:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 85.89 Tm (- Hermes Adaptive Routing bestimmt Route, Intent, Domain und Agent Domain.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 72.89 Tm (- Hermes Brain Status liefert UI-freundliche Zusammenfassungen.) Tj ET
+0.55 0.55 0.55 rg
+BT /F1 8 Tf 1 0 0 1 64 34 Tm (Stand: 12. Mai 2026) Tj ET
+BT /F1 8 Tf 1 0 0 1 500 34 Tm (Seite 3) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 14 0 R /MediaBox [0 0 595.2756 841.8898] /Resources << /Font 1 0 R >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Length 3889 >>
+stream
+0.10 0.10 0.10 rg
+BT /F2 9 Tf 1 0 0 1 64 806 Tm (Jarvis Masterplan V5) Tj ET
+0.25 0.43 0.85 RG 1.2 w 64 798 m 531 798 l S
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 777.89 Tm (- Provider- und Modell-Empfehlungen werden transparent ausgegeben.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 764.89 Tm (- Fallback-Verhalten bleibt defensiv und stabil.) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 745.89 Tm (Inspirationen fuer weitere Entwicklung:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 725.89 Tm (- LangGraph: zustandsorientierte Agentenfluesse) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 712.89 Tm (- CrewAI: Rollen, Teams und Delegation) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 699.89 Tm (- AutoGen: Multi-Agent-Konversationen und Review-Schleifen) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 686.89 Tm (- OpenDevin / SWE-Agent: Developer-Agent-Workflows) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 673.89 Tm (- OpenClaw: lokale Agenten-/Tool-Control-Ideen) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 660.89 Tm (- MCP / A2A: standardisierte Tool- und Agent-Kommunikation) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 647.89 Tm (- Agent Scheduler / Context Lifecycle: geplante Tasks und kontrollierter Kontext) Tj ET
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 622.89 Tm (8. Self-Improvement & Learning) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 593.89 Tm (Hermes lernt nicht durch versteckte Automation, sondern durch sichtbare,) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 580.89 Tm (bewertbare Rueckmeldungen.) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 561.89 Tm (Aktueller Fokus:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 541.89 Tm (- Learning/Memory Status read-only sichtbar machen) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 528.89 Tm (- Routing Hints defensiv auslesen) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 515.89 Tm (- Improvements sichtbar zusammenfassen) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 502.89 Tm (- Developer/Debug Checks zentral dokumentieren) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 483.89 Tm (Prediction Feedback Learning:) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 463.89 Tm (Hermes erstellt spaeter Prognosen:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 443.89 Tm (- up) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 430.89 Tm (- down) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 417.89 Tm (- neutral) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 398.89 Tm (Eine Prognose speichert mindestens:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 378.89 Tm (- Symbol) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 365.89 Tm (- Richtung) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 352.89 Tm (- Timeframe) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 339.89 Tm (- Confidence) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 326.89 Tm (- Setup-Kontext) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 313.89 Tm (- Ablaufzeit) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 294.89 Tm (Spaeter prueft Hermes objektiv, ob die Prognose richtig war.) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 275.89 Tm (Bewertungen:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 255.89 Tm (- correct) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 242.89 Tm (- wrong) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 229.89 Tm (- expired) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 216.89 Tm (- invalidated) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 203.89 Tm (- late_correct) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 184.89 Tm (Daraus lernt Hermes:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 164.89 Tm (- Pattern-Gewichtung) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 151.89 Tm (- Symbol-Verhalten) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 138.89 Tm (- Session-Verhalten) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 125.89 Tm (- Timeframe-Qualitaet) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 112.89 Tm (- Confidence-Kalibrierung) Tj ET
+0.55 0.55 0.55 rg
+BT /F1 8 Tf 1 0 0 1 64 34 Tm (Stand: 12. Mai 2026) Tj ET
+BT /F1 8 Tf 1 0 0 1 500 34 Tm (Seite 4) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 14 0 R /MediaBox [0 0 595.2756 841.8898] /Resources << /Font 1 0 R >> /Contents 8 0 R >>
+endobj
+10 0 obj
+<< /Length 3903 >>
+stream
+0.10 0.10 0.10 rg
+BT /F2 9 Tf 1 0 0 1 64 806 Tm (Jarvis Masterplan V5) Tj ET
+0.25 0.43 0.85 RG 1.2 w 64 798 m 531 798 l S
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 771.89 Tm (9. Sicherheit & Git) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 742.89 Tm (Sicherheitsprinzipien:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 722.89 Tm (- human-in-the-loop) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 709.89 Tm (- read-only-first) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 696.89 Tm (- no_auto_trading) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 683.89 Tm (- approval-gesteuert) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 670.89 Tm (- keine automatischen Commits) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 657.89 Tm (- keine automatischen Pushes) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 644.89 Tm (- keine Runtime-Schreibzugriffe durch Statusmodule) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 631.89 Tm (- keine Secrets in Dokumentation oder Code) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 612.89 Tm (Trading-Sicherheit:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 592.89 Tm (- Trading Analyst analysiert und alarmiert.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 579.89 Tm (- Er fuehrt keine Orders aus.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 566.89 Tm (- Er verwaltet keine API-Keys.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 553.89 Tm (- cTrader wird zunaechst nur als QUOTE-/Chart-/Pattern-Quelle geplant.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 540.89 Tm (- Order- und Broker-Funktionen bleiben ausserhalb dieses Plans.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 521.89 Tm (Git bleibt menschlich kontrolliert. Codex, Agenten und Statusmodule duerfen) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 508.89 Tm (keine Pushes ausfuehren.) Tj ET
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 483.89 Tm (10. UI Vision) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 454.89 Tm (Zukuenftig:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 434.89 Tm (- Jarvis Home Dashboard v1) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 421.89 Tm (- Hermes Control Center) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 408.89 Tm (- Agent Dashboard Panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 395.89 Tm (- Runtime Control Panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 382.89 Tm (- Hermes Brain Panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 369.89 Tm (- Learning/Memory Panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 356.89 Tm (- Voice Panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 343.89 Tm (- Trading Panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 330.89 Tm (- Developer/Debug Panel) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 311.89 Tm (UI Status Snapshot:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 291.89 Tm (Der zentrale Status wird als read-only JSON erzeugt und kann direkt von der UI) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 278.89 Tm (verwendet werden.) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 259.89 Tm (Panels:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 239.89 Tm (- chat_panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 226.89 Tm (- hermes_brain_panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 213.89 Tm (- agent_dashboard_panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 200.89 Tm (- runtime_control_panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 187.89 Tm (- learning_memory_panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 174.89 Tm (- developer_debug_panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 161.89 Tm (- voice_panel) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 148.89 Tm (- trading_panel) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 129.89 Tm (Trading Panel:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 109.89 Tm (- XAUUSD, EURUSD, GER40) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 96.89 Tm (- HTF: W1, D1, H4) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 83.89 Tm (- MTF: H1, M15) Tj ET
+0.55 0.55 0.55 rg
+BT /F1 8 Tf 1 0 0 1 64 34 Tm (Stand: 12. Mai 2026) Tj ET
+BT /F1 8 Tf 1 0 0 1 500 34 Tm (Seite 5) Tj ET
+endstream
+endobj
+11 0 obj
+<< /Type /Page /Parent 14 0 R /MediaBox [0 0 595.2756 841.8898] /Resources << /Font 1 0 R >> /Contents 10 0 R >>
+endobj
+12 0 obj
+<< /Length 3943 >>
+stream
+0.10 0.10 0.10 rg
+BT /F2 9 Tf 1 0 0 1 64 806 Tm (Jarvis Masterplan V5) Tj ET
+0.25 0.43 0.85 RG 1.2 w 64 798 m 531 798 l S
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 777.89 Tm (- LTF: M5, M1) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 764.89 Tm (- Pattern: Rejection, False Break, Engulfing, Morning Star, Evening Star) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 751.89 Tm (- Confidence Score: 0-12) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 738.89 Tm (- Prediction History geplant) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 725.89 Tm (- Trefferquote nach Setup, Session und Timeframe geplant) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 712.89 Tm (- analysis_only und no_auto_trading sichtbar) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 693.89 Tm (Voice Panel:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 673.89 Tm (- Wake Word geplant) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 660.89 Tm (- Whisper geplant) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 647.89 Tm (- Edge TTS geplant) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 634.89 Tm (- lokale Offline Voice geplant) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 621.89 Tm (- Streaming Audio geplant) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 608.89 Tm (- kein Mikrofonzugriff im Statusmodul) Tj ET
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 583.89 Tm (11. Roadmap) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 554.89 Tm (Naechste Schritte:) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 534.89 Tm (1. Jarvis Home Dashboard v1 anbinden) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 521.89 Tm (2. Hermes UI Status im Dashboard verdichten) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 508.89 Tm (3. Voice Runtime planen und sicher kapseln) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 495.89 Tm (4. cTrader QUOTE Integration designen) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 482.89 Tm (5. Trading Analyst als Analyseagent weiter planen) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 469.89 Tm (6. Prediction Feedback Loop implementieren) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 456.89 Tm (7. Agent Execution Sandbox haerten) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 443.89 Tm (8. Agent Scheduler und Context Lifecycle konzipieren) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 430.89 Tm (9. MCP/A2A-kompatible Schnittstellen pruefen) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 76.00 417.89 Tm (10. UI-Panels schrittweise mit Live-Status verbinden) Tj ET
+0 0 0 rg
+BT /F2 10 Tf 1 0 0 1 64.00 398.89 Tm (Kurzfristige Tests:) Tj ET
+0.12 0.12 0.12 rg
+BT /F3 9 Tf 1 0 0 1 80.00 378.89 Tm (python3 agents/core/hermes_ui_status.py) Tj ET
+0.12 0.12 0.12 rg
+BT /F3 9 Tf 1 0 0 1 80.00 366.89 Tm (python3 agents/core/hermes_ui_status.py "Analysiere XAUUSD auf M15") Tj ET
+0.12 0.12 0.12 rg
+BT /F3 9 Tf 1 0 0 1 80.00 354.89 Tm (python3 agents/core/hermes_system_snapshot.py) Tj ET
+0.12 0.12 0.12 rg
+BT /F3 9 Tf 1 0 0 1 80.00 342.89 Tm (python3 agents/core/hermes_router.py "Analysiere XAUUSD auf M15") Tj ET
+0.08 0.16 0.32 rg
+BT /F2 15 Tf 1 0 0 1 64.00 314.89 Tm (12. Klarstellung) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 285.89 Tm (Jarvis ist das System.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 266.89 Tm (Hermes ist das Brain.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 247.89 Tm (Ollama ist die lokale Modellschicht.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 228.89 Tm (Agenten sind spezialisierte Arbeits- und Analysekontexte.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 209.89 Tm (Trading ist Analyse und Alerting, nicht automatische Orderausfuehrung.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 190.89 Tm (Statusmodule liefern read-only Daten fuer die UI.) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 171.89 Tm (Das Ziel bleibt ein lokales AI Operating System mit Multi-Agent Runtime,) Tj ET
+0 0 0 rg
+BT /F1 10 Tf 1 0 0 1 64.00 158.89 Tm (Live Control Center und menschlicher Kontrolle ueber jede riskante Aktion.) Tj ET
+0.55 0.55 0.55 rg
+BT /F1 8 Tf 1 0 0 1 64 34 Tm (Stand: 12. Mai 2026) Tj ET
+BT /F1 8 Tf 1 0 0 1 500 34 Tm (Seite 6) Tj ET
+endstream
+endobj
+13 0 obj
+<< /Type /Page /Parent 14 0 R /MediaBox [0 0 595.2756 841.8898] /Resources << /Font 1 0 R >> /Contents 12 0 R >>
+endobj
+14 0 obj
+<< /Type /Pages /Kids [ 3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R ] /Count 6 >>
+endobj
+15 0 obj
+<< /Type /Catalog /Pages 14 0 R >>
+endobj
+16 0 obj
+<< /Title (Jarvis Masterplan V5) /Author (Jarvis / Hermes) /Subject (Systemdokumentation) >>
+endobj
+xref
+0 17
+0000000000 65535 f 
+0000000009 00000 n 
+0000000210 00000 n 
+0000004034 00000 n 
+0000004161 00000 n 
+0000008647 00000 n 
+0000008774 00000 n 
+0000013001 00000 n 
+0000013128 00000 n 
+0000017069 00000 n 
+0000017196 00000 n 
+0000021152 00000 n 
+0000021281 00000 n 
+0000025277 00000 n 
+0000025406 00000 n 
+0000025498 00000 n 
+0000025549 00000 n 
+trailer
+<< /Size 17 /Root 15 0 R /Info 16 0 R >>
+startxref
+25658
+%%EOF
