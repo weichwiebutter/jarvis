@@ -44,6 +44,24 @@ def _import_snapshot_builder(warnings: list[str]) -> Callable[[str | None], dict
     return builder
 
 
+def _import_learning_memory_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_learning_memory_status"
+    function_name = "build_learning_memory_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _safe_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -139,13 +157,90 @@ def _build_runtime_control_panel(runtime: dict[str, Any], system_health: dict[st
     }
 
 
-def _build_learning_memory_panel(runtime: dict[str, Any]) -> dict[str, Any]:
+def _build_learning_memory_status(warnings: list[str]) -> dict[str, Any]:
+    builder = _import_learning_memory_builder(warnings)
+    if builder is None:
+        return {
+            "generated_at": None,
+            "memory_available": False,
+            "learning_available": False,
+            "routing_hints_available": False,
+            "improvements_available": False,
+            "counts": {},
+            "latest_items_preview": {},
+            "warnings": warnings,
+        }
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warnings.append(f"build_learning_memory_status failed: {exc}")
+        return {
+            "generated_at": None,
+            "memory_available": False,
+            "learning_available": False,
+            "routing_hints_available": False,
+            "improvements_available": False,
+            "counts": {},
+            "latest_items_preview": {},
+            "warnings": [f"build_learning_memory_status failed: {exc}"],
+        }
+
+    if not isinstance(status, dict):
+        warnings.append("build_learning_memory_status returned non-dict data.")
+        return {
+            "generated_at": None,
+            "memory_available": False,
+            "learning_available": False,
+            "routing_hints_available": False,
+            "improvements_available": False,
+            "counts": {},
+            "latest_items_preview": {},
+            "warnings": ["build_learning_memory_status returned non-dict data."],
+        }
+
+    return status
+
+
+def _learning_memory_root_path(learning_memory: dict[str, Any]) -> str | None:
+    paths = _safe_dict(learning_memory.get("paths"))
+    hermes_path = paths.get(".hermes")
+    if isinstance(hermes_path, dict):
+        path = hermes_path.get("path")
+        return str(path) if path else None
+
+    return None
+
+
+def _build_learning_memory_panel(runtime: dict[str, Any], learning_memory: dict[str, Any]) -> dict[str, Any]:
     memory_status = _safe_dict(runtime.get("memory_status"))
+    learning_warnings = [
+        str(warning)
+        for warning in _safe_list(learning_memory.get("warnings"))
+        if str(warning).strip()
+    ]
+    memory_available = bool(
+        learning_memory.get("memory_available")
+        or memory_status.get("status") == "available"
+    )
+
+    if learning_memory.get("learning_available"):
+        status = "available"
+    elif memory_available:
+        status = "memory_available"
+    else:
+        status = "not_configured"
 
     return {
-        "status": memory_status.get("status", "unknown"),
-        "memory_available": memory_status.get("status") == "available",
-        "path": memory_status.get("path"),
+        "status": status,
+        "memory_available": memory_available,
+        "learning_available": bool(learning_memory.get("learning_available", False)),
+        "routing_hints_available": bool(learning_memory.get("routing_hints_available", False)),
+        "improvements_available": bool(learning_memory.get("improvements_available", False)),
+        "path": memory_status.get("path") or _learning_memory_root_path(learning_memory),
+        "counts": _safe_dict(learning_memory.get("counts")),
+        "latest_items_preview": _safe_dict(learning_memory.get("latest_items_preview")),
+        "warnings": learning_warnings,
         "read_only": True,
         "placeholder": "Future Learning/Memory panel can show memory availability and learning status.",
     }
@@ -182,6 +277,7 @@ def _build_ui_panels(
     optional_task: str | None,
     snapshot: dict[str, Any],
     brain: dict[str, Any],
+    learning_memory: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -193,13 +289,23 @@ def _build_ui_panels(
         "hermes_brain_panel": _build_hermes_brain_panel(brain, routing_sample),
         "agent_dashboard_panel": _build_agent_dashboard_panel(agent_dashboard, system_health),
         "runtime_control_panel": _build_runtime_control_panel(runtime, system_health),
-        "learning_memory_panel": _build_learning_memory_panel(runtime),
+        "learning_memory_panel": _build_learning_memory_panel(runtime, learning_memory),
         "developer_debug_panel": _build_developer_debug_panel(system_health, snapshot),
         "trading_panel": _build_trading_panel(agent_dashboard),
     }
 
 
-def _fallback_status(warnings: list[str]) -> dict[str, Any]:
+def _fallback_status(warnings: list[str], learning_memory: dict[str, Any] | None = None) -> dict[str, Any]:
+    learning_memory = learning_memory or {
+        "generated_at": None,
+        "memory_available": False,
+        "learning_available": False,
+        "routing_hints_available": False,
+        "improvements_available": False,
+        "counts": {},
+        "latest_items_preview": {},
+        "warnings": warnings,
+    }
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -225,32 +331,38 @@ def _fallback_status(warnings: list[str]) -> dict[str, Any]:
         "brain": brain,
         "agents": snapshot["agents"],
         "runtime": snapshot["runtime"],
+        "learning_memory": learning_memory,
         "system_health": system_health,
-        "ui_panels": _build_ui_panels(None, snapshot, brain),
+        "ui_panels": _build_ui_panels(None, snapshot, brain, learning_memory),
     }
 
 
 def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     warnings: list[str] = []
+    learning_memory = _build_learning_memory_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
-        return _fallback_status(warnings)
+        return _fallback_status(warnings, learning_memory)
 
     try:
         snapshot = snapshot_builder(optional_task)
     except Exception as exc:
         warnings.append(f"build_hermes_system_snapshot failed: {exc}")
-        return _fallback_status(warnings)
+        return _fallback_status(warnings, learning_memory)
 
     if not isinstance(snapshot, dict):
         warnings.append("build_hermes_system_snapshot returned non-dict data.")
-        return _fallback_status(warnings)
+        return _fallback_status(warnings, learning_memory)
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
     existing_warnings = _get_warnings(system_health)
     merged_warnings = existing_warnings + [
         warning for warning in warnings if warning not in existing_warnings
     ]
+    for warning in _safe_list(learning_memory.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip() and warning_text not in merged_warnings:
+            merged_warnings.append(warning_text)
     system_health["warnings"] = merged_warnings
 
     brain = _extract_brain(snapshot)
@@ -262,8 +374,9 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "brain": brain,
         "agents": agents,
         "runtime": runtime,
+        "learning_memory": learning_memory,
         "system_health": system_health,
-        "ui_panels": _build_ui_panels(optional_task, snapshot, brain),
+        "ui_panels": _build_ui_panels(optional_task, snapshot, brain, learning_memory),
     }
 
 
