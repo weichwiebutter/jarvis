@@ -116,6 +116,24 @@ def _import_trading_panel_builder(warnings: list[str]) -> Callable[[], dict[str,
     return builder
 
 
+def _import_home_dashboard_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.jarvis_home_dashboard_status"
+    function_name = "build_jarvis_home_dashboard_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _import_runtime_events_builders(
     warnings: list[str],
 ) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
@@ -591,6 +609,87 @@ def _build_activity_timeline_status(warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def _empty_home_dashboard_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "dashboard_version": "v1",
+        "online_status": {
+            "status": "unavailable",
+            "hermes_available": False,
+            "ollama_available": False,
+            "external_market_data_connected": False,
+            "weather_api_connected": False,
+            "services_started": False,
+            "runtime_files_written": False,
+        },
+        "primary_tiles": [],
+        "market_watch": {
+            "status": "planned",
+            "quote_only": True,
+            "no_auto_trading": True,
+            "live_quotes_requested": False,
+            "orders_enabled": False,
+            "symbols": {},
+        },
+        "weather": {
+            "status": "planned",
+            "source": "planned_weather_provider",
+            "api_called": False,
+        },
+        "active_agents": {
+            "status": "unavailable",
+            "agents": [],
+            "available_count": 0,
+            "planned_count": 0,
+        },
+        "taskline": {
+            "status": "planned/live_foundation",
+            "entries": [],
+        },
+        "runtime": {
+            "status": "unavailable",
+            "read_only": True,
+        },
+        "warnings": warnings,
+        "read_only": True,
+    }
+
+
+def _build_home_dashboard_status(warnings: list[str]) -> dict[str, Any]:
+    home_dashboard_warnings: list[str] = []
+    builder = _import_home_dashboard_builder(home_dashboard_warnings)
+    for warning in home_dashboard_warnings:
+        _append_warning(warnings, warning)
+
+    if builder is None:
+        return _empty_home_dashboard_status(home_dashboard_warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_jarvis_home_dashboard_status failed: {exc}"
+        _append_warning(home_dashboard_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_home_dashboard_status(home_dashboard_warnings)
+
+    if not isinstance(status, dict):
+        warning = "build_jarvis_home_dashboard_status returned non-dict data."
+        _append_warning(home_dashboard_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_home_dashboard_status(home_dashboard_warnings)
+
+    for warning in _safe_list(status.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip():
+            _append_warning(home_dashboard_warnings, warning_text)
+            _append_warning(warnings, warning_text)
+
+    if home_dashboard_warnings:
+        status["warnings"] = home_dashboard_warnings
+
+    return status
+
+
 def _build_learning_memory_panel(runtime: dict[str, Any], learning_memory: dict[str, Any]) -> dict[str, Any]:
     memory_status = _safe_dict(runtime.get("memory_status"))
     learning_warnings = [
@@ -729,6 +828,26 @@ def _build_taskline_panel(activity_timeline: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_home_dashboard_panel(jarvis_home_dashboard: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": "planned/live_foundation",
+        "dashboard_version": jarvis_home_dashboard.get("dashboard_version", "v1"),
+        "primary_tiles": _safe_list(jarvis_home_dashboard.get("primary_tiles")),
+        "market_watch": _safe_dict(jarvis_home_dashboard.get("market_watch")),
+        "weather": _safe_dict(jarvis_home_dashboard.get("weather")),
+        "active_agents": _safe_dict(jarvis_home_dashboard.get("active_agents")),
+        "taskline": _safe_dict(jarvis_home_dashboard.get("taskline")),
+        "runtime": _safe_dict(jarvis_home_dashboard.get("runtime")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(jarvis_home_dashboard.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "placeholder": "Future Jarvis Home Dashboard can render primary tiles without live quote or weather fetches.",
+    }
+
+
 def _build_ui_panels(
     optional_task: str | None,
     snapshot: dict[str, Any],
@@ -739,6 +858,7 @@ def _build_ui_panels(
     trading: dict[str, Any],
     runtime_events: dict[str, Any],
     activity_timeline: dict[str, Any],
+    jarvis_home_dashboard: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -756,6 +876,7 @@ def _build_ui_panels(
         "trading_panel": _build_trading_panel(agent_dashboard, trading),
         "activity_feed_panel": _build_activity_feed_panel(runtime_events),
         "taskline_panel": _build_taskline_panel(activity_timeline),
+        "home_dashboard_panel": _build_home_dashboard_panel(jarvis_home_dashboard),
     }
 
 
@@ -767,6 +888,7 @@ def _fallback_status(
     trading: dict[str, Any] | None = None,
     runtime_events: dict[str, Any] | None = None,
     activity_timeline: dict[str, Any] | None = None,
+    jarvis_home_dashboard: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -789,6 +911,7 @@ def _fallback_status(
     trading = trading or _empty_trading_panel_status(warnings)
     runtime_events = runtime_events or _empty_runtime_events_status(warnings)
     activity_timeline = activity_timeline or _empty_activity_timeline_status(warnings)
+    jarvis_home_dashboard = jarvis_home_dashboard or _empty_home_dashboard_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -820,6 +943,7 @@ def _fallback_status(
         "trading": trading,
         "runtime_events": runtime_events,
         "activity_timeline": activity_timeline,
+        "jarvis_home_dashboard": jarvis_home_dashboard,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             None,
@@ -831,6 +955,7 @@ def _fallback_status(
             trading,
             runtime_events,
             activity_timeline,
+            jarvis_home_dashboard,
         ),
     }
 
@@ -843,6 +968,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     trading = _build_trading_panel_status(warnings)
     runtime_events = _build_runtime_events_status(warnings)
     activity_timeline = _build_activity_timeline_status(warnings)
+    jarvis_home_dashboard = _build_home_dashboard_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
         return _fallback_status(
@@ -853,6 +979,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             trading,
             runtime_events,
             activity_timeline,
+            jarvis_home_dashboard,
         )
 
     try:
@@ -867,6 +994,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             trading,
             runtime_events,
             activity_timeline,
+            jarvis_home_dashboard,
         )
 
     if not isinstance(snapshot, dict):
@@ -879,6 +1007,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             trading,
             runtime_events,
             activity_timeline,
+            jarvis_home_dashboard,
         )
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
@@ -910,6 +1039,10 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         warning_text = str(warning)
         if warning_text.strip() and warning_text not in merged_warnings:
             merged_warnings.append(warning_text)
+    for warning in _safe_list(jarvis_home_dashboard.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip() and warning_text not in merged_warnings:
+            merged_warnings.append(warning_text)
     system_health["warnings"] = merged_warnings
 
     brain = _extract_brain(snapshot)
@@ -927,6 +1060,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "trading": trading,
         "runtime_events": runtime_events,
         "activity_timeline": activity_timeline,
+        "jarvis_home_dashboard": jarvis_home_dashboard,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             optional_task,
@@ -938,6 +1072,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             trading,
             runtime_events,
             activity_timeline,
+            jarvis_home_dashboard,
         ),
     }
 
