@@ -144,6 +144,34 @@ def _import_runtime_events_builders(
     return example_builder, serializer
 
 
+def _import_activity_timeline_builders(
+    warnings: list[str],
+) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
+    module_name = "agents.core.hermes_activity_timeline"
+    timeline_function_name = "build_demo_activity_timeline"
+    serialize_function_name = "serialize_timeline_entry"
+
+    try:
+        module = importlib.import_module(module_name)
+        timeline_builder = getattr(module, timeline_function_name)
+        serializer = getattr(module, serialize_function_name)
+    except Exception as exc:
+        warnings.append(
+            f"{module_name}.{timeline_function_name}/{serialize_function_name} unavailable: {exc}"
+        )
+        return None, None
+
+    if not callable(timeline_builder):
+        warnings.append(f"{module_name}.{timeline_function_name} is not callable.")
+        timeline_builder = None
+
+    if not callable(serializer):
+        warnings.append(f"{module_name}.{serialize_function_name} is not callable.")
+        serializer = None
+
+    return timeline_builder, serializer
+
+
 def _safe_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -503,6 +531,66 @@ def _build_runtime_events_status(warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def _empty_activity_timeline_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "status": "planned/live_foundation",
+        "entries": [],
+        "warnings": warnings,
+        "read_only": True,
+    }
+
+
+def _build_activity_timeline_status(warnings: list[str]) -> dict[str, Any]:
+    timeline_warnings: list[str] = []
+    timeline_builder, serializer = _import_activity_timeline_builders(timeline_warnings)
+    for warning in timeline_warnings:
+        _append_warning(warnings, warning)
+
+    if timeline_builder is None or serializer is None:
+        return _empty_activity_timeline_status(timeline_warnings)
+
+    try:
+        entries = timeline_builder()
+    except Exception as exc:
+        warning = f"build_demo_activity_timeline failed: {exc}"
+        _append_warning(timeline_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_activity_timeline_status(timeline_warnings)
+
+    if not isinstance(entries, list):
+        warning = "build_demo_activity_timeline returned non-list data."
+        _append_warning(timeline_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_activity_timeline_status(timeline_warnings)
+
+    serialized_entries: list[dict[str, Any]] = []
+    for index, entry in enumerate(entries):
+        try:
+            serialized_entry = serializer(entry)
+        except Exception as exc:
+            warning = f"serialize_timeline_entry failed for entry {index}: {exc}"
+            _append_warning(timeline_warnings, warning)
+            _append_warning(warnings, warning)
+            continue
+
+        if not isinstance(serialized_entry, dict):
+            warning = f"serialize_timeline_entry returned non-dict data for entry {index}."
+            _append_warning(timeline_warnings, warning)
+            _append_warning(warnings, warning)
+            continue
+
+        serialized_entries.append(serialized_entry)
+
+    return {
+        "generated_at": utc_now(),
+        "status": "planned/live_foundation",
+        "entries": serialized_entries,
+        "warnings": timeline_warnings,
+        "read_only": True,
+    }
+
+
 def _build_learning_memory_panel(runtime: dict[str, Any], learning_memory: dict[str, Any]) -> dict[str, Any]:
     memory_status = _safe_dict(runtime.get("memory_status"))
     learning_warnings = [
@@ -627,6 +715,20 @@ def _build_activity_feed_panel(runtime_events: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def _build_taskline_panel(activity_timeline: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": activity_timeline.get("status", "planned/live_foundation"),
+        "entries": _safe_list(activity_timeline.get("entries")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(activity_timeline.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "placeholder": "Future Taskline panel can render activity timeline entries without a background loop.",
+    }
+
+
 def _build_ui_panels(
     optional_task: str | None,
     snapshot: dict[str, Any],
@@ -636,6 +738,7 @@ def _build_ui_panels(
     voice: dict[str, Any],
     trading: dict[str, Any],
     runtime_events: dict[str, Any],
+    activity_timeline: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -652,6 +755,7 @@ def _build_ui_panels(
         "voice_panel": _build_voice_panel(voice),
         "trading_panel": _build_trading_panel(agent_dashboard, trading),
         "activity_feed_panel": _build_activity_feed_panel(runtime_events),
+        "taskline_panel": _build_taskline_panel(activity_timeline),
     }
 
 
@@ -662,6 +766,7 @@ def _fallback_status(
     voice: dict[str, Any] | None = None,
     trading: dict[str, Any] | None = None,
     runtime_events: dict[str, Any] | None = None,
+    activity_timeline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -683,6 +788,7 @@ def _fallback_status(
     voice = voice or _empty_voice_status(warnings)
     trading = trading or _empty_trading_panel_status(warnings)
     runtime_events = runtime_events or _empty_runtime_events_status(warnings)
+    activity_timeline = activity_timeline or _empty_activity_timeline_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -713,6 +819,7 @@ def _fallback_status(
         "voice": voice,
         "trading": trading,
         "runtime_events": runtime_events,
+        "activity_timeline": activity_timeline,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             None,
@@ -723,6 +830,7 @@ def _fallback_status(
             voice,
             trading,
             runtime_events,
+            activity_timeline,
         ),
     }
 
@@ -734,19 +842,44 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     voice = _build_voice_status(warnings)
     trading = _build_trading_panel_status(warnings)
     runtime_events = _build_runtime_events_status(warnings)
+    activity_timeline = _build_activity_timeline_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
-        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading, runtime_events)
+        return _fallback_status(
+            warnings,
+            learning_memory,
+            developer_debug,
+            voice,
+            trading,
+            runtime_events,
+            activity_timeline,
+        )
 
     try:
         snapshot = snapshot_builder(optional_task)
     except Exception as exc:
         warnings.append(f"build_hermes_system_snapshot failed: {exc}")
-        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading, runtime_events)
+        return _fallback_status(
+            warnings,
+            learning_memory,
+            developer_debug,
+            voice,
+            trading,
+            runtime_events,
+            activity_timeline,
+        )
 
     if not isinstance(snapshot, dict):
         warnings.append("build_hermes_system_snapshot returned non-dict data.")
-        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading, runtime_events)
+        return _fallback_status(
+            warnings,
+            learning_memory,
+            developer_debug,
+            voice,
+            trading,
+            runtime_events,
+            activity_timeline,
+        )
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
     existing_warnings = _get_warnings(system_health)
@@ -773,6 +906,10 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         warning_text = str(warning)
         if warning_text.strip() and warning_text not in merged_warnings:
             merged_warnings.append(warning_text)
+    for warning in _safe_list(activity_timeline.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip() and warning_text not in merged_warnings:
+            merged_warnings.append(warning_text)
     system_health["warnings"] = merged_warnings
 
     brain = _extract_brain(snapshot)
@@ -789,6 +926,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "voice": voice,
         "trading": trading,
         "runtime_events": runtime_events,
+        "activity_timeline": activity_timeline,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             optional_task,
@@ -799,6 +937,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             voice,
             trading,
             runtime_events,
+            activity_timeline,
         ),
     }
 
