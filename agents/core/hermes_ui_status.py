@@ -62,6 +62,24 @@ def _import_learning_memory_builder(warnings: list[str]) -> Callable[[], dict[st
     return builder
 
 
+def _import_developer_debug_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_developer_debug_status"
+    function_name = "build_developer_debug_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _safe_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -212,6 +230,44 @@ def _learning_memory_root_path(learning_memory: dict[str, Any]) -> str | None:
     return None
 
 
+def _build_developer_debug_status(warnings: list[str]) -> dict[str, Any]:
+    builder = _import_developer_debug_builder(warnings)
+    if builder is None:
+        return {
+            "generated_at": None,
+            "available_debug_modules": [],
+            "available_cli_checks": [],
+            "suggested_test_commands": [],
+            "warnings": warnings,
+        }
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_developer_debug_status failed: {exc}"
+        warnings.append(warning)
+        return {
+            "generated_at": None,
+            "available_debug_modules": [],
+            "available_cli_checks": [],
+            "suggested_test_commands": [],
+            "warnings": [warning],
+        }
+
+    if not isinstance(status, dict):
+        warning = "build_developer_debug_status returned non-dict data."
+        warnings.append(warning)
+        return {
+            "generated_at": None,
+            "available_debug_modules": [],
+            "available_cli_checks": [],
+            "suggested_test_commands": [],
+            "warnings": [warning],
+        }
+
+    return status
+
+
 def _build_learning_memory_panel(runtime: dict[str, Any], learning_memory: dict[str, Any]) -> dict[str, Any]:
     memory_status = _safe_dict(runtime.get("memory_status"))
     learning_warnings = [
@@ -246,10 +302,25 @@ def _build_learning_memory_panel(runtime: dict[str, Any], learning_memory: dict[
     }
 
 
-def _build_developer_debug_panel(system_health: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
+def _build_developer_debug_panel(
+    system_health: dict[str, Any],
+    snapshot: dict[str, Any],
+    developer_debug: dict[str, Any],
+) -> dict[str, Any]:
+    debug_warnings = [
+        str(warning)
+        for warning in _safe_list(developer_debug.get("warnings"))
+        if str(warning).strip()
+    ]
+
     return {
         "status": "available",
-        "warnings": _get_warnings(system_health),
+        "available_debug_modules": _safe_list(developer_debug.get("available_debug_modules")),
+        "available_cli_checks": _safe_list(developer_debug.get("available_cli_checks")),
+        "suggested_test_commands": _safe_list(developer_debug.get("suggested_test_commands")),
+        "warnings": _get_warnings(system_health) + [
+            warning for warning in debug_warnings if warning not in _get_warnings(system_health)
+        ],
         "snapshot_generated_at": snapshot.get("generated_at"),
         "debug_mode": "read_only",
         "placeholder": "Future Developer Debug panel can inspect warnings and raw snapshot metadata.",
@@ -278,6 +349,7 @@ def _build_ui_panels(
     snapshot: dict[str, Any],
     brain: dict[str, Any],
     learning_memory: dict[str, Any],
+    developer_debug: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -290,12 +362,16 @@ def _build_ui_panels(
         "agent_dashboard_panel": _build_agent_dashboard_panel(agent_dashboard, system_health),
         "runtime_control_panel": _build_runtime_control_panel(runtime, system_health),
         "learning_memory_panel": _build_learning_memory_panel(runtime, learning_memory),
-        "developer_debug_panel": _build_developer_debug_panel(system_health, snapshot),
+        "developer_debug_panel": _build_developer_debug_panel(system_health, snapshot, developer_debug),
         "trading_panel": _build_trading_panel(agent_dashboard),
     }
 
 
-def _fallback_status(warnings: list[str], learning_memory: dict[str, Any] | None = None) -> dict[str, Any]:
+def _fallback_status(
+    warnings: list[str],
+    learning_memory: dict[str, Any] | None = None,
+    developer_debug: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
         "memory_available": False,
@@ -304,6 +380,13 @@ def _fallback_status(warnings: list[str], learning_memory: dict[str, Any] | None
         "improvements_available": False,
         "counts": {},
         "latest_items_preview": {},
+        "warnings": warnings,
+    }
+    developer_debug = developer_debug or {
+        "generated_at": None,
+        "available_debug_modules": [],
+        "available_cli_checks": [],
+        "suggested_test_commands": [],
         "warnings": warnings,
     }
     system_health = {
@@ -332,27 +415,29 @@ def _fallback_status(warnings: list[str], learning_memory: dict[str, Any] | None
         "agents": snapshot["agents"],
         "runtime": snapshot["runtime"],
         "learning_memory": learning_memory,
+        "developer_debug": developer_debug,
         "system_health": system_health,
-        "ui_panels": _build_ui_panels(None, snapshot, brain, learning_memory),
+        "ui_panels": _build_ui_panels(None, snapshot, brain, learning_memory, developer_debug),
     }
 
 
 def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     warnings: list[str] = []
     learning_memory = _build_learning_memory_status(warnings)
+    developer_debug = _build_developer_debug_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
-        return _fallback_status(warnings, learning_memory)
+        return _fallback_status(warnings, learning_memory, developer_debug)
 
     try:
         snapshot = snapshot_builder(optional_task)
     except Exception as exc:
         warnings.append(f"build_hermes_system_snapshot failed: {exc}")
-        return _fallback_status(warnings, learning_memory)
+        return _fallback_status(warnings, learning_memory, developer_debug)
 
     if not isinstance(snapshot, dict):
         warnings.append("build_hermes_system_snapshot returned non-dict data.")
-        return _fallback_status(warnings, learning_memory)
+        return _fallback_status(warnings, learning_memory, developer_debug)
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
     existing_warnings = _get_warnings(system_health)
@@ -360,6 +445,10 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         warning for warning in warnings if warning not in existing_warnings
     ]
     for warning in _safe_list(learning_memory.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip() and warning_text not in merged_warnings:
+            merged_warnings.append(warning_text)
+    for warning in _safe_list(developer_debug.get("warnings")):
         warning_text = str(warning)
         if warning_text.strip() and warning_text not in merged_warnings:
             merged_warnings.append(warning_text)
@@ -375,8 +464,9 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "agents": agents,
         "runtime": runtime,
         "learning_memory": learning_memory,
+        "developer_debug": developer_debug,
         "system_health": system_health,
-        "ui_panels": _build_ui_panels(optional_task, snapshot, brain, learning_memory),
+        "ui_panels": _build_ui_panels(optional_task, snapshot, brain, learning_memory, developer_debug),
     }
 
 
