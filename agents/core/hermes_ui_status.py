@@ -116,6 +116,34 @@ def _import_trading_panel_builder(warnings: list[str]) -> Callable[[], dict[str,
     return builder
 
 
+def _import_runtime_events_builders(
+    warnings: list[str],
+) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
+    module_name = "agents.core.hermes_runtime_events"
+    example_function_name = "example_runtime_events"
+    serialize_function_name = "serialize_runtime_event"
+
+    try:
+        module = importlib.import_module(module_name)
+        example_builder = getattr(module, example_function_name)
+        serializer = getattr(module, serialize_function_name)
+    except Exception as exc:
+        warnings.append(
+            f"{module_name}.{example_function_name}/{serialize_function_name} unavailable: {exc}"
+        )
+        return None, None
+
+    if not callable(example_builder):
+        warnings.append(f"{module_name}.{example_function_name} is not callable.")
+        example_builder = None
+
+    if not callable(serializer):
+        warnings.append(f"{module_name}.{serialize_function_name} is not callable.")
+        serializer = None
+
+    return example_builder, serializer
+
+
 def _safe_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -410,6 +438,71 @@ def _build_trading_panel_status(warnings: list[str]) -> dict[str, Any]:
     return status
 
 
+def _empty_runtime_events_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "status": "planned/live_foundation",
+        "events": [],
+        "warnings": warnings,
+        "read_only": True,
+    }
+
+
+def _append_warning(warnings: list[str], warning: str) -> None:
+    if warning.strip() and warning not in warnings:
+        warnings.append(warning)
+
+
+def _build_runtime_events_status(warnings: list[str]) -> dict[str, Any]:
+    runtime_event_warnings: list[str] = []
+    example_builder, serializer = _import_runtime_events_builders(runtime_event_warnings)
+    for warning in runtime_event_warnings:
+        _append_warning(warnings, warning)
+
+    if example_builder is None or serializer is None:
+        return _empty_runtime_events_status(runtime_event_warnings)
+
+    try:
+        events = example_builder()
+    except Exception as exc:
+        warning = f"example_runtime_events failed: {exc}"
+        _append_warning(runtime_event_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_runtime_events_status(runtime_event_warnings)
+
+    if not isinstance(events, list):
+        warning = "example_runtime_events returned non-list data."
+        _append_warning(runtime_event_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_runtime_events_status(runtime_event_warnings)
+
+    serialized_events: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        try:
+            serialized_event = serializer(event)
+        except Exception as exc:
+            warning = f"serialize_runtime_event failed for event {index}: {exc}"
+            _append_warning(runtime_event_warnings, warning)
+            _append_warning(warnings, warning)
+            continue
+
+        if not isinstance(serialized_event, dict):
+            warning = f"serialize_runtime_event returned non-dict data for event {index}."
+            _append_warning(runtime_event_warnings, warning)
+            _append_warning(warnings, warning)
+            continue
+
+        serialized_events.append(serialized_event)
+
+    return {
+        "generated_at": utc_now(),
+        "status": "planned/live_foundation",
+        "events": serialized_events,
+        "warnings": runtime_event_warnings,
+        "read_only": True,
+    }
+
+
 def _build_learning_memory_panel(runtime: dict[str, Any], learning_memory: dict[str, Any]) -> dict[str, Any]:
     memory_status = _safe_dict(runtime.get("memory_status"))
     learning_warnings = [
@@ -520,6 +613,20 @@ def _build_trading_panel(agent_dashboard: dict[str, Any], trading: dict[str, Any
     }
 
 
+def _build_activity_feed_panel(runtime_events: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": runtime_events.get("status", "planned/live_foundation"),
+        "events": _safe_list(runtime_events.get("events")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(runtime_events.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "placeholder": "Future Activity Feed panel can render runtime events without a background loop.",
+    }
+
+
 def _build_ui_panels(
     optional_task: str | None,
     snapshot: dict[str, Any],
@@ -528,6 +635,7 @@ def _build_ui_panels(
     developer_debug: dict[str, Any],
     voice: dict[str, Any],
     trading: dict[str, Any],
+    runtime_events: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -543,6 +651,7 @@ def _build_ui_panels(
         "developer_debug_panel": _build_developer_debug_panel(system_health, snapshot, developer_debug),
         "voice_panel": _build_voice_panel(voice),
         "trading_panel": _build_trading_panel(agent_dashboard, trading),
+        "activity_feed_panel": _build_activity_feed_panel(runtime_events),
     }
 
 
@@ -552,6 +661,7 @@ def _fallback_status(
     developer_debug: dict[str, Any] | None = None,
     voice: dict[str, Any] | None = None,
     trading: dict[str, Any] | None = None,
+    runtime_events: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -572,6 +682,7 @@ def _fallback_status(
     }
     voice = voice or _empty_voice_status(warnings)
     trading = trading or _empty_trading_panel_status(warnings)
+    runtime_events = runtime_events or _empty_runtime_events_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -601,8 +712,18 @@ def _fallback_status(
         "developer_debug": developer_debug,
         "voice": voice,
         "trading": trading,
+        "runtime_events": runtime_events,
         "system_health": system_health,
-        "ui_panels": _build_ui_panels(None, snapshot, brain, learning_memory, developer_debug, voice, trading),
+        "ui_panels": _build_ui_panels(
+            None,
+            snapshot,
+            brain,
+            learning_memory,
+            developer_debug,
+            voice,
+            trading,
+            runtime_events,
+        ),
     }
 
 
@@ -612,19 +733,20 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     developer_debug = _build_developer_debug_status(warnings)
     voice = _build_voice_status(warnings)
     trading = _build_trading_panel_status(warnings)
+    runtime_events = _build_runtime_events_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
-        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading)
+        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading, runtime_events)
 
     try:
         snapshot = snapshot_builder(optional_task)
     except Exception as exc:
         warnings.append(f"build_hermes_system_snapshot failed: {exc}")
-        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading)
+        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading, runtime_events)
 
     if not isinstance(snapshot, dict):
         warnings.append("build_hermes_system_snapshot returned non-dict data.")
-        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading)
+        return _fallback_status(warnings, learning_memory, developer_debug, voice, trading, runtime_events)
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
     existing_warnings = _get_warnings(system_health)
@@ -647,6 +769,10 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         warning_text = str(warning)
         if warning_text.strip() and warning_text not in merged_warnings:
             merged_warnings.append(warning_text)
+    for warning in _safe_list(runtime_events.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip() and warning_text not in merged_warnings:
+            merged_warnings.append(warning_text)
     system_health["warnings"] = merged_warnings
 
     brain = _extract_brain(snapshot)
@@ -662,8 +788,18 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "developer_debug": developer_debug,
         "voice": voice,
         "trading": trading,
+        "runtime_events": runtime_events,
         "system_health": system_health,
-        "ui_panels": _build_ui_panels(optional_task, snapshot, brain, learning_memory, developer_debug, voice, trading),
+        "ui_panels": _build_ui_panels(
+            optional_task,
+            snapshot,
+            brain,
+            learning_memory,
+            developer_debug,
+            voice,
+            trading,
+            runtime_events,
+        ),
     }
 
 
