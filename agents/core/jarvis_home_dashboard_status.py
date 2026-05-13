@@ -94,14 +94,48 @@ def _build_market_watch() -> dict[str, Any]:
     }
 
 
-def _build_weather_status() -> dict[str, Any]:
+def _fallback_weather_status(warnings: list[str]) -> dict[str, Any]:
     return {
+        "generated_at": None,
         "status": "planned",
-        "source": "planned_weather_provider",
+        "location": "Frankfurt,DE",
+        "provider": "planned_weather_provider",
+        "temperature": None,
+        "condition": None,
+        "wind": None,
         "api_called": False,
-        "location": None,
-        "current_conditions": None,
+        "warnings": warnings,
+        "read_only": True,
     }
+
+
+def _build_weather_status(warnings: list[str]) -> dict[str, Any]:
+    builder = _import_callable(
+        "agents.core.jarvis_weather_status",
+        "build_weather_status",
+        warnings,
+    )
+    if builder is None:
+        return _fallback_weather_status(warnings)
+
+    try:
+        weather = builder()
+    except Exception as exc:
+        warning = f"build_weather_status failed: {exc}"
+        _append_warning(warnings, warning)
+        return _fallback_weather_status([warning])
+
+    if not isinstance(weather, dict):
+        warning = "build_weather_status returned non-dict data."
+        _append_warning(warnings, warning)
+        return _fallback_weather_status([warning])
+
+    for warning in _safe_list(weather.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip():
+            _append_warning(warnings, warning_text)
+
+    return weather
 
 
 def _build_active_agents(warnings: list[str]) -> dict[str, Any]:
@@ -323,7 +357,11 @@ def _build_primary_tiles(
             "tile_id": "weather",
             "title": "Weather",
             "status": weather.get("status", "planned"),
-            "source": weather.get("source", "planned_weather_provider"),
+            "source": weather.get("provider", weather.get("source", "planned_weather_provider")),
+            "location": weather.get("location"),
+            "temperature": weather.get("temperature"),
+            "condition": weather.get("condition"),
+            "api_called": bool(weather.get("api_called", False)),
         },
         {
             "tile_id": "active_agents",
@@ -357,7 +395,7 @@ def build_jarvis_home_dashboard_status() -> dict[str, Any]:
     warnings: list[str] = []
 
     market_watch = _build_market_watch()
-    weather = _build_weather_status()
+    weather = _build_weather_status(warnings)
     active_agents = _build_active_agents(warnings)
     taskline = _build_taskline(warnings)
     runtime = _build_runtime(warnings)

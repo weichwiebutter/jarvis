@@ -485,8 +485,28 @@ def _format_market_tile(symbol: str, market_watch: dict[str, Any]) -> str:
 
 
 def _format_weather_tile(weather: dict[str, Any]) -> str:
+    temperature = _safe_status_dict(weather.get("temperature"))
+    condition = _safe_status_dict(weather.get("condition"))
+    wind = _safe_status_dict(weather.get("wind"))
+    provider = weather.get("provider", weather.get("source", "planned_weather_provider"))
+    temperature_value = temperature.get("value")
+    temperature_unit = temperature.get("unit", "")
+    temperature_text = (
+        f"{temperature_value} {temperature_unit}".strip()
+        if temperature_value is not None
+        else "-"
+    )
+    condition_text = condition.get("text", "-")
+    wind_speed = wind.get("speed")
+    wind_unit = wind.get("speed_unit", "")
+    wind_text = f"{wind_speed} {wind_unit}".strip() if wind_speed is not None else "-"
+
     body = (
-        f"Source: `{weather.get('source', 'planned_weather_provider')}`<br>"
+        f"Provider: `{provider}`<br>"
+        f"Location: `{weather.get('location', '-')}`<br>"
+        f"Temperature: `{temperature_text}`<br>"
+        f"Condition: `{condition_text}`<br>"
+        f"Wind: `{wind_text}`<br>"
         f"{_status_badge('API called', _format_bool(weather.get('api_called', False)))}"
     )
     return _home_dashboard_tile("Wetter", weather.get("status", "planned"), body)
