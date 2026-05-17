@@ -224,6 +224,24 @@ def _import_cost_optimization_builder(warnings: list[str]) -> Callable[[], dict[
     return builder
 
 
+def _import_skill_generator_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_skill_generator_status"
+    function_name = "build_skill_generator_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _import_runtime_events_builders(
     warnings: list[str],
 ) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
@@ -693,6 +711,30 @@ def _empty_cost_optimization_status(warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def _empty_skill_generator_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "status": "unavailable",
+        "read_only": True,
+        "foundation_only": True,
+        "skills_generated": False,
+        "external_repos_cloned": False,
+        "api_calls_performed": False,
+        "mcp_tools_executed": False,
+        "apify_connection_opened": False,
+        "runtime_files_written": False,
+        "services_started": False,
+        "secrets_read": False,
+        "supported_future_sources": [],
+        "generated_artifacts": [],
+        "safety_requirements": {},
+        "review_workflow": {},
+        "output_limits": {},
+        "future_integrations": [],
+        "warnings": warnings,
+    }
+
+
 def _append_warning(warnings: list[str], warning: str) -> None:
     if warning.strip() and warning not in warnings:
         warnings.append(warning)
@@ -864,6 +906,40 @@ def _build_cost_optimization_status(warnings: list[str]) -> dict[str, Any]:
 
     if cost_optimization_warnings:
         status["warnings"] = cost_optimization_warnings
+
+    return status
+
+
+def _build_skill_generator_status(warnings: list[str]) -> dict[str, Any]:
+    skill_generator_warnings: list[str] = []
+    builder = _import_skill_generator_builder(skill_generator_warnings)
+    for warning in skill_generator_warnings:
+        _append_warning(warnings, warning)
+
+    if builder is None:
+        return _empty_skill_generator_status(skill_generator_warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_skill_generator_status failed: {exc}"
+        _append_warning(skill_generator_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_skill_generator_status(skill_generator_warnings)
+
+    if not isinstance(status, dict):
+        warning = "build_skill_generator_status returned non-dict data."
+        _append_warning(skill_generator_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_skill_generator_status(skill_generator_warnings)
+
+    for warning in _safe_list(status.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip():
+            _append_warning(skill_generator_warnings, warning_text)
+
+    if skill_generator_warnings:
+        status["warnings"] = skill_generator_warnings
 
     return status
 
@@ -1354,6 +1430,34 @@ def _build_cost_optimization_panel(cost_optimization: dict[str, Any]) -> dict[st
     }
 
 
+def _build_skill_generator_panel(skill_generator: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": skill_generator.get("status", "unavailable"),
+        "supported_future_sources": _safe_list(skill_generator.get("supported_future_sources")),
+        "generated_artifacts": _safe_list(skill_generator.get("generated_artifacts")),
+        "safety_requirements": _safe_dict(skill_generator.get("safety_requirements")),
+        "review_workflow": _safe_dict(skill_generator.get("review_workflow")),
+        "output_limits": _safe_dict(skill_generator.get("output_limits")),
+        "future_integrations": _safe_list(skill_generator.get("future_integrations")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(skill_generator.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "controls_enabled": False,
+        "skills_generated": bool(skill_generator.get("skills_generated", False)),
+        "external_repos_cloned": bool(skill_generator.get("external_repos_cloned", False)),
+        "api_calls_performed": bool(skill_generator.get("api_calls_performed", False)),
+        "mcp_tools_executed": bool(skill_generator.get("mcp_tools_executed", False)),
+        "apify_connection_opened": bool(skill_generator.get("apify_connection_opened", False)),
+        "runtime_files_written": bool(skill_generator.get("runtime_files_written", False)),
+        "services_started": bool(skill_generator.get("services_started", False)),
+        "secrets_read": bool(skill_generator.get("secrets_read", False)),
+        "placeholder": "Future Skill Generator panel can show generator planning without generating skills.",
+    }
+
+
 def _build_ui_panels(
     optional_task: str | None,
     snapshot: dict[str, Any],
@@ -1370,6 +1474,7 @@ def _build_ui_panels(
     skills: dict[str, Any],
     research_discovery: dict[str, Any],
     cost_optimization: dict[str, Any],
+    skill_generator: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -1393,6 +1498,7 @@ def _build_ui_panels(
         "skills_panel": _build_skills_panel(skills),
         "research_discovery_panel": _build_research_discovery_panel(research_discovery),
         "cost_optimization_panel": _build_cost_optimization_panel(cost_optimization),
+        "skill_generator_panel": _build_skill_generator_panel(skill_generator),
     }
 
 
@@ -1410,6 +1516,7 @@ def _fallback_status(
     skills: dict[str, Any] | None = None,
     research_discovery: dict[str, Any] | None = None,
     cost_optimization: dict[str, Any] | None = None,
+    skill_generator: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -1438,6 +1545,7 @@ def _fallback_status(
     skills = skills or _empty_skills_status(warnings)
     research_discovery = research_discovery or _empty_research_discovery_status(warnings)
     cost_optimization = cost_optimization or _empty_cost_optimization_status(warnings)
+    skill_generator = skill_generator or _empty_skill_generator_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -1475,6 +1583,7 @@ def _fallback_status(
         "skills": skills,
         "research_discovery": research_discovery,
         "cost_optimization": cost_optimization,
+        "skill_generator": skill_generator,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             None,
@@ -1492,6 +1601,7 @@ def _fallback_status(
             skills,
             research_discovery,
             cost_optimization,
+            skill_generator,
         ),
     }
 
@@ -1510,6 +1620,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     skills = _build_skills_status(warnings)
     research_discovery = _build_research_discovery_status(warnings)
     cost_optimization = _build_cost_optimization_status(warnings)
+    skill_generator = _build_skill_generator_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
         return _fallback_status(
@@ -1526,6 +1637,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             skills,
             research_discovery,
             cost_optimization,
+            skill_generator,
         )
 
     try:
@@ -1546,6 +1658,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             skills,
             research_discovery,
             cost_optimization,
+            skill_generator,
         )
 
     if not isinstance(snapshot, dict):
@@ -1564,6 +1677,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             skills,
             research_discovery,
             cost_optimization,
+            skill_generator,
         )
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
@@ -1622,6 +1736,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "skills": skills,
         "research_discovery": research_discovery,
         "cost_optimization": cost_optimization,
+        "skill_generator": skill_generator,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             optional_task,
@@ -1639,6 +1754,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             skills,
             research_discovery,
             cost_optimization,
+            skill_generator,
         ),
     }
 
