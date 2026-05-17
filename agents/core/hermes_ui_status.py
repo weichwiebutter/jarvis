@@ -242,6 +242,24 @@ def _import_skill_generator_builder(warnings: list[str]) -> Callable[[], dict[st
     return builder
 
 
+def _import_mcp_tool_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_mcp_tool_status"
+    function_name = "build_mcp_tool_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _import_runtime_events_builders(
     warnings: list[str],
 ) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
@@ -735,6 +753,29 @@ def _empty_skill_generator_status(warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def _empty_mcp_tool_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "status": "unavailable",
+        "read_only": True,
+        "foundation_only": True,
+        "mcp_servers_started": False,
+        "mcp_clients_connected": False,
+        "tools_executed": False,
+        "external_api_calls_performed": False,
+        "runtime_files_written": False,
+        "services_started": False,
+        "secrets_read": False,
+        "mcp_strategy": [],
+        "tool_registry": {},
+        "planned_tool_categories": [],
+        "permission_model": {},
+        "safety_requirements": {},
+        "future_integrations": [],
+        "warnings": warnings,
+    }
+
+
 def _append_warning(warnings: list[str], warning: str) -> None:
     if warning.strip() and warning not in warnings:
         warnings.append(warning)
@@ -940,6 +981,40 @@ def _build_skill_generator_status(warnings: list[str]) -> dict[str, Any]:
 
     if skill_generator_warnings:
         status["warnings"] = skill_generator_warnings
+
+    return status
+
+
+def _build_mcp_tool_status(warnings: list[str]) -> dict[str, Any]:
+    mcp_tool_warnings: list[str] = []
+    builder = _import_mcp_tool_builder(mcp_tool_warnings)
+    for warning in mcp_tool_warnings:
+        _append_warning(warnings, warning)
+
+    if builder is None:
+        return _empty_mcp_tool_status(mcp_tool_warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_mcp_tool_status failed: {exc}"
+        _append_warning(mcp_tool_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_mcp_tool_status(mcp_tool_warnings)
+
+    if not isinstance(status, dict):
+        warning = "build_mcp_tool_status returned non-dict data."
+        _append_warning(mcp_tool_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_mcp_tool_status(mcp_tool_warnings)
+
+    for warning in _safe_list(status.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip():
+            _append_warning(mcp_tool_warnings, warning_text)
+
+    if mcp_tool_warnings:
+        status["warnings"] = mcp_tool_warnings
 
     return status
 
@@ -1458,6 +1533,35 @@ def _build_skill_generator_panel(skill_generator: dict[str, Any]) -> dict[str, A
     }
 
 
+def _build_mcp_tools_panel(mcp_tools: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": mcp_tools.get("status", "unavailable"),
+        "mcp_strategy": _safe_list(mcp_tools.get("mcp_strategy")),
+        "tool_registry": _safe_dict(mcp_tools.get("tool_registry")),
+        "planned_tool_categories": _safe_list(mcp_tools.get("planned_tool_categories")),
+        "permission_model": _safe_dict(mcp_tools.get("permission_model")),
+        "safety_requirements": _safe_dict(mcp_tools.get("safety_requirements")),
+        "future_integrations": _safe_list(mcp_tools.get("future_integrations")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(mcp_tools.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "controls_enabled": False,
+        "mcp_servers_started": bool(mcp_tools.get("mcp_servers_started", False)),
+        "mcp_clients_connected": bool(mcp_tools.get("mcp_clients_connected", False)),
+        "tools_executed": bool(mcp_tools.get("tools_executed", False)),
+        "external_api_calls_performed": bool(
+            mcp_tools.get("external_api_calls_performed", False)
+        ),
+        "runtime_files_written": bool(mcp_tools.get("runtime_files_written", False)),
+        "services_started": bool(mcp_tools.get("services_started", False)),
+        "secrets_read": bool(mcp_tools.get("secrets_read", False)),
+        "placeholder": "Future MCP Tools panel can show tool policy without connecting or executing tools.",
+    }
+
+
 def _build_ui_panels(
     optional_task: str | None,
     snapshot: dict[str, Any],
@@ -1475,6 +1579,7 @@ def _build_ui_panels(
     research_discovery: dict[str, Any],
     cost_optimization: dict[str, Any],
     skill_generator: dict[str, Any],
+    mcp_tools: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -1499,6 +1604,7 @@ def _build_ui_panels(
         "research_discovery_panel": _build_research_discovery_panel(research_discovery),
         "cost_optimization_panel": _build_cost_optimization_panel(cost_optimization),
         "skill_generator_panel": _build_skill_generator_panel(skill_generator),
+        "mcp_tools_panel": _build_mcp_tools_panel(mcp_tools),
     }
 
 
@@ -1517,6 +1623,7 @@ def _fallback_status(
     research_discovery: dict[str, Any] | None = None,
     cost_optimization: dict[str, Any] | None = None,
     skill_generator: dict[str, Any] | None = None,
+    mcp_tools: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -1546,6 +1653,7 @@ def _fallback_status(
     research_discovery = research_discovery or _empty_research_discovery_status(warnings)
     cost_optimization = cost_optimization or _empty_cost_optimization_status(warnings)
     skill_generator = skill_generator or _empty_skill_generator_status(warnings)
+    mcp_tools = mcp_tools or _empty_mcp_tool_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -1584,6 +1692,7 @@ def _fallback_status(
         "research_discovery": research_discovery,
         "cost_optimization": cost_optimization,
         "skill_generator": skill_generator,
+        "mcp_tools": mcp_tools,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             None,
@@ -1602,6 +1711,7 @@ def _fallback_status(
             research_discovery,
             cost_optimization,
             skill_generator,
+            mcp_tools,
         ),
     }
 
@@ -1621,6 +1731,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     research_discovery = _build_research_discovery_status(warnings)
     cost_optimization = _build_cost_optimization_status(warnings)
     skill_generator = _build_skill_generator_status(warnings)
+    mcp_tools = _build_mcp_tool_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
         return _fallback_status(
@@ -1638,6 +1749,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             research_discovery,
             cost_optimization,
             skill_generator,
+            mcp_tools,
         )
 
     try:
@@ -1659,6 +1771,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             research_discovery,
             cost_optimization,
             skill_generator,
+            mcp_tools,
         )
 
     if not isinstance(snapshot, dict):
@@ -1678,6 +1791,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             research_discovery,
             cost_optimization,
             skill_generator,
+            mcp_tools,
         )
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
@@ -1737,6 +1851,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "research_discovery": research_discovery,
         "cost_optimization": cost_optimization,
         "skill_generator": skill_generator,
+        "mcp_tools": mcp_tools,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             optional_task,
@@ -1755,6 +1870,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             research_discovery,
             cost_optimization,
             skill_generator,
+            mcp_tools,
         ),
     }
 
