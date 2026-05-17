@@ -134,6 +134,24 @@ def _import_home_dashboard_builder(warnings: list[str]) -> Callable[[], dict[str
     return builder
 
 
+def _import_runtime_supervisor_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_runtime_supervisor"
+    function_name = "build_runtime_supervisor_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _import_runtime_events_builders(
     warnings: list[str],
 ) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
@@ -494,9 +512,66 @@ def _empty_runtime_events_status(warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def _empty_runtime_supervisor_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "status": "unavailable",
+        "read_only": True,
+        "foundation_only": True,
+        "background_loops_started": False,
+        "threads_started": False,
+        "services_started": False,
+        "runtime_files_written": False,
+        "heartbeat": {},
+        "scheduler": {},
+        "agent_lifecycle": {},
+        "zombie_protection": {},
+        "context_lifecycle": {},
+        "context_compression": {},
+        "resource_limits": {},
+        "runtime_cleanup": {},
+        "planned_jobs": [],
+        "warnings": warnings,
+    }
+
+
 def _append_warning(warnings: list[str], warning: str) -> None:
     if warning.strip() and warning not in warnings:
         warnings.append(warning)
+
+
+def _build_runtime_supervisor_status(warnings: list[str]) -> dict[str, Any]:
+    runtime_supervisor_warnings: list[str] = []
+    builder = _import_runtime_supervisor_builder(runtime_supervisor_warnings)
+    for warning in runtime_supervisor_warnings:
+        _append_warning(warnings, warning)
+
+    if builder is None:
+        return _empty_runtime_supervisor_status(runtime_supervisor_warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_runtime_supervisor_status failed: {exc}"
+        _append_warning(runtime_supervisor_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_runtime_supervisor_status(runtime_supervisor_warnings)
+
+    if not isinstance(status, dict):
+        warning = "build_runtime_supervisor_status returned non-dict data."
+        _append_warning(runtime_supervisor_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_runtime_supervisor_status(runtime_supervisor_warnings)
+
+    for warning in _safe_list(status.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip():
+            _append_warning(runtime_supervisor_warnings, warning_text)
+
+    if runtime_supervisor_warnings:
+        status["warnings"] = runtime_supervisor_warnings
+
+    return status
 
 
 def _build_runtime_events_status(warnings: list[str]) -> dict[str, Any]:
@@ -848,6 +923,33 @@ def _build_home_dashboard_panel(jarvis_home_dashboard: dict[str, Any]) -> dict[s
     }
 
 
+def _build_runtime_supervisor_panel(runtime_supervisor: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": runtime_supervisor.get("status", "unavailable"),
+        "heartbeat": _safe_dict(runtime_supervisor.get("heartbeat")),
+        "scheduler": _safe_dict(runtime_supervisor.get("scheduler")),
+        "agent_lifecycle": _safe_dict(runtime_supervisor.get("agent_lifecycle")),
+        "zombie_protection": _safe_dict(runtime_supervisor.get("zombie_protection")),
+        "context_lifecycle": _safe_dict(runtime_supervisor.get("context_lifecycle")),
+        "context_compression": _safe_dict(runtime_supervisor.get("context_compression")),
+        "resource_limits": _safe_dict(runtime_supervisor.get("resource_limits")),
+        "runtime_cleanup": _safe_dict(runtime_supervisor.get("runtime_cleanup")),
+        "planned_jobs": _safe_list(runtime_supervisor.get("planned_jobs")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(runtime_supervisor.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "controls_enabled": False,
+        "background_loops_started": bool(runtime_supervisor.get("background_loops_started", False)),
+        "threads_started": bool(runtime_supervisor.get("threads_started", False)),
+        "services_started": bool(runtime_supervisor.get("services_started", False)),
+        "runtime_files_written": bool(runtime_supervisor.get("runtime_files_written", False)),
+        "placeholder": "Future Runtime Supervisor panel can display planned jobs without starting schedulers.",
+    }
+
+
 def _build_ui_panels(
     optional_task: str | None,
     snapshot: dict[str, Any],
@@ -859,6 +961,7 @@ def _build_ui_panels(
     runtime_events: dict[str, Any],
     activity_timeline: dict[str, Any],
     jarvis_home_dashboard: dict[str, Any],
+    runtime_supervisor: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -877,6 +980,7 @@ def _build_ui_panels(
         "activity_feed_panel": _build_activity_feed_panel(runtime_events),
         "taskline_panel": _build_taskline_panel(activity_timeline),
         "home_dashboard_panel": _build_home_dashboard_panel(jarvis_home_dashboard),
+        "runtime_supervisor_panel": _build_runtime_supervisor_panel(runtime_supervisor),
     }
 
 
@@ -889,6 +993,7 @@ def _fallback_status(
     runtime_events: dict[str, Any] | None = None,
     activity_timeline: dict[str, Any] | None = None,
     jarvis_home_dashboard: dict[str, Any] | None = None,
+    runtime_supervisor: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -912,6 +1017,7 @@ def _fallback_status(
     runtime_events = runtime_events or _empty_runtime_events_status(warnings)
     activity_timeline = activity_timeline or _empty_activity_timeline_status(warnings)
     jarvis_home_dashboard = jarvis_home_dashboard or _empty_home_dashboard_status(warnings)
+    runtime_supervisor = runtime_supervisor or _empty_runtime_supervisor_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -944,6 +1050,7 @@ def _fallback_status(
         "runtime_events": runtime_events,
         "activity_timeline": activity_timeline,
         "jarvis_home_dashboard": jarvis_home_dashboard,
+        "runtime_supervisor": runtime_supervisor,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             None,
@@ -956,6 +1063,7 @@ def _fallback_status(
             runtime_events,
             activity_timeline,
             jarvis_home_dashboard,
+            runtime_supervisor,
         ),
     }
 
@@ -969,6 +1077,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     runtime_events = _build_runtime_events_status(warnings)
     activity_timeline = _build_activity_timeline_status(warnings)
     jarvis_home_dashboard = _build_home_dashboard_status(warnings)
+    runtime_supervisor = _build_runtime_supervisor_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
         return _fallback_status(
@@ -980,6 +1089,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             runtime_events,
             activity_timeline,
             jarvis_home_dashboard,
+            runtime_supervisor,
         )
 
     try:
@@ -995,6 +1105,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             runtime_events,
             activity_timeline,
             jarvis_home_dashboard,
+            runtime_supervisor,
         )
 
     if not isinstance(snapshot, dict):
@@ -1008,6 +1119,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             runtime_events,
             activity_timeline,
             jarvis_home_dashboard,
+            runtime_supervisor,
         )
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
@@ -1061,6 +1173,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "runtime_events": runtime_events,
         "activity_timeline": activity_timeline,
         "jarvis_home_dashboard": jarvis_home_dashboard,
+        "runtime_supervisor": runtime_supervisor,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             optional_task,
@@ -1073,6 +1186,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             runtime_events,
             activity_timeline,
             jarvis_home_dashboard,
+            runtime_supervisor,
         ),
     }
 
