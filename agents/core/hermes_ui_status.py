@@ -170,6 +170,24 @@ def _import_shared_memory_builder(warnings: list[str]) -> Callable[[], dict[str,
     return builder
 
 
+def _import_skills_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_skills_status"
+    function_name = "build_skills_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _import_runtime_events_builders(
     warnings: list[str],
 ) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
@@ -573,6 +591,27 @@ def _empty_shared_memory_status(warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def _empty_skills_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "status": "unavailable",
+        "read_only": True,
+        "foundation_only": True,
+        "skills_executed": False,
+        "external_repos_cloned": False,
+        "skills_generated": False,
+        "runtime_files_written": False,
+        "services_started": False,
+        "skill_root_candidates": [],
+        "planned_skill_categories": [],
+        "skill_registry": {},
+        "skill_review_workflow": {},
+        "skill_safety": {},
+        "external_pattern_sources": [],
+        "warnings": warnings,
+    }
+
+
 def _append_warning(warnings: list[str], warning: str) -> None:
     if warning.strip() and warning not in warnings:
         warnings.append(warning)
@@ -642,6 +681,40 @@ def _build_shared_memory_status(warnings: list[str]) -> dict[str, Any]:
 
     if shared_memory_warnings:
         status["warnings"] = shared_memory_warnings
+
+    return status
+
+
+def _build_skills_status(warnings: list[str]) -> dict[str, Any]:
+    skills_warnings: list[str] = []
+    builder = _import_skills_builder(skills_warnings)
+    for warning in skills_warnings:
+        _append_warning(warnings, warning)
+
+    if builder is None:
+        return _empty_skills_status(skills_warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_skills_status failed: {exc}"
+        _append_warning(skills_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_skills_status(skills_warnings)
+
+    if not isinstance(status, dict):
+        warning = "build_skills_status returned non-dict data."
+        _append_warning(skills_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_skills_status(skills_warnings)
+
+    for warning in _safe_list(status.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip():
+            _append_warning(skills_warnings, warning_text)
+
+    if skills_warnings:
+        status["warnings"] = skills_warnings
 
     return status
 
@@ -1046,6 +1119,31 @@ def _build_shared_memory_panel(shared_memory: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_skills_panel(skills: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": skills.get("status", "unavailable"),
+        "skill_root_candidates": _safe_list(skills.get("skill_root_candidates")),
+        "planned_skill_categories": _safe_list(skills.get("planned_skill_categories")),
+        "skill_registry": _safe_dict(skills.get("skill_registry")),
+        "skill_review_workflow": _safe_dict(skills.get("skill_review_workflow")),
+        "skill_safety": _safe_dict(skills.get("skill_safety")),
+        "external_pattern_sources": _safe_list(skills.get("external_pattern_sources")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(skills.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "controls_enabled": False,
+        "skills_executed": bool(skills.get("skills_executed", False)),
+        "external_repos_cloned": bool(skills.get("external_repos_cloned", False)),
+        "skills_generated": bool(skills.get("skills_generated", False)),
+        "runtime_files_written": bool(skills.get("runtime_files_written", False)),
+        "services_started": bool(skills.get("services_started", False)),
+        "placeholder": "Future Skills panel can show registry and review status without executing skills.",
+    }
+
+
 def _build_ui_panels(
     optional_task: str | None,
     snapshot: dict[str, Any],
@@ -1059,6 +1157,7 @@ def _build_ui_panels(
     jarvis_home_dashboard: dict[str, Any],
     runtime_supervisor: dict[str, Any],
     shared_memory: dict[str, Any],
+    skills: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -1079,6 +1178,7 @@ def _build_ui_panels(
         "home_dashboard_panel": _build_home_dashboard_panel(jarvis_home_dashboard),
         "runtime_supervisor_panel": _build_runtime_supervisor_panel(runtime_supervisor),
         "shared_memory_panel": _build_shared_memory_panel(shared_memory),
+        "skills_panel": _build_skills_panel(skills),
     }
 
 
@@ -1093,6 +1193,7 @@ def _fallback_status(
     jarvis_home_dashboard: dict[str, Any] | None = None,
     runtime_supervisor: dict[str, Any] | None = None,
     shared_memory: dict[str, Any] | None = None,
+    skills: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -1118,6 +1219,7 @@ def _fallback_status(
     jarvis_home_dashboard = jarvis_home_dashboard or _empty_home_dashboard_status(warnings)
     runtime_supervisor = runtime_supervisor or _empty_runtime_supervisor_status(warnings)
     shared_memory = shared_memory or _empty_shared_memory_status(warnings)
+    skills = skills or _empty_skills_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -1152,6 +1254,7 @@ def _fallback_status(
         "jarvis_home_dashboard": jarvis_home_dashboard,
         "runtime_supervisor": runtime_supervisor,
         "shared_memory": shared_memory,
+        "skills": skills,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             None,
@@ -1166,6 +1269,7 @@ def _fallback_status(
             jarvis_home_dashboard,
             runtime_supervisor,
             shared_memory,
+            skills,
         ),
     }
 
@@ -1181,6 +1285,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     jarvis_home_dashboard = _build_home_dashboard_status(warnings)
     runtime_supervisor = _build_runtime_supervisor_status(warnings)
     shared_memory = _build_shared_memory_status(warnings)
+    skills = _build_skills_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
         return _fallback_status(
@@ -1194,6 +1299,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             jarvis_home_dashboard,
             runtime_supervisor,
             shared_memory,
+            skills,
         )
 
     try:
@@ -1211,6 +1317,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             jarvis_home_dashboard,
             runtime_supervisor,
             shared_memory,
+            skills,
         )
 
     if not isinstance(snapshot, dict):
@@ -1226,6 +1333,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             jarvis_home_dashboard,
             runtime_supervisor,
             shared_memory,
+            skills,
         )
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
@@ -1281,6 +1389,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "jarvis_home_dashboard": jarvis_home_dashboard,
         "runtime_supervisor": runtime_supervisor,
         "shared_memory": shared_memory,
+        "skills": skills,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             optional_task,
@@ -1295,6 +1404,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             jarvis_home_dashboard,
             runtime_supervisor,
             shared_memory,
+            skills,
         ),
     }
 
