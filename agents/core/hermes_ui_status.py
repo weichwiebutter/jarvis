@@ -296,6 +296,24 @@ def _import_trading_intelligence_builder(warnings: list[str]) -> Callable[[], di
     return builder
 
 
+def _import_foundation_registry_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_foundation_registry"
+    function_name = "build_foundation_registry"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _import_runtime_events_builders(
     warnings: list[str],
 ) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
@@ -857,6 +875,24 @@ def _empty_trading_intelligence_status(warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def _empty_foundation_registry_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "status": "unavailable",
+        "read_only": True,
+        "foundation_only": True,
+        "module_count": 0,
+        "modules": [],
+        "index": {},
+        "safety_levels": [],
+        "external_access_performed": False,
+        "services_started": False,
+        "runtime_loops_started": False,
+        "runtime_files_written": False,
+        "warnings": warnings,
+    }
+
+
 def _append_warning(warnings: list[str], warning: str) -> None:
     if warning.strip() and warning not in warnings:
         warnings.append(warning)
@@ -1164,6 +1200,40 @@ def _build_trading_intelligence_status(warnings: list[str]) -> dict[str, Any]:
 
     if trading_intelligence_warnings:
         status["warnings"] = trading_intelligence_warnings
+
+    return status
+
+
+def _build_foundation_registry_status(warnings: list[str]) -> dict[str, Any]:
+    foundation_registry_warnings: list[str] = []
+    builder = _import_foundation_registry_builder(foundation_registry_warnings)
+    for warning in foundation_registry_warnings:
+        _append_warning(warnings, warning)
+
+    if builder is None:
+        return _empty_foundation_registry_status(foundation_registry_warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_foundation_registry failed: {exc}"
+        _append_warning(foundation_registry_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_foundation_registry_status(foundation_registry_warnings)
+
+    if not isinstance(status, dict):
+        warning = "build_foundation_registry returned non-dict data."
+        _append_warning(foundation_registry_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_foundation_registry_status(foundation_registry_warnings)
+
+    for warning in _safe_list(status.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip():
+            _append_warning(foundation_registry_warnings, warning_text)
+
+    if foundation_registry_warnings:
+        status["warnings"] = foundation_registry_warnings
 
     return status
 
@@ -1778,6 +1848,33 @@ def _build_trading_intelligence_panel(trading_intelligence: dict[str, Any]) -> d
     }
 
 
+def _build_foundation_registry_panel(foundation_registry: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": foundation_registry.get("status", "unavailable"),
+        "modules": _safe_list(foundation_registry.get("modules")),
+        "safety_levels": _safe_list(foundation_registry.get("safety_levels")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(foundation_registry.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "controls_enabled": False,
+        "module_count": int(foundation_registry.get("module_count") or 0),
+        "external_access_performed": bool(
+            foundation_registry.get("external_access_performed", False)
+        ),
+        "services_started": bool(foundation_registry.get("services_started", False)),
+        "runtime_loops_started": bool(
+            foundation_registry.get("runtime_loops_started", False)
+        ),
+        "runtime_files_written": bool(
+            foundation_registry.get("runtime_files_written", False)
+        ),
+        "placeholder": "Future UI and API layers can render foundation modules from this read-only registry.",
+    }
+
+
 def _build_ui_panels(
     optional_task: str | None,
     snapshot: dict[str, Any],
@@ -1798,6 +1895,7 @@ def _build_ui_panels(
     mcp_tools: dict[str, Any],
     reflective_learning: dict[str, Any],
     trading_intelligence: dict[str, Any],
+    foundation_registry: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -1825,6 +1923,7 @@ def _build_ui_panels(
         "mcp_tools_panel": _build_mcp_tools_panel(mcp_tools),
         "reflective_learning_panel": _build_reflective_learning_panel(reflective_learning),
         "trading_intelligence_panel": _build_trading_intelligence_panel(trading_intelligence),
+        "foundation_registry_panel": _build_foundation_registry_panel(foundation_registry),
     }
 
 
@@ -1846,6 +1945,7 @@ def _fallback_status(
     mcp_tools: dict[str, Any] | None = None,
     reflective_learning: dict[str, Any] | None = None,
     trading_intelligence: dict[str, Any] | None = None,
+    foundation_registry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -1878,6 +1978,7 @@ def _fallback_status(
     mcp_tools = mcp_tools or _empty_mcp_tool_status(warnings)
     reflective_learning = reflective_learning or _empty_reflective_learning_status(warnings)
     trading_intelligence = trading_intelligence or _empty_trading_intelligence_status(warnings)
+    foundation_registry = foundation_registry or _empty_foundation_registry_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -1919,6 +2020,7 @@ def _fallback_status(
         "mcp_tools": mcp_tools,
         "reflective_learning": reflective_learning,
         "trading_intelligence": trading_intelligence,
+        "foundation_registry": foundation_registry,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             None,
@@ -1940,6 +2042,7 @@ def _fallback_status(
             mcp_tools,
             reflective_learning,
             trading_intelligence,
+            foundation_registry,
         ),
     }
 
@@ -1962,6 +2065,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     mcp_tools = _build_mcp_tool_status(warnings)
     reflective_learning = _build_reflective_learning_status(warnings)
     trading_intelligence = _build_trading_intelligence_status(warnings)
+    foundation_registry = _build_foundation_registry_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
         return _fallback_status(
@@ -1982,6 +2086,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             mcp_tools,
             reflective_learning,
             trading_intelligence,
+            foundation_registry,
         )
 
     try:
@@ -2006,6 +2111,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             mcp_tools,
             reflective_learning,
             trading_intelligence,
+            foundation_registry,
         )
 
     if not isinstance(snapshot, dict):
@@ -2028,6 +2134,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             mcp_tools,
             reflective_learning,
             trading_intelligence,
+            foundation_registry,
         )
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
@@ -2090,6 +2197,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "mcp_tools": mcp_tools,
         "reflective_learning": reflective_learning,
         "trading_intelligence": trading_intelligence,
+        "foundation_registry": foundation_registry,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             optional_task,
@@ -2111,6 +2219,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             mcp_tools,
             reflective_learning,
             trading_intelligence,
+            foundation_registry,
         ),
     }
 
