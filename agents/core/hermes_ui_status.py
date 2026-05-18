@@ -278,6 +278,24 @@ def _import_reflective_learning_builder(warnings: list[str]) -> Callable[[], dic
     return builder
 
 
+def _import_trading_intelligence_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_trading_intelligence_status"
+    function_name = "build_trading_intelligence_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _import_runtime_events_builders(
     warnings: list[str],
 ) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
@@ -816,6 +834,29 @@ def _empty_reflective_learning_status(warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def _empty_trading_intelligence_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "status": "unavailable",
+        "read_only": True,
+        "foundation_only": True,
+        "broker_connection_opened": False,
+        "network_connections_opened": False,
+        "orders_placed": False,
+        "auto_trading_enabled": False,
+        "runtime_files_written": False,
+        "services_started": False,
+        "supported_symbols": [],
+        "quote_pipeline": {},
+        "prediction_learning": {},
+        "planned_models": [],
+        "feature_engine": {},
+        "safety_rules": {},
+        "future_integrations": [],
+        "warnings": warnings,
+    }
+
+
 def _append_warning(warnings: list[str], warning: str) -> None:
     if warning.strip() and warning not in warnings:
         warnings.append(warning)
@@ -1089,6 +1130,40 @@ def _build_reflective_learning_status(warnings: list[str]) -> dict[str, Any]:
 
     if reflective_learning_warnings:
         status["warnings"] = reflective_learning_warnings
+
+    return status
+
+
+def _build_trading_intelligence_status(warnings: list[str]) -> dict[str, Any]:
+    trading_intelligence_warnings: list[str] = []
+    builder = _import_trading_intelligence_builder(trading_intelligence_warnings)
+    for warning in trading_intelligence_warnings:
+        _append_warning(warnings, warning)
+
+    if builder is None:
+        return _empty_trading_intelligence_status(trading_intelligence_warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_trading_intelligence_status failed: {exc}"
+        _append_warning(trading_intelligence_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_trading_intelligence_status(trading_intelligence_warnings)
+
+    if not isinstance(status, dict):
+        warning = "build_trading_intelligence_status returned non-dict data."
+        _append_warning(trading_intelligence_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_trading_intelligence_status(trading_intelligence_warnings)
+
+    for warning in _safe_list(status.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip():
+            _append_warning(trading_intelligence_warnings, warning_text)
+
+    if trading_intelligence_warnings:
+        status["warnings"] = trading_intelligence_warnings
 
     return status
 
@@ -1668,6 +1743,41 @@ def _build_reflective_learning_panel(reflective_learning: dict[str, Any]) -> dic
     }
 
 
+def _build_trading_intelligence_panel(trading_intelligence: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": trading_intelligence.get("status", "unavailable"),
+        "supported_symbols": _safe_list(trading_intelligence.get("supported_symbols")),
+        "quote_pipeline": _safe_dict(trading_intelligence.get("quote_pipeline")),
+        "prediction_learning": _safe_dict(trading_intelligence.get("prediction_learning")),
+        "planned_models": _safe_list(trading_intelligence.get("planned_models")),
+        "feature_engine": _safe_dict(trading_intelligence.get("feature_engine")),
+        "safety_rules": _safe_dict(trading_intelligence.get("safety_rules")),
+        "future_integrations": _safe_list(trading_intelligence.get("future_integrations")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(trading_intelligence.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "controls_enabled": False,
+        "broker_connection_opened": bool(
+            trading_intelligence.get("broker_connection_opened", False)
+        ),
+        "network_connections_opened": bool(
+            trading_intelligence.get("network_connections_opened", False)
+        ),
+        "orders_placed": bool(trading_intelligence.get("orders_placed", False)),
+        "auto_trading_enabled": bool(
+            trading_intelligence.get("auto_trading_enabled", False)
+        ),
+        "runtime_files_written": bool(
+            trading_intelligence.get("runtime_files_written", False)
+        ),
+        "services_started": bool(trading_intelligence.get("services_started", False)),
+        "placeholder": "Future Trading Intelligence panel can show analysis planning without broker access or orders.",
+    }
+
+
 def _build_ui_panels(
     optional_task: str | None,
     snapshot: dict[str, Any],
@@ -1687,6 +1797,7 @@ def _build_ui_panels(
     skill_generator: dict[str, Any],
     mcp_tools: dict[str, Any],
     reflective_learning: dict[str, Any],
+    trading_intelligence: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -1713,6 +1824,7 @@ def _build_ui_panels(
         "skill_generator_panel": _build_skill_generator_panel(skill_generator),
         "mcp_tools_panel": _build_mcp_tools_panel(mcp_tools),
         "reflective_learning_panel": _build_reflective_learning_panel(reflective_learning),
+        "trading_intelligence_panel": _build_trading_intelligence_panel(trading_intelligence),
     }
 
 
@@ -1733,6 +1845,7 @@ def _fallback_status(
     skill_generator: dict[str, Any] | None = None,
     mcp_tools: dict[str, Any] | None = None,
     reflective_learning: dict[str, Any] | None = None,
+    trading_intelligence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -1764,6 +1877,7 @@ def _fallback_status(
     skill_generator = skill_generator or _empty_skill_generator_status(warnings)
     mcp_tools = mcp_tools or _empty_mcp_tool_status(warnings)
     reflective_learning = reflective_learning or _empty_reflective_learning_status(warnings)
+    trading_intelligence = trading_intelligence or _empty_trading_intelligence_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -1804,6 +1918,7 @@ def _fallback_status(
         "skill_generator": skill_generator,
         "mcp_tools": mcp_tools,
         "reflective_learning": reflective_learning,
+        "trading_intelligence": trading_intelligence,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             None,
@@ -1824,6 +1939,7 @@ def _fallback_status(
             skill_generator,
             mcp_tools,
             reflective_learning,
+            trading_intelligence,
         ),
     }
 
@@ -1845,6 +1961,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     skill_generator = _build_skill_generator_status(warnings)
     mcp_tools = _build_mcp_tool_status(warnings)
     reflective_learning = _build_reflective_learning_status(warnings)
+    trading_intelligence = _build_trading_intelligence_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
         return _fallback_status(
@@ -1864,6 +1981,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             skill_generator,
             mcp_tools,
             reflective_learning,
+            trading_intelligence,
         )
 
     try:
@@ -1887,6 +2005,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             skill_generator,
             mcp_tools,
             reflective_learning,
+            trading_intelligence,
         )
 
     if not isinstance(snapshot, dict):
@@ -1908,6 +2027,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             skill_generator,
             mcp_tools,
             reflective_learning,
+            trading_intelligence,
         )
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
@@ -1969,6 +2089,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "skill_generator": skill_generator,
         "mcp_tools": mcp_tools,
         "reflective_learning": reflective_learning,
+        "trading_intelligence": trading_intelligence,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             optional_task,
@@ -1989,6 +2110,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             skill_generator,
             mcp_tools,
             reflective_learning,
+            trading_intelligence,
         ),
     }
 
