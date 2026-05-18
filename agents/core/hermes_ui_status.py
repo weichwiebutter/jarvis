@@ -260,6 +260,24 @@ def _import_mcp_tool_builder(warnings: list[str]) -> Callable[[], dict[str, Any]
     return builder
 
 
+def _import_reflective_learning_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_reflective_learning_status"
+    function_name = "build_reflective_learning_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _import_runtime_events_builders(
     warnings: list[str],
 ) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
@@ -776,6 +794,28 @@ def _empty_mcp_tool_status(warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def _empty_reflective_learning_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "status": "unavailable",
+        "read_only": True,
+        "foundation_only": True,
+        "code_changes_performed": False,
+        "skills_activated": False,
+        "learnings_persisted": False,
+        "runtime_files_written": False,
+        "services_started": False,
+        "external_queries_performed": False,
+        "commits_created": False,
+        "reflective_phase": {},
+        "self_improvement_scope": {},
+        "approval_workflow": {},
+        "safety_boundaries": {},
+        "future_integrations": [],
+        "warnings": warnings,
+    }
+
+
 def _append_warning(warnings: list[str], warning: str) -> None:
     if warning.strip() and warning not in warnings:
         warnings.append(warning)
@@ -1015,6 +1055,40 @@ def _build_mcp_tool_status(warnings: list[str]) -> dict[str, Any]:
 
     if mcp_tool_warnings:
         status["warnings"] = mcp_tool_warnings
+
+    return status
+
+
+def _build_reflective_learning_status(warnings: list[str]) -> dict[str, Any]:
+    reflective_learning_warnings: list[str] = []
+    builder = _import_reflective_learning_builder(reflective_learning_warnings)
+    for warning in reflective_learning_warnings:
+        _append_warning(warnings, warning)
+
+    if builder is None:
+        return _empty_reflective_learning_status(reflective_learning_warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_reflective_learning_status failed: {exc}"
+        _append_warning(reflective_learning_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_reflective_learning_status(reflective_learning_warnings)
+
+    if not isinstance(status, dict):
+        warning = "build_reflective_learning_status returned non-dict data."
+        _append_warning(reflective_learning_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_reflective_learning_status(reflective_learning_warnings)
+
+    for warning in _safe_list(status.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip():
+            _append_warning(reflective_learning_warnings, warning_text)
+
+    if reflective_learning_warnings:
+        status["warnings"] = reflective_learning_warnings
 
     return status
 
@@ -1562,6 +1636,38 @@ def _build_mcp_tools_panel(mcp_tools: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_reflective_learning_panel(reflective_learning: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": reflective_learning.get("status", "unavailable"),
+        "reflective_phase": _safe_dict(reflective_learning.get("reflective_phase")),
+        "self_improvement_scope": _safe_dict(reflective_learning.get("self_improvement_scope")),
+        "approval_workflow": _safe_dict(reflective_learning.get("approval_workflow")),
+        "safety_boundaries": _safe_dict(reflective_learning.get("safety_boundaries")),
+        "future_integrations": _safe_list(reflective_learning.get("future_integrations")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(reflective_learning.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "controls_enabled": False,
+        "code_changes_performed": bool(
+            reflective_learning.get("code_changes_performed", False)
+        ),
+        "skills_activated": bool(reflective_learning.get("skills_activated", False)),
+        "learnings_persisted": bool(reflective_learning.get("learnings_persisted", False)),
+        "runtime_files_written": bool(
+            reflective_learning.get("runtime_files_written", False)
+        ),
+        "services_started": bool(reflective_learning.get("services_started", False)),
+        "external_queries_performed": bool(
+            reflective_learning.get("external_queries_performed", False)
+        ),
+        "commits_created": bool(reflective_learning.get("commits_created", False)),
+        "placeholder": "Future Reflective Learning panel can show candidates without applying or persisting them.",
+    }
+
+
 def _build_ui_panels(
     optional_task: str | None,
     snapshot: dict[str, Any],
@@ -1580,6 +1686,7 @@ def _build_ui_panels(
     cost_optimization: dict[str, Any],
     skill_generator: dict[str, Any],
     mcp_tools: dict[str, Any],
+    reflective_learning: dict[str, Any],
 ) -> dict[str, Any]:
     runtime = _safe_dict(snapshot.get("runtime"))
     agent_dashboard = _safe_dict(snapshot.get("agents"))
@@ -1605,6 +1712,7 @@ def _build_ui_panels(
         "cost_optimization_panel": _build_cost_optimization_panel(cost_optimization),
         "skill_generator_panel": _build_skill_generator_panel(skill_generator),
         "mcp_tools_panel": _build_mcp_tools_panel(mcp_tools),
+        "reflective_learning_panel": _build_reflective_learning_panel(reflective_learning),
     }
 
 
@@ -1624,6 +1732,7 @@ def _fallback_status(
     cost_optimization: dict[str, Any] | None = None,
     skill_generator: dict[str, Any] | None = None,
     mcp_tools: dict[str, Any] | None = None,
+    reflective_learning: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     learning_memory = learning_memory or {
         "generated_at": None,
@@ -1654,6 +1763,7 @@ def _fallback_status(
     cost_optimization = cost_optimization or _empty_cost_optimization_status(warnings)
     skill_generator = skill_generator or _empty_skill_generator_status(warnings)
     mcp_tools = mcp_tools or _empty_mcp_tool_status(warnings)
+    reflective_learning = reflective_learning or _empty_reflective_learning_status(warnings)
     system_health = {
         "hermes_available": False,
         "ollama_available": False,
@@ -1693,6 +1803,7 @@ def _fallback_status(
         "cost_optimization": cost_optimization,
         "skill_generator": skill_generator,
         "mcp_tools": mcp_tools,
+        "reflective_learning": reflective_learning,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             None,
@@ -1712,6 +1823,7 @@ def _fallback_status(
             cost_optimization,
             skill_generator,
             mcp_tools,
+            reflective_learning,
         ),
     }
 
@@ -1732,6 +1844,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     cost_optimization = _build_cost_optimization_status(warnings)
     skill_generator = _build_skill_generator_status(warnings)
     mcp_tools = _build_mcp_tool_status(warnings)
+    reflective_learning = _build_reflective_learning_status(warnings)
     snapshot_builder = _import_snapshot_builder(warnings)
     if snapshot_builder is None:
         return _fallback_status(
@@ -1750,6 +1863,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             cost_optimization,
             skill_generator,
             mcp_tools,
+            reflective_learning,
         )
 
     try:
@@ -1772,6 +1886,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             cost_optimization,
             skill_generator,
             mcp_tools,
+            reflective_learning,
         )
 
     if not isinstance(snapshot, dict):
@@ -1792,6 +1907,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             cost_optimization,
             skill_generator,
             mcp_tools,
+            reflective_learning,
         )
 
     system_health = _safe_dict(snapshot.get("system_health_summary"))
@@ -1852,6 +1968,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "cost_optimization": cost_optimization,
         "skill_generator": skill_generator,
         "mcp_tools": mcp_tools,
+        "reflective_learning": reflective_learning,
         "system_health": system_health,
         "ui_panels": _build_ui_panels(
             optional_task,
@@ -1871,6 +1988,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             cost_optimization,
             skill_generator,
             mcp_tools,
+            reflective_learning,
         ),
     }
 
