@@ -206,42 +206,6 @@ def _import_research_discovery_builder(warnings: list[str]) -> Callable[[], dict
     return builder
 
 
-def _import_cost_optimization_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
-    module_name = "agents.core.hermes_cost_optimization_status"
-    function_name = "build_cost_optimization_status"
-
-    try:
-        module = importlib.import_module(module_name)
-        builder = getattr(module, function_name)
-    except Exception as exc:
-        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
-        return None
-
-    if not callable(builder):
-        warnings.append(f"{module_name}.{function_name} is not callable.")
-        return None
-
-    return builder
-
-
-def _import_skill_generator_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
-    module_name = "agents.core.hermes_skill_generator_status"
-    function_name = "build_skill_generator_status"
-
-    try:
-        module = importlib.import_module(module_name)
-        builder = getattr(module, function_name)
-    except Exception as exc:
-        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
-        return None
-
-    if not callable(builder):
-        warnings.append(f"{module_name}.{function_name} is not callable.")
-        return None
-
-    return builder
-
-
 def _import_runtime_events_builders(
     warnings: list[str],
 ) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
@@ -1011,71 +975,21 @@ def _build_research_discovery_status(warnings: list[str]) -> dict[str, Any]:
 
 
 def _build_cost_optimization_status(warnings: list[str]) -> dict[str, Any]:
-    cost_optimization_warnings: list[str] = []
-    builder = _import_cost_optimization_builder(cost_optimization_warnings)
-    for warning in cost_optimization_warnings:
-        _append_warning(warnings, warning)
-
-    if builder is None:
-        return _empty_cost_optimization_status(cost_optimization_warnings)
-
-    try:
-        status = builder()
-    except Exception as exc:
-        warning = f"build_cost_optimization_status failed: {exc}"
-        _append_warning(cost_optimization_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_cost_optimization_status(cost_optimization_warnings)
-
-    if not isinstance(status, dict):
-        warning = "build_cost_optimization_status returned non-dict data."
-        _append_warning(cost_optimization_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_cost_optimization_status(cost_optimization_warnings)
-
-    for warning in _safe_list(status.get("warnings")):
-        warning_text = str(warning)
-        if warning_text.strip():
-            _append_warning(cost_optimization_warnings, warning_text)
-
-    if cost_optimization_warnings:
-        status["warnings"] = cost_optimization_warnings
-
-    return status
+    return _call_status_builder(
+        "agents.core.hermes_cost_optimization_status",
+        "build_cost_optimization_status",
+        _empty_cost_optimization_status,
+        warnings,
+    )
 
 
 def _build_skill_generator_status(warnings: list[str]) -> dict[str, Any]:
-    skill_generator_warnings: list[str] = []
-    builder = _import_skill_generator_builder(skill_generator_warnings)
-    for warning in skill_generator_warnings:
-        _append_warning(warnings, warning)
-
-    if builder is None:
-        return _empty_skill_generator_status(skill_generator_warnings)
-
-    try:
-        status = builder()
-    except Exception as exc:
-        warning = f"build_skill_generator_status failed: {exc}"
-        _append_warning(skill_generator_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_skill_generator_status(skill_generator_warnings)
-
-    if not isinstance(status, dict):
-        warning = "build_skill_generator_status returned non-dict data."
-        _append_warning(skill_generator_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_skill_generator_status(skill_generator_warnings)
-
-    for warning in _safe_list(status.get("warnings")):
-        warning_text = str(warning)
-        if warning_text.strip():
-            _append_warning(skill_generator_warnings, warning_text)
-
-    if skill_generator_warnings:
-        status["warnings"] = skill_generator_warnings
-
-    return status
+    return _call_status_builder(
+        "agents.core.hermes_skill_generator_status",
+        "build_skill_generator_status",
+        _empty_skill_generator_status,
+        warnings,
+    )
 
 
 def _build_mcp_tool_status(warnings: list[str]) -> dict[str, Any]:
