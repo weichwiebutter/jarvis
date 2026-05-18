@@ -242,78 +242,6 @@ def _import_skill_generator_builder(warnings: list[str]) -> Callable[[], dict[st
     return builder
 
 
-def _import_mcp_tool_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
-    module_name = "agents.core.hermes_mcp_tool_status"
-    function_name = "build_mcp_tool_status"
-
-    try:
-        module = importlib.import_module(module_name)
-        builder = getattr(module, function_name)
-    except Exception as exc:
-        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
-        return None
-
-    if not callable(builder):
-        warnings.append(f"{module_name}.{function_name} is not callable.")
-        return None
-
-    return builder
-
-
-def _import_reflective_learning_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
-    module_name = "agents.core.hermes_reflective_learning_status"
-    function_name = "build_reflective_learning_status"
-
-    try:
-        module = importlib.import_module(module_name)
-        builder = getattr(module, function_name)
-    except Exception as exc:
-        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
-        return None
-
-    if not callable(builder):
-        warnings.append(f"{module_name}.{function_name} is not callable.")
-        return None
-
-    return builder
-
-
-def _import_trading_intelligence_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
-    module_name = "agents.core.hermes_trading_intelligence_status"
-    function_name = "build_trading_intelligence_status"
-
-    try:
-        module = importlib.import_module(module_name)
-        builder = getattr(module, function_name)
-    except Exception as exc:
-        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
-        return None
-
-    if not callable(builder):
-        warnings.append(f"{module_name}.{function_name} is not callable.")
-        return None
-
-    return builder
-
-
-def _import_foundation_registry_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
-    module_name = "agents.core.hermes_foundation_registry"
-    function_name = "build_foundation_registry"
-
-    try:
-        module = importlib.import_module(module_name)
-        builder = getattr(module, function_name)
-    except Exception as exc:
-        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
-        return None
-
-    if not callable(builder):
-        warnings.append(f"{module_name}.{function_name} is not callable.")
-        return None
-
-    return builder
-
-
 def _import_runtime_events_builders(
     warnings: list[str],
 ) -> tuple[Callable[[], list[Any]] | None, Callable[[Any], dict[str, Any]] | None]:
@@ -898,6 +826,54 @@ def _append_warning(warnings: list[str], warning: str) -> None:
         warnings.append(warning)
 
 
+def _call_status_builder(
+    module_name: str,
+    function_name: str,
+    fallback: Callable[[list[str]], dict[str, Any]],
+    warnings: list[str],
+) -> dict[str, Any]:
+    status_warnings: list[str] = []
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warning = f"{module_name}.{function_name} unavailable: {exc}"
+        _append_warning(status_warnings, warning)
+        _append_warning(warnings, warning)
+        return fallback(status_warnings)
+
+    if not callable(builder):
+        warning = f"{module_name}.{function_name} is not callable."
+        _append_warning(status_warnings, warning)
+        _append_warning(warnings, warning)
+        return fallback(status_warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"{function_name} failed: {exc}"
+        _append_warning(status_warnings, warning)
+        _append_warning(warnings, warning)
+        return fallback(status_warnings)
+
+    if not isinstance(status, dict):
+        warning = f"{function_name} returned non-dict data."
+        _append_warning(status_warnings, warning)
+        _append_warning(warnings, warning)
+        return fallback(status_warnings)
+
+    for warning in _safe_list(status.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip():
+            _append_warning(status_warnings, warning_text)
+
+    if status_warnings:
+        status["warnings"] = status_warnings
+
+    return status
+
+
 def _build_runtime_supervisor_status(warnings: list[str]) -> dict[str, Any]:
     runtime_supervisor_warnings: list[str] = []
     builder = _import_runtime_supervisor_builder(runtime_supervisor_warnings)
@@ -1103,139 +1079,39 @@ def _build_skill_generator_status(warnings: list[str]) -> dict[str, Any]:
 
 
 def _build_mcp_tool_status(warnings: list[str]) -> dict[str, Any]:
-    mcp_tool_warnings: list[str] = []
-    builder = _import_mcp_tool_builder(mcp_tool_warnings)
-    for warning in mcp_tool_warnings:
-        _append_warning(warnings, warning)
-
-    if builder is None:
-        return _empty_mcp_tool_status(mcp_tool_warnings)
-
-    try:
-        status = builder()
-    except Exception as exc:
-        warning = f"build_mcp_tool_status failed: {exc}"
-        _append_warning(mcp_tool_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_mcp_tool_status(mcp_tool_warnings)
-
-    if not isinstance(status, dict):
-        warning = "build_mcp_tool_status returned non-dict data."
-        _append_warning(mcp_tool_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_mcp_tool_status(mcp_tool_warnings)
-
-    for warning in _safe_list(status.get("warnings")):
-        warning_text = str(warning)
-        if warning_text.strip():
-            _append_warning(mcp_tool_warnings, warning_text)
-
-    if mcp_tool_warnings:
-        status["warnings"] = mcp_tool_warnings
-
-    return status
+    return _call_status_builder(
+        "agents.core.hermes_mcp_tool_status",
+        "build_mcp_tool_status",
+        _empty_mcp_tool_status,
+        warnings,
+    )
 
 
 def _build_reflective_learning_status(warnings: list[str]) -> dict[str, Any]:
-    reflective_learning_warnings: list[str] = []
-    builder = _import_reflective_learning_builder(reflective_learning_warnings)
-    for warning in reflective_learning_warnings:
-        _append_warning(warnings, warning)
-
-    if builder is None:
-        return _empty_reflective_learning_status(reflective_learning_warnings)
-
-    try:
-        status = builder()
-    except Exception as exc:
-        warning = f"build_reflective_learning_status failed: {exc}"
-        _append_warning(reflective_learning_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_reflective_learning_status(reflective_learning_warnings)
-
-    if not isinstance(status, dict):
-        warning = "build_reflective_learning_status returned non-dict data."
-        _append_warning(reflective_learning_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_reflective_learning_status(reflective_learning_warnings)
-
-    for warning in _safe_list(status.get("warnings")):
-        warning_text = str(warning)
-        if warning_text.strip():
-            _append_warning(reflective_learning_warnings, warning_text)
-
-    if reflective_learning_warnings:
-        status["warnings"] = reflective_learning_warnings
-
-    return status
+    return _call_status_builder(
+        "agents.core.hermes_reflective_learning_status",
+        "build_reflective_learning_status",
+        _empty_reflective_learning_status,
+        warnings,
+    )
 
 
 def _build_trading_intelligence_status(warnings: list[str]) -> dict[str, Any]:
-    trading_intelligence_warnings: list[str] = []
-    builder = _import_trading_intelligence_builder(trading_intelligence_warnings)
-    for warning in trading_intelligence_warnings:
-        _append_warning(warnings, warning)
-
-    if builder is None:
-        return _empty_trading_intelligence_status(trading_intelligence_warnings)
-
-    try:
-        status = builder()
-    except Exception as exc:
-        warning = f"build_trading_intelligence_status failed: {exc}"
-        _append_warning(trading_intelligence_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_trading_intelligence_status(trading_intelligence_warnings)
-
-    if not isinstance(status, dict):
-        warning = "build_trading_intelligence_status returned non-dict data."
-        _append_warning(trading_intelligence_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_trading_intelligence_status(trading_intelligence_warnings)
-
-    for warning in _safe_list(status.get("warnings")):
-        warning_text = str(warning)
-        if warning_text.strip():
-            _append_warning(trading_intelligence_warnings, warning_text)
-
-    if trading_intelligence_warnings:
-        status["warnings"] = trading_intelligence_warnings
-
-    return status
+    return _call_status_builder(
+        "agents.core.hermes_trading_intelligence_status",
+        "build_trading_intelligence_status",
+        _empty_trading_intelligence_status,
+        warnings,
+    )
 
 
 def _build_foundation_registry_status(warnings: list[str]) -> dict[str, Any]:
-    foundation_registry_warnings: list[str] = []
-    builder = _import_foundation_registry_builder(foundation_registry_warnings)
-    for warning in foundation_registry_warnings:
-        _append_warning(warnings, warning)
-
-    if builder is None:
-        return _empty_foundation_registry_status(foundation_registry_warnings)
-
-    try:
-        status = builder()
-    except Exception as exc:
-        warning = f"build_foundation_registry failed: {exc}"
-        _append_warning(foundation_registry_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_foundation_registry_status(foundation_registry_warnings)
-
-    if not isinstance(status, dict):
-        warning = "build_foundation_registry returned non-dict data."
-        _append_warning(foundation_registry_warnings, warning)
-        _append_warning(warnings, warning)
-        return _empty_foundation_registry_status(foundation_registry_warnings)
-
-    for warning in _safe_list(status.get("warnings")):
-        warning_text = str(warning)
-        if warning_text.strip():
-            _append_warning(foundation_registry_warnings, warning_text)
-
-    if foundation_registry_warnings:
-        status["warnings"] = foundation_registry_warnings
-
-    return status
+    return _call_status_builder(
+        "agents.core.hermes_foundation_registry",
+        "build_foundation_registry",
+        _empty_foundation_registry_status,
+        warnings,
+    )
 
 
 def _build_runtime_events_status(warnings: list[str]) -> dict[str, Any]:
