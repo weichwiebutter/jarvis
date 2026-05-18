@@ -222,6 +222,14 @@ def _get_hermes_ui_status_payload(optional_task: str = "") -> dict[str, Any]:
             "developer_debug": status.get("developer_debug"),
             "voice": status.get("voice"),
             "trading": status.get("trading"),
+            "runtime_supervisor": status.get("runtime_supervisor"),
+            "shared_memory": status.get("shared_memory"),
+            "skills": status.get("skills"),
+            "research_discovery": status.get("research_discovery"),
+            "cost_optimization": status.get("cost_optimization"),
+            "skill_generator": status.get("skill_generator"),
+            "mcp_tools": status.get("mcp_tools"),
+            "reflective_learning": status.get("reflective_learning"),
         }
 
     except Exception as exc:
@@ -250,7 +258,7 @@ def _status_badge(label: str, value: Any) -> str:
     if normalized in {"available", "ok", "ready", "true"}:
         color = "#15803d"
         background = "#dcfce7"
-    elif normalized in {"planned", "idle", "read_only", "not_checked"}:
+    elif normalized in {"planned", "idle", "read_only", "not_checked"} or "planned" in normalized:
         color = "#1d4ed8"
         background = "#dbeafe"
     elif "warn" in normalized or normalized in {"unavailable", "error", "failed", "false"}:
@@ -381,14 +389,332 @@ def _format_hermes_ui_status_markdown(status: dict[str, Any]) -> str:
 """
 
 
+FOUNDATION_PANEL_DEFINITIONS = [
+    {
+        "key": "runtime_supervisor_panel",
+        "title": "Runtime Supervisor",
+        "summary_keys": [
+            "heartbeat",
+            "scheduler",
+            "agent_lifecycle",
+            "zombie_protection",
+            "context_lifecycle",
+            "context_compression",
+            "resource_limits",
+            "runtime_cleanup",
+            "planned_jobs",
+        ],
+    },
+    {
+        "key": "shared_memory_panel",
+        "title": "Shared Memory / Multi-PC",
+        "summary_keys": [
+            "sync_strategy",
+            "local_only_paths",
+            "shared_candidate_paths",
+            "approval_workflow",
+            "multi_pc_roles",
+        ],
+    },
+    {
+        "key": "skills_panel",
+        "title": "Skills System",
+        "summary_keys": [
+            "skill_root_candidates",
+            "planned_skill_categories",
+            "skill_registry",
+            "skill_review_workflow",
+            "skill_safety",
+            "external_pattern_sources",
+        ],
+    },
+    {
+        "key": "skill_generator_panel",
+        "title": "Skill Generator",
+        "summary_keys": [
+            "supported_future_sources",
+            "generated_artifacts",
+            "safety_requirements",
+            "review_workflow",
+            "output_limits",
+            "future_integrations",
+        ],
+    },
+    {
+        "key": "research_discovery_panel",
+        "title": "Research Discovery",
+        "summary_keys": [
+            "research_sources",
+            "monitored_topics",
+            "discovery_pipeline",
+            "review_workflow",
+            "safety_rules",
+            "planned_reports",
+        ],
+    },
+    {
+        "key": "cost_optimization_panel",
+        "title": "Cost Optimization",
+        "summary_keys": [
+            "codex_usage_strategy",
+            "fast_mode_policy",
+            "provider_priority",
+            "cost_controls",
+            "monitored_resources",
+            "future_dashboards",
+        ],
+    },
+    {
+        "key": "mcp_tools_panel",
+        "title": "MCP / Tools",
+        "summary_keys": [
+            "mcp_strategy",
+            "tool_registry",
+            "planned_tool_categories",
+            "permission_model",
+            "safety_requirements",
+            "future_integrations",
+        ],
+    },
+    {
+        "key": "reflective_learning_panel",
+        "title": "Reflective Learning",
+        "summary_keys": [
+            "reflective_phase",
+            "self_improvement_scope",
+            "approval_workflow",
+            "safety_boundaries",
+            "future_integrations",
+        ],
+    },
+]
+
+
+FOUNDATION_SAFETY_FLAG_KEYS = [
+    "read_only",
+    "controls_enabled",
+    "background_loops_started",
+    "threads_started",
+    "services_started",
+    "runtime_files_written",
+    "sync_actions_performed",
+    "network_connections_opened",
+    "files_copied",
+    "skills_executed",
+    "skills_generated",
+    "external_repos_cloned",
+    "api_calls_performed",
+    "external_queries_performed",
+    "scheduler_started",
+    "openrouter_queries_performed",
+    "codex_queries_performed",
+    "model_calls_performed",
+    "mcp_tools_executed",
+    "apify_connection_opened",
+    "mcp_servers_started",
+    "mcp_clients_connected",
+    "tools_executed",
+    "external_api_calls_performed",
+    "code_changes_performed",
+    "skills_activated",
+    "learnings_persisted",
+    "commits_created",
+    "secrets_read",
+]
+
+
+FOUNDATION_TRUE_IS_SAFE_KEYS = {
+    "read_only",
+}
+
+
+def _extract_label(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in (
+            "name",
+            "title",
+            "status",
+            "job_id",
+            "report_id",
+            "path",
+            "source",
+            "step",
+        ):
+            if key in value and value.get(key) is not None:
+                return str(value.get(key))
+        return json.dumps(value, ensure_ascii=False, default=str)[:80]
+
+    return str(value)
+
+
+def _format_compact_value(value: Any, limit: int = 5, max_chars: int = 420) -> str:
+    if isinstance(value, list):
+        if not value:
+            return "-"
+        labels = [_extract_label(item) for item in value[:limit]]
+        suffix = f" (+{len(value) - limit})" if len(value) > limit else ""
+        return ", ".join(labels) + suffix
+
+    if isinstance(value, dict):
+        parts = []
+        if value.get("status") is not None:
+            parts.append(f"status={value.get('status')}")
+        for key in ("states", "steps", "allowed", "forbidden"):
+            nested = value.get(key)
+            if isinstance(nested, list):
+                parts.append(f"{key}={len(nested)}")
+        if parts:
+            return ", ".join(parts)
+
+        compact = json.dumps(value, ensure_ascii=False, default=str)
+        return compact if len(compact) <= max_chars else compact[: max_chars - 3] + "..."
+
+    if value is None:
+        return "-"
+
+    return str(value)
+
+
+def _format_safety_flag_badge(key: str, value: Any) -> str:
+    flag = bool(value)
+    safe = flag if key in FOUNDATION_TRUE_IS_SAFE_KEYS else not flag
+    color = "#15803d" if safe else "#b91c1c"
+    background = "#dcfce7" if safe else "#fee2e2"
+    label = key.replace("_", " ")
+    text = "true" if flag else "false"
+
+    return (
+        f"<span style='display:inline-block;margin:2px 6px 2px 0;"
+        f"padding:3px 8px;border-radius:6px;background:{background};"
+        f"color:{color};font-weight:600;font-size:0.88em'>{label}: {text}</span>"
+    )
+
+
+def _get_foundation_panels(status: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    ui_panels = _safe_status_dict(status.get("ui_panels"))
+
+    return {
+        definition["key"]: _safe_status_dict(ui_panels.get(definition["key"]))
+        for definition in FOUNDATION_PANEL_DEFINITIONS
+    }
+
+
+def _format_foundation_warnings(panel: dict[str, Any]) -> str:
+    warnings = [
+        str(warning)
+        for warning in _safe_status_list(panel.get("warnings"))
+        if str(warning).strip()
+    ]
+
+    if not warnings:
+        return "- Keine Warnungen."
+
+    return "\n".join(
+        f"- <span style='color:#b45309;font-weight:600'>{warning}</span>"
+        for warning in warnings
+    )
+
+
+def _format_foundation_panel_markdown(
+    panel: dict[str, Any],
+    title: str,
+    summary_keys: list[str],
+) -> str:
+    safety_badges = [
+        _format_safety_flag_badge(key, panel.get(key))
+        for key in FOUNDATION_SAFETY_FLAG_KEYS
+        if key in panel
+    ]
+    safety_block = "\n".join(safety_badges) if safety_badges else "-"
+
+    summary_lines = []
+    for key in summary_keys:
+        if key in panel:
+            label = key.replace("_", " ")
+            summary_lines.append(f"- **{label}:** `{_format_compact_value(panel.get(key))}`")
+
+    if not summary_lines:
+        summary_lines = ["- Keine Paneldaten verfügbar."]
+
+    return f"""
+### {title}
+{_status_badge("Status", panel.get("status", "unavailable"))}
+{_status_badge("Foundation", "planned/foundation" if panel.get("status") == "planned/foundation" else panel.get("status", "unavailable"))}
+
+**Safety Flags**
+
+{safety_block}
+
+**Kurzüberblick**
+{chr(10).join(summary_lines)}
+
+**Warnings**
+{_format_foundation_warnings(panel)}
+"""
+
+
+def format_hermes_foundation_panels(status: dict[str, Any]) -> str:
+    foundation_panels = _get_foundation_panels(status)
+    generated_at = status.get("generated_at") or "-"
+    lines = [
+        "### Hermes/Jarvis Foundation Panels",
+        "",
+        f"**Generated:** `{generated_at}`",
+        "",
+        "Diese Panels sind read-only Foundation-Status. Sie starten keine Services, führen keine Agenten aus und schreiben keine Runtime-Dateien.",
+        "",
+    ]
+
+    for definition in FOUNDATION_PANEL_DEFINITIONS:
+        panel = foundation_panels.get(definition["key"], {})
+        warnings = [
+            str(warning)
+            for warning in _safe_status_list(panel.get("warnings"))
+            if str(warning).strip()
+        ]
+        safety_problem_keys = []
+        for key in FOUNDATION_SAFETY_FLAG_KEYS:
+            if key not in panel:
+                continue
+            flag = bool(panel.get(key))
+            safe = flag if key in FOUNDATION_TRUE_IS_SAFE_KEYS else not flag
+            if not safe:
+                safety_problem_keys.append(key)
+
+        lines.append(
+            f"- **{definition['title']}** "
+            f"{_status_badge('Status', panel.get('status', 'unavailable'))} "
+            f"{_status_badge('Warnings', len(warnings))} "
+            f"{_status_badge('Safety flags ok', _format_bool(not safety_problem_keys))}"
+        )
+
+    return "\n".join(lines)
+
+
 def get_hermes_ui_status_for_display(optional_task: str = "") -> str:
     status = _get_hermes_ui_status_payload(optional_task)
     return json.dumps(status, indent=2, ensure_ascii=False, default=str)
 
 
-def get_hermes_ui_status_panels(optional_task: str = "") -> tuple[str, dict[str, Any]]:
+def get_hermes_ui_status_panels(optional_task: str = "") -> tuple[Any, ...]:
     status = _get_hermes_ui_status_payload(optional_task)
-    return _format_hermes_ui_status_markdown(status), status
+    foundation_panels = _get_foundation_panels(status)
+    panel_markdowns = [
+        _format_foundation_panel_markdown(
+            foundation_panels.get(definition["key"], {}),
+            str(definition["title"]),
+            list(definition["summary_keys"]),
+        )
+        for definition in FOUNDATION_PANEL_DEFINITIONS
+    ]
+
+    return (
+        _format_hermes_ui_status_markdown(status),
+        format_hermes_foundation_panels(status),
+        *panel_markdowns,
+        foundation_panels,
+        status,
+    )
 
 
 def _get_home_dashboard_payload() -> dict[str, Any]:
@@ -1610,16 +1936,103 @@ def build_app() -> gr.Blocks:
                             label="Hermes UI Status Raw JSON",
                         )
 
+            gr.Markdown(
+                """
+                ### Hermes / Jarvis Foundation Panels
+
+                Read-only Foundation-Status fuer Masterplan, Control Center und spaetere UI-Ausbaustufen.
+                Aktualisierung erfolgt nur ueber die Buttons oben.
+                """
+            )
+
+            hermes_foundation_summary = gr.Markdown(
+                value="Noch keine Foundation-Panels geladen. Klicke auf Refresh.",
+            )
+
+            with gr.Row():
+                with gr.Column(scale=1):
+                    with gr.Accordion("Runtime Supervisor", open=False):
+                        hermes_runtime_supervisor_panel = gr.Markdown(
+                            value="Noch nicht geladen.",
+                        )
+
+                    with gr.Accordion("Shared Memory / Multi-PC", open=False):
+                        hermes_shared_memory_panel = gr.Markdown(
+                            value="Noch nicht geladen.",
+                        )
+
+                    with gr.Accordion("Skills System", open=False):
+                        hermes_skills_panel = gr.Markdown(
+                            value="Noch nicht geladen.",
+                        )
+
+                    with gr.Accordion("Skill Generator", open=False):
+                        hermes_skill_generator_panel = gr.Markdown(
+                            value="Noch nicht geladen.",
+                        )
+
+                with gr.Column(scale=1):
+                    with gr.Accordion("Research Discovery", open=False):
+                        hermes_research_discovery_panel = gr.Markdown(
+                            value="Noch nicht geladen.",
+                        )
+
+                    with gr.Accordion("Cost Optimization", open=False):
+                        hermes_cost_optimization_panel = gr.Markdown(
+                            value="Noch nicht geladen.",
+                        )
+
+                    with gr.Accordion("MCP / Tools", open=False):
+                        hermes_mcp_tools_panel = gr.Markdown(
+                            value="Noch nicht geladen.",
+                        )
+
+                    with gr.Accordion("Reflective Learning", open=False):
+                        hermes_reflective_learning_panel = gr.Markdown(
+                            value="Noch nicht geladen.",
+                        )
+
+            with gr.Accordion("Foundation Panels JSON", open=False):
+                hermes_foundation_json = gr.JSON(
+                    label="Hermes Foundation Panels JSON",
+                )
+
             hermes_status_refresh.click(
                 fn=get_hermes_ui_status_panels,
                 inputs=[hermes_status_task],
-                outputs=[hermes_status_summary, hermes_status_json],
+                outputs=[
+                    hermes_status_summary,
+                    hermes_foundation_summary,
+                    hermes_runtime_supervisor_panel,
+                    hermes_shared_memory_panel,
+                    hermes_skills_panel,
+                    hermes_skill_generator_panel,
+                    hermes_research_discovery_panel,
+                    hermes_cost_optimization_panel,
+                    hermes_mcp_tools_panel,
+                    hermes_reflective_learning_panel,
+                    hermes_foundation_json,
+                    hermes_status_json,
+                ],
             )
 
             hermes_status_refresh_empty.click(
                 fn=get_hermes_ui_status_panels,
                 inputs=[],
-                outputs=[hermes_status_summary, hermes_status_json],
+                outputs=[
+                    hermes_status_summary,
+                    hermes_foundation_summary,
+                    hermes_runtime_supervisor_panel,
+                    hermes_shared_memory_panel,
+                    hermes_skills_panel,
+                    hermes_skill_generator_panel,
+                    hermes_research_discovery_panel,
+                    hermes_cost_optimization_panel,
+                    hermes_mcp_tools_panel,
+                    hermes_reflective_learning_panel,
+                    hermes_foundation_json,
+                    hermes_status_json,
+                ],
             )
 
         with gr.Tab("System"):
