@@ -566,6 +566,16 @@ def _empty_runtime_events_status(warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def _empty_runtime_event_bus_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "generated_at": None,
+        "status": "unavailable",
+        "event_count": 0,
+        "events": [],
+        "warnings": warnings,
+    }
+
+
 def _empty_runtime_supervisor_status(warnings: list[str]) -> dict[str, Any]:
     return {
         "generated_at": None,
@@ -1028,6 +1038,15 @@ def _build_foundation_registry_status(warnings: list[str]) -> dict[str, Any]:
     )
 
 
+def _build_runtime_event_bus_status(warnings: list[str]) -> dict[str, Any]:
+    return _call_status_builder(
+        "agents.core.hermes_runtime_event_bus",
+        "build_demo_event_bus_status",
+        _empty_runtime_event_bus_status,
+        warnings,
+    )
+
+
 def _build_runtime_events_status(warnings: list[str]) -> dict[str, Any]:
     runtime_event_warnings: list[str] = []
     example_builder, serializer = _import_runtime_events_builders(runtime_event_warnings)
@@ -1340,6 +1359,21 @@ def _build_activity_feed_panel(runtime_events: dict[str, Any]) -> dict[str, Any]
         ],
         "read_only": True,
         "placeholder": "Future Activity Feed panel can render runtime events without a background loop.",
+    }
+
+
+def _build_runtime_event_bus_panel(runtime_event_bus: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": runtime_event_bus.get("status", "unavailable"),
+        "event_count": int(runtime_event_bus.get("event_count") or 0),
+        "events": _safe_list(runtime_event_bus.get("events")),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(runtime_event_bus.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "placeholder": "Future Runtime Event Bus panel can show in-memory events without persistence or streams.",
     }
 
 
@@ -1674,6 +1708,7 @@ def _build_ui_panels(
     voice: dict[str, Any],
     trading: dict[str, Any],
     runtime_events: dict[str, Any],
+    runtime_event_bus: dict[str, Any],
     activity_timeline: dict[str, Any],
     jarvis_home_dashboard: dict[str, Any],
     runtime_supervisor: dict[str, Any],
@@ -1702,6 +1737,7 @@ def _build_ui_panels(
         "voice_panel": _build_voice_panel(voice),
         "trading_panel": _build_trading_panel(agent_dashboard, trading),
         "activity_feed_panel": _build_activity_feed_panel(runtime_events),
+        "runtime_event_bus_panel": _build_runtime_event_bus_panel(runtime_event_bus),
         "taskline_panel": _build_taskline_panel(activity_timeline),
         "home_dashboard_panel": _build_home_dashboard_panel(jarvis_home_dashboard),
         "runtime_supervisor_panel": _build_runtime_supervisor_panel(runtime_supervisor),
@@ -1724,6 +1760,7 @@ def _fallback_status(
     voice: dict[str, Any] | None = None,
     trading: dict[str, Any] | None = None,
     runtime_events: dict[str, Any] | None = None,
+    runtime_event_bus: dict[str, Any] | None = None,
     activity_timeline: dict[str, Any] | None = None,
     jarvis_home_dashboard: dict[str, Any] | None = None,
     runtime_supervisor: dict[str, Any] | None = None,
@@ -1757,6 +1794,7 @@ def _fallback_status(
     voice = voice or _empty_voice_status(warnings)
     trading = trading or _empty_trading_panel_status(warnings)
     runtime_events = runtime_events or _empty_runtime_events_status(warnings)
+    runtime_event_bus = runtime_event_bus or _empty_runtime_event_bus_status(warnings)
     activity_timeline = activity_timeline or _empty_activity_timeline_status(warnings)
     jarvis_home_dashboard = jarvis_home_dashboard or _empty_home_dashboard_status(warnings)
     runtime_supervisor = runtime_supervisor or _empty_runtime_supervisor_status(warnings)
@@ -1799,6 +1837,7 @@ def _fallback_status(
         "voice": voice,
         "trading": trading,
         "runtime_events": runtime_events,
+        "runtime_event_bus": runtime_event_bus,
         "activity_timeline": activity_timeline,
         "jarvis_home_dashboard": jarvis_home_dashboard,
         "runtime_supervisor": runtime_supervisor,
@@ -1821,6 +1860,7 @@ def _fallback_status(
             voice,
             trading,
             runtime_events,
+            runtime_event_bus,
             activity_timeline,
             jarvis_home_dashboard,
             runtime_supervisor,
@@ -1844,6 +1884,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     voice = _build_voice_status(warnings)
     trading = _build_trading_panel_status(warnings)
     runtime_events = _build_runtime_events_status(warnings)
+    runtime_event_bus = _build_runtime_event_bus_status(warnings)
     activity_timeline = _build_activity_timeline_status(warnings)
     jarvis_home_dashboard = _build_home_dashboard_status(warnings)
     runtime_supervisor = _build_runtime_supervisor_status(warnings)
@@ -1865,6 +1906,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             voice,
             trading,
             runtime_events,
+            runtime_event_bus,
             activity_timeline,
             jarvis_home_dashboard,
             runtime_supervisor,
@@ -1890,6 +1932,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             voice,
             trading,
             runtime_events,
+            runtime_event_bus,
             activity_timeline,
             jarvis_home_dashboard,
             runtime_supervisor,
@@ -1913,6 +1956,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             voice,
             trading,
             runtime_events,
+            runtime_event_bus,
             activity_timeline,
             jarvis_home_dashboard,
             runtime_supervisor,
@@ -1952,6 +1996,10 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         warning_text = str(warning)
         if warning_text.strip() and warning_text not in merged_warnings:
             merged_warnings.append(warning_text)
+    for warning in _safe_list(runtime_event_bus.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip() and warning_text not in merged_warnings:
+            merged_warnings.append(warning_text)
     for warning in _safe_list(activity_timeline.get("warnings")):
         warning_text = str(warning)
         if warning_text.strip() and warning_text not in merged_warnings:
@@ -1976,6 +2024,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "voice": voice,
         "trading": trading,
         "runtime_events": runtime_events,
+        "runtime_event_bus": runtime_event_bus,
         "activity_timeline": activity_timeline,
         "jarvis_home_dashboard": jarvis_home_dashboard,
         "runtime_supervisor": runtime_supervisor,
@@ -1998,6 +2047,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             voice,
             trading,
             runtime_events,
+            runtime_event_bus,
             activity_timeline,
             jarvis_home_dashboard,
             runtime_supervisor,
