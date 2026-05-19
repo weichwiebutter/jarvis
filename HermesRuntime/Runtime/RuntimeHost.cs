@@ -3,7 +3,7 @@ namespace Hermes.Runtime;
 public sealed class RuntimeHost
 {
     private const string RuntimeSource = "hermes_minimal_runtime";
-    private const string RuntimeVersion = "1.0.0-sprint5";
+    private const string RuntimeVersion = "1.0.0-sprint6";
 
     private readonly string _configPath;
 
@@ -73,6 +73,9 @@ public sealed class RuntimeHost
         var workerHost = new WorkerHost(storage.Paths, queueManager, eventBus, RuntimeVersion);
         workerHost.RunOnce();
 
+        var replayManifestService = new ReplayManifestService(storage.Paths, eventBus, RuntimeVersion);
+        var replayManifestResult = replayManifestService.CreateDemoReplayManifest();
+
         state.IsRunning = false;
         state.StoppedAtUtc = DateTimeOffset.UtcNow;
         var snapshotResult = snapshotManager.WriteRuntimeSnapshot(
@@ -91,6 +94,14 @@ public sealed class RuntimeHost
             PublishSnapshotValidationFailed(eventBus, snapshotResult.Validation);
         }
 
+        var healthService = new RuntimeHealthService(storage.Paths);
+        var healthResult = healthService.WriteHealth(
+            state,
+            diskSpaceCheck,
+            queueManager.Status,
+            snapshotResult,
+            snapshotResult.Validation.IsValid ? null : snapshotResult.Validation.Error);
+
         PublishRuntimeStopped(eventBus, state, diskSpaceCheck);
         eventStore.Flush();
 
@@ -98,6 +109,8 @@ public sealed class RuntimeHost
         Console.WriteLine($"Storage: {state.StorageRoot}");
         Console.WriteLine($"Events: {eventStore.EventFilePath}");
         Console.WriteLine($"Snapshot: {state.LastSnapshotPath}");
+        Console.WriteLine($"ReplayManifest: {replayManifestResult.ManifestPath}");
+        Console.WriteLine($"Health: {healthResult.ReportPath}");
         Console.WriteLine($"SafeMode: {state.SafeMode}");
     }
 
@@ -216,7 +229,7 @@ public sealed class RuntimeHost
             Priority: 10,
             Status: JobStatus.Pending,
             CreatedAtUtc: createdAtUtc,
-            RequestedBy: "hermes_runtime_sprint5",
+            RequestedBy: "hermes_runtime_sprint6",
             ResourceProfile: "local_minimal",
             MaxRuntimeMinutes: 5,
             MaxRetries: 0,

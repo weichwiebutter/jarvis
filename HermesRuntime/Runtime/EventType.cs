@@ -14,6 +14,7 @@ public enum EventType
     JobCompleted,
     JobFailed,
     WorkerStopped,
+    ReplayManifestCreated,
     SnapshotCreated,
     SnapshotValidationFailed,
     RuntimeStopped
