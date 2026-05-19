@@ -5,6 +5,8 @@ public sealed class EventBus
     private readonly object _sync = new();
     private readonly List<Action<EventEnvelope>> _handlers = [];
 
+    public string? LastPublishedEventId { get; private set; }
+
     public void Subscribe(Action<EventEnvelope> handler)
     {
         lock (_sync)
@@ -19,6 +21,7 @@ public sealed class EventBus
 
         lock (_sync)
         {
+            LastPublishedEventId = envelope.EventId;
             handlers = [.. _handlers];
         }
 

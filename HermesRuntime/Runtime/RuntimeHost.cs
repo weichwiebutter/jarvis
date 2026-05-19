@@ -1,11 +1,9 @@
-using System.Text.Json;
-
 namespace Hermes.Runtime;
 
 public sealed class RuntimeHost
 {
     private const string RuntimeSource = "hermes_minimal_runtime";
-    private const string RuntimeVersion = "1.0.0-sprint2";
+    private const string RuntimeVersion = "1.0.0-sprint3";
 
     private readonly string _configPath;
 
@@ -50,6 +48,13 @@ public sealed class RuntimeHost
         using var eventStore = new EventStore(storage.Paths);
         var eventBus = new EventBus();
         eventBus.Subscribe(eventStore.Append);
+        var snapshotManager = new SnapshotManager(storage.Paths);
+
+        var snapshotLoadResult = snapshotManager.LoadLastValidSnapshot();
+        foreach (var failure in snapshotLoadResult.ValidationFailures)
+        {
+            PublishSnapshotValidationFailed(eventBus, failure);
+        }
 
         PublishRuntimeStarted(eventBus, state, diskSpaceCheck);
         PublishStorageInitialized(eventBus, state, storage.Paths, eventStore.EventFilePath);
@@ -59,10 +64,23 @@ public sealed class RuntimeHost
             PublishRuntimeSafeModeEnabled(eventBus, state, diskSpaceCheck);
         }
 
-        state.LastSnapshotPath = WriteSnapshot(storage.Paths, config.SnapshotFileName, state, diskSpaceCheck);
-
         state.IsRunning = false;
         state.StoppedAtUtc = DateTimeOffset.UtcNow;
+        var snapshotResult = snapshotManager.WriteRuntimeSnapshot(
+            state,
+            diskSpaceCheck,
+            RuntimeVersion,
+            config.Environment,
+            eventBus.LastPublishedEventId);
+
+        state.LastSnapshotPath = snapshotResult.SnapshotPath;
+        PublishSnapshotCreated(eventBus, snapshotResult);
+
+        if (!snapshotResult.Validation.IsValid)
+        {
+            PublishSnapshotValidationFailed(eventBus, snapshotResult.Validation);
+        }
+
         PublishRuntimeStopped(eventBus, state, diskSpaceCheck);
         eventStore.Flush();
 
@@ -99,37 +117,6 @@ public sealed class RuntimeHost
                 RootPath = "../data/safemode"
             };
         }
-    }
-
-    private static string WriteSnapshot(
-        StoragePaths paths,
-        string snapshotFileName,
-        RuntimeState state,
-        DiskSpaceCheck diskSpaceCheck)
-    {
-        Directory.CreateDirectory(paths.Snapshots);
-
-        var snapshot = new
-        {
-            schema_version = "hermes.runtime_snapshot.v1",
-            generated_at = DateTimeOffset.UtcNow,
-            runtime = state,
-            disk = diskSpaceCheck,
-            storage = new
-            {
-                paths.Root,
-                paths.Events,
-                paths.Snapshots,
-                paths.Logs,
-                paths.Cache,
-                paths.Archive
-            }
-        };
-
-        var path = Path.Combine(paths.Snapshots, snapshotFileName);
-        File.WriteAllText(path, JsonSerializer.Serialize(snapshot, JsonDefaults.WriteOptions));
-
-        return path;
     }
 
     private static void PublishRuntimeStarted(
@@ -201,6 +188,48 @@ public sealed class RuntimeHost
                 state.DiskSpaceWarning,
                 diskSpaceCheck.FreeMb,
                 diskSpaceCheck.MinimumFreeMb
+            }));
+    }
+
+    private static void PublishSnapshotCreated(EventBus eventBus, SnapshotWriteResult snapshotResult)
+    {
+        eventBus.Publish(EventEnvelope.Create(
+            EventType.SnapshotCreated,
+            RuntimeSource,
+            snapshotResult.Validation.IsValid ? EventSeverity.Info : EventSeverity.Warning,
+            RuntimeVersion,
+            new
+            {
+                message = "Runtime snapshot created.",
+                snapshotResult.Snapshot.SnapshotId,
+                snapshotResult.Snapshot.CreatedAtUtc,
+                snapshotResult.Snapshot.RuntimeVersion,
+                snapshotResult.Snapshot.RuntimeMode,
+                snapshotResult.Snapshot.LastEventId,
+                snapshotResult.Snapshot.Sha256Hash,
+                snapshotResult.SnapshotPath,
+                snapshotResult.ManifestPath,
+                validationStatus = snapshotResult.Validation.IsValid ? "valid" : "failed",
+                validationError = snapshotResult.Validation.Error
+            }));
+    }
+
+    private static void PublishSnapshotValidationFailed(
+        EventBus eventBus,
+        SnapshotValidationResult validation)
+    {
+        eventBus.Publish(EventEnvelope.Create(
+            EventType.SnapshotValidationFailed,
+            RuntimeSource,
+            EventSeverity.Warning,
+            RuntimeVersion,
+            new
+            {
+                message = "Snapshot validation failed.",
+                validation.Error,
+                SnapshotId = validation.Manifest?.SnapshotId,
+                SnapshotPath = validation.Manifest?.SnapshotPath,
+                ManifestSha256Hash = validation.Manifest?.Sha256Hash
             }));
     }
 

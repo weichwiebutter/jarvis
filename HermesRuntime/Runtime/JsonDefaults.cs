@@ -10,6 +10,13 @@ public static class JsonDefaults
         PropertyNameCaseInsensitive = true
     };
 
+    public static readonly JsonSerializerOptions SnapshotReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
     public static readonly JsonSerializerOptions WriteOptions = new()
     {
         PropertyNameCaseInsensitive = true,
