@@ -47,6 +47,7 @@ public sealed class SnapshotManager
         DiskSpaceCheck diskSpaceCheck,
         string runtimeVersion,
         string runtimeMode,
+        QueueStatus? queueStatus,
         string? lastEventId)
     {
         var snapshotId = $"snap_{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}";
@@ -65,6 +66,7 @@ public sealed class SnapshotManager
             RuntimeMode: runtimeMode,
             State: state,
             Health: health,
+            QueueStatus: queueStatus,
             LastEventId: lastEventId,
             Sha256Hash: null);
 

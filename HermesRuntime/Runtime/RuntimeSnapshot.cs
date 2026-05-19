@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Hermes.Runtime;
 
 public sealed record RuntimeSnapshot(
@@ -7,5 +9,7 @@ public sealed record RuntimeSnapshot(
     string RuntimeMode,
     RuntimeState State,
     SnapshotHealth Health,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    QueueStatus? QueueStatus,
     string? LastEventId,
     string? Sha256Hash);

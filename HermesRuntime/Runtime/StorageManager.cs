@@ -26,6 +26,7 @@ public sealed class StorageManager
                 Path.Combine(fallbackRoot, "snapshots"),
                 Path.Combine(fallbackRoot, "logs"),
                 Path.Combine(fallbackRoot, "cache"),
+                Path.Combine(fallbackRoot, "jobs"),
                 Path.Combine(fallbackRoot, "archive"));
 
             CreateDirectories(fallbackPaths);

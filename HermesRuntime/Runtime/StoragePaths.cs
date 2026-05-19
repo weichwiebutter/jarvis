@@ -6,6 +6,7 @@ public sealed record StoragePaths(
     string Snapshots,
     string Logs,
     string Cache,
+    string Jobs,
     string Archive)
 {
     public IReadOnlyList<string> AllDirectories =>
@@ -15,6 +16,7 @@ public sealed record StoragePaths(
         Snapshots,
         Logs,
         Cache,
+        Jobs,
         Archive
     ];
 }

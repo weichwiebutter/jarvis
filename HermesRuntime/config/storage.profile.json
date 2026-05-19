@@ -5,6 +5,7 @@
   "snapshotsDirectory": "snapshots",
   "logsDirectory": "logs",
   "cacheDirectory": "cache",
+  "jobsDirectory": "jobs",
   "archiveDirectory": "archive",
   "minimumFreeDiskMb": 512
 }

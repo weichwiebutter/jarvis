@@ -16,6 +16,8 @@ public sealed class StorageProfile
 
     public string CacheDirectory { get; init; } = "cache";
 
+    public string JobsDirectory { get; init; } = "jobs";
+
     public string ArchiveDirectory { get; init; } = "archive";
 
     public long MinimumFreeDiskMb { get; init; } = 512;
@@ -47,6 +49,7 @@ public sealed class StorageProfile
             Path.Combine(root, SnapshotsDirectory),
             Path.Combine(root, LogsDirectory),
             Path.Combine(root, CacheDirectory),
+            Path.Combine(root, JobsDirectory),
             Path.Combine(root, ArchiveDirectory));
     }
 }

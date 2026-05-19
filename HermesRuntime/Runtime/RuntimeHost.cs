@@ -3,7 +3,7 @@ namespace Hermes.Runtime;
 public sealed class RuntimeHost
 {
     private const string RuntimeSource = "hermes_minimal_runtime";
-    private const string RuntimeVersion = "1.0.0-sprint3";
+    private const string RuntimeVersion = "1.0.0-sprint4";
 
     private readonly string _configPath;
 
@@ -49,6 +49,7 @@ public sealed class RuntimeHost
         var eventBus = new EventBus();
         eventBus.Subscribe(eventStore.Append);
         var snapshotManager = new SnapshotManager(storage.Paths);
+        var queueManager = new QueueManager(storage.Paths);
 
         var snapshotLoadResult = snapshotManager.LoadLastValidSnapshot();
         foreach (var failure in snapshotLoadResult.ValidationFailures)
@@ -58,6 +59,11 @@ public sealed class RuntimeHost
 
         PublishRuntimeStarted(eventBus, state, diskSpaceCheck);
         PublishStorageInitialized(eventBus, state, storage.Paths, eventStore.EventFilePath);
+        var demoJob = CreateDemoJobIfMissing(queueManager);
+        if (demoJob is not null)
+        {
+            PublishJobCreated(eventBus, demoJob, queueManager.Status);
+        }
 
         if (state.SafeMode)
         {
@@ -71,6 +77,7 @@ public sealed class RuntimeHost
             diskSpaceCheck,
             RuntimeVersion,
             config.Environment,
+            queueManager.Status,
             eventBus.LastPublishedEventId);
 
         state.LastSnapshotPath = snapshotResult.SnapshotPath;
@@ -164,6 +171,7 @@ public sealed class RuntimeHost
                 paths.Snapshots,
                 paths.Logs,
                 paths.Cache,
+                paths.Jobs,
                 paths.Archive,
                 eventFilePath,
                 state.SafeMode,
@@ -191,6 +199,62 @@ public sealed class RuntimeHost
             }));
     }
 
+    private static JobManifest? CreateDemoJobIfMissing(QueueManager queueManager)
+    {
+        if (queueManager.GetJobs().Any(job => job.JobType == "runtime.demo.noop"))
+        {
+            return null;
+        }
+
+        var createdAtUtc = DateTimeOffset.UtcNow;
+        var manifest = new JobManifest(
+            JobId: $"job_demo_{createdAtUtc:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
+            JobType: "runtime.demo.noop",
+            Priority: 10,
+            Status: JobStatus.Pending,
+            CreatedAtUtc: createdAtUtc,
+            RequestedBy: "hermes_runtime_sprint4",
+            ResourceProfile: "local_minimal",
+            MaxRuntimeMinutes: 5,
+            MaxRetries: 0,
+            RetryCount: 0,
+            Parameters: new Dictionary<string, object?>
+            {
+                ["demo"] = true,
+                ["execute"] = false,
+                ["note"] = "Sprint 4 queue visibility job. No worker executes this job."
+            });
+
+        return queueManager.Enqueue(manifest);
+    }
+
+    private static void PublishJobCreated(
+        EventBus eventBus,
+        JobManifest job,
+        QueueStatus queueStatus)
+    {
+        eventBus.Publish(EventEnvelope.Create(
+            EventType.JobCreated,
+            RuntimeSource,
+            EventSeverity.Info,
+            RuntimeVersion,
+            new
+            {
+                message = "Queue job created.",
+                job.JobId,
+                job.JobType,
+                job.Priority,
+                job.Status,
+                job.CreatedAtUtc,
+                job.RequestedBy,
+                job.ResourceProfile,
+                job.MaxRuntimeMinutes,
+                job.MaxRetries,
+                job.RetryCount,
+                queueStatus
+            }));
+    }
+
     private static void PublishSnapshotCreated(EventBus eventBus, SnapshotWriteResult snapshotResult)
     {
         eventBus.Publish(EventEnvelope.Create(
@@ -205,6 +269,7 @@ public sealed class RuntimeHost
                 snapshotResult.Snapshot.CreatedAtUtc,
                 snapshotResult.Snapshot.RuntimeVersion,
                 snapshotResult.Snapshot.RuntimeMode,
+                snapshotResult.Snapshot.QueueStatus,
                 snapshotResult.Snapshot.LastEventId,
                 snapshotResult.Snapshot.Sha256Hash,
                 snapshotResult.SnapshotPath,
