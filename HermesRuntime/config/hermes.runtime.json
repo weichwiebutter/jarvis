@@ -1,0 +1,7 @@
+{
+  "runtimeName": "Hermes Minimal Runtime v1",
+  "environment": "local",
+  "storageProfilePath": "storage.profile.json",
+  "safeModeOnStorageFailure": true,
+  "snapshotFileName": "runtime_snapshot.json"
+}

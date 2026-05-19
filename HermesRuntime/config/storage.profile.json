@@ -1,0 +1,10 @@
+{
+  "profileName": "local-default",
+  "rootPath": "../data",
+  "eventsDirectory": "events",
+  "snapshotsDirectory": "snapshots",
+  "logsDirectory": "logs",
+  "cacheDirectory": "cache",
+  "archiveDirectory": "archive",
+  "minimumFreeDiskMb": 512
+}
