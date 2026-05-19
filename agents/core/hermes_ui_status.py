@@ -152,6 +152,24 @@ def _import_runtime_supervisor_builder(warnings: list[str]) -> Callable[[], dict
     return builder
 
 
+def _import_runtime_v1_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
+    module_name = "agents.core.hermes_runtime_v1_status"
+    function_name = "build_runtime_v1_status"
+
+    try:
+        module = importlib.import_module(module_name)
+        builder = getattr(module, function_name)
+    except Exception as exc:
+        warnings.append(f"{module_name}.{function_name} unavailable: {exc}")
+        return None
+
+    if not callable(builder):
+        warnings.append(f"{module_name}.{function_name} is not callable.")
+        return None
+
+    return builder
+
+
 def _import_shared_memory_builder(warnings: list[str]) -> Callable[[], dict[str, Any]] | None:
     module_name = "agents.core.hermes_shared_memory_status"
     function_name = "build_shared_memory_status"
@@ -599,6 +617,25 @@ def _empty_runtime_supervisor_status(warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def _empty_runtime_v1_status(warnings: list[str]) -> dict[str, Any]:
+    return {
+        "status": "unavailable",
+        "runtime_state": None,
+        "safe_mode": None,
+        "no_auto_trading": None,
+        "human_review_required": None,
+        "free_disk_gb": None,
+        "pending_jobs": None,
+        "running_jobs": None,
+        "failed_jobs": None,
+        "quarantined_jobs": None,
+        "last_snapshot_id": None,
+        "last_error": None,
+        "source_path": None,
+        "warnings": warnings,
+    }
+
+
 def _empty_shared_memory_status(warnings: list[str]) -> dict[str, Any]:
     return {
         "generated_at": None,
@@ -878,6 +915,40 @@ def _build_runtime_supervisor_status(warnings: list[str]) -> dict[str, Any]:
 
     if runtime_supervisor_warnings:
         status["warnings"] = runtime_supervisor_warnings
+
+    return status
+
+
+def _build_runtime_v1_status(warnings: list[str]) -> dict[str, Any]:
+    runtime_v1_warnings: list[str] = []
+    builder = _import_runtime_v1_builder(runtime_v1_warnings)
+    for warning in runtime_v1_warnings:
+        _append_warning(warnings, warning)
+
+    if builder is None:
+        return _empty_runtime_v1_status(runtime_v1_warnings)
+
+    try:
+        status = builder()
+    except Exception as exc:
+        warning = f"build_runtime_v1_status failed: {exc}"
+        _append_warning(runtime_v1_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_runtime_v1_status(runtime_v1_warnings)
+
+    if not isinstance(status, dict):
+        warning = "build_runtime_v1_status returned non-dict data."
+        _append_warning(runtime_v1_warnings, warning)
+        _append_warning(warnings, warning)
+        return _empty_runtime_v1_status(runtime_v1_warnings)
+
+    for warning in _safe_list(status.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip():
+            _append_warning(runtime_v1_warnings, warning_text)
+
+    if runtime_v1_warnings:
+        status["warnings"] = runtime_v1_warnings
 
     return status
 
@@ -1438,6 +1509,37 @@ def _build_runtime_supervisor_panel(runtime_supervisor: dict[str, Any]) -> dict[
     }
 
 
+def _build_runtime_v1_panel(runtime_v1: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": runtime_v1.get("status", "unavailable"),
+        "runtime_state": runtime_v1.get("runtime_state"),
+        "safe_mode": runtime_v1.get("safe_mode"),
+        "no_auto_trading": runtime_v1.get("no_auto_trading"),
+        "human_review_required": runtime_v1.get("human_review_required"),
+        "free_disk_gb": runtime_v1.get("free_disk_gb"),
+        "jobs": {
+            "pending": runtime_v1.get("pending_jobs"),
+            "running": runtime_v1.get("running_jobs"),
+            "failed": runtime_v1.get("failed_jobs"),
+            "quarantined": runtime_v1.get("quarantined_jobs"),
+        },
+        "last_snapshot_id": runtime_v1.get("last_snapshot_id"),
+        "last_error": runtime_v1.get("last_error"),
+        "source_path": runtime_v1.get("source_path"),
+        "warnings": [
+            str(warning)
+            for warning in _safe_list(runtime_v1.get("warnings"))
+            if str(warning).strip()
+        ],
+        "read_only": True,
+        "controls_enabled": False,
+        "services_started": False,
+        "runtime_started": False,
+        "writes_runtime_files": False,
+        "placeholder": "Jarvis can render the real HermesRuntime v1 health report without starting the runtime.",
+    }
+
+
 def _build_shared_memory_panel(shared_memory: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": shared_memory.get("status", "unavailable"),
@@ -1712,6 +1814,7 @@ def _build_ui_panels(
     activity_timeline: dict[str, Any],
     jarvis_home_dashboard: dict[str, Any],
     runtime_supervisor: dict[str, Any],
+    runtime_v1: dict[str, Any],
     shared_memory: dict[str, Any],
     skills: dict[str, Any],
     research_discovery: dict[str, Any],
@@ -1741,6 +1844,7 @@ def _build_ui_panels(
         "taskline_panel": _build_taskline_panel(activity_timeline),
         "home_dashboard_panel": _build_home_dashboard_panel(jarvis_home_dashboard),
         "runtime_supervisor_panel": _build_runtime_supervisor_panel(runtime_supervisor),
+        "runtime_v1_panel": _build_runtime_v1_panel(runtime_v1),
         "shared_memory_panel": _build_shared_memory_panel(shared_memory),
         "skills_panel": _build_skills_panel(skills),
         "research_discovery_panel": _build_research_discovery_panel(research_discovery),
@@ -1764,6 +1868,7 @@ def _fallback_status(
     activity_timeline: dict[str, Any] | None = None,
     jarvis_home_dashboard: dict[str, Any] | None = None,
     runtime_supervisor: dict[str, Any] | None = None,
+    runtime_v1: dict[str, Any] | None = None,
     shared_memory: dict[str, Any] | None = None,
     skills: dict[str, Any] | None = None,
     research_discovery: dict[str, Any] | None = None,
@@ -1798,6 +1903,7 @@ def _fallback_status(
     activity_timeline = activity_timeline or _empty_activity_timeline_status(warnings)
     jarvis_home_dashboard = jarvis_home_dashboard or _empty_home_dashboard_status(warnings)
     runtime_supervisor = runtime_supervisor or _empty_runtime_supervisor_status(warnings)
+    runtime_v1 = runtime_v1 or _empty_runtime_v1_status(warnings)
     shared_memory = shared_memory or _empty_shared_memory_status(warnings)
     skills = skills or _empty_skills_status(warnings)
     research_discovery = research_discovery or _empty_research_discovery_status(warnings)
@@ -1841,6 +1947,7 @@ def _fallback_status(
         "activity_timeline": activity_timeline,
         "jarvis_home_dashboard": jarvis_home_dashboard,
         "runtime_supervisor": runtime_supervisor,
+        "runtime_v1": runtime_v1,
         "shared_memory": shared_memory,
         "skills": skills,
         "research_discovery": research_discovery,
@@ -1864,6 +1971,7 @@ def _fallback_status(
             activity_timeline,
             jarvis_home_dashboard,
             runtime_supervisor,
+            runtime_v1,
             shared_memory,
             skills,
             research_discovery,
@@ -1888,6 +1996,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
     activity_timeline = _build_activity_timeline_status(warnings)
     jarvis_home_dashboard = _build_home_dashboard_status(warnings)
     runtime_supervisor = _build_runtime_supervisor_status(warnings)
+    runtime_v1 = _build_runtime_v1_status(warnings)
     shared_memory = _build_shared_memory_status(warnings)
     skills = _build_skills_status(warnings)
     research_discovery = _build_research_discovery_status(warnings)
@@ -1910,6 +2019,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             activity_timeline,
             jarvis_home_dashboard,
             runtime_supervisor,
+            runtime_v1,
             shared_memory,
             skills,
             research_discovery,
@@ -1936,6 +2046,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             activity_timeline,
             jarvis_home_dashboard,
             runtime_supervisor,
+            runtime_v1,
             shared_memory,
             skills,
             research_discovery,
@@ -1960,6 +2071,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             activity_timeline,
             jarvis_home_dashboard,
             runtime_supervisor,
+            runtime_v1,
             shared_memory,
             skills,
             research_discovery,
@@ -2008,6 +2120,10 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         warning_text = str(warning)
         if warning_text.strip() and warning_text not in merged_warnings:
             merged_warnings.append(warning_text)
+    for warning in _safe_list(runtime_v1.get("warnings")):
+        warning_text = str(warning)
+        if warning_text.strip() and warning_text not in merged_warnings:
+            merged_warnings.append(warning_text)
     system_health["warnings"] = merged_warnings
 
     brain = _extract_brain(snapshot)
@@ -2028,6 +2144,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
         "activity_timeline": activity_timeline,
         "jarvis_home_dashboard": jarvis_home_dashboard,
         "runtime_supervisor": runtime_supervisor,
+        "runtime_v1": runtime_v1,
         "shared_memory": shared_memory,
         "skills": skills,
         "research_discovery": research_discovery,
@@ -2051,6 +2168,7 @@ def build_hermes_ui_status(optional_task: str | None = None) -> dict[str, Any]:
             activity_timeline,
             jarvis_home_dashboard,
             runtime_supervisor,
+            runtime_v1,
             shared_memory,
             skills,
             research_discovery,

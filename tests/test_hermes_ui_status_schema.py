@@ -8,6 +8,7 @@ REQUIRED_TOP_LEVEL_KEYS = {
     "brain",
     "agents",
     "runtime",
+    "runtime_v1",
     "system_health",
     "ui_panels",
 }
@@ -17,6 +18,7 @@ REQUIRED_UI_PANELS = {
     "hermes_brain_panel",
     "agent_dashboard_panel",
     "runtime_control_panel",
+    "runtime_v1_panel",
     "learning_memory_panel",
     "developer_debug_panel",
     "voice_panel",
