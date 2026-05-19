@@ -1,0 +1,904 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jarvis / Hermes Control Center v1 Mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #05070b;
+      --bg-2: #080d14;
+      --panel: rgba(12, 19, 29, 0.86);
+      --panel-strong: rgba(15, 27, 40, 0.96);
+      --line: rgba(112, 207, 255, 0.22);
+      --line-strong: rgba(112, 207, 255, 0.48);
+      --cyan: #59d9ff;
+      --blue: #4f8cff;
+      --green: #4ef6a4;
+      --amber: #ffd166;
+      --red: #ff5c7a;
+      --violet: #a98cff;
+      --text: #eaf6ff;
+      --muted: #8fa8ba;
+      --muted-2: #5f7385;
+      --shadow: 0 18px 70px rgba(0, 0, 0, 0.45);
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        linear-gradient(rgba(89, 217, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(89, 217, 255, 0.035) 1px, transparent 1px),
+        radial-gradient(circle at 50% 0%, rgba(52, 102, 155, 0.18), transparent 38rem),
+        linear-gradient(145deg, #03050a 0%, #08101a 44%, #06080d 100%);
+      background-size: 44px 44px, 44px 44px, auto, auto;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      padding: 22px;
+    }
+
+    .shell {
+      max-width: 1640px;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, rgba(13, 24, 36, 0.94), rgba(9, 13, 21, 0.92));
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .topbar::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(89, 217, 255, 0.18), transparent 24%, rgba(169, 140, 255, 0.12) 72%, transparent),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 45%);
+      pointer-events: none;
+    }
+
+    .brand,
+    .top-actions {
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      margin: 0 0 5px;
+      color: var(--cyan);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 1.7rem;
+      font-weight: 760;
+      letter-spacing: 0.02em;
+    }
+
+    .subtitle {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .status-chip {
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(5, 10, 17, 0.64);
+      color: var(--text);
+      font-size: 0.82rem;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 16px currentColor;
+      color: var(--green);
+      flex: 0 0 auto;
+    }
+
+    .dot.amber {
+      background: var(--amber);
+      color: var(--amber);
+    }
+
+    .dot.red {
+      background: var(--red);
+      color: var(--red);
+    }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1.05fr 1.45fr 1.05fr;
+      gap: 18px;
+      margin-top: 18px;
+      align-items: start;
+    }
+
+    .column {
+      display: grid;
+      gap: 18px;
+      min-width: 0;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .panel,
+    .market-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(180deg, rgba(19, 33, 49, 0.88), rgba(8, 13, 21, 0.92)),
+        var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel {
+      padding: 16px;
+    }
+
+    .panel-header,
+    .market-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .panel-title {
+      display: grid;
+      gap: 4px;
+    }
+
+    .panel-title h2,
+    .panel-title h3 {
+      font-size: 1rem;
+      font-weight: 740;
+    }
+
+    .panel-title span,
+    .caption {
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 25px;
+      padding: 0 9px;
+      border: 1px solid rgba(89, 217, 255, 0.32);
+      border-radius: 999px;
+      color: var(--cyan);
+      background: rgba(89, 217, 255, 0.08);
+      font-size: 0.72rem;
+      font-weight: 760;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+    }
+
+    .badge.green {
+      border-color: rgba(78, 246, 164, 0.34);
+      color: var(--green);
+      background: rgba(78, 246, 164, 0.08);
+    }
+
+    .badge.amber {
+      border-color: rgba(255, 209, 102, 0.34);
+      color: var(--amber);
+      background: rgba(255, 209, 102, 0.08);
+    }
+
+    .badge.red {
+      border-color: rgba(255, 92, 122, 0.34);
+      color: var(--red);
+      background: rgba(255, 92, 122, 0.08);
+    }
+
+    .market-card {
+      min-height: 168px;
+      padding: 16px;
+      position: relative;
+    }
+
+    .market-card::after {
+      content: "";
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      width: 72px;
+      height: 34px;
+      border-right: 1px solid rgba(89, 217, 255, 0.45);
+      border-bottom: 1px solid rgba(89, 217, 255, 0.45);
+      opacity: 0.55;
+      pointer-events: none;
+    }
+
+    .symbol {
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .price {
+      margin-top: 8px;
+      font-size: 1.9rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .delta {
+      margin-top: 8px;
+      color: var(--green);
+      font-size: 0.84rem;
+      font-weight: 700;
+    }
+
+    .delta.neutral {
+      color: var(--muted);
+    }
+
+    .card-meta {
+      display: grid;
+      gap: 7px;
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      min-height: 70px;
+      padding: 12px;
+      border: 1px solid rgba(143, 168, 186, 0.16);
+      border-radius: var(--radius);
+      background: rgba(3, 8, 14, 0.44);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 8px;
+      color: var(--text);
+      font-size: 1.02rem;
+    }
+
+    .brain-core {
+      display: grid;
+      grid-template-columns: 130px minmax(0, 1fr);
+      gap: 14px;
+      align-items: center;
+    }
+
+    .core-ring {
+      width: 120px;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      border: 1px solid rgba(89, 217, 255, 0.42);
+      background:
+        radial-gradient(circle, rgba(89, 217, 255, 0.16) 0 26%, transparent 27%),
+        conic-gradient(from 220deg, rgba(78, 246, 164, 0.9), rgba(89, 217, 255, 0.8), rgba(169, 140, 255, 0.5), rgba(78, 246, 164, 0.9));
+      box-shadow: 0 0 34px rgba(89, 217, 255, 0.18);
+      position: relative;
+    }
+
+    .core-ring::before {
+      content: "H";
+      position: absolute;
+      inset: 17px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #08111b;
+      color: var(--cyan);
+      font-size: 2rem;
+      font-weight: 800;
+    }
+
+    .route-list,
+    .event-list,
+    .task-list,
+    .learning-list,
+    .agent-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .route-item,
+    .event-item,
+    .task-item,
+    .learning-item,
+    .agent-item {
+      display: grid;
+      gap: 5px;
+      padding: 11px 12px;
+      border-left: 2px solid rgba(89, 217, 255, 0.45);
+      border-radius: var(--radius);
+      background: rgba(3, 8, 14, 0.42);
+    }
+
+    .route-item strong,
+    .event-item strong,
+    .task-item strong,
+    .learning-item strong,
+    .agent-item strong {
+      font-size: 0.88rem;
+    }
+
+    .route-item span,
+    .event-item span,
+    .task-item span,
+    .learning-item span,
+    .agent-item span {
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .task-item,
+    .agent-item {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+    }
+
+    .task-item > div,
+    .agent-item > div {
+      min-width: 0;
+    }
+
+    .watch-panel {
+      background:
+        linear-gradient(135deg, rgba(12, 26, 37, 0.98), rgba(8, 13, 21, 0.94)),
+        var(--panel-strong);
+    }
+
+    .watch-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .watch-cell {
+      padding: 11px;
+      border: 1px solid rgba(89, 217, 255, 0.18);
+      border-radius: var(--radius);
+      background: rgba(4, 10, 17, 0.46);
+      min-height: 66px;
+    }
+
+    .watch-cell span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+    }
+
+    .watch-cell strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 0.92rem;
+    }
+
+    .progress {
+      height: 7px;
+      margin-top: 12px;
+      border-radius: 999px;
+      background: rgba(143, 168, 186, 0.16);
+      overflow: hidden;
+    }
+
+    .progress > span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--green), var(--cyan));
+      width: 68%;
+    }
+
+    .safety-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .safety-item {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid rgba(78, 246, 164, 0.22);
+      border-radius: var(--radius);
+      background: rgba(78, 246, 164, 0.055);
+      color: var(--text);
+    }
+
+    .safety-item strong {
+      font-size: 0.84rem;
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.78rem;
+    }
+
+    .event-item.warning {
+      border-left-color: var(--amber);
+    }
+
+    .event-item.success {
+      border-left-color: var(--green);
+    }
+
+    .event-item.blocked {
+      border-left-color: var(--red);
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      color: var(--muted-2);
+      font-size: 0.78rem;
+      text-align: center;
+    }
+
+    @media (max-width: 1180px) {
+      .dashboard {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 820px) {
+      body {
+        padding: 14px;
+      }
+
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+
+      .top-actions {
+        justify-content: flex-start;
+      }
+
+      .hero-grid,
+      .metric-grid,
+      .watch-grid,
+      .safety-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .brain-core {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <p class="eyebrow">Local AI operating layer</p>
+        <h1>Jarvis / Hermes Control Center</h1>
+        <p class="subtitle">Static v1 mockup with demo data. No services, APIs, runtime actions, or live market feeds.</p>
+      </div>
+      <div class="top-actions" aria-label="System status">
+        <span class="status-chip"><span class="dot"></span>Hermes online / foundation</span>
+        <span class="status-chip"><span class="dot"></span>Ollama local model ready</span>
+        <span class="status-chip"><span class="dot amber"></span>Approvals pending</span>
+      </div>
+    </header>
+
+    <section class="dashboard" aria-label="Jarvis dashboard">
+      <aside class="column">
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Systemstatus</h2>
+              <span>Read-only foundation snapshot</span>
+            </div>
+            <span class="badge green">stable</span>
+          </div>
+          <div class="metric-grid">
+            <div class="metric">
+              <span>Runtime</span>
+              <strong>idle / safe</strong>
+            </div>
+            <div class="metric">
+              <span>Mode</span>
+              <strong>prototype</strong>
+            </div>
+            <div class="metric">
+              <span>Trading</span>
+              <strong>no_auto_trading</strong>
+            </div>
+            <div class="metric">
+              <span>Learning</span>
+              <strong>review required</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Agent Activity</h2>
+              <span>Taskline mock</span>
+            </div>
+            <span class="badge">4 agents</span>
+          </div>
+          <ul class="agent-list">
+            <li class="agent-item">
+              <div>
+                <strong>Research Agent</strong>
+                <span>Pattern scan queued for review</span>
+              </div>
+              <span class="badge amber">planned</span>
+            </li>
+            <li class="agent-item">
+              <div>
+                <strong>Trading Agent</strong>
+                <span>XAUUSD setup watch state visible</span>
+              </div>
+              <span class="badge green">watching</span>
+            </li>
+            <li class="agent-item">
+              <div>
+                <strong>Memory Agent</strong>
+                <span>3 candidates waiting for Frank</span>
+              </div>
+              <span class="badge amber">review</span>
+            </li>
+            <li class="agent-item">
+              <div>
+                <strong>Coding Agent</strong>
+                <span>Documentation-only mode</span>
+              </div>
+              <span class="badge">idle</span>
+            </li>
+          </ul>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Taskline</h2>
+              <span>Recent demo tasks</span>
+            </div>
+          </div>
+          <ul class="task-list">
+            <li class="task-item">
+              <div>
+                <strong>UI roadmap created</strong>
+                <span>Control Center prototype path documented</span>
+              </div>
+              <span class="badge green">done</span>
+            </li>
+            <li class="task-item">
+              <div>
+                <strong>Learning review pending</strong>
+                <span>Trading patterns require approval</span>
+              </div>
+              <span class="badge amber">pending</span>
+            </li>
+            <li class="task-item">
+              <div>
+                <strong>Runtime actions blocked</strong>
+                <span>No service start in mockup mode</span>
+              </div>
+              <span class="badge red">blocked</span>
+            </li>
+          </ul>
+        </section>
+      </aside>
+
+      <section class="column">
+        <section class="hero-grid" aria-label="Market and weather cards">
+          <article class="market-card">
+            <div class="market-top">
+              <div>
+                <div class="symbol">XAUUSD</div>
+                <div class="price">2368.42</div>
+                <div class="delta">demo +0.42%</div>
+              </div>
+              <span class="badge amber">setup watching</span>
+            </div>
+            <div class="card-meta">
+              <span>Trigger: liquidity sweep + M15 rejection</span>
+              <span>Confidence: 68% mock</span>
+              <span class="mono">no_auto_trading: true</span>
+            </div>
+          </article>
+
+          <article class="market-card">
+            <div class="market-top">
+              <div>
+                <div class="symbol">EURUSD</div>
+                <div class="price">1.0874</div>
+                <div class="delta neutral">demo neutral</div>
+              </div>
+              <span class="badge">neutral</span>
+            </div>
+            <div class="card-meta">
+              <span>Regime: range / low momentum</span>
+              <span>No-trade filter: active</span>
+              <span class="mono">trade_execution: false</span>
+            </div>
+          </article>
+
+          <article class="market-card">
+            <div class="market-top">
+              <div>
+                <div class="symbol">Weather</div>
+                <div class="price">18 C</div>
+                <div class="delta neutral">planned source later</div>
+              </div>
+              <span class="badge">mock</span>
+            </div>
+            <div class="card-meta">
+              <span>Location: configured later</span>
+              <span>Status: UI placeholder</span>
+              <span class="mono">external_api: not called</span>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel watch-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Trading Watch Panel</h2>
+              <span>XAUUSD setup watch / no execution</span>
+            </div>
+            <span class="badge amber">watching</span>
+          </div>
+          <div class="watch-grid">
+            <div class="watch-cell">
+              <span>Scenario</span>
+              <strong>Long pullback</strong>
+            </div>
+            <div class="watch-cell">
+              <span>Entry zone</span>
+              <strong>2362.0 - 2365.5</strong>
+            </div>
+            <div class="watch-cell">
+              <span>Stop loss</span>
+              <strong>2356.8 mock</strong>
+            </div>
+            <div class="watch-cell">
+              <span>Targets</span>
+              <strong>2374.0 / 2382.5</strong>
+            </div>
+            <div class="watch-cell">
+              <span>Invalidation</span>
+              <strong>M15 close below zone</strong>
+            </div>
+            <div class="watch-cell">
+              <span>Confidence</span>
+              <strong>68%</strong>
+            </div>
+            <div class="watch-cell">
+              <span>Session</span>
+              <strong>New York overlap</strong>
+            </div>
+            <div class="watch-cell">
+              <span>Decision</span>
+              <strong>Frank approval only</strong>
+            </div>
+          </div>
+          <div class="progress" aria-label="Mock setup confidence"><span></span></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Hermes Brain Panel</h2>
+              <span>Routing, confidence, and safety reasoning</span>
+            </div>
+            <span class="badge green">online</span>
+          </div>
+          <div class="brain-core">
+            <div class="core-ring" aria-hidden="true"></div>
+            <ul class="route-list">
+              <li class="route-item">
+                <strong>Domain route: trading intelligence</strong>
+                <span>Reason: XAUUSD setup watch candidate is active.</span>
+              </li>
+              <li class="route-item">
+                <strong>Model route: local-first</strong>
+                <span>Ollama ready for small summaries. Cloud requires explicit approval.</span>
+              </li>
+              <li class="route-item">
+                <strong>Safety gate: human_review_required</strong>
+                <span>Trading alerts are reviewable signals, not commands.</span>
+              </li>
+            </ul>
+          </div>
+        </section>
+      </section>
+
+      <aside class="column">
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Learning Queue</h2>
+              <span>3 candidates pending review</span>
+            </div>
+            <span class="badge amber">pending</span>
+          </div>
+          <ul class="learning-list">
+            <li class="learning-item">
+              <strong>XAUUSD rejection pattern</strong>
+              <span>Candidate target: trading pattern memory</span>
+            </li>
+            <li class="learning-item">
+              <strong>EURUSD range no-trade filter</strong>
+              <span>Candidate target: strategy guardrail</span>
+            </li>
+            <li class="learning-item">
+              <strong>Cost routing hint</strong>
+              <span>Candidate target: provider selection rule</span>
+            </li>
+          </ul>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Runtime Events</h2>
+              <span>Demo event feed</span>
+            </div>
+            <span class="badge">mock</span>
+          </div>
+          <ul class="event-list">
+            <li class="event-item success">
+              <strong>hermes_ui_status generated</strong>
+              <span>Foundation panels available in read-only mode.</span>
+            </li>
+            <li class="event-item warning">
+              <strong>trading_setup_watch_status_changed</strong>
+              <span>XAUUSD moved to watching. Approval required for learning.</span>
+            </li>
+            <li class="event-item blocked">
+              <strong>runtime_action_blocked</strong>
+              <span>No service starts allowed from this prototype.</span>
+            </li>
+          </ul>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Cost / Provider</h2>
+              <span>Transparent routing state</span>
+            </div>
+            <span class="badge green">local first</span>
+          </div>
+          <div class="metric-grid">
+            <div class="metric">
+              <span>Primary</span>
+              <strong>Ollama</strong>
+            </div>
+            <div class="metric">
+              <span>Cloud</span>
+              <strong>approval gated</strong>
+            </div>
+            <div class="metric">
+              <span>Fast mode</span>
+              <strong>off</strong>
+            </div>
+            <div class="metric">
+              <span>OpenRouter</span>
+              <strong>fallback only</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Safety / Approval</h2>
+              <span>Permanent guardrails</span>
+            </div>
+            <span class="badge green">active</span>
+          </div>
+          <div class="safety-grid">
+            <div class="safety-item">
+              <strong>no_auto_trading</strong>
+              <span class="dot"></span>
+            </div>
+            <div class="safety-item">
+              <strong>human_review_required</strong>
+              <span class="dot"></span>
+            </div>
+            <div class="safety-item">
+              <strong>no_silent_learning</strong>
+              <span class="dot"></span>
+            </div>
+            <div class="safety-item">
+              <strong>trade execution off</strong>
+              <span class="dot"></span>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </section>
+
+    <p class="footer-note">Static mockup only. Demo values are placeholders and are not market data.</p>
+  </main>
+</body>
+</html>

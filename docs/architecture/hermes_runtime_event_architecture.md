@@ -231,6 +231,11 @@ Geplante Eventquellen:
 - Voice Runtime
 - Trading Intelligence
 - cTrader QUOTE Bridge
+- Trading Setup Watch Agent
+- Trading Signal Scoring Agent
+- Trading Backtesting Agent
+- Prediction Review Agent
+- Multi-Agent Workflow Orchestrator
 - Jarvis UI / Approval Queue
 - Provider / Model Routing
 - System Health
@@ -267,8 +272,21 @@ Eine spaetere Event-Typ-Liste koennte diese Klassen enthalten:
 - `cost_warning`
 - `voice_state_changed`
 - `trading_analysis_requested`
+- `trading_setup_watch_created`
+- `trading_setup_watch_status_changed`
+- `trading_signal_armed`
+- `trading_signal_triggered`
+- `trading_signal_expired`
 - `quote_check_planned`
 - `prediction_feedback_recorded`
+- `prediction_outcome_recorded`
+- `backtest_started`
+- `backtest_completed`
+- `strategy_disabled_after_review`
+- `risk_reduced_after_review`
+- `agent_chain_started`
+- `agent_chain_step_completed`
+- `agent_chain_blocked_for_approval`
 
 Event Types sollten stabil und maschinenlesbar sein. Display-Texte sollten
 daraus abgeleitet werden, nicht umgekehrt.
@@ -311,6 +329,16 @@ abbilden:
 
 Nicht jede Eventquelle muss jeden Zustand verwenden. Wichtig ist, dass Status-
 Uebergaenge nachvollziehbar und auditierbar bleiben.
+
+Trading Setup Watch nutzt zusaetzlich ein fachliches Statusmodell:
+
+1. `watching`
+2. `armed`
+3. `triggered`
+4. `expired`
+
+Diese Statuswerte sind keine Order-Kommandos. Sie dienen nur UI, Review,
+Prediction Feedback und spaeterer Analyse.
 
 ## Timeline Aggregation
 
@@ -389,6 +417,9 @@ UI-Regeln:
 - Warnings und Critical Events muessen sichtbar sein.
 - Approval Requests muessen prominent angezeigt werden.
 - Trading Events muessen `no_auto_trading` sichtbar halten.
+- Setup-Watch- und Signal-Events muessen Trigger-Bedingungen, Invalidation,
+  Confidence und `human_review_required` sichtbar machen, sobald daraus ein
+  Review- oder Alert-Zustand entsteht.
 - Provider- und Cost-Events muessen Cloud-Nutzung erkennbar machen.
 - Technische Raw-Events duerfen in Developer Debug sichtbar bleiben.
 
@@ -407,6 +438,9 @@ Auditpflichtige Kandidaten:
 - Provider-Wechsel
 - Kostenrelevante Aktionen
 - Trading-bezogene Entscheidungen
+- Setup-Watch-Statuswechsel
+- Prediction Outcomes und daraus abgeleitete Learning-Kandidaten
+- Risk-Agent-Empfehlungen wie Risiko reduzieren oder Strategie deaktivieren
 - Safety Blocks
 
 Audit Logs muessen unveraenderlich, nachvollziehbar und sparsam sein. Sie

@@ -73,6 +73,9 @@ Ein Runtime Event ist ein JSON-kompatibles Dict:
 - `user_visible`: Expliziter UI-Hinweis, wenn ein Event sichtbar gerendert werden soll.
 - `audit_required`: Spaeter fuer sicherheitsrelevante Audit Logs.
 - `redaction_applied`: True, falls sensible Inhalte vor Ausgabe entfernt wurden.
+- `setup_id`: Spaeter fuer Trading Setup Watch.
+- `signal_id`: Spaeter fuer Trading Signal Alerts.
+- `workflow_id`: Spaeter fuer Multi-Agent Workflows / Agent Chains.
 
 ## Severity Levels
 
@@ -107,6 +110,9 @@ Zielkategorien fuer V1-Erweiterung:
 - `skill`
 - `approval`
 - `tool`
+- `workflow`
+- `backtesting`
+- `risk`
 
 Hinweis: Die Zielkategorien sind fuer zukuenftige Integration dokumentiert.
 Bestehende Publisher werden durch dieses Dokument nicht erweitert.
@@ -129,6 +135,12 @@ Beispiele:
 - `hermes_runtime_event_bus`
 - `hermes_activity_timeline`
 - `hermes_trading_analyst`
+- `hermes_setup_watch_agent`
+- `hermes_signal_scoring_agent`
+- `hermes_backtesting_agent`
+- `hermes_risk_agent`
+- `hermes_prediction_review_agent`
+- `hermes_workflow_orchestrator`
 - `hermes_research_discovery`
 - `hermes_skills_status`
 - `jarvis_voice`
@@ -170,6 +182,33 @@ oder Control-Center-Signalen hervor.
 Trading-Events muessen `no_auto_trading` und `human_review_required` in
 `metadata` oder Safety-Kontext sichtbar halten, sobald sie Signale oder
 Prediction-Ergebnisse betreffen.
+
+Setup-Watch-Events duerfen nur Status- und Review-Informationen transportieren.
+Sie sind keine Order-Kommandos und muessen `trade_execution_enabled: false`
+sichtbar halten.
+
+Empfohlene Trading-Statuswerte:
+
+- `watching`
+- `armed`
+- `triggered`
+- `expired`
+
+Empfohlene Trading-Metadaten fuer Setup Watch / Signal Alerts:
+
+- `symbol`
+- `timeframe`
+- `direction`
+- `setup_status`
+- `trigger_conditions`
+- `entry_zone`
+- `confidence`
+- `stop_loss_suggestion`
+- `take_profit_zones`
+- `invalidation_level`
+- `no_auto_trading`
+- `human_review_required`
+- `trade_execution_enabled`
 
 ## Privacy And Safety Rules
 
@@ -342,11 +381,44 @@ Persistence ist nicht Teil der aktuellen Foundation. Vor Persistenz braucht es:
     "symbol": "XAUUSD",
     "timeframe": "M15",
     "signal_type": "candidate",
+    "setup_status": "triggered",
     "no_auto_trading": true,
     "trade_execution_enabled": false,
     "human_review_required": true
   },
   "requires_attention": true
+}
+```
+
+### trading_setup_watch
+
+```json
+{
+  "schema_version": "hermes.runtime_event.v1",
+  "event_id": "evt_trading_setup_watch_001",
+  "timestamp": "2026-05-18T12:05:30+00:00",
+  "source": "hermes_setup_watch_agent",
+  "category": "trading",
+  "severity": "info",
+  "event_type": "trading_setup_watch_status_changed",
+  "setup_id": "setup_xauusd_m15_001",
+  "message": "Trading setup watch moved to armed state.",
+  "metadata": {
+    "symbol": "XAUUSD",
+    "timeframe": "M15",
+    "direction": "long",
+    "setup_status": "armed",
+    "trigger_conditions": ["break_above_entry_zone", "spread_within_limit"],
+    "entry_zone": "redacted_or_structured_later",
+    "confidence": 0.64,
+    "stop_loss_suggestion": "redacted_or_structured_later",
+    "take_profit_zones": ["redacted_or_structured_later"],
+    "invalidation_level": "redacted_or_structured_later",
+    "no_auto_trading": true,
+    "trade_execution_enabled": false,
+    "human_review_required": true
+  },
+  "requires_attention": false
 }
 ```
 
@@ -420,4 +492,3 @@ Persistence ist nicht Teil der aktuellen Foundation. Vor Persistenz braucht es:
 - Keine Persistenz.
 - Keine WebSocket-Implementierung.
 - Keine Event-Command-Ausfuehrung.
-

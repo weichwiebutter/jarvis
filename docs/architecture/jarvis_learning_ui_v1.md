@@ -125,6 +125,8 @@ It should show:
 - Retry strategy suggestions.
 - Confidence tuning suggestions.
 - Trading prediction feedback candidates.
+- Trading setup watch candidates.
+- Trading signal review candidates.
 
 Each queue item should include:
 
@@ -171,6 +173,10 @@ Approval rules:
 - Skill candidates require review before activation.
 - Generated skills are never auto-active.
 - Trading learning never enables trade execution.
+- Trading learnings must show prediction, outcome, evaluation, evidence, and
+  proposed persistence target before approval.
+- Trading setup or signal candidates must never be hidden from the Approval
+  Center when they affect future scoring or memory.
 
 The UI should show exactly what will happen before approval. No approval action
 should silently trigger unrelated runtime changes.
@@ -206,10 +212,18 @@ It should show:
 - Symbol.
 - Timeframe.
 - Entry context if applicable.
+- Setup Watch status: `watching`, `armed`, `triggered`, or `expired`.
+- Trigger conditions.
+- Entry zone.
+- Stop-loss suggestion.
+- Take-profit / target zones.
+- Invalidation level.
 - Outcome/result later.
 - Confidence.
 - Feature notes later.
 - Session context later.
+- Market regime context later.
+- Signal score components later.
 - Later manual evaluation.
 - Prediction feedback status.
 - `no_auto_trading` permanently visible.
@@ -220,9 +234,21 @@ Rules:
 - No orders.
 - No broker execution.
 - No hidden trading memory updates.
+- No hidden trading learnings.
+- No hidden signals.
 - Trading prediction feedback requires review before durable learning.
 - TRADE connection remains disabled until explicit approval in a separate
   future architecture step.
+- Signal alerts are reviewable alerts, not execution commands.
+
+The desired learning chain is:
+
+1. Prediction or setup watch candidate appears.
+2. Trigger status and evidence become visible.
+3. Market outcome is attached later.
+4. Result is evaluated.
+5. Learning candidate is created.
+6. Frank approves, rejects, or defers persistence.
 
 ## Learning Flow
 
@@ -247,6 +273,8 @@ The Learning UI must enforce and visibly communicate:
 
 - `no_auto_learning_without_review`
 - `no_hidden_memory_updates`
+- `no_hidden_trading_learnings`
+- `no_hidden_signals`
 - `visible_runtime_decisions`
 - `visible_model_routing`
 - `no_auto_trading`
@@ -292,6 +320,8 @@ Possible data surfaces:
 - `foundation_registry_panel` for module inventory and safety levels.
 - `trading_intelligence_panel` for prediction feedback and no-auto-trading
   guardrails.
+- `setup_watch_panel` for trading watch state, trigger conditions, signal
+  evidence, and review state.
 
 ## Why Gradio Is Not Enough
 
@@ -348,4 +378,3 @@ A future Tauri/React desktop control center can provide:
 - No learning persistence.
 - No service startup.
 - No trading execution.
-

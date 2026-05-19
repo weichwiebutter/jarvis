@@ -136,6 +136,7 @@ It should include:
 - Agent roles.
 - Current task ownership.
 - Agent status.
+- Visible agent chains / workflow flow.
 - Approval requirements.
 - Recent agent actions.
 
@@ -178,7 +179,15 @@ It should show:
 - GER40 later.
 - Timeframes.
 - Analysis mode.
+- Setup Watch state.
+- Trigger conditions.
+- Entry zone.
+- Confidence / probability.
+- Stop-loss suggestion.
+- Take-profit / target zones.
+- Invalidation level.
 - Prediction feedback status.
+- Prediction -> outcome -> evaluation -> learning state.
 - Pattern signals.
 - `no_auto_trading` visibly and permanently.
 - Trade execution disabled until explicit approval.
@@ -285,6 +294,7 @@ times:
 - Ollama status.
 - Runtime warnings.
 - Trading signals.
+- Setup Watch / trigger status.
 - Approval queue indicator.
 - Provider/model status.
 - `no_auto_trading` indicator.
@@ -393,6 +403,7 @@ Required safety principles:
 
 - Approval requests are visible and prominent.
 - No hidden actions.
+- No hidden trading learnings or signals.
 - `no_auto_trading` is always visible in trading areas.
 - Cloud cost and credits are visible before costly work.
 - Active providers and models are visible.

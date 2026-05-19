@@ -34,6 +34,14 @@ human-in-the-loop und reviewpflichtig.
 - Research / Discovery Agent
 - Cost-aware Codex / OpenRouter / Ollama Strategy
 - Trading `no_auto_trading` Safety
+- Trading Setup Watch
+- Trading Prediction Feedback Loop
+- Trading Continuous Backtesting
+- Trading Safety Gates
+- Jarvis Learning UI
+- Runtime Event Standardisierung
+- `human_review_required` fuer Trading und riskante Runtime-Aktionen
+- Multi-Agent Workflow Architecture
 - External Pattern Review
 
 ### SHOULD
@@ -46,6 +54,14 @@ human-in-the-loop und reviewpflichtig.
 - Agent Dashboard Erweiterung
 - Reflective Learning Phase
 - Obsidian Knowledge Integration
+- Market Regime Detection
+- Strategy Library
+- Signal Score System
+- Risk Agent
+- Fish Audio / Fish Speech Evaluation
+- Unsloth / Local Fine-Tuning Evaluation
+- Anthropic Plugin Pattern Review
+- Skill / Connector / Sub-Agent Pattern
 
 ### LATER
 
@@ -55,6 +71,13 @@ human-in-the-loop und reviewpflichtig.
 - Agent-to-Agent Consensus
 - advanced Token Dashboard
 - Trading ML Training Pipeline
+- Paper Trading
+- Demo Trading
+- Micro Live Trading mit Approval
+- Optional Autotrading
+- Local Fine-Tuning
+- Voice Personality Layer
+- Full MCP Connector Marketplace
 
 ---
 
@@ -217,11 +240,15 @@ Architekturpunkte:
 
 - Shared Skill Architecture
 - Skill Registry
+- Tool Registry
+- Connector Registry
 - Skill Versioning
 - Skill Review Workflow
 - klare Safety Flags pro Skill
 - Aktivierung erst nach Review
 - Trennung zwischen vorgeschlagenen, freigegebenen und aktiven Skills
+- Skills + Connectors + Sub-Agents + Workflows als spaeteres Hermes-Pattern
+- Multi-PC-Synchronisation nur fuer gepruefte und freigegebene Skills
 
 ## H) Hermes Skill Generator
 
@@ -265,6 +292,8 @@ Konzepte:
 
 - zukuenftiges MCP Gateway
 - Tool Registry
+- Connector Registry
+- Skill Registry
 - standardisierte Tool Contracts
 - Filesystem Tools
 - Browser Tools
@@ -280,6 +309,7 @@ Safety:
 - minimale Rechte pro Tool
 - klare Unterscheidung zwischen read-only, write, execute und external access
 - Tool-Ausfuehrung auditierbar machen
+- Approval Gates, Safety Flags und Versionierung pro Tool / Skill / Connector
 
 ## J) Agent Dashboard / Control Interface
 
@@ -290,6 +320,7 @@ Dashboard-Panels:
 
 - lokale Runtime Health
 - aktive Agenten
+- sichtbare Agent Chains / Agent-Flows
 - Skills
 - Memory Status
 - Sessions
@@ -299,6 +330,8 @@ Dashboard-Panels:
 - Logs / Audit Trail
 - Approval Queue
 - Trading Alerts
+- Setup Watch Status
+- Trigger-Status fuer Trading-Signale
 - Voice Status
 - Cost / Credit Panels
 
@@ -337,13 +370,18 @@ Strategie:
 
 - Fast Mode standardmaessig aus
 - Fast Mode nur fuer grosse Refactors
-- ChatGPT-Codex primaer
+- GPT-5.5 / ChatGPT-Codex primaer als Senior Architect fuer komplexe
+  Architektur, Reviews und Multi-File-Umsetzungen
 - OpenRouter als Fallback
-- Ollama / local fuer kleine Aufgaben
+- Ollama / OSS / Qwen als Local Worker fuer kleine, gut begrenzte Aufgaben
 - cost-aware orchestration
 - Token Dashboards pruefen
 - Modellrouting nach Taskklasse
 - Credit-Ueberwachung
+- Qwen2.5-Coder ist lokal fuer kleine Aufgaben nutzbar, aber nicht
+  verlaesslich genug fuer komplexe Agenten-Workflows
+- `gpt-oss:20b` und `qwen2.5-coder` weiter evaluieren
+- Beide Codex-Fenster duerfen nie gleichzeitig dieselben Dateien bearbeiten
 
 Offene Punkte:
 
@@ -382,28 +420,171 @@ Regeln:
 
 ## N) Trading Intelligence
 
-Ziel: Trading Intelligence bleibt Analyse- und Lernschicht. Automatischer
-Handel ist ausgeschlossen, bis explizit und separat freigegeben.
+Ziel: Trading Intelligence bleibt Analyse-, Setup-Watch-, Backtesting- und
+Lernschicht. Automatischer Handel ist in der aktuellen Phase ausgeschlossen.
 
-Fokus:
+Grundsaetze:
 
-- cTrader QUOTE Feed
-- XAUUSD / EURUSD / GER40
-- Prediction Feedback Learning
-- XGBoost / LightGBM Training Pipeline
-- Feature Engine
-- Feature Importance
-- Session Features London / New York
-- `no_auto_trading`
-- `human_review_required`
-- TRADE-Verbindung bleibt deaktiviert bis explizite Freigabe
+- Hermes erzeugt nicht nur Signale aus Indikatoren, sondern bewertet
+  historische Daten, Marktregime, Hypothesen, Prediction Outcomes und
+  Safety-Kontext.
+- cTrader QUOTE ist die geplante read-only Marktdatenquelle.
+- Ziel-Symbole: XAUUSD, EURUSD und GER40.
+- TRADE bleibt deaktiviert bis zu einer separaten, explizit freigegebenen
+  Zukunftsphase.
+- Entscheidungen bleiben bei Frank.
 
-Safety:
+### N.1 Continuous Backtesting Intelligence
 
-- QUOTE ist read-only Marktdatenquelle.
-- TRADE bleibt deaktiviert.
-- Keine Order-Controls im Analysepfad.
-- Modelle duerfen Prognosen bewerten, aber keine Orders ausloesen.
+Hermes soll kontinuierlich historische cTrader-Daten auswerten und daraus
+reviewbare Trading-Learnings vorbereiten.
+
+Geplante Faehigkeiten:
+
+- kontinuierliche Backtests fuer XAUUSD, EURUSD und GER40
+- automatische Hypothesentests
+- Feature-, Session- und Timeframe-Vergleich
+- Walk-Forward-Tests
+- Out-of-Sample-Tests
+- Demo- / Forward-Tests spaeter
+- Prediction Feedback Loop
+- Confidence Calibration
+- Feature Importance Tracking
+- Modellvergleich XGBoost / LightGBM
+- schlechte Strategien markieren oder deaktivieren
+- Risiko reduzieren, wenn Performance schwach ist
+- keine automatische Orderausfuehrung
+
+### N.2 Setup Watch & Signal Alerts
+
+Hermes soll moegliche Long- und Short-Szenarien frueh erkennen, ohne sofort ein
+Signal auszuloesen.
+
+Zielbild:
+
+- Vorwarnung: "Setup koennte entstehen."
+- typisches Zeitfenster: 10 bis 30 Minuten
+- Trigger-Bedingungen sichtbar machen
+- Entry-Zone sichtbar machen
+- Wahrscheinlichkeit / Confidence anzeigen
+- Stop-Loss-Vorschlag anzeigen
+- Take-Profit- / Zielzonen anzeigen
+- Invalidation-Level anzeigen
+- Signal erst ausloesen, wenn Bedingungen eintreten
+- Entscheidung bleibt bei Frank
+- kein Auto-Trading in der aktuellen Phase
+
+Statusmodell:
+
+- `watching`
+- `armed`
+- `triggered`
+- `expired`
+
+### N.3 Trading Autonomy Roadmap
+
+Autonomie wird stufenweise geplant und bleibt jeweils approval-gesteuert.
+
+Roadmap-Stufen:
+
+1. `analysis_only`
+2. `setup_watch`
+3. `signal_alerts`
+4. `prediction_feedback`
+5. `continuous_backtesting`
+6. `paper_trading`
+7. `demo_trading`
+8. `micro_live_with_approval`
+9. `approval_required_live_trading`
+10. `later_optional_autotrading`
+
+Vollautomatik ist nur eine spaetere Option, keine aktuelle Zielphase.
+
+### N.4 Trading Safety Gates
+
+Aktive und spaetere Safety Gates:
+
+- `no_auto_trading` ist aktuell aktiv.
+- Human Approval bleibt Pflicht.
+- Kill Switch spaeter verpflichtend.
+- Drawdown Limits spaeter verpflichtend.
+- Tagesverlustlimit spaeter verpflichtend.
+- Wochenverlustlimit spaeter verpflichtend.
+- Risiko pro Trade 0,25-1 % als spaetere Richtlinie.
+- kein Martingale
+- kein Grid
+- keine Risikoerhoehung nach Verlust
+- keine ungetesteten Regeln live einsetzen
+- Audit Log spaeter verpflichtend
+
+### N.5 Trading Agent Modularisierung
+
+Hermes bleibt Orchestrator. Trading-Faehigkeiten werden spaeter in
+spezialisierte Agenten getrennt:
+
+- Market Data Agent
+- Market Regime Agent
+- Setup Watch Agent
+- Signal Scoring Agent
+- Risk Agent
+- Backtesting Agent
+- Prediction Review Agent
+- News Context Agent
+- Research Agent
+
+### N.6 Market Regime Detection
+
+Geplante Regime-Erkennung:
+
+- Trendmarkt
+- Seitwaertsmarkt
+- hohe Volatilitaet
+- News-Markt
+- illiquide Marktphasen
+- Spread- / Liquiditaetsfilter
+- Session-Fokus London / New York
+
+### N.7 Strategy Library
+
+Strategien werden als bewertbare Bibliothek geplant, nicht als feste
+Black-Box-Regeln.
+
+Kandidaten:
+
+- Trend Pullback
+- Breakout
+- Mean Reversion
+- No-Trade-Filter
+- Strategie-Bewertung pro Marktregime
+- Gold und Forex getrennt behandeln
+
+### N.8 Signal Score System
+
+Ein Signal Score soll Faktoren transparent gewichten:
+
+- Trend
+- Momentum
+- Spread
+- ATR
+- News-Risiko
+- Session
+- Volatilitaet
+- Higher Timeframe Alignment
+- Market Structure
+- Rejection Quality
+
+### N.9 Trading Learning UI / Runtime Events
+
+Trading-Learnings muessen in Jarvis sichtbar und reviewbar werden:
+
+- Learning UI zeigt Trading Feedback.
+- Setup Watch und Trigger-Status sind sichtbar.
+- Prediction -> Ergebnis -> Bewertung -> Learning ist nachvollziehbar.
+- Approval Center fuer Trading-Learnings.
+- keine versteckten Trading-Learnings
+- keine versteckten Signale
+- Runtime Events fuer Setup Watch, Signal Alerts, Prediction Outcomes,
+  Safety Blocks und Approval Requests standardisieren
 
 ## O) Reflective Learning Phase
 
@@ -456,14 +637,19 @@ Zu pruefende Quellen:
 
 - wondelai / Wondel.ai Skills: `https://github.com/wondelai/skills`
 - builderz-labs Mission Control: `https://github.com/builderz-labs/mission-control`
+- Anthropic Financial Services Pattern
+- Anthropic Legal Pattern
+- Anthropic Life Sciences Pattern
 
 Regeln:
 
-- beide Repositories nur als Inspirations- / Pattern-Quelle aufnehmen
+- diese Quellen nur als Inspirations- / Pattern-Quelle aufnehmen
 - nichts direkt kopieren
 - Lizenz pruefen
 - keine fremden Skills automatisch aktivieren
 - keine Repositories klonen ohne explizite Freigabe
+- Lizenz pruefen, bevor Patterns dokumentiert oder adaptiert werden
+- nur Architektur-, Workflow-, Skill- und Connector-Patterns extrahieren
 
 ## R) Wondel.ai Skills als Vorlage
 
@@ -542,6 +728,129 @@ Bewertungsfragen:
 - Welche Config-/Key-Panels duerfen nur sichere Metadaten zeigen?
 - Welche Messaging-Kanaele bleiben optional und approval-gesteuert?
 
+## U) Local Fine-Tuning / Unsloth Evaluation
+
+Ziel: Lokales Fine-Tuning bleibt eine spaetere Option und darf erst nach einer
+stabilen, geprueften Datenbasis bewertet werden.
+
+Grundsaetze:
+
+- Unsloth / Fine-Tuning als spaetere Option pruefen.
+- Kein fruehes Modelltraining auf chaotische oder ungepruefte Daten.
+- Dataset-Erstellung bleibt approval-basiert.
+- Fine-Tuning darf keine versteckten Runtime- oder Trading-Aenderungen
+  aktivieren.
+
+Moegliche spaetere Use Cases:
+
+- Routing-Modell
+- Trading-Scoring
+- Memory-Ranking
+- Voice- / Personality-Verhalten
+- Skill-Auswahl
+
+Voraussetzungen:
+
+- gepruefte Prediction History
+- Human Feedback
+- saubere Labels
+- stabile Backtest-Ergebnisse
+- Approval-basierte Dataset-Erstellung
+
+## V) Fish Audio / Fish Speech Evaluation
+
+Ziel: Fish Audio / Fish Speech als spaetere Voice-Runtime-Option fuer Jarvis
+pruefen.
+
+Zielbild:
+
+- lokale oder streamingfaehige TTS-Stimme fuer Jarvis
+- Local-first bevorzugt
+- keine Sofort-Implementierung
+- erst Voice Runtime stabilisieren
+
+Moegliche Use Cases:
+
+- Trading Alerts
+- Runtime Warnings
+- Voice Responses
+- Setup Watch Vorwarnungen
+- Systemstatus
+
+## W) Anthropic Marketplace / Plugin Pattern Review
+
+Ziel: Anthropic-Beispiele fuer spezialisierte Agenten, Skills und Connectoren
+als Pattern-Quelle pruefen, ohne Inhalte direkt zu kopieren.
+
+Zu pruefen:
+
+- Financial Services: Referenzagenten, Skills und Data Connectors fuer
+  Investment Banking, Equity Research, Private Equity und Wealth Management.
+- Legal: spezialisierte Workflows fuer in-house commercial, privacy,
+  corporate, litigation, regulatory, AI governance und weitere Rechtsbereiche.
+- Life Sciences: MCP-Server und Skills fuer spezialisierte Forschungs- und
+  Analysewerkzeuge.
+
+Regeln:
+
+- nichts direkt kopieren
+- Lizenz pruefen
+- nur Patterns extrahieren
+- keine externen Repositories klonen ohne explizite Freigabe
+- keine externen API- oder Web-Abfragen automatisch implementieren
+
+## X) Multi-Agent Workflow Architecture
+
+Ziel: Hermes wird nicht als Super-Agent-Monolith geplant, sondern als
+sichtbarer Orchestrator spezialisierter Sub-Agents, Skills, Connectors und
+Workflows.
+
+Architekturprinzipien:
+
+- keine Super-Agent-Monolithen
+- spezialisierte Sub-Agents
+- connector-basierte Architektur
+- skill-basierte Ausfuehrung
+- MCP-kompatible Tool-Schicht
+- approval-aware Workflows
+- Agent Chains sichtbar machen
+- Runtime Events fuer Agent-Flows
+- Jarvis Control Center zeigt Agentenaktivitaet
+
+## Y) Connector / Skill / Sub-Agent Pattern
+
+Ziel: Skills, Connectors, Sub-Agents und Workflows werden als konsistentes
+Hermes-Pattern geplant.
+
+Bausteine:
+
+- Skill Registry
+- Tool Registry
+- Connector Registry
+- Approval Gates
+- Audit Logs
+- Safety Flags
+- Versionierung
+- Multi-PC-Synchronisation nur fuer gepruefte Skills
+
+## Z) Codex / Local Model Strategy
+
+Ziel: Coding- und Modellarbeit bleibt rollenbasiert, kostentransparent und
+konfliktarm.
+
+Strategie:
+
+- GPT-5.5 = Senior Architect fuer komplexe Architektur, Reviews und groessere
+  Codex-Arbeiten.
+- OSS / Qwen = Local Worker fuer kleine, klar begrenzte Aufgaben.
+- OpenRouter = Fallback.
+- Fast Mode standardmaessig aus.
+- Fast Mode nur fuer grosse Refactors.
+- Qwen2.5-Coder ist fuer lokale kleine Aufgaben nutzbar, aber nicht
+  zuverlaessig genug fuer komplexe Agenten-Workflows.
+- `gpt-oss:20b` und `qwen2.5-coder` weiter evaluieren.
+- Beide Codex-Fenster nie gleichzeitig dieselben Dateien aendern lassen.
+
 ---
 
 ## Uebergabe an Masterplan 6
@@ -558,4 +867,37 @@ Fuer die Uebernahme braucht jeder Kandidat:
 - Quellenhinweis, falls extern inspiriert
 - Entscheidung: uebernehmen, zurueckstellen oder verwerfen
 
-Für Masterplan 6 übernehmen
+## Für Masterplan 7 / nächste Roadmap übernehmen
+
+### MUST
+
+- Trading Setup Watch
+- Trading Prediction Feedback Loop
+- Trading Continuous Backtesting
+- Trading Safety Gates
+- Jarvis Learning UI
+- Runtime Event Standardisierung
+- `no_auto_trading` / `human_review_required`
+- Multi-Agent Workflow Architecture
+
+### SHOULD
+
+- Market Regime Detection
+- Strategy Library
+- Signal Score System
+- Risk Agent
+- Fish Audio Evaluation
+- Unsloth Evaluation
+- Anthropic Plugin Pattern Review
+- Skill / Connector / Sub-Agent Pattern
+
+### LATER
+
+- Paper Trading
+- Demo Trading
+- Micro Live Trading mit Approval
+- Optional Autotrading
+- Local Fine-Tuning
+- Voice Personality Layer
+- Full MCP Connector Marketplace
+- WebSocket Live UI
