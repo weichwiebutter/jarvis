@@ -3,7 +3,7 @@ namespace Hermes.Runtime;
 public sealed class RuntimeHost
 {
     private const string RuntimeSource = "hermes_minimal_runtime";
-    private const string RuntimeVersion = "1.0.0-sprint4";
+    private const string RuntimeVersion = "1.0.0-sprint5";
 
     private readonly string _configPath;
 
@@ -59,7 +59,7 @@ public sealed class RuntimeHost
 
         PublishRuntimeStarted(eventBus, state, diskSpaceCheck);
         PublishStorageInitialized(eventBus, state, storage.Paths, eventStore.EventFilePath);
-        var demoJob = CreateDemoJobIfMissing(queueManager);
+        var demoJob = CreateDemoFeatureExportJobIfMissing(queueManager);
         if (demoJob is not null)
         {
             PublishJobCreated(eventBus, demoJob, queueManager.Status);
@@ -69,6 +69,9 @@ public sealed class RuntimeHost
         {
             PublishRuntimeSafeModeEnabled(eventBus, state, diskSpaceCheck);
         }
+
+        var workerHost = new WorkerHost(storage.Paths, queueManager, eventBus, RuntimeVersion);
+        workerHost.RunOnce();
 
         state.IsRunning = false;
         state.StoppedAtUtc = DateTimeOffset.UtcNow;
@@ -199,21 +202,21 @@ public sealed class RuntimeHost
             }));
     }
 
-    private static JobManifest? CreateDemoJobIfMissing(QueueManager queueManager)
+    private static JobManifest? CreateDemoFeatureExportJobIfMissing(QueueManager queueManager)
     {
-        if (queueManager.GetJobs().Any(job => job.JobType == "runtime.demo.noop"))
+        if (queueManager.GetJobs(JobStatus.Pending).Any(job => job.JobType == FeatureExportWorker.FeatureExportJobType))
         {
             return null;
         }
 
         var createdAtUtc = DateTimeOffset.UtcNow;
         var manifest = new JobManifest(
-            JobId: $"job_demo_{createdAtUtc:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
-            JobType: "runtime.demo.noop",
+            JobId: $"job_feature_export_demo_{createdAtUtc:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
+            JobType: FeatureExportWorker.FeatureExportJobType,
             Priority: 10,
             Status: JobStatus.Pending,
             CreatedAtUtc: createdAtUtc,
-            RequestedBy: "hermes_runtime_sprint4",
+            RequestedBy: "hermes_runtime_sprint5",
             ResourceProfile: "local_minimal",
             MaxRuntimeMinutes: 5,
             MaxRetries: 0,
@@ -221,8 +224,9 @@ public sealed class RuntimeHost
             Parameters: new Dictionary<string, object?>
             {
                 ["demo"] = true,
-                ["execute"] = false,
-                ["note"] = "Sprint 4 queue visibility job. No worker executes this job."
+                ["symbol"] = "DEMO_FEATURE_EXPORT",
+                ["source"] = "stub",
+                ["note"] = "Sprint 5 demo feature export job. Uses stub data only."
             });
 
         return queueManager.Enqueue(manifest);

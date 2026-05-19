@@ -50,10 +50,16 @@ public sealed class QueueManager
 
     public bool TryDequeue(out JobManifest? manifest, out JobLease? lease)
     {
+        return TryDequeue(jobType: null, out manifest, out lease);
+    }
+
+    public bool TryDequeue(string? jobType, out JobManifest? manifest, out JobLease? lease)
+    {
         manifest = null;
         lease = null;
 
         var candidate = GetJobs(JobStatus.Pending)
+            .Where(job => jobType is null || string.Equals(job.JobType, jobType, StringComparison.Ordinal))
             .OrderByDescending(job => job.Priority)
             .ThenBy(job => job.CreatedAtUtc)
             .FirstOrDefault();
@@ -84,7 +90,11 @@ public sealed class QueueManager
         return manifest;
     }
 
-    public JobResult MarkCompleted(string jobId, string? outputPath = null, IReadOnlyDictionary<string, object?>? metrics = null)
+    public JobResult MarkCompleted(
+        string jobId,
+        string? outputPath = null,
+        IReadOnlyDictionary<string, object?>? metrics = null,
+        DateTimeOffset? startedAtUtc = null)
     {
         var manifest = ReadJob(GetJobPath(_running, jobId)) with
         {
@@ -96,7 +106,7 @@ public sealed class QueueManager
         var result = new JobResult(
             JobId: jobId,
             Status: JobStatus.Completed,
-            StartedAtUtc: DateTimeOffset.UtcNow,
+            StartedAtUtc: startedAtUtc ?? DateTimeOffset.UtcNow,
             CompletedAtUtc: DateTimeOffset.UtcNow,
             OutputPath: outputPath,
             ErrorMessage: null,
@@ -106,7 +116,11 @@ public sealed class QueueManager
         return result;
     }
 
-    public JobResult MarkFailed(string jobId, string errorMessage, IReadOnlyDictionary<string, object?>? metrics = null)
+    public JobResult MarkFailed(
+        string jobId,
+        string errorMessage,
+        IReadOnlyDictionary<string, object?>? metrics = null,
+        DateTimeOffset? startedAtUtc = null)
     {
         var manifest = ReadJob(GetJobPath(_running, jobId)) with
         {
@@ -118,7 +132,7 @@ public sealed class QueueManager
         var result = new JobResult(
             JobId: jobId,
             Status: JobStatus.Failed,
-            StartedAtUtc: DateTimeOffset.UtcNow,
+            StartedAtUtc: startedAtUtc ?? DateTimeOffset.UtcNow,
             CompletedAtUtc: DateTimeOffset.UtcNow,
             OutputPath: null,
             ErrorMessage: errorMessage,
