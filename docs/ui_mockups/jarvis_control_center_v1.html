@@ -279,6 +279,16 @@
       box-shadow: var(--shadow), inset 0 0 34px rgba(78, 246, 164, 0.055);
     }
 
+    .panel.runtime-v1-panel {
+      border-color: rgba(89, 217, 255, 0.58);
+      background:
+        radial-gradient(circle at 12% 0%, rgba(89, 217, 255, 0.17), transparent 16rem),
+        radial-gradient(circle at 92% 22%, rgba(78, 246, 164, 0.13), transparent 18rem),
+        linear-gradient(145deg, rgba(13, 28, 42, 0.98), rgba(6, 12, 20, 0.96)),
+        var(--panel-strong);
+      box-shadow: var(--shadow), inset 0 0 42px rgba(89, 217, 255, 0.07);
+    }
+
     .panel-header,
     .market-top {
       display: flex;
@@ -652,6 +662,131 @@
       font-size: 1.1rem;
     }
 
+    .runtime-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: stretch;
+      margin-bottom: 14px;
+    }
+
+    .runtime-state {
+      min-height: 88px;
+      padding: 14px;
+      border: 1px solid rgba(89, 217, 255, 0.3);
+      border-radius: var(--radius);
+      background: rgba(89, 217, 255, 0.07);
+    }
+
+    .runtime-state span,
+    .runtime-stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.7rem;
+      font-weight: 740;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+
+    .runtime-state strong {
+      display: block;
+      margin-top: 8px;
+      color: var(--green);
+      font-size: 1.55rem;
+      line-height: 1.05;
+    }
+
+    .runtime-flags {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      min-width: 260px;
+    }
+
+    .flag-pill {
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 10px;
+      border: 1px solid rgba(78, 246, 164, 0.36);
+      border-radius: var(--radius);
+      background: rgba(78, 246, 164, 0.075);
+      color: var(--green);
+      font-size: 0.77rem;
+      font-weight: 760;
+    }
+
+    .flag-pill.amber {
+      border-color: rgba(255, 209, 102, 0.38);
+      background: rgba(255, 209, 102, 0.075);
+      color: var(--amber);
+    }
+
+    .runtime-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .runtime-stat {
+      min-height: 68px;
+      padding: 11px;
+      border: 1px solid rgba(89, 217, 255, 0.18);
+      border-radius: var(--radius);
+      background: rgba(4, 10, 17, 0.5);
+    }
+
+    .runtime-stat strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 0.94rem;
+      overflow-wrap: anywhere;
+    }
+
+    .runtime-stat.safe {
+      border-color: rgba(78, 246, 164, 0.3);
+      background: rgba(78, 246, 164, 0.06);
+    }
+
+    .runtime-stat.warning {
+      border-color: rgba(255, 209, 102, 0.32);
+      background: rgba(255, 209, 102, 0.06);
+    }
+
+    .runtime-timeline {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .timeline-node {
+      min-height: 54px;
+      display: grid;
+      align-content: center;
+      gap: 5px;
+      padding: 9px;
+      border: 1px solid rgba(89, 217, 255, 0.18);
+      border-radius: var(--radius);
+      background: rgba(3, 8, 14, 0.46);
+    }
+
+    .timeline-node strong {
+      color: var(--text);
+      font-size: 0.76rem;
+      overflow-wrap: anywhere;
+    }
+
+    .timeline-node span {
+      color: var(--green);
+      font-size: 0.68rem;
+      font-weight: 760;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
     .routing-stack {
       display: grid;
       gap: 10px;
@@ -821,6 +956,10 @@
       .watch-hero,
       .setup-ladder,
       .backtest-grid,
+      .runtime-hero,
+      .runtime-flags,
+      .runtime-grid,
+      .runtime-timeline,
       .voice-grid {
         grid-template-columns: 1fr;
       }
@@ -1141,6 +1280,97 @@
             <div class="backtest-score">
               <span>No-trade zone</span>
               <strong>low ATR range</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel runtime-v1-panel featured">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Hermes Runtime v1</h2>
+              <span>Real runtime health concept / static example values</span>
+            </div>
+            <span class="badge green">read-only visible</span>
+          </div>
+          <div class="runtime-hero">
+            <div class="runtime-state">
+              <span>Runtime State</span>
+              <strong>stopped / ready</strong>
+              <p class="caption">Last health report available. No runtime action from this prototype.</p>
+            </div>
+            <div class="runtime-flags" aria-label="Runtime safety flags">
+              <div class="flag-pill">
+                <span>Safe Mode</span>
+                <strong>false</strong>
+              </div>
+              <div class="flag-pill">
+                <span>no_auto_trading</span>
+                <strong>true</strong>
+              </div>
+              <div class="flag-pill amber">
+                <span>human_review_required</span>
+                <strong>true</strong>
+              </div>
+              <div class="flag-pill">
+                <span>Event Store</span>
+                <strong>active</strong>
+              </div>
+            </div>
+          </div>
+          <div class="runtime-grid">
+            <div class="runtime-stat safe">
+              <span>Free Disk</span>
+              <strong>888 GB</strong>
+            </div>
+            <div class="runtime-stat warning">
+              <span>Pending Jobs</span>
+              <strong>1</strong>
+            </div>
+            <div class="runtime-stat safe">
+              <span>Running Jobs</span>
+              <strong>0</strong>
+            </div>
+            <div class="runtime-stat safe">
+              <span>Failed Jobs</span>
+              <strong>0</strong>
+            </div>
+            <div class="runtime-stat">
+              <span>Last Snapshot ID</span>
+              <strong class="mono">snap_20260519125040082_bd6a...</strong>
+            </div>
+            <div class="runtime-stat">
+              <span>Replay Manifest</span>
+              <strong>present</strong>
+            </div>
+            <div class="runtime-stat">
+              <span>Health Source</span>
+              <strong class="mono">runtime_health.json</strong>
+            </div>
+            <div class="runtime-stat">
+              <span>Controls</span>
+              <strong>disabled</strong>
+            </div>
+          </div>
+          <div class="runtime-timeline" aria-label="Runtime v1 demo timeline">
+            <div class="timeline-node">
+              <span>ok</span>
+              <strong>RuntimeStarted</strong>
+            </div>
+            <div class="timeline-node">
+              <span>ok</span>
+              <strong>StorageInitialized</strong>
+            </div>
+            <div class="timeline-node">
+              <span>ok</span>
+              <strong>SnapshotCreated</strong>
+            </div>
+            <div class="timeline-node">
+              <span>ok</span>
+              <strong>ReplayManifestCreated</strong>
+            </div>
+            <div class="timeline-node">
+              <span>ok</span>
+              <strong>RuntimeStopped</strong>
             </div>
           </div>
         </section>
