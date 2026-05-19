@@ -1,0 +1,953 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [6 0 R 8 0 R 10 0 R 12 0 R 14 0 R 16 0 R 18 0 R 20 0 R 22 0 R 24 0 R 26 0 R 28 0 R 30 0 R 32 0 R] /Count 14 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 4582 >>
+stream
+0.93 0.965 1 rg
+BT /F2 18 Tf 1 0 0 1 48 798 Tm (JARVIS MASTERPLAN V6 - HERMES AI OS) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 767 Tm (Stand: 18. Mai 2026) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 747 Tm (Status: verbindliche Architektur- und Entwicklungsgrundlage fuer die naechste) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 736 Tm (Ausbauphase.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 716 Tm (Quelle: Masterplan V5, Future Hermes Todo / Roadmap Intake, Jarvis UI v1) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 705 Tm (Design Specification und aktuelle read-only Foundation-Module.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 685 Tm (1. Executive Summary) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 658 Tm (Jarvis entwickelt sich vom lokalen Agenten-Framework zum lokalen AI Operating) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 647 Tm (System mit sichtbarer Runtime, Voice, Status, Control Center, Trading-Analyse,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 636 Tm (Memory, Skills und Tool-Kontrolle.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 616 Tm (Die zentrale Rollenverteilung bleibt:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 596 Tm (? Jarvis = UI, Runtime, Voice, Status und Control Center.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 585 Tm (? Hermes = Brain, Routing, Learning, Agent Orchestration und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 574 Tm (  Entscheidungslogik.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 563 Tm (? Ollama / lokale Modelle = lokale Modellschicht fuer einfache, private und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 552 Tm (  kostensensitive Aufgaben.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 541 Tm (? Qwen = lokaler oder providerbasierter Kandidat fuer Coding, Reasoning und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 530 Tm (  strukturierte Aufgaben, sofern ueber sichere Provider-Layer angebunden.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 519 Tm (? GPT-5.5 / Cloud Codex = primaerer starker Coding- und Architekturarbeiter) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 508 Tm (  fuer komplexe Umsetzung, Reviews und groessere Refactors.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 497 Tm (? OpenRouter = Cloud-Fallback fuer limitierte Sessions oder spezielle Modelle,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 486 Tm (  nur ueber explizite Provider-Layer und cost-aware Routing.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 466 Tm (Masterplan 6 macht die neuen Foundation-Themen verbindlich sichtbar:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 455 Tm (Runtime Supervisor, Shared Memory / Multi-PC, Skills System, Skill Generator,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 444 Tm (MCP / Tool Layer, Research Discovery Agent, Cost Optimization, Reflective) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 433 Tm (Learning, Trading Intelligence und eine kuenftige Multi-Agent Workflow) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 422 Tm (Architecture.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 402 Tm (Gradio bleibt ausdruecklich nur Entwickler- und Testoberflaeche. Die finale UI) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 391 Tm (wird als futuristisches lokales AI Control Center geplant.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 371 Tm (2. Leitentscheidungen) Tj ET
+BT /F2 11 Tf 1 0 0 1 48 344 Tm (2.1 Systemrollen) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 321 Tm (? Jarvis ist das Produkt- und Control-Center-Layer.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 310 Tm (? Hermes ist das Brain und steuert Routing, Planung, Learning und Agentenlogik.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 299 Tm (? Agenten sind spezialisierte Analyse- und Arbeitskontexte.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 288 Tm (? Tools sind kontrollierte Faehigkeiten mit Contract, Scope und Safety Flags.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 277 Tm (? Statusmodule sind read-only-first und duerfen keine Runtime-Aktionen) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 266 Tm (  ausloesen.) Tj ET
+BT /F2 11 Tf 1 0 0 1 48 246 Tm (2.2 Local-first, Cloud Fallback) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 223 Tm (? Lokale Modelle und lokale Runtime haben Prioritaet.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 212 Tm (? Cloud wird nur bewusst, sichtbar und kostenbewusst genutzt.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 201 Tm (? Externe Provider laufen nur ueber explizite Provider-Layer.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 190 Tm (? Provider, Modell, Kostenrisiko und Approval-Status muessen sichtbar sein.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 179 Tm (? Keine versteckten Cloud-Aufrufe.) Tj ET
+BT /F2 11 Tf 1 0 0 1 48 159 Tm (2.3 Hybrid-Codex-Workflow) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 136 Tm (Codex bleibt Coding Worker, nicht System Brain.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 116 Tm (Workflow:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 96 Tm (1. Hermes/Jarvis definiert Ziel, Safety und Kontext.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 85 Tm (2. Codex setzt begrenzte Coding- oder Dokumentationsaufgaben um.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 74 Tm (3. Tests und Diffs werden sichtbar gemacht.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 63 Tm (4. Commits und Pushes bleiben menschlich kontrolliert.) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 4781 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 789 Tm (Modusregeln:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 769 Tm (? ChatGPT-Codex / GPT-5.5 primaer fuer komplexe Architektur-,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 758 Tm (  Debugging- und Multi-File-Aufgaben.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 747 Tm (? Fast Mode standardmaessig aus.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 736 Tm (? Fast Mode nur fuer grosse Refactors oder dringendes komplexes Debugging.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 725 Tm (? OpenRouter nur als Fallback bei Limits oder Spezialbedarf.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 714 Tm (? Ollama / local fuer kleine Planung, Klassifikation, Zusammenfassung und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 703 Tm (  wiederholbare Low-Risk-Aufgaben.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 692 Tm (? OSS / Qwen bleiben Local-Worker-Kandidaten fuer kleine, klar begrenzte) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 681 Tm (  Aufgaben.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 670 Tm (? Qwen2.5-Coder und `gpt-oss:20b` werden weiter evaluiert, aber nicht als) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 659 Tm (  verlaessliche Basis fuer komplexe Agenten-Workflows behandelt.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 648 Tm (? Zwei Codex-Fenster duerfen nicht gleichzeitig dieselben Dateien bearbeiten.) Tj ET
+BT /F2 11 Tf 1 0 0 1 48 628 Tm (2.4 Safety First) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 605 Tm (? `human_review_required` bleibt Grundregel fuer riskante Aktionen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 594 Tm (? `no_auto_trading` ist fuer Trading dauerhaft sichtbar.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 583 Tm (? Keine autonomen Codeaenderungen durch Learning, Research oder Reflection.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 572 Tm (? Keine automatischen Installationen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 561 Tm (? Keine Secrets in Dokumentation, Logs, Memory oder Statusausgaben.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 550 Tm (? Runtime, Logs, Cache und Secrets bleiben lokal.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 530 Tm (3. Zielarchitektur) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 503 Tm (Zielbild:) Tj ET
+BT /F1 8 Tf 1 0 0 1 48 483 Tm (text) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 473 Tm (User) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 462 Tm (  -> Jarvis UI / Voice / Control Center) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 451 Tm (  -> Hermes Brain) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 440 Tm (  -> Routing / Planner / Agent Orchestration) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 429 Tm (  -> Skills / Tools / MCP Gateway) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 418 Tm (  -> Runtime Supervisor / Scheduler) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 407 Tm (  -> Memory / Learning / Shared Approval Layer) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 396 Tm (  -> Read-only Status / Audit / Approval Queue) Tj ET
+BT /F1 8 Tf 1 0 0 1 48 385 Tm (code) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 366 Tm (Verantwortlichkeiten:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 346 Tm (? Jarvis UI: Home Dashboard, Chat, Voice, Control Center, Status, Approval UX.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 335 Tm (? Jarvis Runtime: kontrollierte Ausfuehrungsumgebung, Health, Logs, Lifecycle.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 324 Tm (? Hermes Brain: Intent, Domain, Confidence, Safety, Routing, Agent-Auswahl.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 313 Tm (? Hermes Learning: Reflexion, Pattern-Kandidaten, Routing Hints, Skill) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 302 Tm (  Vorschlaege.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 291 Tm (? Runtime Supervisor: Heartbeat, Jobs, Retry Budget, Resource Limits,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 280 Tm (  Zombie Protection, Cleanup und Health Checks.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 269 Tm (? Tool Layer: standardisierte Contracts, Permission Scope, MCP-Faehigkeit,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 258 Tm (  read-only Tools zuerst.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 247 Tm (? Memory Layer: lokale Runtime Learnings, strukturierte Memory-Daten,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 236 Tm (  human-readable Obsidian-Wissen und spaeter approved shared memory.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 216 Tm (4. Aktueller Stand) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 189 Tm (Bereits vorhanden oder vorbereitet:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 169 Tm (? Hermes Router und Hermes Brain Status.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 158 Tm (? Agent Dashboard mit bekannten und geplanten Agenten.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 147 Tm (? Runtime Status und System Snapshot.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 136 Tm (? Zentrale UI-Statusaggregation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 125 Tm (? Learning / Memory Status fuer lokale `.hermes/` Strukturen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 114 Tm (? Voice Status als read-only Foundation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 103 Tm (? Trading Panel Status und Trading Intelligence Status als read-only) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 92 Tm (  Foundation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 81 Tm (? Runtime Supervisor Status Foundation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 70 Tm (? Shared Memory / Multi-PC Status Foundation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 59 Tm (? Skills Status Foundation.) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 3663 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 798 Tm (? Skill Generator Status Foundation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 787 Tm (? MCP / Tool Standardization Foundation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 776 Tm (? Research Discovery Status Foundation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 765 Tm (? Cost Optimization Status Foundation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 754 Tm (? Reflective Learning Status Foundation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 743 Tm (? Gradio UI als Entwickler- und Testoberflaeche fuer Statuspanels.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 732 Tm (? Jarvis UI v1 Design Specification als Zielbild fuer die spaetere finale UI.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 712 Tm (Nicht vorhanden oder noch nicht aktiv:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 692 Tm (? Keine echten Background-Loops.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 681 Tm (? Kein produktiver Scheduler.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 670 Tm (? Keine autonome Skill-Ausfuehrung.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 659 Tm (? Keine echte Multi-PC-Synchronisation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 648 Tm (? Keine echten Reddit-, GitHub-, arXiv- oder Web-Research-Jobs.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 637 Tm (? Keine MCP-Server oder MCP-Clients in produktiver Nutzung.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 626 Tm (? Keine Brokerverbindung.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 615 Tm (? Keine Orders.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 604 Tm (? Kein Auto-Trading.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 593 Tm (? Keine finale React/Tauri/FastAPI-Oberflaeche.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 573 Tm (5. UI-Zielbild) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 546 Tm (Gradio ist nur Dev/Test UI.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 526 Tm (Die aktuelle Gradio UI bleibt sinnvoll fuer:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 506 Tm (? manuelle Statuschecks) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 495 Tm (? JSON-Inspektion) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 484 Tm (? Validierung der Foundation-Module) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 473 Tm (? sichere Entwickler-Tests) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 453 Tm (Sie ist nicht:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 433 Tm (? finale Jarvis UI) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 422 Tm (? Produktions-UX) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 411 Tm (? langfristiges Control Center) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 400 Tm (? visuelle Designbasis) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 380 Tm (Finales Ziel:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 360 Tm (Jarvis UI v1 wird ein futuristisches lokales AI Control Center:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 340 Tm (? dunkel) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 329 Tm (? modern) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 318 Tm (? animiert) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 307 Tm (? modular) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 296 Tm (? hochwertig) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 285 Tm (? AI-first) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 274 Tm (? Jarvis/Iron-Man-inspiriert) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 263 Tm (? Control-Center-Feeling) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 243 Tm (Hauptbereiche:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 223 Tm (? Home Dashboard) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 212 Tm (? Chat / Gespraech) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 201 Tm (? Hermes Brain Panel) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 190 Tm (? Agent Dashboard) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 179 Tm (? Runtime Control) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 168 Tm (? Voice Interface) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 157 Tm (? Trading Panel) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 146 Tm (? Taskline / Activity Feed) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 135 Tm (? Learning & Memory) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 124 Tm (? Developer Debug) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 113 Tm (? Skills / Tools) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 102 Tm (? Research Discovery) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 91 Tm (? Cost Optimization) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 71 Tm (Permanent sichtbar oder schnell erreichbar:) Tj ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 9 0 R >>
+endobj
+11 0 obj
+<< /Length 3681 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 798 Tm (? XAUUSD Livekurs) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 787 Tm (? EURUSD Livekurs) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 776 Tm (? GER40 spaeter) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 765 Tm (? Wetter) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 754 Tm (? aktive Agenten) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 743 Tm (? laufende Tasks) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 732 Tm (? Hermes Status) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 721 Tm (? Ollama Status) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 710 Tm (? Runtime Warnings) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 699 Tm (? Trading Signals) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 688 Tm (? Trading Setup Watch / Trigger-Status) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 677 Tm (? Provider / Model Status) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 666 Tm (? `no_auto_trading`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 655 Tm (? Approval Queue) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 635 Tm (Layout-Ziel:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 615 Tm (? links: Agent Activity / Taskline) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 604 Tm (? mitte: Chat, Voice und Hauptinteraktion) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 593 Tm (? rechts: Hermes Brain, Trading und Model Routing) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 582 Tm (? unten: Runtime, Logs, Memory und Systemstatus) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 562 Tm (Technikoptionen fuer spaeter:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 542 Tm (? React / Vite) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 531 Tm (? Tauri) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 520 Tm (? FastAPI) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 509 Tm (? WebSocket / Event Stream) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 489 Tm (Diese Optionen sind noch keine Implementierungsentscheidung. Masterplan 6 legt) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 478 Tm (nur Zielbild und Sicherheitsanforderungen fest.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 458 Tm (6. Runtime-Zielbild) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 431 Tm (Der Runtime Supervisor wird die Kontrollinstanz fuer geplante Hintergrund- und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 420 Tm (Agentenaufgaben.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 400 Tm (Geplante Funktionen:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 380 Tm (? Heartbeat) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 369 Tm (? Scheduler / Cron-Struktur) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 358 Tm (? Cron als Agent-Jobs statt reine Shell-Crons) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 347 Tm (? Background Jobs) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 336 Tm (? Agent Lifecycle) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 325 Tm (? Zombie Protection) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 314 Tm (? Context Lifecycle) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 303 Tm (? Context Compression) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 292 Tm (? Resource Limits) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 281 Tm (? Runtime Cleanup) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 270 Tm (? Health Checks) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 259 Tm (? Hallucination Gate) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 248 Tm (? Retry Budget / `max_retries` pro Task) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 237 Tm (? 5-Minuten-cTrader-QUOTE-Checks spaeter) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 217 Tm (Grundregeln:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 197 Tm (? Keine heimlichen Services.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 186 Tm (? Keine unkontrollierten Loops.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 175 Tm (? Jeder Job hat Zweck, Owner, Limits, Retry Budget und Safety Flags.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 164 Tm (? Schreibende Jobs brauchen Review.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 153 Tm (? Research Jobs bleiben read-only.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 142 Tm (? Runtime-Aktionen werden in der finalen UI sichtbar und bestaetigungspflichtig.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 122 Tm (Geplante Jobs:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 102 Tm (? Reddit Research Scan) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 91 Tm (? GitHub Trend Scan) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 80 Tm (? Weather Refresh) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 69 Tm (? cTrader Quote Check) Tj ET
+endstream
+endobj
+12 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 11 0 R >>
+endobj
+13 0 obj
+<< /Length 3900 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 798 Tm (? Prediction Feedback Check) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 787 Tm (? Memory Cleanup Review) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 767 Tm (7. Memory / Learning) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 740 Tm (Memory wird in drei Schichten getrennt:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 720 Tm (? `.hermes/` = Runtime Learning Layer, lokal und laufzeitnah.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 709 Tm (? `memory/` = Structured Memory Layer fuer strukturierte, freigegebene Inhalte.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 698 Tm (? `obsidian/` = Human Knowledge Layer fuer menschlich lesbare Notizen,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 687 Tm (  Architektur, Entscheidungen und Wissensgraph.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 667 Tm (Zusaetzlich geplant:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 647 Tm (? `memory_shared/` fuer genehmigte, synchronisierbare Learnings.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 636 Tm (? `approved_learnings/` fuer explizit freigegebene dauerhafte Learnings.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 625 Tm (? `shared_skills/` fuer freigegebene Skills.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 614 Tm (? `routing_hints_approved/` fuer genehmigte Routing-Hints.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 603 Tm (? `trading_patterns_approved/` fuer freigegebene Trading-Pattern.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 583 Tm (Regeln:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 563 Tm (? Keine Orphan- oder Shadow-Stores.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 552 Tm (? Single-Store-Design pruefen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 541 Tm (? Runtime-Daten werden nicht unkontrolliert synchronisiert.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 530 Tm (? Persistence ist approval-based.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 519 Tm (? Lokale Learnings entstehen zuerst lokal.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 508 Tm (? Hermes schlaegt dauerhafte Learnings vor.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 497 Tm (? Frank bestaetigt.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 486 Tm (? Erst danach wird shared memory aktualisiert.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 475 Tm (? Zweiter PC synchronisiert nur approved memory.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 455 Tm (Reflective Learning:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 435 Tm (? post_task_review) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 424 Tm (? pattern_extraction) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 413 Tm (? failure_analysis) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 402 Tm (? success_pattern_detection) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 391 Tm (? skill_candidate_generation) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 380 Tm (? routing_hint_candidate_generation) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 369 Tm (? confidence_adjustment_candidate) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 349 Tm (Reflection erzeugt Vorschlaege, keine direkten Code- oder Runtime-Aenderungen.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 329 Tm (8. Trading Intelligence) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 302 Tm (Trading Intelligence ist Analyse-, Setup-Watch-, Backtesting- und Lernschicht,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 291 Tm (keine Order-Schicht.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 271 Tm (Unterstuetzte Ziel-Symbole:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 251 Tm (? XAUUSD) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 240 Tm (? EURUSD) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 229 Tm (? GER40) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 218 Tm (? US500) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 207 Tm (? Forex-Majors) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 187 Tm (Geplante Pipeline:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 167 Tm (? cTrader QUOTE Feed geplant) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 156 Tm (? read-only quotes only) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 145 Tm (? no trade execution) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 134 Tm (? Composite Trading Indicator als Feature- / Signal-Engine geplant) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 123 Tm (? Trading Feature Store geplant) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 112 Tm (? future feature extraction) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 101 Tm (? session tagging) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 90 Tm (? market regime tagging) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 79 Tm (? continuous backtesting) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 68 Tm (? strategy evaluation) Tj ET
+endstream
+endobj
+14 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 13 0 R >>
+endobj
+15 0 obj
+<< /Length 4491 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 798 Tm (? signal scoring) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 787 Tm (? setup watch) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 776 Tm (? signal alerts only after trigger conditions are met) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 765 Tm (? entry / exit warnings) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 754 Tm (? no-trade zones) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 734 Tm (Rollenmodell:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 714 Tm (? Composite Trading Indicator liefert Features, Marktstruktur, Scores und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 703 Tm (  nicht-repaintende Signal-Kandidaten.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 692 Tm (? Hermes-Agent bewertet, lernt, vergleicht und entscheidet als lernende) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 681 Tm (  Bewertungs- und Entscheidungsinstanz.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 670 Tm (? Indicator-Regeln bleiben deterministische Feature-Erzeugung.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 659 Tm (? Hermes-Learning bleibt reviewbar und approval-gesteuert.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 648 Tm (? Trennung bleibt verbindlich: Indicator liefert Features, Hermes lernt und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 637 Tm (  entscheidet.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 617 Tm (Prediction Learning:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 597 Tm (? Prediction Feedback Loop geplant) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 586 Tm (? Prediction Scoring geplant) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 575 Tm (? Confidence Tracking geplant) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 564 Tm (? Confidence Calibration geplant) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 553 Tm (? Outcome Review geplant) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 542 Tm (? Feature Importance Tracking geplant) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 531 Tm (? keine autonome Ausfuehrung) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 511 Tm (Continuous Backtesting:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 491 Tm (? historische cTrader-Daten kontinuierlich auswerten.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 480 Tm (? XAUUSD, EURUSD, GER40, US500 und Forex-Majors getrennt backtesten.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 469 Tm (? automatische Hypothesentests vorbereiten.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 458 Tm (? Feature-, Session- und Timeframe-Vergleiche durchfuehren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 447 Tm (? Walk-Forward- und Out-of-Sample-Tests planen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 436 Tm (? Paper-Trading-Phase vor Live-Phasen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 425 Tm (? Live-vs-Backtest-Vergleich fuer spaetere Forward-Auswertung.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 414 Tm (? Demo- / Forward-Tests spaeter.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 403 Tm (? Modellvergleich XGBoost / LightGBM.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 392 Tm (? schlechte Strategien deaktivieren oder zurueckstufen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 381 Tm (? Risiko reduzieren, wenn Performance schwach ist.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 361 Tm (Setup Watch / Signal Alerts:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 341 Tm (? moegliche Long- und Short-Szenarien frueh erkennen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 330 Tm (? Vorwarnung: "Setup koennte entstehen.") Tj ET
+BT /F1 9 Tf 1 0 0 1 48 319 Tm (? Zeitfenster typischerweise 10 bis 30 Minuten.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 308 Tm (? Trigger-Bedingungen, Entry-Zone, Confidence, Stop-Loss-Vorschlag,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 297 Tm (  Take-Profit- / Zielzonen und Invalidation-Level sichtbar machen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 286 Tm (? Entry- und Exit-Warnungen sichtbar machen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 275 Tm (? No-Trade-Zonen sichtbar machen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 264 Tm (? Statusmodell: `watching`, `armed`, `triggered`, `expired`.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 253 Tm (? Signal erst ausloesen, wenn Bedingungen eintreten.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 242 Tm (? Signal-Kandidaten duerfen nicht repainten und gelten nur nach Kerzenschluss.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 231 Tm (? Entscheidung bleibt bei Frank.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 211 Tm (Geplante Modelle:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 191 Tm (? XGBoost) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 180 Tm (? LightGBM) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 169 Tm (? future transformer experiments) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 158 Tm (? ensemble later optional) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 138 Tm (Feature Engine:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 118 Tm (? Trading Feature Store) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 107 Tm (? Composite Indicator Features) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 96 Tm (? Session Features London / New York) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 85 Tm (? Volatility Features) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 74 Tm (? Momentum Features) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 63 Tm (? Spread Tracking) Tj ET
+endstream
+endobj
+16 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 15 0 R >>
+endobj
+17 0 obj
+<< /Length 4483 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 798 Tm (? Time Features) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 787 Tm (? News spaeter optional) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 776 Tm (? Feature Importance) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 765 Tm (? Higher Timeframe Alignment) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 754 Tm (? Market Structure) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 743 Tm (? Rejection Quality) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 732 Tm (? Pattern-Cluster statt starre Regeln) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 712 Tm (Market Regime / Strategy Library:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 692 Tm (? Trendmarkt, Seitwaertsmarkt, hohe Volatilitaet, News-Markt und illiquide) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 681 Tm (  Marktphasen erkennen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 670 Tm (? Spread- / Liquiditaetsfilter und Session-Fokus London / New York.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 659 Tm (? Strategie-Kandidaten: Trend Pullback, Breakout, Mean Reversion und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 648 Tm (  No-Trade-Filter.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 637 Tm (? Strategie-Bewertung pro Marktregime.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 626 Tm (? Gold, Indizes und Forex getrennt behandeln.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 615 Tm (? Pattern-Cluster koennen mehrere Setups zusammenfassen, ersetzen aber keine) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 604 Tm (  Review- und Safety-Gates.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 584 Tm (cTrader / C# Zielarchitektur:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 564 Tm (? Core: gemeinsame Berechnungen, Feature-Definitionen und Signal Contracts.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 553 Tm (? Indicator: Composite Trading Indicator fuer Visualisierung und Feature-) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 542 Tm (  Ausgabe.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 531 Tm (? Bot: spaetere kontrollierte Ausfuehrungsschicht, aktuell deaktiviert.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 520 Tm (? Analyzer: Backtest-, Feature- und Ergebnisanalyse.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 509 Tm (? Research: Overnight Research, Hypothesentests und Report-Erzeugung.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 489 Tm (Overnight Research Mode:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 469 Tm (? historische oder gespeicherte Daten testen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 458 Tm (? keine Orders.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 447 Tm (? keine Broker-Trade-Verbindung.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 436 Tm (? morgens Report erzeugen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 425 Tm (? Lernkandidaten zur Freigabe vorbereiten.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 414 Tm (? Frank entscheidet, was dauerhaft gelernt wird.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 394 Tm (Trading Agent Modularisierung:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 374 Tm (? Market Data Agent) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 363 Tm (? Market Regime Agent) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 352 Tm (? Setup Watch Agent) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 341 Tm (? Signal Scoring Agent) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 330 Tm (? Risk Agent) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 319 Tm (? Backtesting Agent) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 308 Tm (? Prediction Review Agent) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 297 Tm (? News Context Agent) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 286 Tm (? Research Agent) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 275 Tm (? Hermes bleibt Orchestrator.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 255 Tm (Safety:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 235 Tm (? `no_auto_trading: true`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 224 Tm (? `no_trade_execution: true`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 213 Tm (? `human_review_required: true`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 202 Tm (? Broker-Verbindung bleibt deaktiviert bis explizite Freigabe.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 191 Tm (? TRADE-Verbindung bleibt deaktiviert bis explizite Freigabe.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 180 Tm (? QUOTE ist read-only Marktdatenquelle.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 169 Tm (? Modelle duerfen Prognosen bewerten, aber keine Orders ausloesen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 158 Tm (? Human Approval bleibt Pflicht.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 147 Tm (? Kein Martingale, kein Grid, keine Risikoerhoehung nach Verlust.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 136 Tm (? Keine ungetesteten Regeln live einsetzen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 125 Tm (? Keine automatische Risikoerhoehung aus Backtest- oder Learning-Ergebnissen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 114 Tm (? Kill Switch, Drawdown Limits, Tagesverlustlimit, Wochenverlustlimit und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 103 Tm (  Audit Log sind spaetere Pflicht-Gates vor jeder Live-Phase.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 92 Tm (? Risiko pro Trade 0,25-1 % nur als spaetere Richtlinie.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 72 Tm (UI-Bezug:) Tj ET
+endstream
+endobj
+18 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 17 0 R >>
+endobj
+19 0 obj
+<< /Length 3438 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 798 Tm (? Trading Learning / Backtest Center fuer Backtest Runs, Strategy Comparison,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 787 Tm (  Prediction Feedback, Setup Watch Results und Confidence Calibration.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 776 Tm (? Jarvis Learning UI fuer Prediction -> Outcome -> Bewertung -> Learning.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 765 Tm (? Setup Watch Panel fuer Entry, Exit, Confidence, SL/TP, Invalidation und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 754 Tm (  No-Trade-Zonen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 743 Tm (? Approval Queue fuer dauerhafte Trading-Learnings.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 723 Tm (Autonomy Roadmap:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 703 Tm (1. `analysis_only`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 692 Tm (2. `setup_watch`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 681 Tm (3. `signal_alerts`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 670 Tm (4. `prediction_feedback`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 659 Tm (5. `continuous_backtesting`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 648 Tm (6. `paper_trading`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 637 Tm (7. `demo_trading`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 626 Tm (8. `micro_live_with_approval`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 615 Tm (9. `approval_required_live_trading`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 604 Tm (10. `later_optional_autotrading`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 584 Tm (Vollautomatik bleibt nur eine spaetere Option.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 564 Tm (9. Tool / Skill / MCP) Tj ET
+BT /F2 11 Tf 1 0 0 1 48 537 Tm (9.1 Skills System) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 514 Tm (Skills sind wiederverwendbare Markdown-Playbooks und prozedurales) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 503 Tm (Gedaechtnis.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 483 Tm (Geplante Kategorien:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 463 Tm (? architecture) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 452 Tm (? debugging) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 441 Tm (? trading) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 430 Tm (? runtime) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 419 Tm (? ui) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 408 Tm (? codex_workflows) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 397 Tm (? deployment) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 386 Tm (? research) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 366 Tm (Skill Registry:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 346 Tm (? versioning_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 335 Tm (? metadata_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 324 Tm (? owner_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 313 Tm (? safety_flags_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 302 Tm (? review_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 291 Tm (? connector_scope_required_later) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 271 Tm (Workflow:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 251 Tm (1. proposed) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 240 Tm (2. reviewed_by_frank) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 229 Tm (3. approved) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 218 Tm (4. active) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 207 Tm (5. deprecated) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 187 Tm (Generated Skills werden niemals automatisch aktiv.) Tj ET
+BT /F2 11 Tf 1 0 0 1 48 167 Tm (9.2 Skill Generator) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 144 Tm (Der Skill Generator bereitet aus Tool- und API-Spezifikationen Skill-Entwuerfe) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 133 Tm (vor, fuehrt sie aber nicht aus.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 113 Tm (Moegliche Quellen:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 93 Tm (? Apify Actors) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 82 Tm (? MCP Tools) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 71 Tm (? lokale CLI-Tools) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 60 Tm (? cTrader QUOTE Bridge) Tj ET
+endstream
+endobj
+20 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 19 0 R >>
+endobj
+21 0 obj
+<< /Length 3496 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 798 Tm (? Weather Provider) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 787 Tm (? Reddit / GitHub Research Tools) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 776 Tm (? OpenAPI Specs) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 756 Tm (Ausgaben:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 736 Tm (? Skill-Dokumentation) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 725 Tm (? Input Schema) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 714 Tm (? Execution Contract) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 703 Tm (? Test Prompts) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 692 Tm (? Usage Notes) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 681 Tm (? Safety Flags) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 670 Tm (? Rate-Limit-Metadaten) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 659 Tm (? Cost-Metadaten) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 639 Tm (Regeln:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 619 Tm (? keine Auto-Aktivierung) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 608 Tm (? `human_review_required`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 597 Tm (? secrets_never_embedded) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 586 Tm (? pagination_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 575 Tm (? truncation_handling_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 564 Tm (? structured_output_required) Tj ET
+BT /F2 11 Tf 1 0 0 1 48 544 Tm (9.3 MCP / Tool Layer) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 521 Tm (MCP ist als Standardisierungs- und Gateway-Idee gesetzt.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 501 Tm (Strategie:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 481 Tm (? Hermes spaeter als MCP Client denkbar.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 470 Tm (? Hermes spaeter als MCP Server denkbar.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 459 Tm (? MCP Gateway geplant.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 448 Tm (? Read-only Tools zuerst.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 437 Tm (? Keine Toolausfuehrung ohne Review.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 426 Tm (? Skills + Connectors + Sub-Agents + Workflows als zukuenftiges Hermes-Pattern.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 415 Tm (? Agent Chains und Tool-/Skill-Flows muessen im Jarvis Control Center sichtbar) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 404 Tm (  werden.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 384 Tm (Tool Registry:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 364 Tm (? metadata_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 353 Tm (? owner_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 342 Tm (? versioning_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 331 Tm (? safety_flags_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 320 Tm (? permission_scope_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 300 Tm (Connector / Sub-Agent Registry spaeter:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 280 Tm (? Skill Registry) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 269 Tm (? Tool Registry) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 258 Tm (? Connector Registry) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 247 Tm (? Approval Gates) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 236 Tm (? Audit Logs) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 225 Tm (? Safety Flags) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 214 Tm (? Versionierung) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 203 Tm (? Multi-PC-Synchronisation nur fuer gepruefte Skills) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 183 Tm (Geplante Tool-Kategorien:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 163 Tm (? filesystem_readonly) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 152 Tm (? browser_assist) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 141 Tm (? voice_runtime) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 130 Tm (? weather_provider) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 119 Tm (? ctrader_quote) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 108 Tm (? reddit_research) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 97 Tm (? github_research) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 86 Tm (? obsidian_knowledge) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 75 Tm (? memory_retrieval) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 64 Tm (? runtime_status) Tj ET
+endstream
+endobj
+22 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 21 0 R >>
+endobj
+23 0 obj
+<< /Length 3592 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 789 Tm (Safety:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 769 Tm (? read_only_default) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 758 Tm (? write_requires_approval) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 747 Tm (? external_api_requires_review) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 736 Tm (? secrets_never_exposed) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 725 Tm (? trade_execution_disabled) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 714 Tm (? audit_log_required_later) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 694 Tm (10. Research Discovery Agent) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 667 Tm (Hermes soll externe Ideen als kuratierte Vorschlaege sammeln. Research bleibt) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 656 Tm (read-only.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 636 Tm (Quellen:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 616 Tm (? Reddit) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 605 Tm (? GitHub) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 594 Tm (? arXiv) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 583 Tm (? MCP ecosystem) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 572 Tm (? Hermes-agent ecosystem) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 561 Tm (? Ollama / OpenRouter news) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 550 Tm (? Trading AI / cTrader topics) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 530 Tm (Monitored Topics:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 510 Tm (? LangGraph) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 499 Tm (? CrewAI) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 488 Tm (? AutoGen) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 477 Tm (? OpenClaw) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 466 Tm (? SWE-Agent / OpenDevin) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 455 Tm (? MCP) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 444 Tm (? local models) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 433 Tm (? agent memory) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 422 Tm (? scheduler / runtime supervisor) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 411 Tm (? skill systems) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 400 Tm (? trading ML) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 380 Tm (Pipeline:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 360 Tm (1. scan) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 349 Tm (2. deduplicate) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 338 Tm (3. summarize) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 327 Tm (4. extract_ideas) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 316 Tm (5. score_relevance) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 305 Tm (6. propose_for_review) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 294 Tm (7. archive_or_promote) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 274 Tm (Safety:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 254 Tm (? read_only_research) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 243 Tm (? no_auto_code_changes) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 232 Tm (? no_auto_installations) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 221 Tm (? human_review_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 210 Tm (? cite_sources_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 199 Tm (? Quelle und Datum dokumentieren) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 188 Tm (? Lizenzlage markieren) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 168 Tm (External Pattern Review:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 148 Tm (? `https://github.com/wondelai/skills` als Inspiration fuer Markdown-Playbooks.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 137 Tm (? `https://github.com/builderz-labs/mission-control` als Inspiration fuer) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 126 Tm (  Agent Fleet View, Task Dispatching, Session Monitoring, Cost Tracking,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 115 Tm (  Logs / Audit Trail, Event Store und Live Telemetry.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 104 Tm (? Anthropic Financial Services, Legal und Life Sciences Pattern als spaetere) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 93 Tm (  Referenz fuer spezialisierte Agenten, Skills, Data Connectors und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 82 Tm (  MCP-nahe Forschungs- oder Analysewerkzeuge pruefen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 71 Tm (? Nichts direkt kopieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 60 Tm (? Lizenz pruefen.) Tj ET
+endstream
+endobj
+24 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 23 0 R >>
+endobj
+25 0 obj
+<< /Length 3600 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 798 Tm (? Nur Patterns extrahieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 787 Tm (? Keine fremden Skills automatisch aktivieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 776 Tm (? Keine Repositories klonen ohne explizite Freigabe.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 756 Tm (11. Multi-PC Sync) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 729 Tm (Ziel: Zwei oder mehr PCs koennen dieselben freigegebenen Erfahrungen und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 718 Tm (Dokumente nutzen, ohne lokale Runtime, Logs, Cache oder Secrets zu mischen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 698 Tm (Synchronisierbar:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 678 Tm (? Code und Dokumentation ueber GitHub.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 667 Tm (? Obsidian- und Wissensnotizen, sofern bewusst freigegeben.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 656 Tm (? Approved Learnings.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 645 Tm (? Approved Skills.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 634 Tm (? Approved Routing Hints.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 623 Tm (? Approved Trading Patterns.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 603 Tm (Lokal-only:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 583 Tm (? `.hermes/runtime`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 572 Tm (? `runtime/`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 561 Tm (? `logs/`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 550 Tm (? `.env.local`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 539 Tm (? cache) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 528 Tm (? local model files) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 517 Tm (? Secrets) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 497 Tm (Rollen:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 477 Tm (? primary_pc) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 466 Tm (? secondary_pc) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 455 Tm (? offline_mode) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 444 Tm (? conflict_handling: manual_review_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 424 Tm (Regeln:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 404 Tm (? Keine unkontrollierte Runtime-Synchronisation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 393 Tm (? Kein Sync von `.env.local`.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 382 Tm (? Kein Sync von Secrets.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 371 Tm (? Kein Sync roher Logs.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 360 Tm (? Konflikte werden manuell reviewt.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 349 Tm (? Cross-device Memory Sync Engine ist spaeter, nicht jetzt.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 329 Tm (12. Cost Optimization) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 302 Tm (Ziel: Provider- und Modellnutzung wird transparent, aufgabenabhaengig und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 291 Tm (kostenbewusst gesteuert.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 271 Tm (Codex-Strategie:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 251 Tm (? ChatGPT-Codex primaer.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 240 Tm (? Fast Mode standardmaessig aus.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 229 Tm (? Fast Mode nur fuer grosse Refactors, Multi-File-Architektur oder dringendes) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 218 Tm (  komplexes Debugging.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 207 Tm (? OpenRouter als Fallback bei Limits.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 196 Tm (? Ollama / local fuer kleine Aufgaben.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 185 Tm (? Kleine Doku-, Planungs- und Status-Foundation-Aufgaben ohne Fast Mode.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 165 Tm (Provider-Prioritaet:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 145 Tm (? local_ollama_first) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 134 Tm (? chatgpt_codex_for_complex_code) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 123 Tm (? openrouter_fallback_for_limited_sessions) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 112 Tm (? manual_review_for_costly_tasks) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 92 Tm (Cost Controls:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 72 Tm (? credit_monitoring_required) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 61 Tm (? no_hidden_cloud_calls) Tj ET
+endstream
+endobj
+26 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 25 0 R >>
+endobj
+27 0 obj
+<< /Length 3900 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 798 Tm (? provider_logged) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 787 Tm (? model_logged) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 776 Tm (? estimated_cost_later) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 765 Tm (? human_review_for_expensive_tasks) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 745 Tm (Future Dashboards:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 725 Tm (? Codex usage panel) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 714 Tm (? OpenRouter credit panel) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 703 Tm (? model routing history) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 692 Tm (? provider cost summary) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 681 Tm (? local / cloud ratio) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 661 Tm (13. Safety) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 634 Tm (Globale Sicherheitsregeln:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 614 Tm (? Human review bleibt Pflicht fuer riskante Aenderungen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 603 Tm (? Keine automatischen Commits.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 592 Tm (? Keine automatischen Pushes.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 581 Tm (? Keine unreviewed production config changes.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 570 Tm (? Keine Secrets lesen, speichern oder anzeigen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 559 Tm (? Keine Runtime-Schreibzugriffe durch Statusmodule.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 548 Tm (? Keine autonome Code-Selbstmodifikation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 537 Tm (? Keine automatische Dependency-Installation.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 526 Tm (? Keine Tool- oder Skill-Ausfuehrung ohne Review.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 515 Tm (? Keine automatischen Trades.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 504 Tm (? Keine Brokerverbindung ohne explizite Freigabe.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 484 Tm (UI-Safety:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 464 Tm (? Approval Requests sichtbar.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 453 Tm (? Keine versteckten Actions.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 442 Tm (? `no_auto_trading` sichtbar.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 431 Tm (? Cloud-Kosten sichtbar.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 420 Tm (? Aktive Provider / Modelle sichtbar.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 409 Tm (? Runtime-Aktionen confirmieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 398 Tm (? Tool- und Skill-Ausfuehrung nur mit Review.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 378 Tm (Trading-Safety:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 358 Tm (? `no_auto_trading`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 347 Tm (? `human_review_required`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 336 Tm (? `no_trade_execution`) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 325 Tm (? TRADE deaktiviert) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 314 Tm (? QUOTE read-only) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 303 Tm (? keine ungetesteten Regeln live) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 292 Tm (? kein Martingale) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 281 Tm (? kein Grid) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 270 Tm (? keine Risikoerhoehung nach Verlust) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 259 Tm (? Kill Switch, Drawdown Limits, Tagesverlustlimit, Wochenverlustlimit und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 248 Tm (  Audit Log vor Live-Phasen verpflichtend planen) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 228 Tm (Research-Safety:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 208 Tm (? read-only Recherche.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 197 Tm (? Keine autonomen Codeaenderungen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 186 Tm (? Keine autonomen Installationen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 175 Tm (? Keine ungeprueften Empfehlungen direkt uebernehmen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 164 Tm (? Quellen und Datum dokumentieren.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 144 Tm (14. Masterplan-6-Roadmap) Tj ET
+BT /F2 11 Tf 1 0 0 1 48 117 Tm (MUST) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 94 Tm (? Trading Setup Watch verbindlich fuer die naechste Roadmap ausarbeiten.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 83 Tm (? Trading Prediction Feedback Loop spezifizieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 72 Tm (? Trading Continuous Backtesting fuer XAUUSD, EURUSD und GER40 planen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 61 Tm (? Trading Safety Gates konkretisieren.) Tj ET
+endstream
+endobj
+28 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 27 0 R >>
+endobj
+29 0 obj
+<< /Length 5047 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 798 Tm (? Jarvis Learning UI mit Trading Feedback, Approval Center und sichtbaren) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 787 Tm (  Learnings verbinden.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 776 Tm (? Runtime Event Standardisierung fuer Agent-Flows, Trading-Status und) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 765 Tm (  Approval Events fortfuehren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 754 Tm (? `no_auto_trading` / `human_review_required` dauerhaft sichtbar halten.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 743 Tm (? Multi-Agent Workflow Architecture entwerfen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 732 Tm (? Multi-PC Shared Learning verbindlich entwerfen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 721 Tm (? Runtime Supervisor Foundation zu einer kontrollierten Supervisor-Struktur) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 710 Tm (  weiterentwickeln.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 699 Tm (? Memory Architecture mit klarer Store-Trennung finalisieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 688 Tm (? Research / Discovery Agent als read-only Pipeline planen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 677 Tm (? Cost-aware Codex / OpenRouter / Ollama Strategy im UI sichtbar machen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 666 Tm (? Trading `no_auto_trading` Safety dauerhaft im UI und Status fuehren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 655 Tm (? External Pattern Review fuer Wondel.ai Skills und Mission Control) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 644 Tm (  dokumentiert durchfuehren.) Tj ET
+BT /F2 11 Tf 1 0 0 1 48 624 Tm (SHOULD) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 601 Tm (? Market Regime Detection planen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 590 Tm (? Strategy Library entwerfen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 579 Tm (? Signal Score System definieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 568 Tm (? Risk Agent spezifizieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 557 Tm (? Fish Audio / Fish Speech Evaluation fuer spaetere Voice Runtime pruefen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 546 Tm (? Unsloth / Local Fine-Tuning Evaluation vorbereiten.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 535 Tm (? Anthropic Plugin Pattern Review dokumentieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 524 Tm (? Skill / Connector / Sub-Agent Pattern konkretisieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 513 Tm (? Hermes Skills System ausbauen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 502 Tm (? Skill Registry definieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 491 Tm (? Skill Review Workflow konkretisieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 480 Tm (? Skill Generator als Draft-Generator spezifizieren.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 469 Tm (? MCP Gateway planen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 458 Tm (? Agent Dashboard erweitern.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 447 Tm (? Reflective Learning Phase als Approval-Queue-Kandidat ausbauen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 436 Tm (? Obsidian Knowledge Integration pruefen.) Tj ET
+BT /F2 11 Tf 1 0 0 1 48 416 Tm (LATER) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 393 Tm (? Paper Trading.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 382 Tm (? Demo Trading.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 371 Tm (? Micro Live Trading mit Approval.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 360 Tm (? Optional Autotrading.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 349 Tm (? Local Fine-Tuning.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 338 Tm (? Voice Personality Layer.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 327 Tm (? Full MCP Connector Marketplace.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 316 Tm (? Automatische Skill-Generierung aus Apify / MCP.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 305 Tm (? WebSocket Live Runtime.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 294 Tm (? Cross-device Memory Sync Engine.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 283 Tm (? Agent-to-Agent Consensus.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 272 Tm (? Advanced Token Dashboard.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 261 Tm (? Trading ML Training Pipeline.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 250 Tm (? Event Store / SQLite fuer Audit und Live-Telemetry pruefen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 239 Tm (? Messaging Gateway optional: Telegram, Discord, Slack, Email.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 219 Tm (15. Abnahmeliste) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 192 Tm (Masterplan 6 gilt als akzeptiert, wenn:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 172 Tm (? Jarvis und Hermes Rollen eindeutig getrennt sind.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 161 Tm (? Local-first und Cloud fallback beschrieben sind.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 150 Tm (? Ollama, Qwen, GPT-5.5 / Cloud Codex und OpenRouter Rollen beschrieben sind.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 139 Tm (? Hybrid-Codex-Workflow dokumentiert ist.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 128 Tm (? Gradio klar als Dev/Test UI markiert ist.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 117 Tm (? Finale UI als futuristisches AI Control Center beschrieben ist.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 106 Tm (? Runtime Supervisor, Shared Memory, Skills, Skill Generator, MCP / Tool Layer,) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 95 Tm (  Research Discovery, Cost Optimization, Reflective Learning und Trading) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 84 Tm (  Intelligence enthalten sind.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 73 Tm (? cTrader QUOTE Feed als geplant und read-only beschrieben ist.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 62 Tm (? `no_auto_trading` und `human_review_required` enthalten sind.) Tj ET
+endstream
+endobj
+30 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 29 0 R >>
+endobj
+31 0 obj
+<< /Length 3856 >>
+stream
+0.93 0.965 1 rg
+BT /F1 9 Tf 1 0 0 1 48 798 Tm (? Obsidian / `memory/` / `.hermes/` Wissensarchitektur beschrieben ist.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 787 Tm (? Roadmap mit MUST, SHOULD und LATER enthalten ist.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 776 Tm (? Keine Implementierung, Runtime-Aenderung, Services, Secrets, Commits oder) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 765 Tm (  Pushes Teil dieses Masterplans sind.) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 745 Tm (16. Uebergabe-Prompt fuer neuen Chat) Tj ET
+BT /F1 8 Tf 1 0 0 1 48 718 Tm (text) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 708 Tm (Arbeite im Projekt ~/jarvis.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 688 Tm (Nutze docs/Masterplan/Jarvis_Masterplan_V6_Hermes_AI_OS.md als aktuelle) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 677 Tm (verbindliche Architektur- und Entwicklungsgrundlage.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 657 Tm (Wichtige Rollen:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 646 Tm (? Jarvis = UI / Runtime / Voice / Control Center.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 635 Tm (? Hermes = Brain / Routing / Learning / Agent Orchestration.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 624 Tm (? Codex = Coding Worker, nicht System Brain.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 604 Tm (Grundregeln:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 593 Tm (? Local-first, Cloud nur als bewusster Fallback.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 582 Tm (? Gradio bleibt Dev/Test UI.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 571 Tm (? Finale UI ist ein futuristisches lokales AI Control Center.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 560 Tm (? Statusmodule sind read-only-first.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 549 Tm (? Keine Runtime-Dateien ohne expliziten Auftrag aendern.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 538 Tm (? Keine Secrets lesen oder speichern.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 527 Tm (? Keine Services starten, ausser explizit verlangt.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 516 Tm (? Keine Commits oder Pushes.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 505 Tm (? no_auto_trading bleibt Pflicht.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 494 Tm (? human_review_required fuer riskante Aktionen.) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 474 Tm (Aktuelle V6-Schwerpunkte:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 463 Tm (? Runtime Supervisor) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 452 Tm (? Shared Memory / Multi-PC) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 441 Tm (? Memory Architecture) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 430 Tm (? Skills System) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 419 Tm (? Skill Generator) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 408 Tm (? MCP / Tool Layer) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 397 Tm (? Research Discovery Agent) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 386 Tm (? Cost Optimization) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 375 Tm (? Reflective Learning) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 364 Tm (? Trading Intelligence mit cTrader QUOTE Feed geplant) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 344 Tm (Wenn du Code aenderst:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 333 Tm (? klein und reviewbar arbeiten) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 322 Tm (? bestehende Architektur respektieren) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 311 Tm (? Tests ausfuehren, wenn relevant) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 300 Tm (? geaenderte Dateien und Diff zusammenfassen) Tj ET
+BT /F1 8 Tf 1 0 0 1 48 289 Tm (code) Tj ET
+BT /F2 14 Tf 1 0 0 1 48 270 Tm (17. Nicht-Ziele) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 243 Tm (Dieser Masterplan erzeugt nicht:) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 223 Tm (? PDF) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 212 Tm (? React / Tauri / FastAPI-Code) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 201 Tm (? neue Services) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 190 Tm (? Scheduler oder Background-Loops) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 179 Tm (? Brokerverbindungen) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 168 Tm (? Orders) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 157 Tm (? echte Web-, Reddit-, GitHub- oder arXiv-Abfragen) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 146 Tm (? API-Keys oder Secrets) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 135 Tm (? Commits oder Pushes) Tj ET
+BT /F1 9 Tf 1 0 0 1 48 115 Tm (Masterplan 6 ist Dokumentation und Architekturgrundlage.) Tj ET
+endstream
+endobj
+32 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 31 0 R >>
+endobj
+xref
+0 33
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000212 00000 n 
+0000000309 00000 n 
+0000000411 00000 n 
+0000005044 00000 n 
+0000005180 00000 n 
+0000010012 00000 n 
+0000010148 00000 n 
+0000013862 00000 n 
+0000013999 00000 n 
+0000017732 00000 n 
+0000017870 00000 n 
+0000021822 00000 n 
+0000021960 00000 n 
+0000026503 00000 n 
+0000026641 00000 n 
+0000031176 00000 n 
+0000031314 00000 n 
+0000034804 00000 n 
+0000034942 00000 n 
+0000038490 00000 n 
+0000038628 00000 n 
+0000042272 00000 n 
+0000042410 00000 n 
+0000046062 00000 n 
+0000046200 00000 n 
+0000050152 00000 n 
+0000050290 00000 n 
+0000055389 00000 n 
+0000055527 00000 n 
+0000059435 00000 n 
+trailer
+<< /Size 33 /Root 1 0 R >>
+startxref
+59573
+%%EOF

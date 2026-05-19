@@ -328,12 +328,16 @@ Unterstuetzte Ziel-Symbole:
 - XAUUSD
 - EURUSD
 - GER40
+- US500
+- Forex-Majors
 
 Geplante Pipeline:
 
 - cTrader QUOTE Feed geplant
 - read-only quotes only
 - no trade execution
+- Composite Trading Indicator als Feature- / Signal-Engine geplant
+- Trading Feature Store geplant
 - future feature extraction
 - session tagging
 - market regime tagging
@@ -342,6 +346,19 @@ Geplante Pipeline:
 - signal scoring
 - setup watch
 - signal alerts only after trigger conditions are met
+- entry / exit warnings
+- no-trade zones
+
+Rollenmodell:
+
+- Composite Trading Indicator liefert Features, Marktstruktur, Scores und
+  nicht-repaintende Signal-Kandidaten.
+- Hermes-Agent bewertet, lernt, vergleicht und entscheidet als lernende
+  Bewertungs- und Entscheidungsinstanz.
+- Indicator-Regeln bleiben deterministische Feature-Erzeugung.
+- Hermes-Learning bleibt reviewbar und approval-gesteuert.
+- Trennung bleibt verbindlich: Indicator liefert Features, Hermes lernt und
+  entscheidet.
 
 Prediction Learning:
 
@@ -356,10 +373,12 @@ Prediction Learning:
 Continuous Backtesting:
 
 - historische cTrader-Daten kontinuierlich auswerten.
-- XAUUSD, EURUSD und GER40 getrennt backtesten.
+- XAUUSD, EURUSD, GER40, US500 und Forex-Majors getrennt backtesten.
 - automatische Hypothesentests vorbereiten.
 - Feature-, Session- und Timeframe-Vergleiche durchfuehren.
 - Walk-Forward- und Out-of-Sample-Tests planen.
+- Paper-Trading-Phase vor Live-Phasen.
+- Live-vs-Backtest-Vergleich fuer spaetere Forward-Auswertung.
 - Demo- / Forward-Tests spaeter.
 - Modellvergleich XGBoost / LightGBM.
 - schlechte Strategien deaktivieren oder zurueckstufen.
@@ -372,8 +391,11 @@ Setup Watch / Signal Alerts:
 - Zeitfenster typischerweise 10 bis 30 Minuten.
 - Trigger-Bedingungen, Entry-Zone, Confidence, Stop-Loss-Vorschlag,
   Take-Profit- / Zielzonen und Invalidation-Level sichtbar machen.
+- Entry- und Exit-Warnungen sichtbar machen.
+- No-Trade-Zonen sichtbar machen.
 - Statusmodell: `watching`, `armed`, `triggered`, `expired`.
 - Signal erst ausloesen, wenn Bedingungen eintreten.
+- Signal-Kandidaten duerfen nicht repainten und gelten nur nach Kerzenschluss.
 - Entscheidung bleibt bei Frank.
 
 Geplante Modelle:
@@ -385,6 +407,8 @@ Geplante Modelle:
 
 Feature Engine:
 
+- Trading Feature Store
+- Composite Indicator Features
 - Session Features London / New York
 - Volatility Features
 - Momentum Features
@@ -395,6 +419,7 @@ Feature Engine:
 - Higher Timeframe Alignment
 - Market Structure
 - Rejection Quality
+- Pattern-Cluster statt starre Regeln
 
 Market Regime / Strategy Library:
 
@@ -404,7 +429,27 @@ Market Regime / Strategy Library:
 - Strategie-Kandidaten: Trend Pullback, Breakout, Mean Reversion und
   No-Trade-Filter.
 - Strategie-Bewertung pro Marktregime.
-- Gold und Forex getrennt behandeln.
+- Gold, Indizes und Forex getrennt behandeln.
+- Pattern-Cluster koennen mehrere Setups zusammenfassen, ersetzen aber keine
+  Review- und Safety-Gates.
+
+cTrader / C# Zielarchitektur:
+
+- Core: gemeinsame Berechnungen, Feature-Definitionen und Signal Contracts.
+- Indicator: Composite Trading Indicator fuer Visualisierung und Feature-
+  Ausgabe.
+- Bot: spaetere kontrollierte Ausfuehrungsschicht, aktuell deaktiviert.
+- Analyzer: Backtest-, Feature- und Ergebnisanalyse.
+- Research: Overnight Research, Hypothesentests und Report-Erzeugung.
+
+Overnight Research Mode:
+
+- historische oder gespeicherte Daten testen.
+- keine Orders.
+- keine Broker-Trade-Verbindung.
+- morgens Report erzeugen.
+- Lernkandidaten zur Freigabe vorbereiten.
+- Frank entscheidet, was dauerhaft gelernt wird.
 
 Trading Agent Modularisierung:
 
@@ -431,9 +476,19 @@ Safety:
 - Human Approval bleibt Pflicht.
 - Kein Martingale, kein Grid, keine Risikoerhoehung nach Verlust.
 - Keine ungetesteten Regeln live einsetzen.
+- Keine automatische Risikoerhoehung aus Backtest- oder Learning-Ergebnissen.
 - Kill Switch, Drawdown Limits, Tagesverlustlimit, Wochenverlustlimit und
   Audit Log sind spaetere Pflicht-Gates vor jeder Live-Phase.
 - Risiko pro Trade 0,25-1 % nur als spaetere Richtlinie.
+
+UI-Bezug:
+
+- Trading Learning / Backtest Center fuer Backtest Runs, Strategy Comparison,
+  Prediction Feedback, Setup Watch Results und Confidence Calibration.
+- Jarvis Learning UI fuer Prediction -> Outcome -> Bewertung -> Learning.
+- Setup Watch Panel fuer Entry, Exit, Confidence, SL/TP, Invalidation und
+  No-Trade-Zonen.
+- Approval Queue fuer dauerhafte Trading-Learnings.
 
 Autonomy Roadmap:
 

@@ -429,10 +429,15 @@ Grundsaetze:
   historische Daten, Marktregime, Hypothesen, Prediction Outcomes und
   Safety-Kontext.
 - cTrader QUOTE ist die geplante read-only Marktdatenquelle.
-- Ziel-Symbole: XAUUSD, EURUSD und GER40.
+- Ziel-Symbole: XAUUSD, EURUSD, GER40, US500 und Forex-Majors.
 - TRADE bleibt deaktiviert bis zu einer separaten, explizit freigegebenen
   Zukunftsphase.
 - Entscheidungen bleiben bei Frank.
+- Composite Trading Indicator liefert spaeter Features, Marktstruktur, Scores
+  und nicht-repaintende Signal-Kandidaten.
+- Hermes-Agent bleibt die lernende Bewertungs- und Entscheidungsinstanz.
+- Trennung: Indicator liefert Features, Hermes lernt und entscheidet.
+- Trading Feature Store als spaetere strukturierte Feature-Basis.
 
 ### N.1 Continuous Backtesting Intelligence
 
@@ -441,11 +446,13 @@ reviewbare Trading-Learnings vorbereiten.
 
 Geplante Faehigkeiten:
 
-- kontinuierliche Backtests fuer XAUUSD, EURUSD und GER40
+- kontinuierliche Backtests fuer XAUUSD, EURUSD, GER40, US500 und Forex-Majors
 - automatische Hypothesentests
 - Feature-, Session- und Timeframe-Vergleich
 - Walk-Forward-Tests
 - Out-of-Sample-Tests
+- Paper-Trading-Phase
+- Live-vs-Backtest-Vergleich
 - Demo- / Forward-Tests spaeter
 - Prediction Feedback Loop
 - Confidence Calibration
@@ -466,11 +473,14 @@ Zielbild:
 - typisches Zeitfenster: 10 bis 30 Minuten
 - Trigger-Bedingungen sichtbar machen
 - Entry-Zone sichtbar machen
+- Entry- und Exit-Warnungen sichtbar machen
 - Wahrscheinlichkeit / Confidence anzeigen
 - Stop-Loss-Vorschlag anzeigen
 - Take-Profit- / Zielzonen anzeigen
 - Invalidation-Level anzeigen
+- No-Trade-Zonen sichtbar machen
 - Signal erst ausloesen, wenn Bedingungen eintreten
+- nicht-repaintende Signale nur nach Kerzenschluss werten
 - Entscheidung bleibt bei Frank
 - kein Auto-Trading in der aktuellen Phase
 
@@ -546,8 +556,8 @@ Geplante Regime-Erkennung:
 
 ### N.7 Strategy Library
 
-Strategien werden als bewertbare Bibliothek geplant, nicht als feste
-Black-Box-Regeln.
+Strategien werden als bewertbare Bibliothek und Pattern-Cluster geplant, nicht
+als feste Black-Box-Regeln.
 
 Kandidaten:
 
@@ -556,7 +566,19 @@ Kandidaten:
 - Mean Reversion
 - No-Trade-Filter
 - Strategie-Bewertung pro Marktregime
-- Gold und Forex getrennt behandeln
+- Gold, Indizes und Forex getrennt behandeln
+- Pattern-Cluster statt starre Regeln
+
+### N.7a cTrader / C# Zielarchitektur
+
+Zielstruktur:
+
+- Core: gemeinsame Berechnungen, Feature-Definitionen und Signal Contracts
+- Indicator: Composite Trading Indicator fuer Visualisierung und Feature-
+  Ausgabe
+- Bot: spaetere kontrollierte Ausfuehrungsschicht, aktuell deaktiviert
+- Analyzer: Backtest-, Feature- und Ergebnisanalyse
+- Research: Overnight Research, Hypothesentests und Report-Erzeugung
 
 ### N.8 Signal Score System
 
@@ -578,6 +600,8 @@ Ein Signal Score soll Faktoren transparent gewichten:
 Trading-Learnings muessen in Jarvis sichtbar und reviewbar werden:
 
 - Learning UI zeigt Trading Feedback.
+- Trading Learning / Backtest Center zeigt Backtest Runs, Strategy Comparison,
+  Prediction Feedback, Setup Watch Results und Confidence Calibration.
 - Setup Watch und Trigger-Status sind sichtbar.
 - Prediction -> Ergebnis -> Bewertung -> Learning ist nachvollziehbar.
 - Approval Center fuer Trading-Learnings.
@@ -585,6 +609,17 @@ Trading-Learnings muessen in Jarvis sichtbar und reviewbar werden:
 - keine versteckten Signale
 - Runtime Events fuer Setup Watch, Signal Alerts, Prediction Outcomes,
   Safety Blocks und Approval Requests standardisieren
+
+### N.10 Overnight Research Mode
+
+Spaeterer Analysemodus:
+
+- historische oder gespeicherte Daten testen
+- keine Orders
+- keine Broker-Trade-Verbindung
+- morgens Report erzeugen
+- Lernkandidaten zur Freigabe vorbereiten
+- Frank entscheidet, was dauerhaft gelernt wird
 
 ## O) Reflective Learning Phase
 
