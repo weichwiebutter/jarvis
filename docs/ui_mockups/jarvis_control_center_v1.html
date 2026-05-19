@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Jarvis / Hermes Control Center v1 Mockup</title>
+  <title>Jarvis / Hermes Control Center v1.1 Mockup</title>
   <style>
     :root {
       color-scheme: dark;
@@ -17,6 +17,7 @@
       --blue: #4f8cff;
       --green: #4ef6a4;
       --amber: #ffd166;
+      --orange: #ff9f43;
       --red: #ff5c7a;
       --violet: #a98cff;
       --text: #eaf6ff;
@@ -48,9 +49,23 @@
       padding: 22px;
     }
 
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background:
+        linear-gradient(120deg, transparent 0 42%, rgba(89, 217, 255, 0.08) 43%, transparent 45%),
+        radial-gradient(circle at 78% 18%, rgba(255, 159, 67, 0.11), transparent 22rem),
+        radial-gradient(circle at 17% 74%, rgba(89, 217, 255, 0.12), transparent 24rem);
+      opacity: 0.9;
+      pointer-events: none;
+    }
+
     .shell {
+      position: relative;
       max-width: 1640px;
       margin: 0 auto;
+      z-index: 1;
     }
 
     .topbar {
@@ -58,11 +73,12 @@
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 18px;
       align-items: center;
-      padding: 18px 20px;
-      border: 1px solid var(--line);
+      min-height: 118px;
+      padding: 22px 24px;
+      border: 1px solid var(--line-strong);
       border-radius: var(--radius);
       background: linear-gradient(135deg, rgba(13, 24, 36, 0.94), rgba(9, 13, 21, 0.92));
-      box-shadow: var(--shadow);
+      box-shadow: var(--shadow), inset 0 0 42px rgba(89, 217, 255, 0.045);
       position: relative;
       overflow: hidden;
     }
@@ -77,6 +93,19 @@
       pointer-events: none;
     }
 
+    .topbar::after {
+      content: "";
+      position: absolute;
+      right: 18px;
+      top: 18px;
+      width: 220px;
+      height: 72px;
+      border-top: 1px solid rgba(255, 209, 102, 0.38);
+      border-right: 1px solid rgba(255, 209, 102, 0.38);
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
     .brand,
     .top-actions {
       position: relative;
@@ -85,10 +114,10 @@
 
     .eyebrow {
       margin: 0 0 5px;
-      color: var(--cyan);
+      color: var(--amber);
       font-size: 0.75rem;
       font-weight: 700;
-      letter-spacing: 0.18em;
+      letter-spacing: 0.2em;
       text-transform: uppercase;
     }
 
@@ -100,15 +129,48 @@
     }
 
     h1 {
-      font-size: 1.7rem;
-      font-weight: 760;
+      font-size: clamp(2rem, 4vw, 3.25rem);
+      font-weight: 820;
       letter-spacing: 0.02em;
+      text-shadow: 0 0 28px rgba(89, 217, 255, 0.26);
     }
 
     .subtitle {
       margin-top: 6px;
       color: var(--muted);
       font-size: 0.92rem;
+    }
+
+    .command-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .strip-item {
+      min-height: 58px;
+      padding: 11px 12px;
+      border: 1px solid rgba(89, 217, 255, 0.22);
+      border-radius: var(--radius);
+      background: rgba(4, 10, 18, 0.66);
+      box-shadow: inset 0 0 24px rgba(89, 217, 255, 0.035);
+    }
+
+    .strip-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.68rem;
+      font-weight: 740;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .strip-item strong {
+      display: block;
+      margin-top: 7px;
+      color: var(--text);
+      font-size: 0.95rem;
     }
 
     .top-actions {
@@ -130,6 +192,7 @@
       color: var(--text);
       font-size: 0.82rem;
       white-space: nowrap;
+      box-shadow: inset 0 0 18px rgba(89, 217, 255, 0.035);
     }
 
     .dot {
@@ -154,7 +217,7 @@
 
     .dashboard {
       display: grid;
-      grid-template-columns: 1.05fr 1.45fr 1.05fr;
+      grid-template-columns: 1.02fr 1.54fr 1.02fr;
       gap: 18px;
       margin-top: 18px;
       align-items: start;
@@ -177,14 +240,43 @@
       border: 1px solid var(--line);
       border-radius: var(--radius);
       background:
-        linear-gradient(180deg, rgba(19, 33, 49, 0.88), rgba(8, 13, 21, 0.92)),
+        linear-gradient(180deg, rgba(19, 33, 49, 0.94), rgba(8, 13, 21, 0.94)),
         var(--panel);
-      box-shadow: var(--shadow);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.04);
       overflow: hidden;
+      position: relative;
+    }
+
+    .panel::before,
+    .market-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(89, 217, 255, 0.82), rgba(255, 209, 102, 0.64), transparent);
+      opacity: 0.72;
     }
 
     .panel {
       padding: 16px;
+    }
+
+    .panel.featured {
+      border-color: rgba(255, 209, 102, 0.42);
+      background:
+        linear-gradient(145deg, rgba(20, 34, 47, 0.98), rgba(8, 13, 21, 0.95)),
+        var(--panel-strong);
+    }
+
+    .panel.learning-panel {
+      border-color: rgba(169, 140, 255, 0.42);
+    }
+
+    .panel.safety-panel {
+      border-color: rgba(78, 246, 164, 0.48);
+      box-shadow: var(--shadow), inset 0 0 34px rgba(78, 246, 164, 0.055);
     }
 
     .panel-header,
@@ -246,6 +338,12 @@
       border-color: rgba(255, 92, 122, 0.34);
       color: var(--red);
       background: rgba(255, 92, 122, 0.08);
+    }
+
+    .badge.violet {
+      border-color: rgba(169, 140, 255, 0.36);
+      color: var(--violet);
+      background: rgba(169, 140, 255, 0.08);
     }
 
     .market-card {
@@ -315,6 +413,16 @@
       background: rgba(3, 8, 14, 0.44);
     }
 
+    .metric.hot {
+      border-color: rgba(255, 209, 102, 0.28);
+      background: rgba(255, 209, 102, 0.055);
+    }
+
+    .metric.safe {
+      border-color: rgba(78, 246, 164, 0.26);
+      background: rgba(78, 246, 164, 0.055);
+    }
+
     .metric span {
       display: block;
       color: var(--muted);
@@ -366,7 +474,8 @@
     .event-list,
     .task-list,
     .learning-list,
-    .agent-list {
+    .agent-list,
+    .approval-list {
       display: grid;
       gap: 10px;
       margin: 0;
@@ -378,7 +487,8 @@
     .event-item,
     .task-item,
     .learning-item,
-    .agent-item {
+    .agent-item,
+    .approval-item {
       display: grid;
       gap: 5px;
       padding: 11px 12px;
@@ -391,7 +501,8 @@
     .event-item strong,
     .task-item strong,
     .learning-item strong,
-    .agent-item strong {
+    .agent-item strong,
+    .approval-item strong {
       font-size: 0.88rem;
     }
 
@@ -399,26 +510,89 @@
     .event-item span,
     .task-item span,
     .learning-item span,
-    .agent-item span {
+    .agent-item span,
+    .approval-item span {
       color: var(--muted);
       font-size: 0.78rem;
     }
 
     .task-item,
-    .agent-item {
+    .agent-item,
+    .approval-item {
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
     }
 
     .task-item > div,
-    .agent-item > div {
+    .agent-item > div,
+    .approval-item > div {
       min-width: 0;
     }
 
     .watch-panel {
       background:
+        radial-gradient(circle at 80% 15%, rgba(255, 209, 102, 0.12), transparent 18rem),
         linear-gradient(135deg, rgba(12, 26, 37, 0.98), rgba(8, 13, 21, 0.94)),
         var(--panel-strong);
+      border-color: rgba(255, 209, 102, 0.44);
+    }
+
+    .watch-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .setup-state {
+      padding: 14px;
+      border: 1px solid rgba(255, 209, 102, 0.26);
+      border-radius: var(--radius);
+      background: rgba(255, 209, 102, 0.06);
+    }
+
+    .setup-state span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 740;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .setup-state strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 1.45rem;
+      line-height: 1.05;
+    }
+
+    .setup-ladder {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .ladder-step {
+      min-height: 56px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(143, 168, 186, 0.18);
+      border-radius: var(--radius);
+      background: rgba(3, 8, 14, 0.45);
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 760;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      text-align: center;
+    }
+
+    .ladder-step.active {
+      border-color: rgba(255, 209, 102, 0.52);
+      color: var(--amber);
+      background: rgba(255, 209, 102, 0.08);
+      box-shadow: 0 0 20px rgba(255, 209, 102, 0.12);
     }
 
     .watch-grid {
@@ -450,6 +624,90 @@
       font-size: 0.92rem;
     }
 
+    .backtest-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .backtest-score {
+      padding: 12px;
+      border: 1px solid rgba(89, 217, 255, 0.18);
+      border-radius: var(--radius);
+      background: rgba(3, 8, 14, 0.43);
+      min-height: 70px;
+    }
+
+    .backtest-score span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+    }
+
+    .backtest-score strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 1.1rem;
+    }
+
+    .routing-stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .routing-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 11px 12px;
+      border: 1px solid rgba(89, 217, 255, 0.16);
+      border-radius: var(--radius);
+      background: rgba(4, 10, 17, 0.46);
+    }
+
+    .routing-row strong {
+      display: block;
+      font-size: 0.86rem;
+    }
+
+    .routing-row span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.76rem;
+    }
+
+    .voice-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .voice-cell {
+      min-height: 58px;
+      padding: 10px 11px;
+      border: 1px solid rgba(169, 140, 255, 0.2);
+      border-radius: var(--radius);
+      background: rgba(169, 140, 255, 0.055);
+    }
+
+    .voice-cell span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+    }
+
+    .voice-cell strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 0.9rem;
+    }
+
     .progress {
       height: 7px;
       margin-top: 12px;
@@ -463,7 +721,7 @@
       height: 100%;
       border-radius: inherit;
       background: linear-gradient(90deg, var(--green), var(--cyan));
-      width: 68%;
+      width: 72%;
     }
 
     .safety-grid {
@@ -485,6 +743,11 @@
       color: var(--text);
     }
 
+    .safety-item.attention {
+      border-color: rgba(255, 209, 102, 0.4);
+      background: rgba(255, 209, 102, 0.07);
+    }
+
     .safety-item strong {
       font-size: 0.84rem;
     }
@@ -504,6 +767,20 @@
 
     .event-item.blocked {
       border-left-color: var(--red);
+    }
+
+    .event-item.info {
+      border-left-color: var(--cyan);
+    }
+
+    .learning-item {
+      border-left-color: rgba(169, 140, 255, 0.62);
+      background: rgba(169, 140, 255, 0.055);
+    }
+
+    .approval-item {
+      border-left-color: rgba(255, 209, 102, 0.72);
+      background: rgba(255, 209, 102, 0.055);
     }
 
     .footer-note {
@@ -539,7 +816,12 @@
       .hero-grid,
       .metric-grid,
       .watch-grid,
-      .safety-grid {
+      .safety-grid,
+      .command-strip,
+      .watch-hero,
+      .setup-ladder,
+      .backtest-grid,
+      .voice-grid {
         grid-template-columns: 1fr;
       }
 
@@ -553,16 +835,40 @@
   <main class="shell">
     <header class="topbar">
       <div class="brand">
-        <p class="eyebrow">Local AI operating layer</p>
+        <p class="eyebrow">Jarvis visual prototype v1.1</p>
         <h1>Jarvis / Hermes Control Center</h1>
-        <p class="subtitle">Static v1 mockup with demo data. No services, APIs, runtime actions, or live market feeds.</p>
+        <p class="subtitle">Static command-room mockup with demo data. No services, APIs, runtime actions, or live market feeds.</p>
       </div>
       <div class="top-actions" aria-label="System status">
         <span class="status-chip"><span class="dot"></span>Hermes online / foundation</span>
         <span class="status-chip"><span class="dot"></span>Ollama local model ready</span>
-        <span class="status-chip"><span class="dot amber"></span>Approvals pending</span>
+        <span class="status-chip"><span class="dot amber"></span>4 approvals pending</span>
+        <span class="status-chip"><span class="dot red"></span>Trade execution off</span>
       </div>
     </header>
+
+    <section class="command-strip" aria-label="Control center summary">
+      <div class="strip-item">
+        <span>Control layer</span>
+        <strong>Jarvis UI mock / static</strong>
+      </div>
+      <div class="strip-item">
+        <span>Brain</span>
+        <strong>Hermes foundation online</strong>
+      </div>
+      <div class="strip-item">
+        <span>Trading guard</span>
+        <strong>no_auto_trading active</strong>
+      </div>
+      <div class="strip-item">
+        <span>Learning</span>
+        <strong>3 candidates queued</strong>
+      </div>
+      <div class="strip-item">
+        <span>Voice</span>
+        <strong>alert channel standby</strong>
+      </div>
+    </section>
 
     <section class="dashboard" aria-label="Jarvis dashboard">
       <aside class="column">
@@ -579,15 +885,15 @@
               <span>Runtime</span>
               <strong>idle / safe</strong>
             </div>
-            <div class="metric">
+            <div class="metric hot">
               <span>Mode</span>
-              <strong>prototype</strong>
+              <strong>v1.1 mockup</strong>
             </div>
-            <div class="metric">
+            <div class="metric safe">
               <span>Trading</span>
               <strong>no_auto_trading</strong>
             </div>
-            <div class="metric">
+            <div class="metric hot">
               <span>Learning</span>
               <strong>review required</strong>
             </div>
@@ -613,9 +919,9 @@
             <li class="agent-item">
               <div>
                 <strong>Trading Agent</strong>
-                <span>XAUUSD setup watch state visible</span>
+                <span>XAUUSD setup watch escalated toward armed</span>
               </div>
-              <span class="badge green">watching</span>
+              <span class="badge amber">watching</span>
             </li>
             <li class="agent-item">
               <div>
@@ -632,6 +938,34 @@
               <span class="badge">idle</span>
             </li>
           </ul>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Voice Alert Status</h2>
+              <span>Mock alert channel / no audio runtime</span>
+            </div>
+            <span class="badge violet">standby</span>
+          </div>
+          <div class="voice-grid">
+            <div class="voice-cell">
+              <span>Trading alerts</span>
+              <strong>armed for review</strong>
+            </div>
+            <div class="voice-cell">
+              <span>Runtime warnings</span>
+              <strong>visual only</strong>
+            </div>
+            <div class="voice-cell">
+              <span>TTS provider</span>
+              <strong>planned later</strong>
+            </div>
+            <div class="voice-cell">
+              <span>Privacy mode</span>
+              <strong>local first</strong>
+            </div>
+          </div>
         </section>
 
         <section class="panel">
@@ -676,11 +1010,11 @@
                 <div class="price">2368.42</div>
                 <div class="delta">demo +0.42%</div>
               </div>
-              <span class="badge amber">setup watching</span>
+              <span class="badge amber">watching / armed</span>
             </div>
             <div class="card-meta">
-              <span>Trigger: liquidity sweep + M15 rejection</span>
-              <span>Confidence: 68% mock</span>
+              <span>Trigger: liquidity sweep + M15 rejection pending close</span>
+              <span>Confidence: 72% mock</span>
               <span class="mono">no_auto_trading: true</span>
             </div>
           </article>
@@ -718,13 +1052,25 @@
           </article>
         </section>
 
-        <section class="panel watch-panel">
+        <section class="panel watch-panel featured">
           <div class="panel-header">
             <div class="panel-title">
               <h2>Trading Watch Panel</h2>
-              <span>XAUUSD setup watch / no execution</span>
+              <span>XAUUSD setup watch / no execution / review only</span>
             </div>
-            <span class="badge amber">watching</span>
+            <span class="badge amber">watching -> armed</span>
+          </div>
+          <div class="watch-hero">
+            <div class="setup-state">
+              <span>Primary setup</span>
+              <strong>XAUUSD long pullback preparing</strong>
+            </div>
+            <div class="setup-ladder" aria-label="Setup watch state ladder">
+              <div class="ladder-step active">watching</div>
+              <div class="ladder-step active">armed</div>
+              <div class="ladder-step">triggered</div>
+              <div class="ladder-step">expired</div>
+            </div>
           </div>
           <div class="watch-grid">
             <div class="watch-cell">
@@ -749,7 +1095,7 @@
             </div>
             <div class="watch-cell">
               <span>Confidence</span>
-              <strong>68%</strong>
+              <strong>72%</strong>
             </div>
             <div class="watch-cell">
               <span>Session</span>
@@ -761,6 +1107,42 @@
             </div>
           </div>
           <div class="progress" aria-label="Mock setup confidence"><span></span></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Backtest Summary</h2>
+              <span>Static research snapshot / no backtest executed</span>
+            </div>
+            <span class="badge">demo report</span>
+          </div>
+          <div class="backtest-grid">
+            <div class="backtest-score">
+              <span>Strategy</span>
+              <strong>Trend pullback</strong>
+            </div>
+            <div class="backtest-score">
+              <span>Winrate</span>
+              <strong>58.4%</strong>
+            </div>
+            <div class="backtest-score">
+              <span>Profit factor</span>
+              <strong>1.42</strong>
+            </div>
+            <div class="backtest-score">
+              <span>Max drawdown</span>
+              <strong>4.8%</strong>
+            </div>
+            <div class="backtest-score">
+              <span>Best regime</span>
+              <strong>London trend</strong>
+            </div>
+            <div class="backtest-score">
+              <span>No-trade zone</span>
+              <strong>low ATR range</strong>
+            </div>
+          </div>
         </section>
 
         <section class="panel">
@@ -792,13 +1174,13 @@
       </section>
 
       <aside class="column">
-        <section class="panel">
+        <section class="panel learning-panel featured">
           <div class="panel-header">
             <div class="panel-title">
               <h2>Learning Queue</h2>
               <span>3 candidates pending review</span>
             </div>
-            <span class="badge amber">pending</span>
+            <span class="badge violet">needs Frank</span>
           </div>
           <ul class="learning-list">
             <li class="learning-item">
@@ -816,22 +1198,59 @@
           </ul>
         </section>
 
+        <section class="panel featured">
+          <div class="panel-header">
+            <div class="panel-title">
+              <h2>Approval Queue</h2>
+              <span>Explicit gates before durable changes</span>
+            </div>
+            <span class="badge amber">4 pending</span>
+          </div>
+          <ul class="approval-list">
+            <li class="approval-item">
+              <div>
+                <strong>Persist XAUUSD pattern candidate</strong>
+                <span>Target: trading memory / requires review</span>
+              </div>
+              <span class="badge amber">review</span>
+            </li>
+            <li class="approval-item">
+              <div>
+                <strong>Promote no-trade filter</strong>
+                <span>Target: strategy guardrail / read-only</span>
+              </div>
+              <span class="badge amber">review</span>
+            </li>
+            <li class="approval-item">
+              <div>
+                <strong>Enable voice warning pattern</strong>
+                <span>Target: future alert UX / no audio action</span>
+              </div>
+              <span class="badge">planned</span>
+            </li>
+          </ul>
+        </section>
+
         <section class="panel">
           <div class="panel-header">
             <div class="panel-title">
               <h2>Runtime Events</h2>
-              <span>Demo event feed</span>
+              <span>High-visibility demo event feed</span>
             </div>
             <span class="badge">mock</span>
           </div>
           <ul class="event-list">
+            <li class="event-item info">
+              <strong>control_center_v1_1_loaded</strong>
+              <span>Static prototype opened with mock data only.</span>
+            </li>
             <li class="event-item success">
               <strong>hermes_ui_status generated</strong>
               <span>Foundation panels available in read-only mode.</span>
             </li>
             <li class="event-item warning">
               <strong>trading_setup_watch_status_changed</strong>
-              <span>XAUUSD moved to watching. Approval required for learning.</span>
+              <span>XAUUSD moved from watching toward armed. Approval required for learning.</span>
             </li>
             <li class="event-item blocked">
               <strong>runtime_action_blocked</strong>
@@ -843,36 +1262,48 @@
         <section class="panel">
           <div class="panel-header">
             <div class="panel-title">
-              <h2>Cost / Provider</h2>
-              <span>Transparent routing state</span>
+              <h2>Model Routing Status</h2>
+              <span>Transparent provider and cost state</span>
             </div>
             <span class="badge green">local first</span>
           </div>
-          <div class="metric-grid">
-            <div class="metric">
-              <span>Primary</span>
-              <strong>Ollama</strong>
+          <div class="routing-stack">
+            <div class="routing-row">
+              <div>
+                <strong>Primary route</strong>
+                <span>Ollama / local model ready</span>
+              </div>
+              <span class="badge green">local</span>
             </div>
-            <div class="metric">
-              <span>Cloud</span>
-              <strong>approval gated</strong>
+            <div class="routing-row">
+              <div>
+                <strong>Senior architect route</strong>
+                <span>GPT-5.5 / Cloud Codex only with explicit task intent</span>
+              </div>
+              <span class="badge amber">gated</span>
             </div>
-            <div class="metric">
-              <span>Fast mode</span>
-              <strong>off</strong>
+            <div class="routing-row">
+              <div>
+                <strong>Fallback route</strong>
+                <span>OpenRouter remains visible and approval-aware</span>
+              </div>
+              <span class="badge">fallback</span>
             </div>
-            <div class="metric">
-              <span>OpenRouter</span>
-              <strong>fallback only</strong>
+            <div class="routing-row">
+              <div>
+                <strong>Fast mode</strong>
+                <span>Off by default for prototype and normal docs work</span>
+              </div>
+              <span class="badge green">off</span>
             </div>
           </div>
         </section>
 
-        <section class="panel">
+        <section class="panel safety-panel">
           <div class="panel-header">
             <div class="panel-title">
               <h2>Safety / Approval</h2>
-              <span>Permanent guardrails</span>
+              <span>Permanent guardrails / visually pinned</span>
             </div>
             <span class="badge green">active</span>
           </div>
@@ -885,13 +1316,13 @@
               <strong>human_review_required</strong>
               <span class="dot"></span>
             </div>
-            <div class="safety-item">
+            <div class="safety-item attention">
               <strong>no_silent_learning</strong>
-              <span class="dot"></span>
+              <span class="dot amber"></span>
             </div>
-            <div class="safety-item">
+            <div class="safety-item attention">
               <strong>trade execution off</strong>
-              <span class="dot"></span>
+              <span class="dot red"></span>
             </div>
           </div>
         </section>
