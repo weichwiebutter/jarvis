@@ -4,6 +4,9 @@ namespace Hermes.Runtime;
 
 public sealed class RuntimeHost
 {
+    private const string RuntimeSource = "hermes_minimal_runtime";
+    private const string RuntimeVersion = "1.0.0-sprint2";
+
     private readonly string _configPath;
 
     public RuntimeHost(string configPath)
@@ -44,17 +47,28 @@ public sealed class RuntimeHost
             state.SafeModeReason ??= diskSpaceCheck.Warning;
         }
 
-        var logger = new JsonlLogger(storage.Paths.Events);
-        logger.Append(CreateEvent("runtime_started", "Runtime started.", state, diskSpaceCheck));
+        using var eventStore = new EventStore(storage.Paths);
+        var eventBus = new EventBus();
+        eventBus.Subscribe(eventStore.Append);
+
+        PublishRuntimeStarted(eventBus, state, diskSpaceCheck);
+        PublishStorageInitialized(eventBus, state, storage.Paths, eventStore.EventFilePath);
+
+        if (state.SafeMode)
+        {
+            PublishRuntimeSafeModeEnabled(eventBus, state, diskSpaceCheck);
+        }
 
         state.LastSnapshotPath = WriteSnapshot(storage.Paths, config.SnapshotFileName, state, diskSpaceCheck);
 
         state.IsRunning = false;
         state.StoppedAtUtc = DateTimeOffset.UtcNow;
-        logger.Append(CreateEvent("runtime_stopped", "Runtime stopped cleanly.", state, diskSpaceCheck));
+        PublishRuntimeStopped(eventBus, state, diskSpaceCheck);
+        eventStore.Flush();
 
         Console.WriteLine("Hermes Runtime completed.");
         Console.WriteLine($"Storage: {state.StorageRoot}");
+        Console.WriteLine($"Events: {eventStore.EventFilePath}");
         Console.WriteLine($"Snapshot: {state.LastSnapshotPath}");
         Console.WriteLine($"SafeMode: {state.SafeMode}");
     }
@@ -118,23 +132,19 @@ public sealed class RuntimeHost
         return path;
     }
 
-    private static RuntimeEvent CreateEvent(
-        string eventType,
-        string message,
+    private static void PublishRuntimeStarted(
+        EventBus eventBus,
         RuntimeState state,
         DiskSpaceCheck diskSpaceCheck)
     {
-        return new RuntimeEvent(
-            SchemaVersion: "hermes.runtime_event.v1",
-            EventId: $"evt_{eventType}_{Guid.NewGuid():N}",
-            Timestamp: DateTimeOffset.UtcNow,
-            Source: "hermes_minimal_runtime",
-            Category: "runtime",
-            Severity: state.SafeMode ? "warning" : "info",
-            EventType: eventType,
-            Message: message,
-            Metadata: new
+        eventBus.Publish(EventEnvelope.Create(
+            EventType.RuntimeStarted,
+            RuntimeSource,
+            state.SafeMode ? EventSeverity.Warning : EventSeverity.Info,
+            RuntimeVersion,
+            new
             {
+                message = "Runtime started.",
                 state.RuntimeName,
                 state.Environment,
                 state.StorageProfile,
@@ -144,7 +154,80 @@ public sealed class RuntimeHost
                 state.DiskSpaceWarning,
                 diskSpaceCheck.FreeMb,
                 diskSpaceCheck.MinimumFreeMb
-            },
-            RequiresAttention: state.SafeMode);
+            }));
+    }
+
+    private static void PublishStorageInitialized(
+        EventBus eventBus,
+        RuntimeState state,
+        StoragePaths paths,
+        string eventFilePath)
+    {
+        eventBus.Publish(EventEnvelope.Create(
+            EventType.StorageInitialized,
+            RuntimeSource,
+            state.SafeMode ? EventSeverity.Warning : EventSeverity.Info,
+            RuntimeVersion,
+            new
+            {
+                message = "Storage initialized.",
+                state.StorageProfile,
+                state.StorageRoot,
+                paths.Events,
+                paths.Snapshots,
+                paths.Logs,
+                paths.Cache,
+                paths.Archive,
+                eventFilePath,
+                state.SafeMode,
+                state.SafeModeReason
+            }));
+    }
+
+    private static void PublishRuntimeSafeModeEnabled(
+        EventBus eventBus,
+        RuntimeState state,
+        DiskSpaceCheck diskSpaceCheck)
+    {
+        eventBus.Publish(EventEnvelope.Create(
+            EventType.RuntimeSafeModeEnabled,
+            RuntimeSource,
+            EventSeverity.Warning,
+            RuntimeVersion,
+            new
+            {
+                message = "Runtime safe mode enabled.",
+                state.SafeModeReason,
+                state.DiskSpaceWarning,
+                diskSpaceCheck.FreeMb,
+                diskSpaceCheck.MinimumFreeMb
+            }));
+    }
+
+    private static void PublishRuntimeStopped(
+        EventBus eventBus,
+        RuntimeState state,
+        DiskSpaceCheck diskSpaceCheck)
+    {
+        eventBus.Publish(EventEnvelope.Create(
+            EventType.RuntimeStopped,
+            RuntimeSource,
+            state.SafeMode ? EventSeverity.Warning : EventSeverity.Info,
+            RuntimeVersion,
+            new
+            {
+                message = "Runtime stopped cleanly.",
+                state.RuntimeName,
+                state.Environment,
+                state.StorageProfile,
+                state.StorageRoot,
+                state.StartedAtUtc,
+                state.StoppedAtUtc,
+                state.SafeMode,
+                state.SafeModeReason,
+                state.LastSnapshotPath,
+                diskSpaceCheck.FreeMb,
+                diskSpaceCheck.MinimumFreeMb
+            }));
     }
 }

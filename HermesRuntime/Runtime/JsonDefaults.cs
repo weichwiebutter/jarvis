@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Hermes.Runtime;
 
@@ -13,6 +14,7 @@ public static class JsonDefaults
     {
         PropertyNameCaseInsensitive = true,
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-        WriteIndented = false
+        WriteIndented = false,
+        Converters = { new JsonStringEnumConverter() }
     };
 }

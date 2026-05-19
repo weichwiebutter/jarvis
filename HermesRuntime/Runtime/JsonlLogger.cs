@@ -1,26 +1,50 @@
-using System.Text.Json;
+using System.Text;
 
 namespace Hermes.Runtime;
 
-public sealed class JsonlLogger
+public sealed class JsonlLogger : IDisposable
 {
-    private readonly string _eventsDirectory;
+    private readonly object _sync = new();
+    private readonly StreamWriter _writer;
 
-    public JsonlLogger(string eventsDirectory)
+    public JsonlLogger(string filePath)
     {
-        _eventsDirectory = eventsDirectory;
+        var directory = Path.GetDirectoryName(filePath)
+            ?? throw new InvalidOperationException("JSONL log directory could not be resolved.");
+
+        Directory.CreateDirectory(directory);
+
+        var stream = new FileStream(
+            filePath,
+            FileMode.Append,
+            FileAccess.Write,
+            FileShare.Read);
+
+        _writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
-    public string Append(RuntimeEvent runtimeEvent)
+    public void AppendLine(string jsonLine)
     {
-        Directory.CreateDirectory(_eventsDirectory);
+        lock (_sync)
+        {
+            _writer.WriteLine(jsonLine);
+        }
+    }
 
-        var fileName = $"{DateTimeOffset.UtcNow:yyyyMMdd}.runtime.events.jsonl";
-        var path = Path.Combine(_eventsDirectory, fileName);
-        var json = JsonSerializer.Serialize(runtimeEvent, JsonDefaults.WriteOptions);
+    public void Flush()
+    {
+        lock (_sync)
+        {
+            _writer.Flush();
+        }
+    }
 
-        File.AppendAllText(path, json + Environment.NewLine);
-
-        return path;
+    public void Dispose()
+    {
+        lock (_sync)
+        {
+            _writer.Flush();
+            _writer.Dispose();
+        }
     }
 }
