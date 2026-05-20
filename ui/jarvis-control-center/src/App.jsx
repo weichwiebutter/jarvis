@@ -190,6 +190,153 @@ const eventLegend = [
   { label: t.eventTimeline.runtime, tone: 'info' },
 ];
 
+const researchJobs = [
+  {
+    id: 'research-xauusd-overnight',
+    name: 'Overnight Research XAUUSD',
+    type: 'Backtest Sweep',
+    status: 'running',
+    detail: 'Trend Pullback / London-New-York Session',
+    progress: 68,
+  },
+  {
+    id: 'research-eurusd-walk-forward',
+    name: 'EURUSD Walk-Forward',
+    type: 'Walk-Forward Run',
+    status: 'planned',
+    detail: 'Mean Reversion Cluster mit OOS-Check',
+    progress: 0,
+  },
+  {
+    id: 'research-ger40-breakout',
+    name: 'GER40 Breakout Replay',
+    type: 'Replay Manifest',
+    status: 'paused',
+    detail: 'Pausiert wegen Spread-/Liquiditaetsfilter',
+    progress: 42,
+  },
+  {
+    id: 'research-us500-cluster',
+    name: 'US500 Cluster Review',
+    type: 'Cluster-Bewertung',
+    status: 'completed',
+    detail: 'Volatilitaetscluster fuer Review vorbereitet',
+    progress: 100,
+  },
+  {
+    id: 'research-xauusd-news',
+    name: 'XAUUSD News-Markt Hypothese',
+    type: 'Regime-Analyse',
+    status: 'quarantined',
+    detail: 'Ausreisser erkannt; keine Lernfreigabe',
+    progress: 18,
+  },
+];
+
+const backtestRuns = [
+  {
+    id: 'bt-xauusd-trend-pullback',
+    name: 'Trend Pullback v0.3',
+    symbol: 'XAUUSD',
+    period: '2024-01 bis 2025-12',
+    marketRegime: 'Trendmarkt / hohe Volatilitaet',
+    profitFactor: '1.84',
+    winrate: '57%',
+    maxDrawdown: '8.6%',
+    status: 'completed',
+    confidenceStability: 'stabil 0.72',
+    outOfSample: 'bestanden',
+  },
+  {
+    id: 'bt-eurusd-mean-reversion',
+    name: 'Mean Reversion Session Filter',
+    symbol: 'EURUSD',
+    period: '2023-06 bis 2025-12',
+    marketRegime: 'Seitwaertsmarkt / London',
+    profitFactor: '1.31',
+    winrate: '53%',
+    maxDrawdown: '5.2%',
+    status: 'paused',
+    confidenceStability: 'mittel 0.58',
+    outOfSample: 'in Review',
+  },
+  {
+    id: 'bt-ger40-breakout',
+    name: 'Opening Breakout Guarded',
+    symbol: 'GER40',
+    period: '2024-03 bis 2025-11',
+    marketRegime: 'News-Markt / hohe Spreads',
+    profitFactor: '0.94',
+    winrate: '46%',
+    maxDrawdown: '13.9%',
+    status: 'quarantined',
+    confidenceStability: 'instabil 0.41',
+    outOfSample: 'fehlgeschlagen',
+  },
+];
+
+const researchArtifacts = [
+  {
+    id: 'walk-forward',
+    label: 'Walk-Forward-Runs',
+    value: '6',
+    detail: '2 bestanden / 3 Review / 1 pausiert',
+    tone: 'info',
+  },
+  {
+    id: 'replay-manifests',
+    label: 'Replay-Manifeste',
+    value: '14',
+    detail: 'nur Manifestdaten, kein Live-Replay',
+    tone: 'good',
+  },
+  {
+    id: 'feature-exports',
+    label: 'Feature-Exporte',
+    value: '9',
+    detail: 'Feature Store Kandidaten fuer Review',
+    tone: 'info',
+  },
+  {
+    id: 'storage',
+    label: t.backtestResearch.storageLoad,
+    value: '38%',
+    detail: 'aktive Runs auf SSD, Archiv spaeter auslagern',
+    tone: 'warn',
+  },
+];
+
+const clusterScores = [
+  { id: 'trend-pullback', label: 'Trend Pullback', score: '82', className: 'cluster-strong' },
+  { id: 'breakout', label: 'Breakout', score: '61', className: 'cluster-medium' },
+  { id: 'mean-reversion', label: 'Mean Reversion', score: '55', className: 'cluster-medium' },
+  { id: 'news-market', label: 'News-Markt', score: '28', className: 'cluster-risk' },
+];
+
+const regimeAnalyses = [
+  {
+    id: 'regime-trend',
+    name: 'Trendmarkt',
+    symbols: 'XAUUSD / US500',
+    detail: 'Pullback-Setups zeigen die stabilste Confidence.',
+    tone: 'good',
+  },
+  {
+    id: 'regime-range',
+    name: 'Seitwaertsmarkt',
+    symbols: 'EURUSD',
+    detail: 'Mean-Reversion nur mit Session- und Spread-Filter.',
+    tone: 'info',
+  },
+  {
+    id: 'regime-news',
+    name: 'News-Markt',
+    symbols: 'GER40 / XAUUSD',
+    detail: 'Keine automatische Freigabe; RiskGuard bleibt aktiv.',
+    tone: 'danger',
+  },
+];
+
 const providers = [
   { name: 'GPT-5.5', role: t.providers.seniorArchitect, status: t.providers.manualRoute },
   { name: 'Ollama / Qwen', role: t.providers.localWorker, status: t.providers.ready },
@@ -377,6 +524,52 @@ function eventCategoryLabel(category) {
     default:
       return t.eventTimeline.runtime;
   }
+}
+
+function researchStatusTone(status) {
+  switch (status) {
+    case 'running':
+      return 'info';
+    case 'planned':
+      return 'warn';
+    case 'paused':
+      return 'muted';
+    case 'completed':
+      return 'good';
+    case 'quarantined':
+      return 'danger';
+    default:
+      return 'info';
+  }
+}
+
+function researchStatusLabel(status) {
+  switch (status) {
+    case 'running':
+      return t.backtestResearch.running;
+    case 'planned':
+      return t.backtestResearch.planned;
+    case 'paused':
+      return t.backtestResearch.paused;
+    case 'completed':
+      return t.backtestResearch.completed;
+    case 'quarantined':
+      return t.backtestResearch.quarantined;
+    default:
+      return status;
+  }
+}
+
+function outOfSampleTone(status) {
+  if (status === 'bestanden') {
+    return 'good';
+  }
+
+  if (status === 'fehlgeschlagen') {
+    return 'danger';
+  }
+
+  return 'warn';
 }
 
 function StatusPill({ children, tone = 'info' }) {
@@ -754,6 +947,170 @@ function TradingWatchPanel() {
   );
 }
 
+function BacktestResearchPanel() {
+  return (
+    <Panel
+      eyebrow={t.backtestResearch.eyebrow}
+      title={t.backtestResearch.title}
+      action={<StatusPill tone="info">{t.backtestResearch.status}</StatusPill>}
+      className="backtest-panel"
+    >
+      <div className="research-safety-strip">
+        <strong>{t.backtestResearch.noLiveTrades}</strong>
+        <strong>{t.backtestResearch.noAutoApproval}</strong>
+        <strong>{t.backtestResearch.humanReviewRequired}</strong>
+      </div>
+
+      <div className="research-overview-grid">
+        <section className="research-block">
+          <div className="research-section-head">
+            <h3>{t.backtestResearch.jobsTitle}</h3>
+            <StatusPill tone="warn">{researchJobs.length} Mock-Jobs</StatusPill>
+          </div>
+          <div className="research-job-list">
+            {researchJobs.map((job) => (
+              <article className={`research-job ${toneClass(researchStatusTone(job.status))}`} key={job.id}>
+                <div className="research-job-top">
+                  <div>
+                    <span>{job.type}</span>
+                    <strong>{job.name}</strong>
+                  </div>
+                  <StatusPill tone={researchStatusTone(job.status)}>
+                    {researchStatusLabel(job.status)}
+                  </StatusPill>
+                </div>
+                <p>{job.detail}</p>
+                <div className="research-progress">
+                  <span>{t.backtestResearch.progress}: {job.progress}%</span>
+                  <i style={{ width: `${job.progress}%` }} />
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="research-block">
+          <div className="research-section-head">
+            <h3>{t.backtestResearch.assetsTitle}</h3>
+            <StatusPill tone="good">{t.common.readOnly}</StatusPill>
+          </div>
+          <div className="research-asset-grid">
+            {researchArtifacts.map((artifact) => (
+              <article className={`research-asset ${toneClass(artifact.tone)}`} key={artifact.id}>
+                <span>{artifact.label}</span>
+                <strong>{artifact.value}</strong>
+                <p>{artifact.detail}</p>
+              </article>
+            ))}
+          </div>
+          <div className="research-replay-note">
+            <span>{t.backtestResearch.replayNote}</span>
+            <strong>Replay-Manifeste zeigen nur gespeicherte Referenzen; kein Replay wird im UI gestartet.</strong>
+          </div>
+        </section>
+      </div>
+
+      <section className="research-section">
+        <div className="research-section-head">
+          <h3>{t.backtestResearch.backtestsTitle}</h3>
+          <StatusPill tone="info">3 Runs</StatusPill>
+        </div>
+        <div className="backtest-card-list">
+          {backtestRuns.map((run) => (
+            <article
+              className={`backtest-card ${toneClass(researchStatusTone(run.status))}`}
+              key={run.id}
+            >
+              <div className="backtest-card-head">
+                <div>
+                  <span>{t.backtestResearch.name}</span>
+                  <strong>{run.name}</strong>
+                </div>
+                <StatusPill tone={researchStatusTone(run.status)}>
+                  {researchStatusLabel(run.status)}
+                </StatusPill>
+              </div>
+              <div className="backtest-meta">
+                <div>
+                  <span>{t.backtestResearch.symbol}</span>
+                  <strong>{run.symbol}</strong>
+                </div>
+                <div>
+                  <span>{t.backtestResearch.period}</span>
+                  <strong>{run.period}</strong>
+                </div>
+                <div>
+                  <span>{t.backtestResearch.marketRegime}</span>
+                  <strong>{run.marketRegime}</strong>
+                </div>
+              </div>
+              <div className="backtest-metrics">
+                <div>
+                  <span>{t.backtestResearch.profitFactor}</span>
+                  <strong>{run.profitFactor}</strong>
+                </div>
+                <div>
+                  <span>{t.backtestResearch.winrate}</span>
+                  <strong>{run.winrate}</strong>
+                </div>
+                <div>
+                  <span>{t.backtestResearch.maxDrawdown}</span>
+                  <strong>{run.maxDrawdown}</strong>
+                </div>
+                <div>
+                  <span>{t.backtestResearch.confidenceStability}</span>
+                  <strong>{run.confidenceStability}</strong>
+                </div>
+              </div>
+              <div className="backtest-oos">
+                <span>{t.backtestResearch.outOfSample}</span>
+                <strong className={toneClass(outOfSampleTone(run.outOfSample))}>
+                  {run.outOfSample}
+                </strong>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <div className="research-analysis-grid">
+        <section className="research-block">
+          <div className="research-section-head">
+            <h3>{t.backtestResearch.clusterTitle}</h3>
+            <StatusPill tone="info">Heatmap</StatusPill>
+          </div>
+          <div className="cluster-heatmap">
+            {clusterScores.map((cluster) => (
+              <div className={`cluster-tile ${cluster.className}`} key={cluster.id}>
+                <span>{cluster.label}</span>
+                <strong>{cluster.score}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="research-block">
+          <div className="research-section-head">
+            <h3>{t.backtestResearch.regimeTitle}</h3>
+            <StatusPill tone="warn">Review</StatusPill>
+          </div>
+          <div className="regime-card-list">
+            {regimeAnalyses.map((regime) => (
+              <article className={`regime-card ${toneClass(regime.tone)}`} key={regime.id}>
+                <div>
+                  <span>{regime.symbols}</span>
+                  <strong>{regime.name}</strong>
+                </div>
+                <p>{regime.detail}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    </Panel>
+  );
+}
+
 function LearningQueuePanel() {
   return (
     <Panel
@@ -979,6 +1336,7 @@ export default function App() {
         <RuntimePanel />
         <HermesBrainPanel />
         <TradingWatchPanel />
+        <BacktestResearchPanel />
         <LearningQueuePanel />
         <ApprovalQueuePanel />
         <ReflectiveLearningPanel />
