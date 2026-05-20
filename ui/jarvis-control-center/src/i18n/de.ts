@@ -11,6 +11,9 @@ export const de = {
     lastError: 'Letzter Fehler',
     fixtureFallback: 'Fixture-Fallback',
     jsonSource: 'HermesRuntime JSON',
+    liveFileSource: 'Live-Datei',
+    unavailable: 'nicht verfuegbar',
+    demoFixtureActive: 'Demo-/Fixture-Daten aktiv',
   },
   header: {
     eyebrow: 'Prototyp v0.1 / lokale Demo-Daten',

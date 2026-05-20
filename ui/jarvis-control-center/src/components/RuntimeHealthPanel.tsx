@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  createRuntimeHealthFallback,
-  loadRuntimeHealth,
-} from '../services/runtimeHealthLoader';
+import { createRuntimeDataFallback, loadRuntimeData } from '../data/runtimeDataAdapter';
 import { de as t } from '../i18n/de';
-import { formatBool, formatOptionalBool, sourceModeLabel } from '../utils/controlCenterFormatters';
+import {
+  formatBool,
+  formatOptionalBool,
+  sourceModeLabel,
+  sourceTone,
+} from '../utils/controlCenterFormatters';
 import { MetricGrid, Panel, StatusPill, toneClass } from './StatusCard';
 
 function buildRuntimeMetrics(runtimeHealth) {
@@ -77,8 +79,10 @@ function RuntimeSafetyFlags({ runtimeHealth }) {
   );
 }
 
-function RuntimeHealthCard({ runtimeHealth, mode, warning }) {
-  const statusTone = runtimeHealth.last_error ? 'danger' : mode === 'json' ? 'good' : 'warn';
+function RuntimeHealthCard({ runtimeHealth, dataSource }) {
+  const statusTone =
+    runtimeHealth.last_error ? 'danger' : dataSource === 'live_file' ? 'good' : 'warn';
+  const fixtureActive = dataSource === 'fixture';
 
   return (
     <div className="runtime-health-card">
@@ -88,7 +92,7 @@ function RuntimeHealthCard({ runtimeHealth, mode, warning }) {
       </div>
       <div>
         <span>{t.common.source}</span>
-        <b>{mode === 'json' ? t.common.jsonSource : t.common.fixtureFallback}</b>
+        <b>{sourceModeLabel(dataSource)}</b>
       </div>
       <div>
         <span>{t.common.timestamp}</span>
@@ -100,7 +104,7 @@ function RuntimeHealthCard({ runtimeHealth, mode, warning }) {
           {runtimeHealth.last_error || t.common.none}
         </b>
       </div>
-      {warning ? <p className="runtime-warning">{warning}</p> : null}
+      {fixtureActive ? <p className="runtime-warning">{t.common.demoFixtureActive}</p> : null}
     </div>
   );
 }
@@ -166,12 +170,13 @@ function RuntimeCapabilityGrid({ runtimeHealth }) {
   );
 }
 
-function RuntimeEventTimeline({ runtimeHealth, mode }) {
+function RuntimeEventTimeline({ runtimeHealth, dataSource }) {
   const events = [
     {
       time: runtimeHealth.timestamp_utc || t.common.latest,
-      title: mode === 'json' ? t.runtime.runtimeJsonLoaded : t.runtime.runtimeFixtureLoaded,
-      detail: mode === 'json' ? t.common.jsonSource : t.common.fixtureFallback,
+      title:
+        dataSource === 'live_file' ? t.runtime.runtimeJsonLoaded : t.runtime.runtimeFixtureLoaded,
+      detail: sourceModeLabel(dataSource),
     },
     {
       time: t.common.readOnly,
@@ -201,19 +206,17 @@ function RuntimeEventTimeline({ runtimeHealth, mode }) {
 }
 
 export function RuntimeHealthPanel() {
-  const [runtimeHealthState, setRuntimeHealthState] = useState(() =>
-    createRuntimeHealthFallback(),
-  );
-  const runtimeHealth = runtimeHealthState.data;
+  const [runtimeData, setRuntimeData] = useState(() => createRuntimeDataFallback());
+  const runtimeHealth = runtimeData.runtimeHealth;
+  const runtimeHealthSource = runtimeData.sources.runtimeHealth;
   const runtimeMetrics = useMemo(() => buildRuntimeMetrics(runtimeHealth), [runtimeHealth]);
-  const sourceTone = runtimeHealthState.mode === 'json' ? 'good' : 'warn';
 
   useEffect(() => {
     let active = true;
 
-    loadRuntimeHealth().then((nextState) => {
+    loadRuntimeData().then((nextState) => {
       if (active) {
-        setRuntimeHealthState(nextState);
+        setRuntimeData(nextState);
       }
     });
 
@@ -226,21 +229,27 @@ export function RuntimeHealthPanel() {
     <Panel
       eyebrow={t.runtime.eyebrow}
       title={t.runtime.title}
-      action={<StatusPill tone={sourceTone}>{sourceModeLabel(runtimeHealthState.mode)}</StatusPill>}
+      action={
+        <StatusPill tone={sourceTone(runtimeHealthSource.dataSource)}>
+          {sourceModeLabel(runtimeHealthSource.dataSource)}
+        </StatusPill>
+      }
       className="runtime-panel"
     >
       <RuntimeHealthCard
         runtimeHealth={runtimeHealth}
-        mode={runtimeHealthState.mode}
-        warning={runtimeHealthState.warning}
+        dataSource={runtimeHealthSource.dataSource}
       />
       <RuntimeSafetyFlags runtimeHealth={runtimeHealth} />
       <StorageStatus runtimeHealth={runtimeHealth} />
       <RuntimeCapabilityGrid runtimeHealth={runtimeHealth} />
       <MetricGrid items={runtimeMetrics} />
-      <RuntimeEventTimeline runtimeHealth={runtimeHealth} mode={runtimeHealthState.mode} />
+      <RuntimeEventTimeline
+        runtimeHealth={runtimeHealth}
+        dataSource={runtimeHealthSource.dataSource}
+      />
       <div className="inline-note">
-        {t.runtime.sourceNote} <code>{runtimeHealth.source_path}</code>
+        {t.runtime.sourceNote} <code>{runtimeHealthSource.path || runtimeHealth.source_path}</code>
       </div>
     </Panel>
   );

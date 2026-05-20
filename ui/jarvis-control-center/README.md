@@ -55,6 +55,18 @@ The adapter is browser-only and read-only. It prepares access to:
 - `HermesRuntime/data/setup_watch/setup_watch.json`
 - future runtime JSONL event files under `HermesRuntime/data/events/runtime/`
 
+`RuntimeHealthPanel` and `SetupWatchPanel` both load through
+`loadRuntimeData()` from the adapter. The normalized shape is:
+
+```ts
+{
+  runtimeHealth,
+  setupWatches,
+  dataSource: 'live_file' | 'fixture' | 'unavailable',
+  warnings,
+}
+```
+
 The adapter uses Vite `/@fs/...` URLs in development, never sends commands to
 `HermesRuntime`, never opens a backend API, never writes runtime files, and does
 not use WebSockets. If a browser or static hosting context blocks local file
@@ -66,3 +78,16 @@ access, the UI keeps working through fixture fallback data:
 
 This means the React prototype can show real local JSON when reachable, but it
 must always remain functional without those files.
+
+Direct local JSON access is not fully reliable in a browser because static
+builds, stricter dev servers, browser sandboxing, CORS rules, or missing files
+can block `file` or `/@fs` reads. The current safe interim path is fixture
+fallback with a small "Demo-/Fixture-Daten aktiv" hint in the UI instead of a
+blocking error.
+
+The later production path should be either:
+
+- a tiny read-only backend bridge that exposes approved JSON snapshots only, or
+- Tauri file access with explicit local permissions.
+
+Both future options must stay read-only from the Control Center perspective.

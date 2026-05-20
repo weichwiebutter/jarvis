@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { createSetupWatchFallback, loadSetupWatches } from '../services/setupWatchLoader';
+import { createRuntimeDataFallback, loadRuntimeData } from '../data/runtimeDataAdapter';
 import { de as t } from '../i18n/de';
-import { confidencePercent, sourceModeLabel } from '../utils/controlCenterFormatters';
+import { confidencePercent, sourceModeLabel, sourceTone } from '../utils/controlCenterFormatters';
 import { Panel, StatusPill, toneClass } from './StatusCard';
 
 function setupStatusTone(status) {
@@ -88,15 +88,16 @@ function setupLifecycle(status) {
 }
 
 export function SetupWatchPanel() {
-  const [setupWatchState, setSetupWatchState] = useState(() => createSetupWatchFallback());
-  const sourceTone = setupWatchState.mode === 'json' ? 'good' : 'warn';
+  const [runtimeData, setRuntimeData] = useState(() => createRuntimeDataFallback());
+  const setupWatchSource = runtimeData.sources.setupWatches;
+  const fixtureActive = setupWatchSource.dataSource === 'fixture';
 
   useEffect(() => {
     let active = true;
 
-    loadSetupWatches().then((nextState) => {
+    loadRuntimeData().then((nextState) => {
       if (active) {
-        setSetupWatchState(nextState);
+        setRuntimeData(nextState);
       }
     });
 
@@ -109,7 +110,11 @@ export function SetupWatchPanel() {
     <Panel
       eyebrow={t.setupWatch.eyebrow}
       title={t.setupWatch.title}
-      action={<StatusPill tone={sourceTone}>{sourceModeLabel(setupWatchState.mode)}</StatusPill>}
+      action={
+        <StatusPill tone={sourceTone(setupWatchSource.dataSource)}>
+          {sourceModeLabel(setupWatchSource.dataSource)}
+        </StatusPill>
+      }
       className="trading-panel"
     >
       <div className="setup-safety-strip">
@@ -118,12 +123,12 @@ export function SetupWatchPanel() {
         <strong>{t.setupWatch.noOrders}</strong>
       </div>
       <div className="watch-source">
-        <span>{setupWatchState.sourcePath}</span>
+        <span>{setupWatchSource.path}</span>
         <strong className="tone-warn">{t.header.noAutoTrading}</strong>
       </div>
-      {setupWatchState.warning ? <p className="runtime-warning">{setupWatchState.warning}</p> : null}
+      {fixtureActive ? <p className="runtime-warning">{t.common.demoFixtureActive}</p> : null}
       <div className="setup-card-list">
-        {setupWatchState.items.map((item) => {
+        {runtimeData.setupWatches.map((item) => {
           const tone = setupStatusTone(item.status);
           const biasKey = setupBiasKey(item.bias);
           const lifecycle = setupLifecycle(item.status);

@@ -12,4 +12,26 @@ export const formatOptionalBool = (value) => {
   return value ? t.common.active : t.common.inactive;
 };
 
-export const sourceModeLabel = (mode) => (mode === 'json' ? 'JSON' : t.common.fixtureFallback);
+export const sourceModeLabel = (source) => {
+  if (source === 'live_file' || source === 'json') {
+    return t.common.liveFileSource;
+  }
+
+  if (source === 'unavailable') {
+    return t.common.unavailable;
+  }
+
+  return t.common.fixtureFallback;
+};
+
+export const sourceTone = (source) => {
+  if (source === 'live_file' || source === 'json') {
+    return 'good';
+  }
+
+  if (source === 'unavailable') {
+    return 'danger';
+  }
+
+  return 'warn';
+};

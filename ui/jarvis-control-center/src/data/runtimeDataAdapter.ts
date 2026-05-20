@@ -2,6 +2,12 @@ import { runtimeHealthMock } from '../fixtures/runtimeHealthMock';
 import { setupWatchMock } from '../fixtures/setupWatchMock';
 import { de } from '../i18n/de';
 
+export const DATA_SOURCE = {
+  LIVE_FILE: 'live_file',
+  FIXTURE: 'fixture',
+  UNAVAILABLE: 'unavailable',
+} as const;
+
 const runtimeHealthDevUrl = __HERMES_RUNTIME_HEALTH_URL__;
 const runtimeEventsBaseUrl = __HERMES_RUNTIME_EVENTS_BASE_URL__;
 const replayManifestUrl = __HERMES_REPLAY_MANIFEST_URL__;
@@ -32,6 +38,11 @@ function asNullableBoolean(value) {
 function asNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function warningFromError(prefix, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return `${prefix}: ${message}`;
 }
 
 async function readJsonReadOnly(url) {
@@ -83,6 +94,30 @@ async function probeReadOnlyFile(url) {
   } catch {
     return null;
   }
+}
+
+function buildSource(dataSource, path, warning = '') {
+  return {
+    dataSource,
+    path,
+    warnings: warning ? [warning] : [],
+  };
+}
+
+function combineDataSource(sources) {
+  if (sources.every((source) => source.dataSource === DATA_SOURCE.LIVE_FILE)) {
+    return DATA_SOURCE.LIVE_FILE;
+  }
+
+  if (sources.some((source) => source.dataSource === DATA_SOURCE.FIXTURE)) {
+    return DATA_SOURCE.FIXTURE;
+  }
+
+  return DATA_SOURCE.UNAVAILABLE;
+}
+
+function combineWarnings(sources) {
+  return sources.flatMap((source) => source.warnings || []);
 }
 
 export function normalizeRuntimeHealth(raw, source) {
@@ -154,29 +189,44 @@ async function enrichRuntimeHealthFiles(runtimeHealth) {
   };
 }
 
-export function createRuntimeHealthFallback(loadError = '') {
-  const warning = loadError
-    ? `Echte Laufzeitstatus-JSON konnte in diesem Browser-Kontext nicht geladen werden: ${loadError}`
-    : 'Lokale Laufzeitstatus-Fixture wird verwendet.';
+function createFixtureRuntimeHealth(warning = '') {
+  const source = buildSource(
+    DATA_SOURCE.FIXTURE,
+    'src/fixtures/runtimeHealthMock.ts',
+    warning,
+  );
 
   return {
-    data: normalizeRuntimeHealth(runtimeHealthMock, {
+    runtimeHealth: normalizeRuntimeHealth(runtimeHealthMock, {
       label: de.common.fixtureFallback,
-      url: 'src/fixtures/runtimeHealthMock.ts',
+      url: source.path,
       readOnly: true,
     }),
-    mode: 'fixture',
-    warning,
+    source,
   };
 }
 
-export async function loadRuntimeHealth() {
+function createFixtureSetupWatches(warning = '') {
+  const source = buildSource(
+    DATA_SOURCE.FIXTURE,
+    'src/fixtures/setupWatchMock.ts',
+    warning,
+  );
+
+  return {
+    setupWatches: setupWatchMock.map(normalizeSetupWatch),
+    source,
+  };
+}
+
+async function loadRuntimeHealthEntry() {
   if (!runtimeHealthDevUrl) {
-    return createRuntimeHealthFallback('No runtime health URL configured.');
+    return createFixtureRuntimeHealth('Runtime Health URL ist nicht konfiguriert.');
   }
 
   try {
     const raw = await readJsonReadOnly(runtimeHealthDevUrl);
+    const source = buildSource(DATA_SOURCE.LIVE_FILE, runtimeHealthPath);
     const runtimeHealth = normalizeRuntimeHealth(raw, {
       label: de.common.jsonSource,
       url: runtimeHealthDevUrl,
@@ -184,31 +234,19 @@ export async function loadRuntimeHealth() {
     });
 
     return {
-      data: await enrichRuntimeHealthFiles(runtimeHealth),
-      mode: 'json',
-      warning: '',
+      runtimeHealth: await enrichRuntimeHealthFiles(runtimeHealth),
+      source,
     };
   } catch (error) {
-    return createRuntimeHealthFallback(error instanceof Error ? error.message : String(error));
+    return createFixtureRuntimeHealth(
+      warningFromError('Runtime Health JSON nicht erreichbar', error),
+    );
   }
 }
 
-export function createSetupWatchFallback(loadError = '') {
-  const warning = loadError
-    ? `Echte Setup-Beobachtungs-JSON konnte in diesem Browser-Kontext nicht geladen werden: ${loadError}`
-    : 'Lokale Setup-Beobachtungs-Fixture wird verwendet.';
-
-  return {
-    items: setupWatchMock.map(normalizeSetupWatch),
-    mode: 'fixture',
-    warning,
-    sourcePath: `src/fixtures/setupWatchMock.ts (${de.common.fixtureFallback})`,
-  };
-}
-
-export async function loadSetupWatches() {
+async function loadSetupWatchesEntry() {
   if (!setupWatchUrl) {
-    return createSetupWatchFallback('No setup watch URL configured.');
+    return createFixtureSetupWatches('Setup Watch URL ist nicht konfiguriert.');
   }
 
   try {
@@ -216,14 +254,96 @@ export async function loadSetupWatches() {
     const items = Array.isArray(raw) ? raw : raw?.candidates || raw?.setup_watches || [];
 
     return {
-      items: items.map(normalizeSetupWatch),
-      mode: 'json',
-      warning: '',
-      sourcePath: setupWatchPath,
+      setupWatches: items.map(normalizeSetupWatch),
+      source: buildSource(DATA_SOURCE.LIVE_FILE, setupWatchPath),
     };
   } catch (error) {
-    return createSetupWatchFallback(error instanceof Error ? error.message : String(error));
+    return createFixtureSetupWatches(
+      warningFromError('Setup Watch JSON nicht erreichbar', error),
+    );
   }
+}
+
+function buildRuntimeData(runtimeEntry, setupEntry) {
+  const sources = {
+    runtimeHealth: runtimeEntry.source,
+    setupWatches: setupEntry.source,
+  };
+  const sourceList = Object.values(sources);
+
+  return {
+    runtimeHealth: runtimeEntry.runtimeHealth,
+    setupWatches: setupEntry.setupWatches,
+    dataSource: combineDataSource(sourceList),
+    warnings: combineWarnings(sourceList),
+    sources,
+  };
+}
+
+export function createRuntimeDataFallback(loadError = '') {
+  const runtimeEntry = createFixtureRuntimeHealth(loadError);
+  const setupEntry = createFixtureSetupWatches(loadError);
+
+  return buildRuntimeData(runtimeEntry, setupEntry);
+}
+
+export async function loadRuntimeData() {
+  const [runtimeEntry, setupEntry] = await Promise.all([
+    loadRuntimeHealthEntry(),
+    loadSetupWatchesEntry(),
+  ]);
+
+  return buildRuntimeData(runtimeEntry, setupEntry);
+}
+
+export function createRuntimeHealthFallback(loadError = '') {
+  const runtimeData = createRuntimeDataFallback(loadError);
+  const source = runtimeData.sources.runtimeHealth;
+
+  return {
+    ...runtimeData,
+    data: runtimeData.runtimeHealth,
+    mode: source.dataSource === DATA_SOURCE.LIVE_FILE ? 'json' : 'fixture',
+    warning: source.warnings[0] || '',
+  };
+}
+
+export async function loadRuntimeHealth() {
+  const runtimeData = await loadRuntimeData();
+  const source = runtimeData.sources.runtimeHealth;
+
+  return {
+    ...runtimeData,
+    data: runtimeData.runtimeHealth,
+    mode: source.dataSource === DATA_SOURCE.LIVE_FILE ? 'json' : 'fixture',
+    warning: source.warnings[0] || '',
+  };
+}
+
+export function createSetupWatchFallback(loadError = '') {
+  const runtimeData = createRuntimeDataFallback(loadError);
+  const source = runtimeData.sources.setupWatches;
+
+  return {
+    ...runtimeData,
+    items: runtimeData.setupWatches,
+    mode: source.dataSource === DATA_SOURCE.LIVE_FILE ? 'json' : 'fixture',
+    warning: source.warnings[0] || '',
+    sourcePath: source.path,
+  };
+}
+
+export async function loadSetupWatches() {
+  const runtimeData = await loadRuntimeData();
+  const source = runtimeData.sources.setupWatches;
+
+  return {
+    ...runtimeData,
+    items: runtimeData.setupWatches,
+    mode: source.dataSource === DATA_SOURCE.LIVE_FILE ? 'json' : 'fixture',
+    warning: source.warnings[0] || '',
+    sourcePath: source.path,
+  };
 }
 
 export async function loadRuntimeEvents(timestampUtc, fallbackItems = []) {
@@ -232,8 +352,8 @@ export async function loadRuntimeEvents(timestampUtc, fallbackItems = []) {
   if (!url) {
     return {
       items: fallbackItems,
-      mode: 'fixture',
-      warning: 'No runtime event URL configured.',
+      dataSource: DATA_SOURCE.FIXTURE,
+      warnings: ['Runtime Event URL ist nicht konfiguriert.'],
       sourcePath: 'runtime events fixture',
     };
   }
@@ -248,26 +368,26 @@ export async function loadRuntimeEvents(timestampUtc, fallbackItems = []) {
 
     return {
       items,
-      mode: 'jsonl',
-      warning: '',
+      dataSource: DATA_SOURCE.LIVE_FILE,
+      warnings: [],
       sourcePath: url,
     };
   } catch (error) {
     return {
       items: fallbackItems,
-      mode: 'fixture',
-      warning: `Echte Runtime-Events konnten in diesem Browser-Kontext nicht geladen werden: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      dataSource: DATA_SOURCE.FIXTURE,
+      warnings: [warningFromError('Runtime Events nicht erreichbar', error)],
       sourcePath: 'runtime events fixture',
     };
   }
 }
 
 export const runtimeDataAdapter = {
+  loadRuntimeData,
   loadRuntimeHealth,
   loadSetupWatches,
   loadRuntimeEvents,
+  createRuntimeDataFallback,
   createRuntimeHealthFallback,
   createSetupWatchFallback,
 };
