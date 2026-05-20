@@ -106,11 +106,88 @@ const learningCandidates = [
   },
 ];
 
-const agentActivity = [
-  { time: '08:10 UTC', title: 'Research-Agent', detail: 'Overnight-Notizen fuer Review zusammengefasst' },
-  { time: '08:14 UTC', title: 'Trading-Beobachter', detail: 'XAUUSD-Setup in Beobachtung verschoben' },
-  { time: '08:17 UTC', title: 'Memory-Agent', detail: '3 Lernkandidaten in Warteschlange' },
-  { time: '08:22 UTC', title: 'Laufzeit-Beobachter', detail: 'Letzten Health-Report als Demo-Sample geladen' },
+const runtimeEvents = [
+  {
+    id: 'runtime-started',
+    time: '08:00:03 UTC',
+    eventType: 'RuntimeStarted',
+    category: 'runtime',
+    severity: 'info',
+    source: 'RuntimeHost',
+    description: 'Hermes Runtime v1 wurde lokal gestartet und initialisiert.',
+  },
+  {
+    id: 'storage-initialized',
+    time: '08:00:05 UTC',
+    eventType: 'StorageInitialized',
+    category: 'runtime',
+    severity: 'info',
+    source: 'StorageManager',
+    description: 'Storage-Pfade, Event Store und Snapshot-Verzeichnisse wurden geprueft.',
+  },
+  {
+    id: 'snapshot-created',
+    time: '08:00:11 UTC',
+    eventType: 'SnapshotCreated',
+    category: 'runtime',
+    severity: 'info',
+    source: 'SnapshotManager',
+    description: 'Ein Runtime-Snapshot wurde geschrieben und mit Hash im Manifest referenziert.',
+  },
+  {
+    id: 'replay-manifest-created',
+    time: '08:00:15 UTC',
+    eventType: 'ReplayManifestCreated',
+    category: 'runtime',
+    severity: 'info',
+    source: 'ReplayManifestService',
+    description: 'Demo-Replay-Manifest fuer spaetere Backtest- und Research-Laeufe ist verfuegbar.',
+  },
+  {
+    id: 'setup-watch-created',
+    time: '08:01:20 UTC',
+    eventType: 'SetupWatchCreated',
+    category: 'trading',
+    severity: 'warning',
+    source: 'SetupWatchService',
+    description: 'XAUUSD Long-Szenario wurde als Beobachtung markiert; keine Orderausfuehrung.',
+  },
+  {
+    id: 'learning-candidate-created',
+    time: '08:02:44 UTC',
+    eventType: 'LearningCandidateCreated',
+    category: 'learning',
+    severity: 'warning',
+    source: 'LearningQueue',
+    description: 'Prediction-Feedback wurde als Lernkandidat vorgemerkt und wartet auf Review.',
+  },
+  {
+    id: 'risk-guard-blocked',
+    time: '08:03:08 UTC',
+    eventType: 'RiskGuardBlocked',
+    category: 'trading',
+    severity: 'critical',
+    source: 'RiskGuard',
+    description: 'Trading-Aktion blockiert: Auto-Trading ist deaktiviert und menschliche Freigabe ist Pflicht.',
+  },
+  {
+    id: 'runtime-stopped',
+    time: '08:04:02 UTC',
+    eventType: 'RuntimeStopped',
+    category: 'runtime',
+    severity: 'info',
+    source: 'RuntimeHost',
+    description: 'Runtime wurde sauber beendet; Event Store bleibt nur lesend im UI sichtbar.',
+  },
+];
+
+const eventLegend = [
+  { label: t.eventTimeline.info, tone: 'info' },
+  { label: t.eventTimeline.warning, tone: 'warn' },
+  { label: t.eventTimeline.critical, tone: 'danger' },
+  { label: t.eventTimeline.trading, tone: 'warn' },
+  { label: t.eventTimeline.learning, tone: 'good' },
+  { label: t.eventTimeline.runtime, tone: 'info' },
 ];
 
 const providers = [
@@ -255,6 +332,50 @@ function riskLabel(risk) {
       return t.learningQueue.mediumRisk;
     default:
       return t.learningQueue.lowRisk;
+  }
+}
+
+function eventSeverityTone(severity) {
+  switch (severity) {
+    case 'critical':
+      return 'danger';
+    case 'warning':
+      return 'warn';
+    default:
+      return 'info';
+  }
+}
+
+function eventSeverityLabel(severity) {
+  switch (severity) {
+    case 'critical':
+      return t.eventTimeline.critical;
+    case 'warning':
+      return t.eventTimeline.warning;
+    default:
+      return t.eventTimeline.info;
+  }
+}
+
+function eventCategoryTone(category) {
+  switch (category) {
+    case 'trading':
+      return 'warn';
+    case 'learning':
+      return 'good';
+    default:
+      return 'info';
+  }
+}
+
+function eventCategoryLabel(category) {
+  switch (category) {
+    case 'trading':
+      return t.eventTimeline.trading;
+    case 'learning':
+      return t.eventTimeline.learning;
+    default:
+      return t.eventTimeline.runtime;
   }
 }
 
@@ -755,20 +876,54 @@ function ReflectiveLearningPanel() {
   );
 }
 
-function AgentTimelinePanel() {
+function RuntimeEventTimelinePanel() {
   return (
-    <Panel eyebrow={t.agents.eyebrow} title={t.agents.title} action={<StatusPill tone="info">{t.agents.mockStream}</StatusPill>}>
-      <ol className="timeline">
-        {agentActivity.map((event) => (
-          <li key={`${event.time}-${event.title}`}>
-            <time>{event.time}</time>
-            <div>
-              <strong>{event.title}</strong>
-              <span>{event.detail}</span>
-            </div>
-          </li>
+    <Panel
+      eyebrow={t.eventTimeline.eyebrow}
+      title={t.eventTimeline.title}
+      action={<StatusPill tone="info">{t.eventTimeline.status}</StatusPill>}
+      className="event-timeline-panel"
+    >
+      <div className="event-safety-strip">
+        <strong>{t.eventTimeline.autoTradingOff}</strong>
+        <strong>{t.eventTimeline.humanReviewRequired}</strong>
+      </div>
+      <div className="event-filter-legend" aria-label={t.eventTimeline.legend}>
+        {eventLegend.map((item) => (
+          <span className={`event-filter ${toneClass(item.tone)}`} key={item.label}>
+            {item.label}
+          </span>
         ))}
-      </ol>
+      </div>
+      <div className="event-timeline-list">
+        {runtimeEvents.map((event) => (
+          <article
+            className={`event-timeline-card severity-${event.severity} category-${event.category}`}
+            key={event.id}
+          >
+            <div className="event-time-block">
+              <time>{event.time}</time>
+              <span>{event.eventType}</span>
+            </div>
+            <div className="event-main">
+              <div className="event-tags">
+                <StatusPill tone={eventSeverityTone(event.severity)}>
+                  {eventSeverityLabel(event.severity)}
+                </StatusPill>
+                <StatusPill tone={eventCategoryTone(event.category)}>
+                  {eventCategoryLabel(event.category)}
+                </StatusPill>
+              </div>
+              <strong>{event.eventType}</strong>
+              <p>{event.description}</p>
+            </div>
+            <div className="event-source-block">
+              <span>{t.eventTimeline.source}</span>
+              <strong>{event.source}</strong>
+            </div>
+          </article>
+        ))}
+      </div>
     </Panel>
   );
 }
@@ -827,7 +982,7 @@ export default function App() {
         <LearningQueuePanel />
         <ApprovalQueuePanel />
         <ReflectiveLearningPanel />
-        <AgentTimelinePanel />
+        <RuntimeEventTimelinePanel />
         <SafetyPanel />
         <CostProviderPanel />
       </div>
