@@ -11,7 +11,7 @@ export const setupWatchMock = [
     trigger_condition: 'Bullish rejection near pullback zone after candle close.',
     invalidation_level: '2360.80',
     time_window_minutes: 30,
-    notes: 'Fixture only. No broker connection, no order execution.',
+    notes: 'Fixture-only. Keine Broker-Verbindung, keine Orderausfuehrung.',
     created_at_utc: '2026-05-20T08:45:00Z',
   },
   {
@@ -26,7 +26,7 @@ export const setupWatchMock = [
     trigger_condition: 'No confirmed directional trigger during the demo window.',
     invalidation_level: 'n/a',
     time_window_minutes: 10,
-    notes: 'Fixture neutral watch expired without signal.',
+    notes: 'Fixture neutral: Beobachtung ohne Signal abgelaufen.',
     created_at_utc: '2026-05-20T08:45:00Z',
   },
   {
@@ -41,7 +41,7 @@ export const setupWatchMock = [
     trigger_condition: 'Break and close above local resistance with acceptable spread.',
     invalidation_level: '18375',
     time_window_minutes: 20,
-    notes: 'Fixture breakout watch. Alerts only, no auto-trading.',
+    notes: 'Fixture Breakout-Beobachtung. Nur Hinweise, kein Auto-Trading.',
     created_at_utc: '2026-05-20T08:45:00Z',
   },
 ] as const;

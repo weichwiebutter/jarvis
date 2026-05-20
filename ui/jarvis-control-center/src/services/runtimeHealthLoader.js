@@ -1,4 +1,5 @@
 import { runtimeHealthMock } from '../fixtures/runtimeHealthMock';
+import { de } from '../i18n/de';
 
 const runtimeHealthDevUrl = __HERMES_RUNTIME_HEALTH_URL__;
 const runtimeEventsBaseUrl = __HERMES_RUNTIME_EVENTS_BASE_URL__;
@@ -100,12 +101,12 @@ async function enrichRuntimeHealthFiles(runtimeHealth) {
 
 export function createRuntimeHealthFallback(loadError = '') {
   const warning = loadError
-    ? `Real runtime health JSON could not be loaded in this browser context: ${loadError}`
-    : 'Using local runtime health fixture.';
+    ? `Echte Laufzeitstatus-JSON konnte in diesem Browser-Kontext nicht geladen werden: ${loadError}`
+    : 'Lokale Laufzeitstatus-Fixture wird verwendet.';
 
   return {
     data: normalizeRuntimeHealth(runtimeHealthMock, {
-      label: 'Fixture fallback',
+      label: de.common.fixtureFallback,
       url: 'src/fixtures/runtimeHealthMock.ts',
       readOnly: true,
     }),
@@ -132,7 +133,7 @@ export async function loadRuntimeHealth() {
     const raw = await response.json();
 
     const runtimeHealth = normalizeRuntimeHealth(raw, {
-      label: 'HermesRuntime JSON',
+      label: de.common.jsonSource,
       url: runtimeHealthDevUrl,
       readOnly: true,
     });

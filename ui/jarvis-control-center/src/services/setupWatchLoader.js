@@ -1,4 +1,5 @@
 import { setupWatchMock } from '../fixtures/setupWatchMock';
+import { de } from '../i18n/de';
 
 const setupWatchUrl = __HERMES_SETUP_WATCH_URL__;
 const setupWatchPath = __HERMES_SETUP_WATCH_PATH__;
@@ -28,14 +29,14 @@ function normalizeSetupWatch(raw) {
 
 export function createSetupWatchFallback(loadError = '') {
   const warning = loadError
-    ? `Real setup watch JSON could not be loaded in this browser context: ${loadError}`
-    : 'Using local setup watch fixture.';
+    ? `Echte Setup-Beobachtungs-JSON konnte in diesem Browser-Kontext nicht geladen werden: ${loadError}`
+    : 'Lokale Setup-Beobachtungs-Fixture wird verwendet.';
 
   return {
     items: setupWatchMock.map(normalizeSetupWatch),
     mode: 'fixture',
     warning,
-    sourcePath: 'src/fixtures/setupWatchMock.ts',
+    sourcePath: `src/fixtures/setupWatchMock.ts (${de.common.fixtureFallback})`,
   };
 }
 
