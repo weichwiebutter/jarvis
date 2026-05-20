@@ -178,6 +178,10 @@ h2 {
   grid-column: span 12;
 }
 
+.storage-retention-panel {
+  grid-column: span 12;
+}
+
 .learning-panel {
   grid-column: span 8;
 }
@@ -961,6 +965,183 @@ h2 {
   gap: 4px;
 }
 
+.storage-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(180px, 0.5fr) minmax(180px, 0.5fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.storage-root-card,
+.storage-threshold-card,
+.storage-bucket,
+.storage-policy-block,
+.storage-rule,
+.storage-safety-rule {
+  border: 1px solid rgba(132, 204, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.68);
+}
+
+.storage-root-card {
+  display: grid;
+  gap: 12px;
+  min-height: 150px;
+  padding: 16px;
+  border-color: rgba(71, 215, 255, 0.26);
+}
+
+.storage-root-card > span,
+.storage-threshold-card span,
+.storage-bucket span,
+.storage-bucket-meter span,
+.storage-rule span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.storage-root-card > strong {
+  color: var(--text);
+  font-size: 1.45rem;
+  overflow-wrap: anywhere;
+}
+
+.storage-main-meter,
+.storage-bucket-meter {
+  display: grid;
+  gap: 8px;
+}
+
+.storage-main-meter div {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.storage-main-meter strong {
+  color: var(--green);
+  font-size: 1.05rem;
+  text-align: right;
+}
+
+.storage-main-meter i,
+.storage-bucket-meter i {
+  display: block;
+  max-width: 100%;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 18px currentColor;
+}
+
+.storage-main-meter i {
+  height: 12px;
+  color: var(--green);
+}
+
+.storage-threshold-card {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  min-height: 150px;
+  padding: 16px;
+  border-color: currentColor;
+}
+
+.storage-threshold-card strong {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.storage-threshold-card p,
+.storage-bucket p {
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.storage-section {
+  margin-top: 16px;
+}
+
+.storage-bucket-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.storage-bucket {
+  display: grid;
+  gap: 12px;
+  min-height: 216px;
+  padding: 15px;
+  border-color: currentColor;
+  box-shadow: inset 4px 0 0 currentColor;
+}
+
+.storage-bucket-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.storage-bucket-head div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.storage-bucket-head strong {
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+.storage-bucket code {
+  overflow-wrap: anywhere;
+}
+
+.storage-bucket-meter i {
+  height: 9px;
+}
+
+.storage-policy-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.storage-policy-block {
+  padding: 14px;
+}
+
+.storage-rule-list,
+.storage-safety-list {
+  display: grid;
+  gap: 10px;
+}
+
+.storage-rule {
+  min-height: 48px;
+  padding: 13px;
+  border-color: rgba(71, 215, 255, 0.18);
+}
+
+.storage-safety-rule {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  padding: 13px;
+  border-color: currentColor;
+  box-shadow: inset 4px 0 0 currentColor;
+}
+
+.storage-safety-rule strong {
+  overflow-wrap: anywhere;
+}
+
 .watch-symbol,
 .queue-item,
 .provider-row,
@@ -1301,6 +1482,7 @@ h2 {
   .runtime-panel,
   .trading-panel,
   .backtest-panel,
+  .storage-retention-panel,
   .learning-panel,
   .approval-panel,
   .reflective-panel,
@@ -1314,8 +1496,14 @@ h2 {
 
   .research-overview-grid,
   .research-analysis-grid,
-  .backtest-card-list {
+  .backtest-card-list,
+  .storage-summary-grid,
+  .storage-policy-grid {
     grid-template-columns: 1fr;
+  }
+
+  .storage-bucket-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .runtime-health-card {
@@ -1360,6 +1548,9 @@ h2 {
   .backtest-meta,
   .backtest-metrics,
   .cluster-heatmap,
+  .storage-summary-grid,
+  .storage-bucket-grid,
+  .storage-policy-grid,
   .storage-status,
   .runtime-capability-grid,
   .runtime-health-card {
@@ -1372,6 +1563,8 @@ h2 {
   .queue-item,
   .research-job-top,
   .backtest-card-head,
+  .storage-bucket-head,
+  .storage-main-meter div,
   .research-section-head,
   .setup-card-top,
   .setup-card-header,

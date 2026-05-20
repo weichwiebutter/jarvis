@@ -337,6 +337,96 @@ const regimeAnalyses = [
   },
 ];
 
+const storageSummary = {
+  root: 'D:/HermesData',
+  freeDiskGb: 888,
+  totalDiskGb: 1200,
+  usedPercent: 26,
+  warningThreshold: '75%',
+  criticalThreshold: '90%',
+};
+
+const storageBuckets = [
+  {
+    id: 'cache',
+    label: t.storageRetention.cache,
+    path: 'HermesData/cache',
+    used: '18 GB',
+    percent: 8,
+    tone: 'good',
+    detail: t.storageRetention.tempCacheShort,
+  },
+  {
+    id: 'events',
+    label: t.storageRetention.events,
+    path: 'HermesData/events',
+    used: '42 GB',
+    percent: 19,
+    tone: 'info',
+    detail: t.storageRetention.eventsCompress,
+  },
+  {
+    id: 'snapshots',
+    label: t.storageRetention.snapshots,
+    path: 'HermesData/snapshots',
+    used: '64 GB',
+    percent: 29,
+    tone: 'info',
+    detail: t.storageRetention.snapshotsRotate,
+  },
+  {
+    id: 'replays',
+    label: t.storageRetention.replays,
+    path: 'HermesData/replays',
+    used: '180 GB',
+    percent: 54,
+    tone: 'warn',
+    detail: 'Replay-Daten spaeter ins Archiv verschieben.',
+  },
+  {
+    id: 'features',
+    label: t.storageRetention.featureStore,
+    path: 'HermesData/features',
+    used: '96 GB',
+    percent: 40,
+    tone: 'info',
+    detail: 'Approved Feature-Sets nur nach Review behalten.',
+  },
+  {
+    id: 'backtests',
+    label: t.storageRetention.backtestRuns,
+    path: 'HermesData/backtests',
+    used: '220 GB',
+    percent: 62,
+    tone: 'warn',
+    detail: t.storageRetention.failedResearchLimit,
+  },
+  {
+    id: 'archive',
+    label: t.storageRetention.archive,
+    path: 'HermesData/archive',
+    used: '310 GB',
+    percent: 68,
+    tone: 'muted',
+    detail: 'Langzeitdaten auf HDD/NAS auslagern.',
+  },
+];
+
+const retentionRules = [
+  t.storageRetention.tempCacheShort,
+  t.storageRetention.eventsCompress,
+  t.storageRetention.snapshotsRotate,
+  t.storageRetention.failedResearchLimit,
+  t.storageRetention.approvedNeverDelete,
+];
+
+const storageSafetyRules = [
+  { label: t.storageRetention.diskGuardActive, tone: 'good' },
+  { label: t.storageRetention.stopResearchCritical, tone: 'warn' },
+  { label: t.storageRetention.safeModeStorage, tone: 'danger' },
+  { label: t.storageRetention.emergencyTempOnly, tone: 'warn' },
+];
+
 const providers = [
   { name: 'GPT-5.5', role: t.providers.seniorArchitect, status: t.providers.manualRoute },
   { name: 'Ollama / Qwen', role: t.providers.localWorker, status: t.providers.ready },
@@ -570,6 +660,18 @@ function outOfSampleTone(status) {
   }
 
   return 'warn';
+}
+
+function storagePressureTone(percent) {
+  if (percent >= 90) {
+    return 'danger';
+  }
+
+  if (percent >= 60) {
+    return 'warn';
+  }
+
+  return 'good';
 }
 
 function StatusPill({ children, tone = 'info' }) {
@@ -1111,6 +1213,99 @@ function BacktestResearchPanel() {
   );
 }
 
+function StorageRetentionPanel() {
+  return (
+    <Panel
+      eyebrow={t.storageRetention.eyebrow}
+      title={t.storageRetention.title}
+      action={<StatusPill tone="warn">{t.storageRetention.status}</StatusPill>}
+      className="storage-retention-panel"
+    >
+      <div className="storage-summary-grid">
+        <article className="storage-root-card">
+          <span>{t.storageRetention.root}</span>
+          <strong>{storageSummary.root}</strong>
+          <div className="storage-main-meter">
+            <div>
+              <span>{t.storageRetention.used}: {storageSummary.usedPercent}%</span>
+              <strong>{storageSummary.freeDiskGb} GB {t.storageRetention.freeDisk}</strong>
+            </div>
+            <i style={{ width: `${storageSummary.usedPercent}%` }} />
+          </div>
+        </article>
+        <article className="storage-threshold-card tone-warn">
+          <span>{t.storageRetention.warningThreshold}</span>
+          <strong>{storageSummary.warningThreshold}</strong>
+          <p>Neue Research- und Replay-Jobs werden spaeter gedrosselt.</p>
+        </article>
+        <article className="storage-threshold-card tone-danger">
+          <span>{t.storageRetention.criticalThreshold}</span>
+          <strong>{storageSummary.criticalThreshold}</strong>
+          <p>Safe Mode und Stop neuer Research-Jobs werden spaeter Pflicht.</p>
+        </article>
+      </div>
+
+      <section className="storage-section">
+        <div className="research-section-head">
+          <h3>{t.storageRetention.dataLake}</h3>
+          <StatusPill tone={storagePressureTone(storageSummary.usedPercent)}>
+            {storageSummary.usedPercent}% {t.storageRetention.used}
+          </StatusPill>
+        </div>
+        <div className="storage-bucket-grid">
+          {storageBuckets.map((bucket) => (
+            <article className={`storage-bucket ${toneClass(bucket.tone)}`} key={bucket.id}>
+              <div className="storage-bucket-head">
+                <div>
+                  <span>{t.storageRetention.path}</span>
+                  <strong>{bucket.label}</strong>
+                </div>
+                <StatusPill tone={bucket.tone}>{bucket.used}</StatusPill>
+              </div>
+              <code>{bucket.path}</code>
+              <div className="storage-bucket-meter">
+                <span>{bucket.percent}% {t.storageRetention.used}</span>
+                <i style={{ width: `${bucket.percent}%` }} />
+              </div>
+              <p>{bucket.detail}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <div className="storage-policy-grid">
+        <section className="storage-policy-block">
+          <div className="research-section-head">
+            <h3>{t.storageRetention.retentionRules}</h3>
+            <StatusPill tone="info">Policy</StatusPill>
+          </div>
+          <div className="storage-rule-list">
+            {retentionRules.map((rule) => (
+              <div className="storage-rule" key={rule}>
+                <span>{rule}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="storage-policy-block">
+          <div className="research-section-head">
+            <h3>{t.storageRetention.storageSafety}</h3>
+            <StatusPill tone="warn">Safety</StatusPill>
+          </div>
+          <div className="storage-safety-list">
+            {storageSafetyRules.map((rule) => (
+              <article className={`storage-safety-rule ${toneClass(rule.tone)}`} key={rule.label}>
+                <strong>{rule.label}</strong>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    </Panel>
+  );
+}
+
 function LearningQueuePanel() {
   return (
     <Panel
@@ -1337,6 +1532,7 @@ export default function App() {
         <HermesBrainPanel />
         <TradingWatchPanel />
         <BacktestResearchPanel />
+        <StorageRetentionPanel />
         <LearningQueuePanel />
         <ApprovalQueuePanel />
         <ReflectiveLearningPanel />
