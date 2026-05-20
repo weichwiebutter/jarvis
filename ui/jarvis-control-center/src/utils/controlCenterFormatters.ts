@@ -1,0 +1,15 @@
+import { de as t } from '../i18n/de';
+
+export const formatBool = (value) => (value ? 'true' : 'false');
+
+export const confidencePercent = (value) => `${Math.round(Number(value || 0) * 100)}%`;
+
+export const formatOptionalBool = (value) => {
+  if (value === null || value === undefined) {
+    return t.common.notReported;
+  }
+
+  return value ? t.common.active : t.common.inactive;
+};
+
+export const sourceModeLabel = (mode) => (mode === 'json' ? 'JSON' : t.common.fixtureFallback);
