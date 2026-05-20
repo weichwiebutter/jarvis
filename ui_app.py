@@ -46,6 +46,15 @@ except Exception as exc:
     _HERMES_UI_STATUS_IMPORT_ERROR = str(exc)
 
 try:
+    from agents.core.hermes_runtime_v1_status import (
+        build_runtime_v1_status as _build_runtime_v1_status,
+    )
+    _HERMES_RUNTIME_V1_IMPORT_ERROR = ""
+except Exception as exc:
+    _build_runtime_v1_status = None
+    _HERMES_RUNTIME_V1_IMPORT_ERROR = str(exc)
+
+try:
     from agents.core.jarvis_home_dashboard_status import (
         build_jarvis_home_dashboard_status as _build_jarvis_home_dashboard_status,
     )
@@ -217,6 +226,7 @@ def _get_hermes_ui_status_payload(optional_task: str = "") -> dict[str, Any]:
             "brain": status.get("brain"),
             "agents": status.get("agents"),
             "runtime": status.get("runtime"),
+            "runtime_v1": status.get("runtime_v1"),
             "ui_panels": status.get("ui_panels"),
             "learning_memory": status.get("learning_memory"),
             "developer_debug": status.get("developer_debug"),
@@ -243,6 +253,68 @@ def _get_hermes_ui_status_payload(optional_task: str = "") -> dict[str, Any]:
         }
 
 
+def _get_runtime_v1_status_payload() -> dict[str, Any]:
+    if _build_runtime_v1_status is None:
+        return {
+            "status": "unavailable",
+            "runtime_state": None,
+            "safe_mode": None,
+            "no_auto_trading": None,
+            "human_review_required": None,
+            "free_disk_gb": None,
+            "pending_jobs": None,
+            "running_jobs": None,
+            "failed_jobs": None,
+            "quarantined_jobs": None,
+            "last_snapshot_id": None,
+            "last_error": None,
+            "source_path": None,
+            "warnings": [
+                f"agents.core.hermes_runtime_v1_status.build_runtime_v1_status unavailable: {_HERMES_RUNTIME_V1_IMPORT_ERROR}"
+            ],
+        }
+
+    try:
+        status = _build_runtime_v1_status()
+    except Exception as exc:
+        return {
+            "status": "error",
+            "runtime_state": None,
+            "safe_mode": None,
+            "no_auto_trading": None,
+            "human_review_required": None,
+            "free_disk_gb": None,
+            "pending_jobs": None,
+            "running_jobs": None,
+            "failed_jobs": None,
+            "quarantined_jobs": None,
+            "last_snapshot_id": None,
+            "last_error": str(exc),
+            "source_path": None,
+            "warnings": [f"build_runtime_v1_status failed: {exc}"],
+        }
+
+    if not isinstance(status, dict):
+        return {
+            "status": "error",
+            "runtime_state": None,
+            "safe_mode": None,
+            "no_auto_trading": None,
+            "human_review_required": None,
+            "free_disk_gb": None,
+            "pending_jobs": None,
+            "running_jobs": None,
+            "failed_jobs": None,
+            "quarantined_jobs": None,
+            "last_snapshot_id": None,
+            "last_error": "Runtime v1 status returned non-dict data.",
+            "source_path": None,
+            "warnings": ["build_runtime_v1_status returned non-dict data."],
+        }
+
+    return status
+
+
 def _safe_status_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -267,6 +339,20 @@ def _status_badge(label: str, value: Any) -> str:
     else:
         color = "#374151"
         background = "#f3f4f6"
+
+    return (
+        f"<span style='display:inline-block;margin:2px 6px 2px 0;"
+        f"padding:3px 8px;border-radius:6px;background:{background};"
+        f"color:{color};font-weight:600;font-size:0.9em'>{label}: {text}</span>"
+    )
+
+
+def _status_bool_badge(label: str, value: Any, expected: bool) -> str:
+    flag = bool(value)
+    safe = flag is expected
+    color = "#15803d" if safe else "#b91c1c"
+    background = "#dcfce7" if safe else "#fee2e2"
+    text = "true" if flag else "false"
 
     return (
         f"<span style='display:inline-block;margin:2px 6px 2px 0;"
@@ -386,6 +472,44 @@ def _format_hermes_ui_status_markdown(status: dict[str, Any]) -> str:
 - Patterns: {_format_list(trading.get("planned_patterns"))}
 - Prediction feedback: `{trading_feedback.get("status", "-")}`
 - cTrader integration: `{trading_ctrader.get("status", "-")} / {trading_ctrader.get("mode", "-")}`
+"""
+
+
+def _format_runtime_v1_health_markdown(runtime_v1: dict[str, Any]) -> str:
+    warnings = [
+        str(warning)
+        for warning in _safe_status_list(runtime_v1.get("warnings"))
+        if str(warning).strip()
+    ]
+    warning_block = (
+        "\n".join(f"- <span style='color:#b45309;font-weight:600'>{warning}</span>" for warning in warnings)
+        if warnings
+        else "- Keine Warnungen."
+    )
+
+    return f"""
+### Hermes Runtime v1 Health
+
+{_status_badge("Status", runtime_v1.get("status", "unavailable"))}
+{_status_badge("Runtime State", runtime_v1.get("runtime_state", "-"))}
+{_status_bool_badge("Safe Mode", runtime_v1.get("safe_mode", False), False)}
+{_status_bool_badge("no_auto_trading", runtime_v1.get("no_auto_trading", True), True)}
+{_status_bool_badge("human_review_required", runtime_v1.get("human_review_required", True), True)}
+
+#### Storage / Jobs
+- Free Disk: `{runtime_v1.get("free_disk_gb", "-")} GB`
+- Pending Jobs: `{runtime_v1.get("pending_jobs", "-")}`
+- Running Jobs: `{runtime_v1.get("running_jobs", "-")}`
+- Failed Jobs: `{runtime_v1.get("failed_jobs", "-")}`
+- Quarantined Jobs: `{runtime_v1.get("quarantined_jobs", "-")}`
+
+#### Snapshot / Source
+- Last Snapshot ID: `{runtime_v1.get("last_snapshot_id") or "-"}`
+- Last Error: `{runtime_v1.get("last_error") or "-"}`
+- Source: `{runtime_v1.get("source_path") or "-"}`
+
+**Warnings**
+{warning_block}
 """
 
 
@@ -699,6 +823,10 @@ def get_hermes_ui_status_for_display(optional_task: str = "") -> str:
 def get_hermes_ui_status_panels(optional_task: str = "") -> tuple[Any, ...]:
     status = _get_hermes_ui_status_payload(optional_task)
     foundation_panels = _get_foundation_panels(status)
+    runtime_v1 = _safe_status_dict(status.get("runtime_v1"))
+    runtime_v1_panel = _safe_status_dict(
+        _safe_status_dict(status.get("ui_panels")).get("runtime_v1_panel")
+    )
     panel_markdowns = [
         _format_foundation_panel_markdown(
             foundation_panels.get(definition["key"], {}),
@@ -711,7 +839,9 @@ def get_hermes_ui_status_panels(optional_task: str = "") -> tuple[Any, ...]:
     return (
         _format_hermes_ui_status_markdown(status),
         format_hermes_foundation_panels(status),
+        _format_runtime_v1_health_markdown(runtime_v1),
         *panel_markdowns,
+        runtime_v1_panel,
         foundation_panels,
         status,
     )
@@ -954,9 +1084,12 @@ def refresh_home_dashboard() -> tuple[
     str,
     str,
     str,
+    str,
+    dict[str, Any],
     dict[str, Any],
 ]:
     status = _get_home_dashboard_payload()
+    runtime_v1 = _get_runtime_v1_status_payload()
     market_watch = _safe_status_dict(status.get("market_watch"))
     weather = _safe_status_dict(status.get("weather"))
     runtime = _safe_status_dict(status.get("runtime"))
@@ -975,6 +1108,8 @@ def refresh_home_dashboard() -> tuple[
         _format_agents_panel(active_agents),
         _format_taskline_panel(taskline),
         _format_runtime_summary_panel(runtime),
+        _format_runtime_v1_health_markdown(runtime_v1),
+        runtime_v1,
         _format_home_dashboard_warnings(status),
         status,
     )
@@ -1387,6 +1522,14 @@ def build_app() -> gr.Blocks:
                 value="### Runtime Kurzstatus\nNoch nicht geladen.",
             )
 
+            with gr.Accordion("Hermes Runtime v1 Health", open=True):
+                home_runtime_v1_panel = gr.Markdown(
+                    value="### Hermes Runtime v1 Health\nNoch nicht geladen.",
+                )
+                home_runtime_v1_json = gr.JSON(
+                    label="Hermes Runtime v1 Health JSON",
+                )
+
             with gr.Accordion("Advanced JSON", open=False):
                 home_dashboard_json = gr.JSON(
                     label="Jarvis Home Dashboard Raw JSON",
@@ -1404,6 +1547,8 @@ def build_app() -> gr.Blocks:
                     home_agents_panel,
                     home_taskline_panel,
                     home_runtime_panel,
+                    home_runtime_v1_panel,
+                    home_runtime_v1_json,
                     home_warnings_panel,
                     home_dashboard_json,
                 ],
@@ -1949,6 +2094,14 @@ def build_app() -> gr.Blocks:
                 value="Noch keine Foundation-Panels geladen. Klicke auf Refresh.",
             )
 
+            with gr.Accordion("Hermes Runtime v1 Health", open=True):
+                hermes_runtime_v1_panel = gr.Markdown(
+                    value="Noch nicht geladen.",
+                )
+                hermes_runtime_v1_json = gr.JSON(
+                    label="Hermes Runtime v1 Panel JSON",
+                )
+
             with gr.Row():
                 with gr.Column(scale=1):
                     with gr.Accordion("Runtime Supervisor", open=False):
@@ -2003,6 +2156,7 @@ def build_app() -> gr.Blocks:
                 outputs=[
                     hermes_status_summary,
                     hermes_foundation_summary,
+                    hermes_runtime_v1_panel,
                     hermes_runtime_supervisor_panel,
                     hermes_shared_memory_panel,
                     hermes_skills_panel,
@@ -2011,6 +2165,7 @@ def build_app() -> gr.Blocks:
                     hermes_cost_optimization_panel,
                     hermes_mcp_tools_panel,
                     hermes_reflective_learning_panel,
+                    hermes_runtime_v1_json,
                     hermes_foundation_json,
                     hermes_status_json,
                 ],
@@ -2022,6 +2177,7 @@ def build_app() -> gr.Blocks:
                 outputs=[
                     hermes_status_summary,
                     hermes_foundation_summary,
+                    hermes_runtime_v1_panel,
                     hermes_runtime_supervisor_panel,
                     hermes_shared_memory_panel,
                     hermes_skills_panel,
@@ -2030,6 +2186,7 @@ def build_app() -> gr.Blocks:
                     hermes_cost_optimization_panel,
                     hermes_mcp_tools_panel,
                     hermes_reflective_learning_panel,
+                    hermes_runtime_v1_json,
                     hermes_foundation_json,
                     hermes_status_json,
                 ],
