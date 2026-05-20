@@ -1,11 +1,39 @@
+import { runtimeHealthMock } from './fixtures/runtimeHealthMock';
+
+const formatBool = (value) => (value ? 'true' : 'false');
+
 const runtimeMetrics = [
-  { label: 'Runtime State', value: 'stopped / ready', tone: 'info' },
-  { label: 'Safe Mode', value: 'false', tone: 'good' },
-  { label: 'no_auto_trading', value: 'true', tone: 'warn' },
-  { label: 'human_review_required', value: 'true', tone: 'warn' },
-  { label: 'Free Disk', value: '888 GB', tone: 'good' },
-  { label: 'Jobs', value: '1 pending / 0 running / 0 failed', tone: 'info' },
-  { label: 'Last Snapshot', value: 'runtime-snap-2026-05-20-001', tone: 'info' },
+  { label: 'runtime_state', value: runtimeHealthMock.runtime_state, tone: 'info' },
+  { label: 'free_disk_gb', value: `${runtimeHealthMock.free_disk_gb} GB`, tone: 'good' },
+  { label: 'pending_jobs', value: runtimeHealthMock.pending_jobs, tone: 'warn' },
+  { label: 'running_jobs', value: runtimeHealthMock.running_jobs, tone: 'info' },
+  { label: 'failed_jobs', value: runtimeHealthMock.failed_jobs, tone: 'good' },
+  { label: 'quarantined_jobs', value: runtimeHealthMock.quarantined_jobs, tone: 'good' },
+  { label: 'last_snapshot_id', value: runtimeHealthMock.last_snapshot_id, tone: 'info' },
+];
+
+const runtimeSafetyFlags = [
+  {
+    label: 'safe_mode',
+    value: runtimeHealthMock.safe_mode,
+    expected: false,
+    tone: 'good',
+    detail: 'Runtime is not forced into degraded safety mode.',
+  },
+  {
+    label: 'no_auto_trading',
+    value: runtimeHealthMock.no_auto_trading,
+    expected: true,
+    tone: 'warn',
+    detail: 'Trading automation is blocked in this prototype phase.',
+  },
+  {
+    label: 'human_review_required',
+    value: runtimeHealthMock.human_review_required,
+    expected: true,
+    tone: 'warn',
+    detail: 'Frank approval remains mandatory before any durable action.',
+  },
 ];
 
 const tradingWatch = [
@@ -90,6 +118,27 @@ function MetricGrid({ items }) {
   );
 }
 
+function RuntimeSafetyFlags() {
+  return (
+    <div className="runtime-safety-strip" aria-label="Hermes Runtime v1 safety flags">
+      {runtimeSafetyFlags.map((flag) => {
+        const matchesExpected = flag.value === flag.expected;
+        const tone = matchesExpected ? flag.tone : 'danger';
+
+        return (
+          <article className={`runtime-flag ${toneClass(tone)}`} key={flag.label}>
+            <div>
+              <span>{flag.label}</span>
+              <strong>{formatBool(flag.value)}</strong>
+            </div>
+            <p>{flag.detail}</p>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
 function Header() {
   return (
     <header className="hero-shell">
@@ -119,10 +168,11 @@ function RuntimePanel() {
       action={<StatusPill tone="good">read-only sample</StatusPill>}
       className="runtime-panel"
     >
+      <RuntimeSafetyFlags />
       <MetricGrid items={runtimeMetrics} />
       <div className="inline-note">
         Example structure mirrors <code>HermesRuntime/data/reports/runtime_health.json</code>, but
-        this prototype keeps all values as local mock data.
+        this prototype keeps all values in <code>src/fixtures/runtimeHealthMock.ts</code>.
       </div>
     </Panel>
   );

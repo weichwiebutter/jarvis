@@ -1,0 +1,17 @@
+export const runtimeHealthMock = {
+  status: 'ready',
+  timestamp_utc: '2026-05-20T08:30:00Z',
+  runtime_state: 'stopped',
+  safe_mode: false,
+  no_auto_trading: true,
+  human_review_required: true,
+  free_disk_gb: 888.4,
+  pending_jobs: 1,
+  running_jobs: 0,
+  failed_jobs: 0,
+  quarantined_jobs: 0,
+  last_snapshot_id: 'runtime-snap-2026-05-20-001',
+  last_error: null,
+  source_path: 'HermesRuntime/data/reports/runtime_health.json',
+  warnings: [],
+} as const;

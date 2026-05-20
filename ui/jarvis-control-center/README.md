@@ -22,6 +22,6 @@ npm run dev
 - No runtime writes
 - No direct reads from `HermesRuntime`
 
-The Runtime Health panel mirrors the shape of
-`HermesRuntime/data/reports/runtime_health.json` as example data, but the current
-prototype does not read that file.
+The Runtime Health panel uses `src/fixtures/runtimeHealthMock.ts`. The fixture
+mirrors the shape of `HermesRuntime/data/reports/runtime_health.json` as example
+data, but the current prototype does not read that file.
