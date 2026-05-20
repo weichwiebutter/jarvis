@@ -3,7 +3,7 @@
 First separated React/Vite prototype for the future Jarvis Control Center.
 
 This prototype is intentionally isolated from the existing Gradio test UI and from
-`HermesRuntime`. It uses local mock data only.
+`HermesRuntime`. It never sends commands to the runtime and does not write files.
 
 ## Start
 
@@ -20,8 +20,23 @@ npm run dev
 - No cTrader connection
 - No live quotes
 - No runtime writes
-- No direct reads from `HermesRuntime`
+- Read-only browser fetch for `HermesRuntime/data/reports/runtime_health.json`
 
-The Runtime Health panel uses `src/fixtures/runtimeHealthMock.ts`. The fixture
-mirrors the shape of `HermesRuntime/data/reports/runtime_health.json` as example
-data, but the current prototype does not read that file.
+## Runtime Health JSON
+
+In Vite dev mode, the Runtime Health panel tries to load the real file through a
+read-only `/@fs/...` URL configured in `vite.config.js`:
+
+```text
+HermesRuntime/data/reports/runtime_health.json
+```
+
+This is a browser fetch of an existing JSON file. It does not start
+`HermesRuntime`, does not open a backend API, and does not write to runtime data.
+The UI also performs optional read-only file probes for the matching runtime
+event-store JSONL file and the latest replay manifest, so the Event Store and
+Replay Manifest indicators can become active when those files are reachable.
+
+If the browser cannot access that path, for example in a static build or a
+stricter browser/server context, the UI falls back to
+`src/fixtures/runtimeHealthMock.ts` and shows a visible fallback warning.

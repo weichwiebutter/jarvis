@@ -1,40 +1,59 @@
-import { runtimeHealthMock } from './fixtures/runtimeHealthMock';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  createRuntimeHealthFallback,
+  loadRuntimeHealth,
+} from './services/runtimeHealthLoader';
 
 const formatBool = (value) => (value ? 'true' : 'false');
+const formatOptionalBool = (value) => {
+  if (value === null || value === undefined) {
+    return 'not reported';
+  }
 
-const runtimeMetrics = [
-  { label: 'runtime_state', value: runtimeHealthMock.runtime_state, tone: 'info' },
-  { label: 'free_disk_gb', value: `${runtimeHealthMock.free_disk_gb} GB`, tone: 'good' },
-  { label: 'pending_jobs', value: runtimeHealthMock.pending_jobs, tone: 'warn' },
-  { label: 'running_jobs', value: runtimeHealthMock.running_jobs, tone: 'info' },
-  { label: 'failed_jobs', value: runtimeHealthMock.failed_jobs, tone: 'good' },
-  { label: 'quarantined_jobs', value: runtimeHealthMock.quarantined_jobs, tone: 'good' },
-  { label: 'last_snapshot_id', value: runtimeHealthMock.last_snapshot_id, tone: 'info' },
-];
+  return value ? 'active' : 'inactive';
+};
 
-const runtimeSafetyFlags = [
-  {
-    label: 'safe_mode',
-    value: runtimeHealthMock.safe_mode,
-    expected: false,
-    tone: 'good',
-    detail: 'Runtime is not forced into degraded safety mode.',
-  },
-  {
-    label: 'no_auto_trading',
-    value: runtimeHealthMock.no_auto_trading,
-    expected: true,
-    tone: 'warn',
-    detail: 'Trading automation is blocked in this prototype phase.',
-  },
-  {
-    label: 'human_review_required',
-    value: runtimeHealthMock.human_review_required,
-    expected: true,
-    tone: 'warn',
-    detail: 'Frank approval remains mandatory before any durable action.',
-  },
-];
+function buildRuntimeMetrics(runtimeHealth) {
+  return [
+    { label: 'runtime_state', value: runtimeHealth.runtime_state, tone: 'info' },
+    { label: 'free_disk_gb', value: `${runtimeHealth.free_disk_gb} GB`, tone: 'good' },
+    { label: 'pending_jobs', value: runtimeHealth.pending_jobs, tone: 'warn' },
+    { label: 'running_jobs', value: runtimeHealth.running_jobs, tone: 'info' },
+    { label: 'failed_jobs', value: runtimeHealth.failed_jobs, tone: runtimeHealth.failed_jobs ? 'danger' : 'good' },
+    {
+      label: 'quarantined_jobs',
+      value: runtimeHealth.quarantined_jobs,
+      tone: runtimeHealth.quarantined_jobs ? 'danger' : 'good',
+    },
+    { label: 'last_snapshot_id', value: runtimeHealth.last_snapshot_id || '-', tone: 'info' },
+  ];
+}
+
+function buildRuntimeSafetyFlags(runtimeHealth) {
+  return [
+    {
+      label: 'safe_mode',
+      value: runtimeHealth.safe_mode,
+      expected: false,
+      tone: 'good',
+      detail: 'Runtime is not forced into degraded safety mode.',
+    },
+    {
+      label: 'no_auto_trading',
+      value: runtimeHealth.no_auto_trading,
+      expected: true,
+      tone: 'warn',
+      detail: 'Trading automation is blocked in this prototype phase.',
+    },
+    {
+      label: 'human_review_required',
+      value: runtimeHealth.human_review_required,
+      expected: true,
+      tone: 'warn',
+      detail: 'Frank approval remains mandatory before any durable action.',
+    },
+  ];
+}
 
 const tradingWatch = [
   {
@@ -118,7 +137,9 @@ function MetricGrid({ items }) {
   );
 }
 
-function RuntimeSafetyFlags() {
+function RuntimeSafetyFlags({ runtimeHealth }) {
+  const runtimeSafetyFlags = buildRuntimeSafetyFlags(runtimeHealth);
+
   return (
     <div className="runtime-safety-strip" aria-label="Hermes Runtime v1 safety flags">
       {runtimeSafetyFlags.map((flag) => {
@@ -136,6 +157,129 @@ function RuntimeSafetyFlags() {
         );
       })}
     </div>
+  );
+}
+
+function RuntimeHealthCard({ runtimeHealth, mode, warning }) {
+  const statusTone = runtimeHealth.last_error ? 'danger' : mode === 'json' ? 'good' : 'warn';
+
+  return (
+    <div className="runtime-health-card">
+      <div>
+        <p className="eyebrow">Runtime Status Badge</p>
+        <strong className={toneClass(statusTone)}>{runtimeHealth.status}</strong>
+      </div>
+      <div>
+        <span>Source</span>
+        <b>{runtimeHealth.source.label}</b>
+      </div>
+      <div>
+        <span>Timestamp</span>
+        <b>{runtimeHealth.timestamp_utc || 'not reported'}</b>
+      </div>
+      <div>
+        <span>Last Error</span>
+        <b className={runtimeHealth.last_error ? 'tone-danger' : 'tone-good'}>
+          {runtimeHealth.last_error || 'none'}
+        </b>
+      </div>
+      {warning ? <p className="runtime-warning">{warning}</p> : null}
+    </div>
+  );
+}
+
+function StorageStatus({ runtimeHealth }) {
+  const hasJobIssues = runtimeHealth.failed_jobs > 0 || runtimeHealth.quarantined_jobs > 0;
+
+  return (
+    <div className="storage-status">
+      <div>
+        <span>Storage Status</span>
+        <strong className="tone-good">{runtimeHealth.free_disk_gb} GB free</strong>
+      </div>
+      <div>
+        <span>Queue</span>
+        <strong className={hasJobIssues ? 'tone-danger' : 'tone-info'}>
+          {runtimeHealth.pending_jobs} pending / {runtimeHealth.running_jobs} running
+        </strong>
+      </div>
+      <div>
+        <span>Problem Jobs</span>
+        <strong className={hasJobIssues ? 'tone-danger' : 'tone-good'}>
+          {runtimeHealth.failed_jobs} failed / {runtimeHealth.quarantined_jobs} quarantined
+        </strong>
+      </div>
+    </div>
+  );
+}
+
+function RuntimeCapabilityGrid({ runtimeHealth }) {
+  const capabilities = [
+    {
+      label: 'Event Store Active',
+      value: runtimeHealth.event_store_active,
+      detail: 'Optional runtime-health flag; fixture reports active.',
+    },
+    {
+      label: 'Replay Manifest Available',
+      value: runtimeHealth.replay_manifest_available,
+      detail: 'Optional runtime-health flag; fixture reports available.',
+    },
+  ];
+
+  return (
+    <div className="runtime-capability-grid">
+      {capabilities.map((capability) => {
+        const tone =
+          capability.value === null || capability.value === undefined
+            ? 'muted'
+            : capability.value
+              ? 'good'
+              : 'warn';
+
+        return (
+          <article className={`runtime-capability ${toneClass(tone)}`} key={capability.label}>
+            <span>{capability.label}</span>
+            <strong>{formatOptionalBool(capability.value)}</strong>
+            <p>{capability.detail}</p>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function RuntimeEventTimeline({ runtimeHealth, mode }) {
+  const events = [
+    {
+      time: runtimeHealth.timestamp_utc || 'latest',
+      title: mode === 'json' ? 'RuntimeHealthJsonLoaded' : 'RuntimeHealthFixtureLoaded',
+      detail: runtimeHealth.source.label,
+    },
+    {
+      time: 'read-only',
+      title: 'StorageStatusObserved',
+      detail: `${runtimeHealth.free_disk_gb} GB free disk reported`,
+    },
+    {
+      time: 'read-only',
+      title: 'SnapshotReferenceObserved',
+      detail: runtimeHealth.last_snapshot_id || 'No snapshot id reported',
+    },
+  ];
+
+  return (
+    <ol className="runtime-event-timeline">
+      {events.map((event) => (
+        <li key={`${event.title}-${event.detail}`}>
+          <span>{event.time}</span>
+          <div>
+            <strong>{event.title}</strong>
+            <p>{event.detail}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -161,18 +305,47 @@ function Header() {
 }
 
 function RuntimePanel() {
+  const [runtimeHealthState, setRuntimeHealthState] = useState(() =>
+    createRuntimeHealthFallback(),
+  );
+  const runtimeHealth = runtimeHealthState.data;
+  const runtimeMetrics = useMemo(() => buildRuntimeMetrics(runtimeHealth), [runtimeHealth]);
+  const sourceTone = runtimeHealthState.mode === 'json' ? 'good' : 'warn';
+
+  useEffect(() => {
+    let active = true;
+
+    loadRuntimeHealth().then((nextState) => {
+      if (active) {
+        setRuntimeHealthState(nextState);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <Panel
       eyebrow="Runtime Health"
       title="Hermes Runtime v1"
-      action={<StatusPill tone="good">read-only sample</StatusPill>}
+      action={<StatusPill tone={sourceTone}>{runtimeHealthState.mode}</StatusPill>}
       className="runtime-panel"
     >
-      <RuntimeSafetyFlags />
+      <RuntimeHealthCard
+        runtimeHealth={runtimeHealth}
+        mode={runtimeHealthState.mode}
+        warning={runtimeHealthState.warning}
+      />
+      <RuntimeSafetyFlags runtimeHealth={runtimeHealth} />
+      <StorageStatus runtimeHealth={runtimeHealth} />
+      <RuntimeCapabilityGrid runtimeHealth={runtimeHealth} />
       <MetricGrid items={runtimeMetrics} />
+      <RuntimeEventTimeline runtimeHealth={runtimeHealth} mode={runtimeHealthState.mode} />
       <div className="inline-note">
-        Example structure mirrors <code>HermesRuntime/data/reports/runtime_health.json</code>, but
-        this prototype keeps all values in <code>src/fixtures/runtimeHealthMock.ts</code>.
+        The loader attempts a read-only browser fetch from <code>{runtimeHealth.source_path}</code>.
+        If the browser blocks that file path, the panel uses <code>src/fixtures/runtimeHealthMock.ts</code>.
       </div>
     </Panel>
   );
