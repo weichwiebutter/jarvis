@@ -46,6 +46,7 @@ export function normalizeRuntimeHealth(raw, source) {
     running_jobs: asNumber(raw?.running_jobs ?? raw?.runningJobs, 0),
     failed_jobs: asNumber(raw?.failed_jobs ?? raw?.failedJobs, 0),
     quarantined_jobs: asNumber(raw?.quarantined_jobs ?? raw?.quarantinedJobs, 0),
+    active_setup_watches: asNumber(raw?.active_setup_watches ?? raw?.activeSetupWatches, 0),
     last_snapshot_id: raw?.last_snapshot_id || raw?.lastSnapshotId || null,
     last_error: raw?.last_error || raw?.lastError || null,
     event_store_active: asNullableBoolean(raw?.event_store_active ?? raw?.eventStoreActive),

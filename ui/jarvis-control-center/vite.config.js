@@ -9,6 +9,7 @@ const repoRoot = resolve(projectDir, '../..');
 const runtimeHealthPath = resolve(repoRoot, 'HermesRuntime/data/reports/runtime_health.json');
 const runtimeEventsPath = resolve(repoRoot, 'HermesRuntime/data/events/runtime');
 const replayManifestPath = resolve(repoRoot, 'HermesRuntime/data/replays/manifests');
+const setupWatchPath = resolve(repoRoot, 'HermesRuntime/data/setup_watch/setup_watch.json');
 
 function findLatestReplayManifest() {
   try {
@@ -33,9 +34,11 @@ export default defineConfig({
     __HERMES_REPLAY_MANIFEST_URL__: JSON.stringify(
       latestReplayManifestPath ? `/@fs/${latestReplayManifestPath}` : '',
     ),
+    __HERMES_SETUP_WATCH_URL__: JSON.stringify(`/@fs/${setupWatchPath}`),
     __HERMES_RUNTIME_HEALTH_PATH__: JSON.stringify(
       'HermesRuntime/data/reports/runtime_health.json',
     ),
+    __HERMES_SETUP_WATCH_PATH__: JSON.stringify('HermesRuntime/data/setup_watch/setup_watch.json'),
   },
   server: {
     fs: {

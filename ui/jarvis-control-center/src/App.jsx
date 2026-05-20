@@ -3,8 +3,13 @@ import {
   createRuntimeHealthFallback,
   loadRuntimeHealth,
 } from './services/runtimeHealthLoader';
+import {
+  createSetupWatchFallback,
+  loadSetupWatches,
+} from './services/setupWatchLoader';
 
 const formatBool = (value) => (value ? 'true' : 'false');
+const confidencePercent = (value) => `${Math.round(Number(value || 0) * 100)}%`;
 const formatOptionalBool = (value) => {
   if (value === null || value === undefined) {
     return 'not reported';
@@ -25,6 +30,7 @@ function buildRuntimeMetrics(runtimeHealth) {
       value: runtimeHealth.quarantined_jobs,
       tone: runtimeHealth.quarantined_jobs ? 'danger' : 'good',
     },
+    { label: 'active_setup_watches', value: runtimeHealth.active_setup_watches, tone: 'warn' },
     { label: 'last_snapshot_id', value: runtimeHealth.last_snapshot_id || '-', tone: 'info' },
   ];
 }
@@ -55,33 +61,6 @@ function buildRuntimeSafetyFlags(runtimeHealth) {
   ];
 }
 
-const tradingWatch = [
-  {
-    symbol: 'XAUUSD',
-    status: 'Setup watching',
-    confidence: '68%',
-    zone: 'Entry zone 2368.20 - 2371.80',
-    risk: 'SL 2361.40 / TP 2382.00',
-    tone: 'warn',
-  },
-  {
-    symbol: 'EURUSD',
-    status: 'Neutral',
-    confidence: '42%',
-    zone: 'No active trigger',
-    risk: 'Wait for London session structure',
-    tone: 'muted',
-  },
-  {
-    symbol: 'GER40',
-    status: 'No-trade filter',
-    confidence: '31%',
-    zone: 'Spread and volatility filter active',
-    risk: 'No signal allowed',
-    tone: 'danger',
-  },
-];
-
 const learningQueue = [
   { title: 'XAUUSD pullback cluster', meta: 'Prediction -> outcome pending review', score: '0.74' },
   { title: 'EURUSD session filter', meta: 'No-trade zone candidate', score: '0.62' },
@@ -103,6 +82,23 @@ const providers = [
 
 function toneClass(tone) {
   return `tone-${tone || 'info'}`;
+}
+
+function setupStatusTone(status) {
+  switch (status) {
+    case 'watching':
+      return 'warn';
+    case 'armed':
+      return 'info';
+    case 'triggered':
+      return 'good';
+    case 'expired':
+      return 'muted';
+    case 'invalidated':
+      return 'danger';
+    default:
+      return 'info';
+  }
 }
 
 function StatusPill({ children, tone = 'info' }) {
@@ -381,22 +377,88 @@ function HermesBrainPanel() {
 }
 
 function TradingWatchPanel() {
+  const [setupWatchState, setSetupWatchState] = useState(() => createSetupWatchFallback());
+  const sourceTone = setupWatchState.mode === 'json' ? 'good' : 'warn';
+
+  useEffect(() => {
+    let active = true;
+
+    loadSetupWatches().then((nextState) => {
+      if (active) {
+        setSetupWatchState(nextState);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
-    <Panel eyebrow="Trading Watch" title="Setup Watch" action={<StatusPill tone="warn">alerts only</StatusPill>}>
-      <div className="watch-list">
-        {tradingWatch.map((item) => (
-          <article className="watch-row" key={item.symbol}>
-            <div className="watch-symbol">
-              <strong>{item.symbol}</strong>
-              <StatusPill tone={item.tone}>{item.status}</StatusPill>
-            </div>
-            <div className="watch-detail">
-              <span>Confidence {item.confidence}</span>
-              <span>{item.zone}</span>
-              <span>{item.risk}</span>
-            </div>
-          </article>
-        ))}
+    <Panel
+      eyebrow="Trading Watch"
+      title="Setup Watch"
+      action={<StatusPill tone={sourceTone}>{setupWatchState.mode}</StatusPill>}
+      className="trading-panel"
+    >
+      <div className="watch-source">
+        <span>{setupWatchState.sourcePath}</span>
+        <strong className="tone-warn">alerts only / no_auto_trading</strong>
+      </div>
+      {setupWatchState.warning ? <p className="runtime-warning">{setupWatchState.warning}</p> : null}
+      <div className="setup-card-list">
+        {setupWatchState.items.map((item) => {
+          const tone = setupStatusTone(item.status);
+
+          return (
+            <article className={`setup-card ${toneClass(tone)}`} key={item.setup_id}>
+              <div className="setup-card-header">
+                <div>
+                  <strong>{item.symbol}</strong>
+                  <span>{item.bias}</span>
+                </div>
+                <StatusPill tone={tone}>{item.status}</StatusPill>
+              </div>
+              <div className="confidence-meter">
+                <div>
+                  <span>Confidence</span>
+                  <strong>{confidencePercent(item.confidence)}</strong>
+                </div>
+                <i style={{ width: confidencePercent(item.confidence) }} />
+              </div>
+              <div className="setup-levels">
+                <div>
+                  <span>Entry</span>
+                  <strong>{item.entry_zone}</strong>
+                </div>
+                <div>
+                  <span>Stop</span>
+                  <strong>{item.suggested_stop_loss}</strong>
+                </div>
+                <div>
+                  <span>Target</span>
+                  <strong>{item.suggested_target}</strong>
+                </div>
+                <div>
+                  <span>Invalidation</span>
+                  <strong>{item.invalidation_level}</strong>
+                </div>
+              </div>
+              <div className="setup-trigger">
+                <span>Trigger</span>
+                <p>{item.trigger_condition}</p>
+              </div>
+              <div className="setup-foot">
+                <span>{item.time_window_minutes} min window</span>
+                <span>{item.notes}</span>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <div className="inline-note">
+        Setup Watch is a local demo status feed. It does not place orders, connect to a broker,
+        request market data, or enable auto-trading.
       </div>
     </Panel>
   );

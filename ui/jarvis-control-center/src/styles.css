@@ -170,6 +170,10 @@ h2 {
   grid-column: span 8;
 }
 
+.trading-panel {
+  grid-column: span 8;
+}
+
 .panel-header {
   display: flex;
   align-items: flex-start;
@@ -412,6 +416,7 @@ h2 {
 }
 
 .watch-list,
+.setup-card-list,
 .queue-list,
 .provider-list,
 .safety-stack {
@@ -431,6 +436,114 @@ h2 {
   display: grid;
   gap: 12px;
   padding: 14px;
+}
+
+.watch-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(132, 204, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.58);
+}
+
+.watch-source span,
+.setup-card-header span,
+.setup-levels span,
+.setup-trigger span,
+.setup-foot span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.setup-card-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.setup-card {
+  display: grid;
+  gap: 12px;
+  min-height: 360px;
+  padding: 15px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.68);
+}
+
+.setup-card-header,
+.confidence-meter div,
+.setup-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.setup-card-header div {
+  display: grid;
+  gap: 4px;
+}
+
+.setup-card-header strong {
+  font-size: 1.1rem;
+}
+
+.confidence-meter {
+  display: grid;
+  gap: 8px;
+}
+
+.confidence-meter i {
+  display: block;
+  max-width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 18px currentColor;
+}
+
+.setup-levels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.setup-levels div {
+  display: grid;
+  gap: 4px;
+  min-height: 62px;
+  padding: 10px;
+  border: 1px solid rgba(132, 204, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.setup-levels strong,
+.setup-trigger p,
+.setup-foot span:last-child {
+  overflow-wrap: anywhere;
+}
+
+.setup-trigger {
+  display: grid;
+  gap: 5px;
+}
+
+.setup-trigger p {
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.setup-foot {
+  align-items: flex-start;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(132, 204, 255, 0.1);
 }
 
 .watch-symbol,
@@ -529,8 +642,13 @@ h2 {
   }
 
   .panel,
-  .runtime-panel {
+  .runtime-panel,
+  .trading-panel {
     grid-column: span 12;
+  }
+
+  .setup-card-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .runtime-health-card {
@@ -564,7 +682,10 @@ h2 {
 
   .panel-header,
   .watch-symbol,
+  .watch-source,
   .queue-item,
+  .setup-card-header,
+  .setup-foot,
   .safety-row {
     align-items: flex-start;
     flex-direction: column;
@@ -575,6 +696,11 @@ h2 {
   }
 
   .runtime-event-timeline li {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-card-list,
+  .setup-levels {
     grid-template-columns: 1fr;
   }
 }

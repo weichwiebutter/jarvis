@@ -17,6 +17,7 @@ public sealed class RuntimeHealthService
         DiskSpaceCheck diskSpaceCheck,
         QueueStatus queueStatus,
         SnapshotWriteResult? snapshotResult,
+        int activeSetupWatches,
         string? lastError)
     {
         var health = new RuntimeHealth(
@@ -30,13 +31,14 @@ public sealed class RuntimeHealthService
             RunningJobs: queueStatus.Running,
             FailedJobs: queueStatus.Failed,
             QuarantinedJobs: queueStatus.Quarantined,
+            ActiveSetupWatches: activeSetupWatches,
             LastSnapshotId: snapshotResult?.Snapshot.SnapshotId,
             LastError: lastError);
 
         var reportPath = Path.Combine(_reportsDirectory, "runtime_health.json");
         File.WriteAllText(reportPath, JsonSerializer.Serialize(health, JsonDefaults.WriteOptions));
 
-        Console.WriteLine($"RuntimeHealth: {health.RuntimeState}, safeMode={health.SafeMode}, pendingJobs={health.PendingJobs}");
+        Console.WriteLine($"RuntimeHealth: {health.RuntimeState}, safeMode={health.SafeMode}, pendingJobs={health.PendingJobs}, activeSetupWatches={health.ActiveSetupWatches}");
 
         return new RuntimeHealthWriteResult(health, reportPath);
     }

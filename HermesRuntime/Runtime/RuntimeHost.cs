@@ -75,6 +75,8 @@ public sealed class RuntimeHost
 
         var replayManifestService = new ReplayManifestService(storage.Paths, eventBus, RuntimeVersion);
         var replayManifestResult = replayManifestService.CreateDemoReplayManifest();
+        var setupWatchService = new SetupWatchService(storage.Paths, eventBus, RuntimeVersion);
+        var setupWatchResult = setupWatchService.CreateDemoSetupWatches();
 
         state.IsRunning = false;
         state.StoppedAtUtc = DateTimeOffset.UtcNow;
@@ -100,6 +102,7 @@ public sealed class RuntimeHost
             diskSpaceCheck,
             queueManager.Status,
             snapshotResult,
+            setupWatchResult.ActiveSetupWatches,
             snapshotResult.Validation.IsValid ? null : snapshotResult.Validation.Error);
 
         PublishRuntimeStopped(eventBus, state, diskSpaceCheck);
@@ -110,6 +113,7 @@ public sealed class RuntimeHost
         Console.WriteLine($"Events: {eventStore.EventFilePath}");
         Console.WriteLine($"Snapshot: {state.LastSnapshotPath}");
         Console.WriteLine($"ReplayManifest: {replayManifestResult.ManifestPath}");
+        Console.WriteLine($"SetupWatch: {setupWatchResult.OutputPath}");
         Console.WriteLine($"Health: {healthResult.ReportPath}");
         Console.WriteLine($"SafeMode: {state.SafeMode}");
     }

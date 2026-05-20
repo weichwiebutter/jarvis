@@ -10,6 +10,7 @@ export const runtimeHealthMock = {
   running_jobs: 0,
   failed_jobs: 0,
   quarantined_jobs: 0,
+  active_setup_watches: 2,
   last_snapshot_id: 'snap_20260519125040082_bd6a4472464e46808be723df3b09396e',
   last_error: null,
   event_store_active: true,

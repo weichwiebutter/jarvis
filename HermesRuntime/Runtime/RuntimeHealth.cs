@@ -11,5 +11,6 @@ public sealed record RuntimeHealth(
     int RunningJobs,
     int FailedJobs,
     int QuarantinedJobs,
+    int ActiveSetupWatches,
     string? LastSnapshotId,
     string? LastError);
