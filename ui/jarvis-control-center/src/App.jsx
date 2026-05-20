@@ -63,10 +63,47 @@ function buildRuntimeSafetyFlags(runtimeHealth) {
   ];
 }
 
-const learningQueue = [
-  { title: 'XAUUSD Pullback-Cluster', meta: 'Prediction -> Ergebnis wartet auf Review', score: '0.74' },
-  { title: 'EURUSD Session-Filter', meta: 'No-Trade-Zone als Lernkandidat', score: '0.62' },
-  { title: 'GER40 Volatilitaets-Rejection', meta: 'Menschliche Freigabe vor Memory-Write erforderlich', score: '0.58' },
+const learningCandidates = [
+  {
+    id: 'learn-trading-xauusd-pullback',
+    type: 'Trading-Setup',
+    title: 'XAUUSD Pullback als Lernkandidat',
+    description: 'Setup-Beobachtung war konsistent mit Pullback-Rejection und soll fuer spaetere Bewertung markiert werden.',
+    source: 'Setup-Beobachtung / Prediction-Feedback',
+    risk: 'high',
+    status: 'review',
+    action: 'Nur nach Ergebnisvergleich und Freigabe als Regelkandidat speichern.',
+  },
+  {
+    id: 'learn-routing-local-worker',
+    type: 'Routing-Hinweis',
+    title: 'Lokaler Worker fuer kleine UI-Aufgaben',
+    description: 'Wiederkehrende kleine React-Textanpassungen koennten spaeter bevorzugt lokal geroutet werden.',
+    source: 'Codex Routing Beobachtung',
+    risk: 'medium',
+    status: 'open',
+    action: 'Als Routing-Hypothese vormerken, nicht automatisch aktivieren.',
+  },
+  {
+    id: 'learn-error-pattern-file-access',
+    type: 'Fehlerpattern',
+    title: 'Browser blockiert lokale Runtime-Dateien',
+    description: 'Vite /@fs-Zugriff kann im statischen Build blockiert sein; Fixture-Fallback muss sichtbar bleiben.',
+    source: 'Laufzeitstatus-Loader',
+    risk: 'low',
+    status: 'approved',
+    action: 'Als UI-Hinweis behalten und bei echten Connectors erneut pruefen.',
+  },
+  {
+    id: 'learn-skill-proposal-storage',
+    type: 'Skill-Vorschlag',
+    title: 'Storage-Retention Dry-Run Skill',
+    description: 'Spaeterer Skill koennte nur lesend Datenklassen scannen und Cleanup-Plaene als Vorschlag zeigen.',
+    source: 'Speicher-Retention-Policy',
+    risk: 'high',
+    status: 'rejected',
+    action: 'Nicht aktivieren; erst nach Approval-Flow und Dry-Run-UI erneut bewerten.',
+  },
 ];
 
 const agentActivity = [
@@ -171,6 +208,54 @@ function setupLifecycle(status) {
 
 function sourceModeLabel(mode) {
   return mode === 'json' ? 'JSON' : t.common.fixtureFallback;
+}
+
+function learningStatusTone(status) {
+  switch (status) {
+    case 'approved':
+      return 'good';
+    case 'rejected':
+      return 'danger';
+    case 'review':
+      return 'warn';
+    default:
+      return 'info';
+  }
+}
+
+function learningStatusLabel(status) {
+  switch (status) {
+    case 'approved':
+      return t.learningQueue.approved;
+    case 'rejected':
+      return t.learningQueue.rejected;
+    case 'review':
+      return t.learningQueue.review;
+    default:
+      return t.learningQueue.open;
+  }
+}
+
+function riskTone(risk) {
+  switch (risk) {
+    case 'high':
+      return 'danger';
+    case 'medium':
+      return 'warn';
+    default:
+      return 'good';
+  }
+}
+
+function riskLabel(risk) {
+  switch (risk) {
+    case 'high':
+      return t.learningQueue.highRisk;
+    case 'medium':
+      return t.learningQueue.mediumRisk;
+    default:
+      return t.learningQueue.lowRisk;
+  }
 }
 
 function StatusPill({ children, tone = 'info' }) {
@@ -550,17 +635,121 @@ function TradingWatchPanel() {
 
 function LearningQueuePanel() {
   return (
-    <Panel eyebrow={t.learningQueue.eyebrow} title={t.learningQueue.title} action={<StatusPill tone="warn">{t.learningQueue.pending}</StatusPill>}>
-      <div className="queue-list">
-        {learningQueue.map((item) => (
-          <article className="queue-item" key={item.title}>
-            <div>
-              <strong>{item.title}</strong>
-              <span>{item.meta}</span>
-            </div>
-            <b>{item.score}</b>
-          </article>
+    <Panel
+      eyebrow={t.learningQueue.eyebrow}
+      title={t.learningQueue.title}
+      action={<StatusPill tone="warn">{t.learningQueue.pending}</StatusPill>}
+      className="learning-panel"
+    >
+      <LearningGuardStrip />
+      <div className="learning-candidate-list">
+        {learningCandidates.map((candidate) => (
+          <LearningCandidateCard candidate={candidate} key={candidate.id} />
         ))}
+      </div>
+    </Panel>
+  );
+}
+
+function LearningGuardStrip() {
+  return (
+    <div className="learning-guard-strip">
+      <strong>{t.learningQueue.noSilentLearning}</strong>
+      <strong>{t.learningQueue.humanApprovalRequired}</strong>
+      <strong>{t.learningQueue.noAutoSkillActivation}</strong>
+      <strong>{t.learningQueue.noTradingRuleWithoutReview}</strong>
+    </div>
+  );
+}
+
+function LearningCandidateCard({ candidate }) {
+  return (
+    <article className={`learning-candidate risk-${candidate.risk}`}>
+      <div className="learning-card-head">
+        <div>
+          <span>{t.learningQueue.type}: {candidate.type}</span>
+          <strong>{candidate.title}</strong>
+        </div>
+        <StatusPill tone={learningStatusTone(candidate.status)}>
+          {learningStatusLabel(candidate.status)}
+        </StatusPill>
+      </div>
+      <p>{candidate.description}</p>
+      <div className="learning-card-meta">
+        <div>
+          <span>{t.learningQueue.source}</span>
+          <strong>{candidate.source}</strong>
+        </div>
+        <div>
+          <span>{t.learningQueue.risk}</span>
+          <strong className={toneClass(riskTone(candidate.risk))}>{riskLabel(candidate.risk)}</strong>
+        </div>
+      </div>
+      <div className="learning-action">
+        <span>{t.learningQueue.action}</span>
+        <strong>{candidate.action}</strong>
+      </div>
+    </article>
+  );
+}
+
+function ApprovalQueuePanel() {
+  const approvalItems = learningCandidates.filter((candidate) =>
+    ['open', 'review'].includes(candidate.status),
+  );
+
+  return (
+    <Panel
+      eyebrow={t.approvalQueue.eyebrow}
+      title={t.approvalQueue.title}
+      action={<StatusPill tone="warn">{t.approvalQueue.waiting}</StatusPill>}
+      className="approval-panel"
+    >
+      <div className="approval-list">
+        {approvalItems.length === 0 ? (
+          <p className="panel-copy">{t.approvalQueue.empty}</p>
+        ) : (
+          approvalItems.map((candidate) => (
+            <article className="approval-item" key={candidate.id}>
+              <div>
+                <strong>{candidate.type}</strong>
+                <span>{candidate.title}</span>
+              </div>
+              <StatusPill tone={riskTone(candidate.risk)}>{riskLabel(candidate.risk)}</StatusPill>
+              <p>{candidate.action}</p>
+            </article>
+          ))
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+function ReflectiveLearningPanel() {
+  return (
+    <Panel
+      eyebrow={t.reflectiveLearning.eyebrow}
+      title={t.reflectiveLearning.title}
+      action={<StatusPill tone="info">{t.reflectiveLearning.status}</StatusPill>}
+      className="reflective-panel"
+    >
+      <div className="reflective-stack">
+        <div>
+          <span>Loop</span>
+          <strong>{t.reflectiveLearning.reviewLoop}</strong>
+        </div>
+        <div>
+          <span>Memory</span>
+          <strong>{t.reflectiveLearning.memoryGate}</strong>
+        </div>
+        <div>
+          <span>Skills</span>
+          <strong>{t.reflectiveLearning.skillGate}</strong>
+        </div>
+        <div>
+          <span>Trading</span>
+          <strong>{t.reflectiveLearning.tradingGate}</strong>
+        </div>
       </div>
     </Panel>
   );
@@ -636,6 +825,8 @@ export default function App() {
         <HermesBrainPanel />
         <TradingWatchPanel />
         <LearningQueuePanel />
+        <ApprovalQueuePanel />
+        <ReflectiveLearningPanel />
         <AgentTimelinePanel />
         <SafetyPanel />
         <CostProviderPanel />
