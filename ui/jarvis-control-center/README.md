@@ -40,3 +40,29 @@ Replay Manifest indicators can become active when those files are reachable.
 If the browser cannot access that path, for example in a static build or a
 stricter browser/server context, the UI falls back to
 `src/fixtures/runtimeHealthMock.ts` and shows a visible fallback warning.
+
+## Read-only Runtime Data Adapter
+
+Runtime-facing file reads are centralized in:
+
+```text
+src/data/runtimeDataAdapter.ts
+```
+
+The adapter is browser-only and read-only. It prepares access to:
+
+- `HermesRuntime/data/reports/runtime_health.json`
+- `HermesRuntime/data/setup_watch/setup_watch.json`
+- future runtime JSONL event files under `HermesRuntime/data/events/runtime/`
+
+The adapter uses Vite `/@fs/...` URLs in development, never sends commands to
+`HermesRuntime`, never opens a backend API, never writes runtime files, and does
+not use WebSockets. If a browser or static hosting context blocks local file
+access, the UI keeps working through fixture fallback data:
+
+- `src/fixtures/runtimeHealthMock.ts`
+- `src/fixtures/setupWatchMock.ts`
+- existing mock event data in `src/fixtures/controlCenterMockData.ts`
+
+This means the React prototype can show real local JSON when reachable, but it
+must always remain functional without those files.
