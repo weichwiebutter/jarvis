@@ -171,7 +171,7 @@ h2 {
 }
 
 .trading-panel {
-  grid-column: span 8;
+  grid-column: span 12;
 }
 
 .panel-header {
@@ -450,9 +450,33 @@ h2 {
   background: rgba(4, 10, 18, 0.58);
 }
 
+.setup-safety-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.setup-safety-strip strong {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 12px;
+  border: 1px solid rgba(248, 193, 74, 0.42);
+  border-radius: 8px;
+  color: var(--amber);
+  background: rgba(248, 193, 74, 0.08);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
 .watch-source span,
+.setup-card-header > span,
+.setup-symbol-block span,
 .setup-card-header span,
 .setup-levels span,
+.setup-lifecycle > span,
 .setup-trigger span,
 .setup-foot span {
   color: var(--muted);
@@ -460,19 +484,37 @@ h2 {
 }
 
 .setup-card-list {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(320px, 1fr));
+  gap: 14px;
 }
 
 .setup-card {
   display: grid;
-  gap: 12px;
-  min-height: 360px;
-  padding: 15px;
+  gap: 14px;
+  min-height: 500px;
+  padding: 18px;
   border: 1px solid currentColor;
   border-radius: 8px;
   background: rgba(4, 10, 18, 0.68);
 }
 
+.setup-card.bias-long {
+  box-shadow: inset 4px 0 0 rgba(74, 222, 128, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.setup-card.bias-short {
+  box-shadow: inset 4px 0 0 rgba(251, 113, 133, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.setup-card.bias-neutral {
+  box-shadow: inset 4px 0 0 rgba(148, 163, 184, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.setup-card.bias-breakout {
+  box-shadow: inset 4px 0 0 rgba(71, 215, 255, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.setup-card-top,
 .setup-card-header,
 .confidence-meter div,
 .setup-foot {
@@ -482,13 +524,57 @@ h2 {
   gap: 10px;
 }
 
-.setup-card-header div {
+.setup-card-top {
+  align-items: flex-start;
+}
+
+.setup-symbol-block {
   display: grid;
   gap: 4px;
 }
 
-.setup-card-header strong {
-  font-size: 1.1rem;
+.setup-symbol-block strong {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.setup-bias {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.setup-bias-long {
+  color: var(--green);
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.setup-bias-short {
+  color: var(--red);
+  background: rgba(251, 113, 133, 0.08);
+}
+
+.setup-bias-neutral {
+  color: var(--steel);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.setup-bias-breakout {
+  color: var(--cyan);
+  background: rgba(71, 215, 255, 0.08);
+}
+
+.setup-card-header {
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid rgba(132, 204, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .confidence-meter {
@@ -499,10 +585,52 @@ h2 {
 .confidence-meter i {
   display: block;
   max-width: 100%;
-  height: 7px;
+  height: 10px;
   border-radius: 999px;
   background: currentColor;
   box-shadow: 0 0 18px currentColor;
+}
+
+.confidence-meter strong {
+  font-size: 1.1rem;
+}
+
+.setup-lifecycle {
+  display: grid;
+  gap: 8px;
+}
+
+.setup-lifecycle-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.setup-lifecycle-step {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 1px solid rgba(132, 204, 255, 0.12);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.setup-lifecycle-step.is-complete {
+  color: var(--green);
+  border-color: rgba(74, 222, 128, 0.34);
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.setup-lifecycle-step.is-active {
+  color: var(--amber);
+  border-color: rgba(248, 193, 74, 0.42);
+  background: rgba(248, 193, 74, 0.1);
+  box-shadow: 0 0 18px rgba(248, 193, 74, 0.14);
 }
 
 .setup-levels {
@@ -514,8 +642,8 @@ h2 {
 .setup-levels div {
   display: grid;
   gap: 4px;
-  min-height: 62px;
-  padding: 10px;
+  min-height: 74px;
+  padding: 12px;
   border: 1px solid rgba(132, 204, 255, 0.1);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.025);
@@ -527,9 +655,17 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.setup-levels strong {
+  font-size: 0.98rem;
+}
+
 .setup-trigger {
   display: grid;
   gap: 5px;
+  padding: 12px;
+  border: 1px solid rgba(132, 204, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .setup-trigger p {
@@ -654,6 +790,10 @@ h2 {
   .runtime-health-card {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .setup-safety-strip {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -684,6 +824,7 @@ h2 {
   .watch-symbol,
   .watch-source,
   .queue-item,
+  .setup-card-top,
   .setup-card-header,
   .setup-foot,
   .safety-row {
@@ -700,7 +841,8 @@ h2 {
   }
 
   .setup-card-list,
-  .setup-levels {
+  .setup-levels,
+  .setup-lifecycle-steps {
     grid-template-columns: 1fr;
   }
 }
