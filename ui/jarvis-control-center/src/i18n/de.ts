@@ -19,7 +19,7 @@ export const de = {
   },
   header: {
     eyebrow: 'Prototyp v0.1 / lokale Demo-Daten',
-    title: 'Jarvis / Hermes Kontrollzentrum',
+    title: 'Jarvis Control Center',
     copy:
       'Separater React/Vite-Prototyp fuer das kuenftige Jarvis Cockpit. Gradio bleibt die Entwicklungs- und Testoberflaeche; diese Ansicht sendet keine API-Aufrufe, schreibt keine Runtime-Dateien und streamt keine Live-Marktdaten.',
     hermesOnline: 'Hermes Grundlage online',

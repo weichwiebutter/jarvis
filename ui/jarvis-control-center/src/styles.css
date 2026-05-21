@@ -204,6 +204,243 @@ h2 {
   min-height: 560px;
 }
 
+.control-center-shell {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1.08fr) minmax(0, 0.92fr);
+  gap: 12px;
+  width: min(1600px, calc(100vw - 24px));
+  height: 100vh;
+  min-height: 0;
+  padding: 12px 0;
+  overflow: hidden;
+}
+
+.control-center-shell .hero-shell {
+  min-height: 96px;
+  align-items: center;
+  padding: 16px 18px;
+  border-radius: 8px;
+}
+
+.control-center-shell .hero-copy {
+  max-width: 980px;
+}
+
+.control-center-shell .hero-copy h1 {
+  margin-bottom: 6px;
+  font-size: 3.2rem;
+  line-height: 0.98;
+}
+
+.control-center-shell .hero-copy p:last-child {
+  max-width: 980px;
+  margin-bottom: 0;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.control-center-shell .hero-status {
+  align-items: center;
+  max-width: none;
+}
+
+.control-status-grid,
+.control-main-grid,
+.details-grid {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+}
+
+.control-status-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.status-summary-card {
+  display: grid;
+  min-height: 104px;
+  align-content: space-between;
+  gap: 8px;
+  padding: 13px 14px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 62%),
+    rgba(4, 10, 18, 0.72);
+  box-shadow: inset 4px 0 0 currentColor;
+}
+
+.status-summary-card div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.status-summary-card span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.status-summary-card strong {
+  color: var(--text);
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.status-summary-card p {
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.status-summary-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.status-summary-badges .status-pill {
+  min-height: 24px;
+  padding: 4px 8px;
+  font-size: 0.68rem;
+}
+
+.control-main-grid {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.95fr);
+}
+
+.control-column {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+}
+
+.learning-column {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 0.76fr);
+}
+
+.control-main-grid .panel,
+.tab-panel > .panel,
+.details-grid > .panel {
+  grid-column: auto;
+  min-height: 0;
+  height: 100%;
+  padding: 14px;
+  overflow: auto;
+  border-radius: 8px;
+}
+
+.control-main-grid .panel-header,
+.tab-panel .panel-header,
+.details-grid .panel-header {
+  margin-bottom: 10px;
+}
+
+.control-main-grid .panel-header h2,
+.tab-panel .panel-header h2,
+.details-grid .panel-header h2 {
+  font-size: 0.98rem;
+}
+
+.control-main-grid .event-timeline-panel,
+.control-main-grid .trading-panel,
+.control-main-grid .learning-panel,
+.control-main-grid .approval-panel {
+  min-height: 0;
+}
+
+.control-main-grid .setup-card-list {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.control-main-grid .setup-card {
+  min-height: auto;
+  gap: 10px;
+  padding: 12px;
+}
+
+.control-main-grid .setup-symbol-block strong {
+  font-size: 1.45rem;
+}
+
+.control-main-grid .setup-levels div,
+.control-main-grid .setup-trigger {
+  padding: 10px;
+}
+
+.control-main-grid .setup-lifecycle-step {
+  min-height: 30px;
+  font-size: 0.68rem;
+}
+
+.control-main-grid .runtime-warning,
+.tab-panel .runtime-warning,
+.details-grid .runtime-warning {
+  padding: 9px 10px;
+  font-size: 0.78rem;
+}
+
+.control-tabs {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+}
+
+.tab-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(132, 204, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.62);
+}
+
+.tab-button {
+  min-height: 32px;
+  padding: 7px 11px;
+  border: 1px solid rgba(132, 204, 255, 0.18);
+  border-radius: 8px;
+  color: var(--soft);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.tab-button:hover,
+.tab-button.is-active {
+  color: var(--cyan);
+  border-color: rgba(71, 215, 255, 0.46);
+  background: rgba(71, 215, 255, 0.1);
+}
+
+.tab-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.details-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  height: 100%;
+}
+
+.details-grid .jobs-queue-panel,
+.details-grid .runtime-panel,
+.details-grid .learning-panel,
+.details-grid .approval-panel,
+.details-grid .reflective-panel,
+.details-grid .cli-panel,
+.details-grid .storage-retention-panel,
+.details-grid .event-timeline-panel {
+  grid-column: auto;
+}
+
 .panel-header {
   display: flex;
   align-items: flex-start;
@@ -2120,6 +2357,26 @@ h2 {
     font-size: 3.6rem;
   }
 
+  .control-center-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+    grid-template-rows: auto;
+  }
+
+  .control-status-grid,
+  .control-main-grid,
+  .details-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .control-main-grid .panel,
+  .tab-panel > .panel,
+  .details-grid > .panel {
+    height: auto;
+    max-height: 72vh;
+  }
+
   .hero-shell {
     grid-template-columns: 1fr;
   }
@@ -2215,6 +2472,19 @@ h2 {
   .hero-shell,
   .panel {
     padding: 16px;
+  }
+
+  .control-center-shell .hero-copy h1 {
+    font-size: 2.35rem;
+  }
+
+  .control-center-shell .hero-copy p:last-child {
+    font-size: 0.84rem;
+  }
+
+  .tab-nav {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .metric-grid,
