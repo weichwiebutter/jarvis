@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Hermes.Runtime;
 
 public sealed class FeatureExportWorker : IWorker
@@ -19,80 +17,20 @@ public sealed class FeatureExportWorker : IWorker
 
     public WorkerExecutionResult Execute(JobManifest job)
     {
-        var exportDirectory = Path.Combine(_storagePaths.Root, "exports", "features");
-        Directory.CreateDirectory(exportDirectory);
-
-        var exportPath = Path.Combine(exportDirectory, $"{job.JobId}.features.jsonl");
-        var symbol = ReadStringParameter(job, "symbol", "DEMO_SYMBOL");
-        var createdAtUtc = DateTimeOffset.UtcNow;
-
-        var rows = new object[]
-        {
-            new
-            {
-                timestamp_utc = createdAtUtc.AddMinutes(-2),
-                symbol,
-                timeframe = "M1",
-                source = "stub",
-                feature_set = "demo_feature_export_v1",
-                row_index = 1,
-                price_stub = 100.00,
-                momentum_stub = 0.10,
-                volatility_stub = 0.20
-            },
-            new
-            {
-                timestamp_utc = createdAtUtc.AddMinutes(-1),
-                symbol,
-                timeframe = "M1",
-                source = "stub",
-                feature_set = "demo_feature_export_v1",
-                row_index = 2,
-                price_stub = 100.25,
-                momentum_stub = 0.12,
-                volatility_stub = 0.18
-            },
-            new
-            {
-                timestamp_utc = createdAtUtc,
-                symbol,
-                timeframe = "M1",
-                source = "stub",
-                feature_set = "demo_feature_export_v1",
-                row_index = 3,
-                price_stub = 100.10,
-                momentum_stub = 0.08,
-                volatility_stub = 0.22
-            }
-        };
-
-        File.WriteAllLines(
-            exportPath,
-            rows.Select(row => JsonSerializer.Serialize(row, JsonDefaults.WriteOptions)));
+        var service = new FeatureExportService(_storagePaths);
+        var result = service.CreateDemoFeatureExport(job.JobId);
 
         return new WorkerExecutionResult(
-            OutputPath: exportPath,
+            OutputPath: result.FeatureOutputPath,
             Metrics: new Dictionary<string, object?>
             {
-                ["rows_written"] = rows.Length,
+                ["feature_rows_written"] = result.FeatureRowsWritten,
+                ["signal_rows_written"] = result.SignalRowsWritten,
                 ["format"] = "jsonl",
-                ["symbol"] = symbol,
+                ["symbols"] = result.Symbols,
+                ["feature_output_path"] = result.FeatureOutputPath,
+                ["signal_output_path"] = result.SignalOutputPath,
                 ["stub"] = true
             });
-    }
-
-    private static string ReadStringParameter(JobManifest job, string key, string fallback)
-    {
-        if (!job.Parameters.TryGetValue(key, out var value) || value is null)
-        {
-            return fallback;
-        }
-
-        return value switch
-        {
-            string text when !string.IsNullOrWhiteSpace(text) => text,
-            JsonElement { ValueKind: JsonValueKind.String } element => element.GetString() ?? fallback,
-            _ => value.ToString() ?? fallback
-        };
     }
 }

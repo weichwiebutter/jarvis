@@ -52,6 +52,7 @@ public sealed class WorkerHost
             PublishFeatureExportStarted(job);
             var workerResult = worker.Execute(job);
             PublishFeatureExportCompleted(job, workerResult);
+            PublishSignalResultExported(job, workerResult);
 
             var completed = _queueManager.MarkCompleted(
                 job.JobId,
@@ -171,6 +172,32 @@ public sealed class WorkerHost
                 job.JobId,
                 result.OutputPath,
                 result.Metrics
+            }));
+    }
+
+    private void PublishSignalResultExported(JobManifest job, WorkerExecutionResult result)
+    {
+        if (!result.Metrics.TryGetValue("signal_output_path", out var signalOutputPath)
+            || signalOutputPath is null)
+        {
+            return;
+        }
+
+        _eventBus.Publish(EventEnvelope.Create(
+            EventType.SignalResultExported,
+            WorkerSource,
+            EventSeverity.Info,
+            _runtimeVersion,
+            new
+            {
+                message = "Demo signal results exported. No orders were created.",
+                job.JobId,
+                signalOutputPath,
+                signalRowsWritten = result.Metrics.TryGetValue("signal_rows_written", out var count)
+                    ? count
+                    : null,
+                noAutoTrading = true,
+                humanReviewRequired = true
             }));
     }
 

@@ -11,6 +11,7 @@ public enum EventType
     JobStarted,
     FeatureExportStarted,
     FeatureExportCompleted,
+    SignalResultExported,
     JobCompleted,
     JobFailed,
     WorkerStopped,

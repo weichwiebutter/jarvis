@@ -241,9 +241,9 @@ public sealed class RuntimeHost
             Parameters: new Dictionary<string, object?>
             {
                 ["demo"] = true,
-                ["symbol"] = "DEMO_FEATURE_EXPORT",
+                ["symbols"] = new[] { "XAUUSD", "EURUSD", "GER40" },
                 ["source"] = "stub",
-                ["note"] = "Sprint 5 demo feature export job. Uses stub data only."
+                ["note"] = "Feature Logging v1 demo export. Uses mock feature and signal data only."
             });
 
         return queueManager.Enqueue(manifest);

@@ -31,6 +31,8 @@ internal sealed class HermesCli
             "events" => ShowEvents(),
             "jobs" => ShowJobs(),
             "storage" => ShowStorage(),
+            "features" => ShowFeatures(),
+            "signals" => ShowSignals(),
             "version" => ShowVersion(),
             _ => UnknownCommand(command)
         };
@@ -47,6 +49,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes events recent      letzte Runtime-Events anzeigen");
         Console.WriteLine("  hermes jobs               Queue/Jobjournale anzeigen");
         Console.WriteLine("  hermes storage            lokale Storage-Uebersicht anzeigen");
+        Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
+        Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes version            CLI-/Runtime-Version anzeigen");
         Console.WriteLine();
         Console.WriteLine("Start ohne Installation:");
@@ -256,6 +260,91 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowFeatures()
+    {
+        WriteHeader("Hermes Feature Exports");
+        var limit = ReadLimit(_args, 8);
+        var files = FindExportFiles("features").ToList();
+        if (files.Count == 0)
+        {
+            WriteWarning("Keine Feature-Export-Dateien gefunden.");
+            WriteSafety();
+            return 0;
+        }
+
+        var file = files[^1];
+        Console.WriteLine($"Quelle: {DisplayPath(file)}");
+        Console.WriteLine();
+
+        foreach (var line in ReadRecentJsonlLines(file, limit))
+        {
+            if (!TryParseJsonLine(line, out var root))
+            {
+                WriteWarning("Ungueltige Feature-JSONL-Zeile uebersprungen.");
+                continue;
+            }
+
+            WriteSubHeader($"{GetString(root, "symbol") ?? "UNKNOWN"} {GetString(root, "timeframe") ?? "-"}");
+            WriteField("Timestamp UTC", GetString(root, "timestamp_utc", "timestampUtc"));
+            WriteField("Session", GetString(root, "session"));
+            WriteField("H4 Regime", GetString(root, "h4_regime", "h4Regime"));
+            WriteField("H1 Bias", GetString(root, "h1_bias", "h1Bias"));
+            WriteField("M15 Setup", GetString(root, "m15_setup", "m15Setup"));
+            WriteField("M5 Trigger", GetString(root, "m5_trigger", "m5Trigger"));
+            WriteField("ADX", $"{GetDouble(root, "adx"):0.##}");
+            WriteField("ATR", $"{GetDouble(root, "atr"):0.#####}");
+            WriteField("RSI", $"{GetDouble(root, "rsi"):0.##}");
+            WriteField("Structure", GetString(root, "structure_state", "structureState"));
+            WriteField("Pattern", GetString(root, "pattern_candidate", "patternCandidate"));
+            WriteField("Signal Score", $"{GetDouble(root, "signal_score", "signalScore"):0.##}");
+            WriteField("Spread", $"{GetDouble(root, "spread"):0.#####}");
+            Console.WriteLine();
+        }
+
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowSignals()
+    {
+        WriteHeader("Hermes Signal Results");
+        var limit = ReadLimit(_args, 8);
+        var files = FindExportFiles("signals").ToList();
+        if (files.Count == 0)
+        {
+            WriteWarning("Keine Signal-Export-Dateien gefunden.");
+            WriteSafety();
+            return 0;
+        }
+
+        var file = files[^1];
+        Console.WriteLine($"Quelle: {DisplayPath(file)}");
+        Console.WriteLine();
+
+        foreach (var line in ReadRecentJsonlLines(file, limit))
+        {
+            if (!TryParseJsonLine(line, out var root))
+            {
+                WriteWarning("Ungueltige Signal-JSONL-Zeile uebersprungen.");
+                continue;
+            }
+
+            WriteSubHeader($"{GetString(root, "symbol") ?? "UNKNOWN"} - {GetString(root, "direction") ?? "unknown"}");
+            WriteField("Timestamp UTC", GetString(root, "timestamp_utc", "timestampUtc"));
+            WriteField("Signal Type", GetString(root, "signal_type", "signalType"));
+            WriteField("Score", $"{GetDouble(root, "score"):0.##}");
+            WriteField("Confidence", $"{GetDouble(root, "confidence") * 100:0}%");
+            WriteField("Theoretical Entry", $"{GetDouble(root, "theoretical_entry", "theoreticalEntry"):0.#####}");
+            WriteField("Theoretical Stop", $"{GetDouble(root, "theoretical_stop", "theoreticalStop"):0.#####}");
+            WriteField("Theoretical Target", $"{GetDouble(root, "theoretical_target", "theoreticalTarget"):0.#####}");
+            WriteField("Reason Codes", string.Join(", ", GetStringArray(root, "reason_codes", "reasonCodes")));
+            Console.WriteLine();
+        }
+
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowVersion()
     {
         WriteHeader("Hermes CLI Version");
@@ -312,6 +401,30 @@ internal sealed class HermesCli
         }
     }
 
+    private IEnumerable<string> FindExportFiles(string exportType)
+    {
+        var directory = Path.Combine(_dataRoot, "exports", exportType);
+        if (!Directory.Exists(directory))
+        {
+            yield break;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(directory, "*.jsonl")
+                     .OrderBy(File.GetLastWriteTimeUtc)
+                     .ThenBy(path => path))
+        {
+            yield return file;
+        }
+    }
+
+    private static IReadOnlyList<string> ReadRecentJsonlLines(string file, int limit)
+    {
+        return File.ReadLines(file)
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .TakeLast(limit)
+            .ToList();
+    }
+
     private static int ReadLimit(string[] args, int fallback)
     {
         for (var index = 0; index < args.Length - 1; index++)
@@ -337,6 +450,21 @@ internal sealed class HermesCli
         {
             using var stream = File.OpenRead(path);
             using var document = JsonDocument.Parse(stream);
+            root = document.RootElement.Clone();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryParseJsonLine(string line, out JsonElement root)
+    {
+        root = default;
+        try
+        {
+            using var document = JsonDocument.Parse(line);
             root = document.RootElement.Clone();
             return true;
         }
@@ -412,6 +540,20 @@ internal sealed class HermesCli
         }
 
         return double.TryParse(GetString(root, names), out var parsed) ? parsed : 0;
+    }
+
+    private static IReadOnlyList<string> GetStringArray(JsonElement root, params string[] names)
+    {
+        if (!TryGetProperty(root, out var value, names) || value.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return value.EnumerateArray()
+            .Select(item => item.ValueKind == JsonValueKind.String ? item.GetString() : item.GetRawText())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => item!)
+            .ToList();
     }
 
     private static string GetBoolText(JsonElement root, params string[] names)
