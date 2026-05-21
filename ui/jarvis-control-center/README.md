@@ -53,10 +53,12 @@ The adapter is browser-only and read-only. It prepares access to:
 
 - `HermesRuntime/data/reports/runtime_health.json`
 - `HermesRuntime/data/setup_watch/setup_watch.json`
-- future runtime JSONL event files under `HermesRuntime/data/events/runtime/`
+- runtime JSONL event files under `HermesRuntime/data/events/runtime/`
 
 `RuntimeHealthPanel` and `SetupWatchPanel` both load through
-`loadRuntimeData()` from the adapter. The normalized shape is:
+`loadRuntimeData()` from the adapter. `EventTimelinePanel` uses
+`loadRuntimeTimelineEvents()` and prepares read-only JSONL events for timeline
+display. The normalized runtime shape is:
 
 ```ts
 {
@@ -66,6 +68,33 @@ The adapter is browser-only and read-only. It prepares access to:
   warnings,
 }
 ```
+
+Runtime timeline events are normalized to:
+
+```ts
+{
+  id,
+  time,
+  eventType,
+  category,
+  severity,
+  source,
+  description,
+}
+```
+
+The event loader currently derives the JSONL file name from the Runtime Health
+timestamp and attempts to read:
+
+```text
+HermesRuntime/data/events/runtime/yyyy-MM-dd.runtime.jsonl
+```
+
+Supported timeline event types include `RuntimeStarted`, `StorageInitialized`,
+`SnapshotCreated`, `ReplayManifestCreated`, `SetupWatchCreated`,
+`SetupWatchUpdated`, `LearningCandidateCreated`, `JobStarted`, `JobCompleted`,
+and `RuntimeStopped`. Unknown event types are still displayed defensively as
+runtime events when a valid JSONL line can be parsed.
 
 The adapter uses Vite `/@fs/...` URLs in development, never sends commands to
 `HermesRuntime`, never opens a backend API, never writes runtime files, and does
@@ -87,7 +116,8 @@ blocking error.
 
 The later production path should be either:
 
-- a tiny read-only backend bridge that exposes approved JSON snapshots only, or
+- a tiny localhost-only read-only backend bridge that exposes approved JSON
+  snapshots and recent JSONL events only, or
 - Tauri file access with explicit local permissions.
 
 Both future options must stay read-only from the Control Center perspective.

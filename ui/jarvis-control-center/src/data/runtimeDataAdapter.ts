@@ -1,5 +1,6 @@
 import { runtimeHealthMock } from '../fixtures/runtimeHealthMock';
 import { setupWatchMock } from '../fixtures/setupWatchMock';
+import { runtimeEvents } from '../fixtures/controlCenterMockData';
 import { de } from '../i18n/de';
 
 export const DATA_SOURCE = {
@@ -14,6 +15,19 @@ const replayManifestUrl = __HERMES_REPLAY_MANIFEST_URL__;
 const setupWatchUrl = __HERMES_SETUP_WATCH_URL__;
 const runtimeHealthPath = __HERMES_RUNTIME_HEALTH_PATH__;
 const setupWatchPath = __HERMES_SETUP_WATCH_PATH__;
+
+const SUPPORTED_RUNTIME_EVENT_TYPES = new Set([
+  'RuntimeStarted',
+  'StorageInitialized',
+  'SnapshotCreated',
+  'ReplayManifestCreated',
+  'SetupWatchCreated',
+  'SetupWatchUpdated',
+  'LearningCandidateCreated',
+  'JobStarted',
+  'JobCompleted',
+  'RuntimeStopped',
+]);
 
 function asBoolean(value, fallback = false) {
   if (typeof value === 'boolean') {
@@ -38,6 +52,14 @@ function asNullableBoolean(value) {
 function asNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function asString(value, fallback = '') {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  return String(value);
 }
 
 function warningFromError(prefix, error) {
@@ -163,6 +185,140 @@ export function normalizeSetupWatch(raw) {
     time_window_minutes: asNumber(raw?.time_window_minutes || raw?.timeWindowMinutes, 0),
     notes: raw?.notes || '',
     created_at_utc: raw?.created_at_utc || raw?.createdAtUtc || null,
+  };
+}
+
+function normalizeRuntimeEventSeverity(severity) {
+  const value = asString(severity, 'info').toLowerCase();
+
+  if (value === 'critical' || value === 'error') {
+    return 'critical';
+  }
+
+  if (value === 'warning' || value === 'warn') {
+    return 'warning';
+  }
+
+  return 'info';
+}
+
+function normalizeRuntimeEventCategory(eventType) {
+  if (eventType.startsWith('SetupWatch')) {
+    return 'trading';
+  }
+
+  if (eventType.startsWith('Learning')) {
+    return 'learning';
+  }
+
+  if (eventType.startsWith('Job')) {
+    return 'jobs';
+  }
+
+  if (eventType.startsWith('Storage')) {
+    return 'storage';
+  }
+
+  if (eventType.startsWith('Snapshot')) {
+    return 'snapshot';
+  }
+
+  if (eventType.startsWith('Replay')) {
+    return 'replay';
+  }
+
+  return 'runtime';
+}
+
+function runtimeEventDescription(eventType, payload) {
+  const payloadMessage = payload?.message || payload?.Message;
+
+  if (payloadMessage) {
+    return String(payloadMessage);
+  }
+
+  switch (eventType) {
+    case 'RuntimeStarted':
+      return 'Hermes Runtime v1 wurde gestartet.';
+    case 'StorageInitialized':
+      return 'Storage-Pfade und Runtime-Ablage wurden initialisiert.';
+    case 'SnapshotCreated':
+      return 'Ein Runtime-Snapshot wurde erstellt.';
+    case 'ReplayManifestCreated':
+      return 'Ein Replay-Manifest wurde fuer spaetere Analyse erzeugt.';
+    case 'SetupWatchCreated':
+      return 'Eine neue Setup-Beobachtung wurde angelegt.';
+    case 'SetupWatchUpdated':
+      return 'Eine Setup-Beobachtung wurde aktualisiert.';
+    case 'LearningCandidateCreated':
+      return 'Ein Lernkandidat wurde fuer Review vorgemerkt.';
+    case 'JobStarted':
+      return 'Ein lokaler Runtime-Job wurde gestartet.';
+    case 'JobCompleted':
+      return 'Ein lokaler Runtime-Job wurde abgeschlossen.';
+    case 'RuntimeStopped':
+      return 'Hermes Runtime v1 wurde sauber beendet.';
+    default:
+      return SUPPORTED_RUNTIME_EVENT_TYPES.has(eventType)
+        ? `${eventType} wurde gemeldet.`
+        : `${eventType} wurde gelesen.`;
+  }
+}
+
+export function normalizeRuntimeEvent(raw, index = 0) {
+  const eventType = asString(raw?.event_type ?? raw?.eventType ?? raw?.EventType, 'UnknownEvent');
+  const payload = raw?.payload || raw?.Payload || {};
+  const timestamp =
+    raw?.timestamp_utc ||
+    raw?.timestampUtc ||
+    raw?.TimestampUtc ||
+    raw?.time ||
+    raw?.Time ||
+    '-';
+
+  return {
+    id:
+      raw?.event_id ||
+      raw?.eventId ||
+      raw?.EventId ||
+      raw?.id ||
+      `${eventType.toLowerCase()}-${index}`,
+    time: asString(timestamp, '-'),
+    eventType,
+    category: raw?.category || normalizeRuntimeEventCategory(eventType),
+    severity: normalizeRuntimeEventSeverity(raw?.severity ?? raw?.Severity),
+    source: asString(raw?.source ?? raw?.Source, 'HermesRuntime'),
+    description: asString(
+      raw?.description ?? raw?.Description,
+      runtimeEventDescription(eventType, payload),
+    ),
+  };
+}
+
+function parseRuntimeJsonl(text) {
+  const warnings = [];
+  const items = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line, index) => {
+      try {
+        return [normalizeRuntimeEvent(JSON.parse(line), index)];
+      } catch (error) {
+        warnings.push(warningFromError(`Runtime Event Zeile ${index + 1} nicht lesbar`, error));
+        return [];
+      }
+    });
+
+  return { items, warnings };
+}
+
+export function createRuntimeEventFallback(loadError = '') {
+  return {
+    items: runtimeEvents.map(normalizeRuntimeEvent),
+    dataSource: DATA_SOURCE.FIXTURE,
+    warnings: loadError ? [loadError] : [],
+    sourcePath: 'src/fixtures/controlCenterMockData.ts',
   };
 }
 
@@ -346,40 +502,45 @@ export async function loadSetupWatches() {
   };
 }
 
-export async function loadRuntimeEvents(timestampUtc, fallbackItems = []) {
+export async function loadRuntimeEvents(timestampUtc, fallbackItems = runtimeEvents) {
   const url = getRuntimeEventStoreUrl(timestampUtc);
 
   if (!url) {
     return {
-      items: fallbackItems,
+      items: fallbackItems.map(normalizeRuntimeEvent),
       dataSource: DATA_SOURCE.FIXTURE,
       warnings: ['Runtime Event URL ist nicht konfiguriert.'],
-      sourcePath: 'runtime events fixture',
+      sourcePath: 'src/fixtures/controlCenterMockData.ts',
     };
   }
 
   try {
     const text = await readTextReadOnly(url);
-    const items = text
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => JSON.parse(line));
+    const parsed = parseRuntimeJsonl(text);
+
+    if (!parsed.items.length) {
+      return createRuntimeEventFallback('Runtime Event JSONL enthaelt keine lesbaren Events.');
+    }
 
     return {
-      items,
+      items: parsed.items,
       dataSource: DATA_SOURCE.LIVE_FILE,
-      warnings: [],
+      warnings: parsed.warnings,
       sourcePath: url,
     };
   } catch (error) {
     return {
-      items: fallbackItems,
-      dataSource: DATA_SOURCE.FIXTURE,
-      warnings: [warningFromError('Runtime Events nicht erreichbar', error)],
-      sourcePath: 'runtime events fixture',
+      ...createRuntimeEventFallback(warningFromError('Runtime Events nicht erreichbar', error)),
+      items: fallbackItems.map(normalizeRuntimeEvent),
     };
   }
+}
+
+export async function loadRuntimeTimelineEvents() {
+  const runtimeData = await loadRuntimeData();
+  const timestampUtc = runtimeData.runtimeHealth?.timestamp_utc;
+
+  return loadRuntimeEvents(timestampUtc, runtimeEvents);
 }
 
 export const runtimeDataAdapter = {
@@ -387,7 +548,9 @@ export const runtimeDataAdapter = {
   loadRuntimeHealth,
   loadSetupWatches,
   loadRuntimeEvents,
+  loadRuntimeTimelineEvents,
   createRuntimeDataFallback,
   createRuntimeHealthFallback,
   createSetupWatchFallback,
+  createRuntimeEventFallback,
 };

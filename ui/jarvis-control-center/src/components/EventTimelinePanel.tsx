@@ -1,5 +1,11 @@
-import { eventLegend, runtimeEvents } from '../fixtures/controlCenterMockData';
+import { useEffect, useState } from 'react';
+import {
+  createRuntimeEventFallback,
+  loadRuntimeTimelineEvents,
+} from '../data/runtimeDataAdapter';
+import { eventLegend } from '../fixtures/controlCenterMockData';
 import { de as t } from '../i18n/de';
+import { sourceModeLabel, sourceTone } from '../utils/controlCenterFormatters';
 import { Panel, StatusPill, toneClass } from './StatusCard';
 
 function eventSeverityTone(severity) {
@@ -30,6 +36,12 @@ function eventCategoryTone(category) {
       return 'warn';
     case 'learning':
       return 'good';
+    case 'jobs':
+    case 'storage':
+    case 'replay':
+      return 'info';
+    case 'snapshot':
+      return 'good';
     default:
       return 'info';
   }
@@ -41,23 +53,53 @@ function eventCategoryLabel(category) {
       return t.eventTimeline.trading;
     case 'learning':
       return t.eventTimeline.learning;
+    case 'jobs':
+      return t.eventTimeline.jobs;
+    case 'storage':
+      return t.eventTimeline.storage;
+    case 'snapshot':
+      return t.eventTimeline.snapshot;
+    case 'replay':
+      return t.eventTimeline.replay;
     default:
       return t.eventTimeline.runtime;
   }
 }
 
 export function EventTimelinePanel() {
+  const [eventState, setEventState] = useState(() => createRuntimeEventFallback());
+  const fixtureActive = eventState.dataSource === 'fixture';
+
+  useEffect(() => {
+    let active = true;
+
+    loadRuntimeTimelineEvents().then((nextState) => {
+      if (active) {
+        setEventState(nextState);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <Panel
       eyebrow={t.eventTimeline.eyebrow}
       title={t.eventTimeline.title}
-      action={<StatusPill tone="info">{t.eventTimeline.status}</StatusPill>}
+      action={
+        <StatusPill tone={sourceTone(eventState.dataSource)}>
+          {sourceModeLabel(eventState.dataSource)}
+        </StatusPill>
+      }
       className="event-timeline-panel"
     >
       <div className="event-safety-strip">
         <strong>{t.eventTimeline.autoTradingOff}</strong>
         <strong>{t.eventTimeline.humanReviewRequired}</strong>
       </div>
+      {fixtureActive ? <p className="runtime-warning">{t.eventTimeline.fixtureActive}</p> : null}
       <div className="event-filter-legend" aria-label={t.eventTimeline.legend}>
         {eventLegend.map((item) => (
           <span className={`event-filter ${toneClass(item.tone)}`} key={item.label}>
@@ -66,7 +108,7 @@ export function EventTimelinePanel() {
         ))}
       </div>
       <div className="event-timeline-list">
-        {runtimeEvents.map((event) => (
+        {eventState.items.map((event) => (
           <article
             className={`event-timeline-card severity-${event.severity} category-${event.category}`}
             key={event.id}
