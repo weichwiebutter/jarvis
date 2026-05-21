@@ -28,6 +28,76 @@
 - Trading Panel Status: beschreibt den geplanten Hermes Trading Analyst als
   Analyse-Panel ohne Trading-Automation.
 
+## Schnellstart
+
+### A. Python/Gradio Dev UI
+
+Rolle: Gradio ist die lokale Dev/Test UI fuer Jarvis- und Hermes-Status,
+manuelle Tests und bestehende Diagnose-Panels.
+
+```bash
+cd ~/jarvis
+source .venv/bin/activate
+python ui_app.py
+```
+
+Dann im Browser oeffnen:
+
+```text
+http://127.0.0.1:7860
+```
+
+Falls die Umgebung `venv/` statt `.venv/` nutzt:
+
+```bash
+source venv/bin/activate
+```
+
+### B. HermesRuntime
+
+Rolle: HermesRuntime ist die lokale Runtime Foundation fuer Events, Snapshots,
+Queue, Worker-Stubs, Setup-Watch-Demo, RuntimeHealth und JSON/JSONL-Ablage.
+
+```bash
+cd ~/jarvis/HermesRuntime
+dotnet run --project ./Hermes.Runtime.csproj
+```
+
+### C. Hermes CLI
+
+Rolle: Hermes CLI ist eine read-only Dev Console fuer lokale Runtime-Dateien.
+Sie startet/stoppt die Runtime nicht und fuehrt keine Trading-Aktionen aus.
+
+```bash
+cd ~/jarvis/HermesRuntime
+dotnet run --project ./cli/Hermes.Cli.csproj -- health
+dotnet run --project ./cli/Hermes.Cli.csproj -- setup-watch
+dotnet run --project ./cli/Hermes.Cli.csproj -- events recent
+dotnet run --project ./cli/Hermes.Cli.csproj -- jobs
+dotnet run --project ./cli/Hermes.Cli.csproj -- storage
+dotnet run --project ./cli/Hermes.Cli.csproj -- version
+```
+
+### D. React Jarvis Control Center
+
+Rolle: React ist der sichtbare Jarvis Control Center Prototype. Er nutzt
+Mock-/Fixture-Daten und read-only lokale JSON-Zugriffe, wenn der Browser diese
+im Dev-Modus erlaubt.
+
+```bash
+cd ~/jarvis/ui/jarvis-control-center
+npm install
+npm run dev
+```
+
+Dann im Browser oeffnen:
+
+```text
+http://127.0.0.1:5173
+```
+
+Falls Port `5173` belegt ist, zeigt Vite die tatsaechliche URL im Terminal.
+
 ## Sicherheitsprinzipien
 
 - Human-in-the-loop fuer riskante Aktionen und Ausfuehrungsschritte.
@@ -35,6 +105,11 @@
 - Keine Runtime-Daten im Git.
 - Keine automatischen Trades.
 - Statusmodule sind read-only und starten keine Services.
+- `no_auto_trading` bleibt aktiv.
+- `human_review_required` bleibt aktiv.
+- React UI ist read-only und sendet keine Runtime-Kommandos.
+- Hermes CLI ist read-only und bietet keine Start-/Stop-/Delete-Kommandos.
+- Keine Brokerverbindung und keine cTrader-Anbindung in der aktuellen Phase.
 - Trading bleibt Analyse/Alerts only; Orders und Broker-Anbindungen sind nicht
   implementiert.
 - Hermes CLI Foundation ist read-only: keine Runtime-Steuerung, keine
