@@ -37,6 +37,29 @@
 - Statusmodule sind read-only und starten keine Services.
 - Trading bleibt Analyse/Alerts only; Orders und Broker-Anbindungen sind nicht
   implementiert.
+- Hermes CLI Foundation ist read-only: keine Runtime-Steuerung, keine
+  Delete-Kommandos, keine Trading-Kommandos.
+
+## Hermes CLI Foundation
+
+Die erste lokale CLI liegt unter `HermesRuntime/cli/` und liest nur bestehende
+Runtime-Dateien.
+
+Beispiele:
+
+```bash
+cd HermesRuntime
+dotnet run --project ./cli/Hermes.Cli.csproj -- health
+dotnet run --project ./cli/Hermes.Cli.csproj -- setup-watch
+dotnet run --project ./cli/Hermes.Cli.csproj -- events recent
+dotnet run --project ./cli/Hermes.Cli.csproj -- jobs
+dotnet run --project ./cli/Hermes.Cli.csproj -- storage
+dotnet run --project ./cli/Hermes.Cli.csproj -- version
+```
+
+Die CLI startet HermesRuntime nicht. Sie liest `runtime_health.json`,
+`setup_watch.json`, Event-JSONL, Job-Manifeste und Storage-Metadaten lokal und
+zeigt Safety-Flags wie `no_auto_trading` und `human_review_required` sichtbar an.
 
 ## Relevante Testbefehle
 

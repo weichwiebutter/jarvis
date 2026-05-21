@@ -43,6 +43,8 @@ config/settings.env
 
 # Runtime data
 data/
+!ui/jarvis-control-center/src/data/
+!ui/jarvis-control-center/src/data/runtimeDataAdapter.ts
 obsidian/
 
 # External reference repos
