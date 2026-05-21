@@ -772,6 +772,15 @@ h2 {
     rgba(4, 10, 18, 0.34);
 }
 
+.outcome-report-section {
+  padding: 14px;
+  border: 1px solid rgba(132, 204, 255, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(132, 204, 255, 0.06), transparent 58%),
+    rgba(4, 10, 18, 0.34);
+}
+
 .research-block {
   min-width: 0;
 }
@@ -797,6 +806,8 @@ h2 {
 .feature-export-preview-grid,
 .feature-row-list,
 .backtest-report-grid,
+.outcome-summary-grid,
+.outcome-card-grid,
 .backtest-card-list,
 .cluster-heatmap,
 .regime-card-list {
@@ -846,7 +857,32 @@ h2 {
   text-align: center;
 }
 
+.outcome-safety-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.outcome-safety-strip strong {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 10px;
+  border: 1px solid rgba(132, 204, 255, 0.28);
+  border-radius: 8px;
+  color: var(--cyan);
+  background: rgba(132, 204, 255, 0.07);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
 .feature-export-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.outcome-summary-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -861,6 +897,29 @@ h2 {
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 60%),
     rgba(5, 11, 18, 0.72);
+}
+
+.outcome-summary-card {
+  display: grid;
+  min-height: 98px;
+  align-content: center;
+  gap: 7px;
+  padding: 13px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 60%),
+    rgba(5, 11, 18, 0.72);
+}
+
+.outcome-summary-card span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.outcome-summary-card strong {
+  color: var(--text);
+  font-size: 1.45rem;
 }
 
 .feature-export-summary-card span,
@@ -1039,6 +1098,7 @@ h2 {
 .research-asset,
 .research-replay-note,
 .backtest-report-card,
+.outcome-card,
 .backtest-card,
 .cluster-tile,
 .regime-card {
@@ -1121,6 +1181,73 @@ h2 {
   margin: 0;
   color: var(--soft);
   line-height: 1.45;
+}
+
+.outcome-card-grid {
+  grid-template-columns: repeat(3, minmax(300px, 1fr));
+}
+
+.outcome-card {
+  display: grid;
+  gap: 12px;
+  min-height: 330px;
+  padding: 16px;
+  border-color: currentColor;
+  background:
+    radial-gradient(circle at top right, rgba(132, 204, 255, 0.09), transparent 38%),
+    rgba(4, 10, 18, 0.72);
+  box-shadow: inset 4px 0 0 currentColor;
+}
+
+.outcome-identity,
+.outcome-metrics {
+  display: grid;
+  gap: 8px;
+}
+
+.outcome-identity {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.outcome-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.outcome-identity div,
+.outcome-metrics div,
+.outcome-evaluated {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid rgba(132, 204, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.outcome-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.outcome-flags span {
+  padding: 7px 9px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.76rem;
+}
+
+.outcome-card span,
+.outcome-evaluated span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.outcome-card strong,
+.outcome-flags b {
+  overflow-wrap: anywhere;
 }
 
 .backtest-card-list {
@@ -2023,6 +2150,8 @@ h2 {
   .research-analysis-grid,
   .backtest-card-list,
   .backtest-report-grid,
+  .outcome-summary-grid,
+  .outcome-card-grid,
   .feature-export-summary-grid,
   .feature-export-preview-grid,
   .storage-summary-grid,
@@ -2058,6 +2187,7 @@ h2 {
 
   .feature-export-guard,
   .backtest-report-safety,
+  .outcome-safety-strip,
   .feature-export-file-grid {
     grid-template-columns: 1fr;
   }
@@ -2099,6 +2229,11 @@ h2 {
   .backtest-report-safety,
   .backtest-report-identity,
   .backtest-report-metrics,
+  .outcome-summary-grid,
+  .outcome-safety-strip,
+  .outcome-card-grid,
+  .outcome-identity,
+  .outcome-metrics,
   .backtest-meta,
   .backtest-metrics,
   .cluster-heatmap,

@@ -14,6 +14,7 @@ const setupWatchPath = resolve(repoRoot, 'HermesRuntime/data/setup_watch/setup_w
 const featureExportsPath = resolve(repoRoot, 'HermesRuntime/data/exports/features');
 const signalExportsPath = resolve(repoRoot, 'HermesRuntime/data/exports/signals');
 const backtestReportsPath = resolve(repoRoot, 'HermesRuntime/data/reports/backtests');
+const outcomeReportsPath = resolve(repoRoot, 'HermesRuntime/data/reports/outcomes');
 
 function findLatestReplayManifest() {
   try {
@@ -45,6 +46,7 @@ const latestReplayManifestPath = findLatestReplayManifest();
 const latestFeatureExportPath = findLatestExportFile(featureExportsPath, '.features.jsonl');
 const latestSignalExportPath = findLatestExportFile(signalExportsPath, '.signals.jsonl');
 const latestBacktestReportPath = findLatestExportFile(backtestReportsPath, '.backtest.json');
+const latestOutcomeReportPath = findLatestExportFile(outcomeReportsPath, '.outcomes.json');
 
 export default defineConfig({
   plugins: [react()],
@@ -64,6 +66,9 @@ export default defineConfig({
     __HERMES_BACKTEST_REPORT_URL__: JSON.stringify(
       latestBacktestReportPath ? `/@fs/${latestBacktestReportPath}` : '',
     ),
+    __HERMES_OUTCOME_REPORT_URL__: JSON.stringify(
+      latestOutcomeReportPath ? `/@fs/${latestOutcomeReportPath}` : '',
+    ),
     __HERMES_SETUP_WATCH_URL__: JSON.stringify(`/@fs/${setupWatchPath}`),
     __HERMES_RUNTIME_HEALTH_PATH__: JSON.stringify(
       'HermesRuntime/data/reports/runtime_health.json',
@@ -82,6 +87,11 @@ export default defineConfig({
     __HERMES_BACKTEST_REPORT_PATH__: JSON.stringify(
       latestBacktestReportPath
         ? `HermesRuntime/data/reports/backtests/${latestBacktestReportPath.split('/').at(-1)}`
+        : '',
+    ),
+    __HERMES_OUTCOME_REPORT_PATH__: JSON.stringify(
+      latestOutcomeReportPath
+        ? `HermesRuntime/data/reports/outcomes/${latestOutcomeReportPath.split('/').at(-1)}`
         : '',
     ),
     __HERMES_SETUP_WATCH_PATH__: JSON.stringify('HermesRuntime/data/setup_watch/setup_watch.json'),

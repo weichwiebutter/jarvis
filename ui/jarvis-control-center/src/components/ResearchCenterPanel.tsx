@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import {
   createBacktestReportsFallback,
   createFeatureSignalExportsFallback,
+  createOutcomeReportsFallback,
   loadBacktestReports,
   loadFeatureSignalExports,
+  loadOutcomeReports,
 } from '../data/runtimeDataAdapter';
 import {
   backtestRuns,
@@ -90,8 +92,49 @@ function backtestReportStatusLabel(status) {
   return researchStatusLabel(status);
 }
 
+function outcomeStatusTone(status) {
+  switch (status) {
+    case 'tp_hit':
+      return 'good';
+    case 'sl_hit':
+    case 'invalidated':
+      return 'danger';
+    case 'expired':
+      return 'muted';
+    case 'partial':
+      return 'warn';
+    default:
+      return 'info';
+  }
+}
+
+function outcomeStatusLabel(status) {
+  switch (status) {
+    case 'tp_hit':
+      return t.backtestResearch.tpHit;
+    case 'sl_hit':
+      return t.backtestResearch.slHit;
+    case 'expired':
+      return t.backtestResearch.expiredOutcome;
+    case 'invalidated':
+      return t.backtestResearch.invalidatedOutcome;
+    case 'partial':
+      return t.backtestResearch.partialOutcome;
+    default:
+      return status;
+  }
+}
+
 function formatDecimal(value, digits = 2) {
   return Number(value || 0).toFixed(digits);
+}
+
+function formatR(value) {
+  return `${formatDecimal(value)} R`;
+}
+
+function boolLabel(value) {
+  return value ? t.common.yes : t.common.no;
 }
 
 function FeatureSignalExportSection({ exportState }) {
@@ -285,10 +328,123 @@ function BacktestReportsSection({ backtestReportState }) {
   );
 }
 
+function OutcomeReportsSection({ outcomeReportState }) {
+  const fixtureActive = outcomeReportState.dataSource === 'fixture';
+  const outcomes = outcomeReportState.outcomes.slice(0, 4);
+
+  return (
+    <section className="research-section outcome-report-section">
+      <div className="research-section-head">
+        <h3>{t.backtestResearch.outcomeReportsTitle}</h3>
+        <StatusPill tone={sourceTone(outcomeReportState.dataSource)}>
+          {exportStatusLabel(outcomeReportState)}
+        </StatusPill>
+      </div>
+      {fixtureActive ? <p className="runtime-warning">{t.common.demoFixtureActive}</p> : null}
+      <div className="outcome-summary-grid">
+        <article className="outcome-summary-card tone-good">
+          <span>{t.backtestResearch.tpHit}</span>
+          <strong>{outcomeReportState.counts.targetHits}</strong>
+        </article>
+        <article className="outcome-summary-card tone-danger">
+          <span>{t.backtestResearch.slHit}</span>
+          <strong>{outcomeReportState.counts.stopHits}</strong>
+        </article>
+        <article className="outcome-summary-card tone-muted">
+          <span>{t.backtestResearch.expiredOutcome}</span>
+          <strong>{outcomeReportState.counts.expired}</strong>
+        </article>
+        <article className="outcome-summary-card tone-warn">
+          <span>{t.backtestResearch.invalidatedOutcome}</span>
+          <strong>{outcomeReportState.counts.invalidated}</strong>
+        </article>
+      </div>
+      <div className="outcome-safety-strip">
+        <strong>{t.backtestResearch.theoreticalOutcome}</strong>
+        <strong>{t.backtestResearch.noOrderExecution}</strong>
+        <strong>{t.backtestResearch.confidenceCalibrationBasis}</strong>
+      </div>
+      <div className="outcome-card-grid">
+        {outcomes.map((outcome) => (
+          <article
+            className={`outcome-card ${toneClass(outcomeStatusTone(outcome.outcome_status))}`}
+            key={outcome.outcome_id}
+          >
+            <div className="backtest-card-head">
+              <div>
+                <span>{t.backtestResearch.outcomeId}</span>
+                <strong>{outcome.outcome_id}</strong>
+              </div>
+              <StatusPill tone={outcomeStatusTone(outcome.outcome_status)}>
+                {outcomeStatusLabel(outcome.outcome_status)}
+              </StatusPill>
+            </div>
+            <div className="outcome-identity">
+              <div>
+                <span>{t.backtestResearch.symbol}</span>
+                <strong>{outcome.symbol}</strong>
+              </div>
+              <div>
+                <span>{t.backtestResearch.timeframe}</span>
+                <strong>{outcome.timeframe}</strong>
+              </div>
+              <div>
+                <span>{t.backtestResearch.direction}</span>
+                <strong>{outcome.direction}</strong>
+              </div>
+            </div>
+            <div className="outcome-flags">
+              <span className={toneClass(outcome.hit_target ? 'good' : 'muted')}>
+                {t.backtestResearch.targetHit}: <b>{boolLabel(outcome.hit_target)}</b>
+              </span>
+              <span className={toneClass(outcome.hit_stop ? 'danger' : 'muted')}>
+                {t.backtestResearch.stopHit}: <b>{boolLabel(outcome.hit_stop)}</b>
+              </span>
+              <span className={toneClass(outcome.expired ? 'warn' : 'muted')}>
+                {t.backtestResearch.expiredOutcome}: <b>{boolLabel(outcome.expired)}</b>
+              </span>
+              <span className={toneClass(outcome.invalidated ? 'danger' : 'muted')}>
+                {t.backtestResearch.invalidatedOutcome}: <b>{boolLabel(outcome.invalidated)}</b>
+              </span>
+            </div>
+            <div className="outcome-metrics">
+              <div>
+                <span>{t.backtestResearch.mfe}</span>
+                <strong>{formatR(outcome.mfe)}</strong>
+              </div>
+              <div>
+                <span>{t.backtestResearch.mae}</span>
+                <strong>{formatR(outcome.mae)}</strong>
+              </div>
+              <div>
+                <span>{t.backtestResearch.finalR}</span>
+                <strong>{formatR(outcome.final_r)}</strong>
+              </div>
+            </div>
+            <div className="outcome-evaluated">
+              <span>{t.backtestResearch.evaluatedAt}</span>
+              <strong>{outcome.evaluated_at_utc || t.common.notReported}</strong>
+            </div>
+          </article>
+        ))}
+      </div>
+      <div className="feature-export-file-grid">
+        <article>
+          <span>{t.backtestResearch.outcomeReportFiles}</span>
+          <code>{outcomeReportState.sourcePath || t.common.notReported}</code>
+        </article>
+      </div>
+    </section>
+  );
+}
+
 export function ResearchCenterPanel() {
   const [exportState, setExportState] = useState(() => createFeatureSignalExportsFallback());
   const [backtestReportState, setBacktestReportState] = useState(() =>
     createBacktestReportsFallback(),
+  );
+  const [outcomeReportState, setOutcomeReportState] = useState(() =>
+    createOutcomeReportsFallback(),
   );
 
   useEffect(() => {
@@ -303,6 +459,12 @@ export function ResearchCenterPanel() {
     loadBacktestReports().then((nextState) => {
       if (active) {
         setBacktestReportState(nextState);
+      }
+    });
+
+    loadOutcomeReports().then((nextState) => {
+      if (active) {
+        setOutcomeReportState(nextState);
       }
     });
 
@@ -326,6 +488,7 @@ export function ResearchCenterPanel() {
 
       <FeatureSignalExportSection exportState={exportState} />
       <BacktestReportsSection backtestReportState={backtestReportState} />
+      <OutcomeReportsSection outcomeReportState={outcomeReportState} />
 
       <div className="research-overview-grid">
         <section className="research-block">

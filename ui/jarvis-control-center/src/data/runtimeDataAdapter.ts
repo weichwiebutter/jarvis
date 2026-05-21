@@ -2,6 +2,7 @@ import { runtimeBacktestReportsMock } from '../fixtures/runtimeBacktestReportsMo
 import { runtimeFeatureSignalExportsMock } from '../fixtures/runtimeFeatureSignalExportsMock';
 import { runtimeHealthMock } from '../fixtures/runtimeHealthMock';
 import { runtimeJobsMock } from '../fixtures/runtimeJobsMock';
+import { runtimeOutcomeReportsMock } from '../fixtures/runtimeOutcomeReportsMock';
 import { runtimeStorageMock } from '../fixtures/runtimeStorageMock';
 import { setupWatchMock } from '../fixtures/setupWatchMock';
 import { runtimeEvents } from '../fixtures/controlCenterMockData';
@@ -19,6 +20,7 @@ const runtimeJobsUrl = __HERMES_RUNTIME_JOBS_URL__;
 const featureExportUrl = __HERMES_FEATURE_EXPORT_URL__;
 const signalExportUrl = __HERMES_SIGNAL_EXPORT_URL__;
 const backtestReportUrl = __HERMES_BACKTEST_REPORT_URL__;
+const outcomeReportUrl = __HERMES_OUTCOME_REPORT_URL__;
 const replayManifestUrl = __HERMES_REPLAY_MANIFEST_URL__;
 const setupWatchUrl = __HERMES_SETUP_WATCH_URL__;
 const runtimeHealthPath = __HERMES_RUNTIME_HEALTH_PATH__;
@@ -26,6 +28,7 @@ const runtimeJobsPath = __HERMES_RUNTIME_JOBS_PATH__;
 const featureExportPath = __HERMES_FEATURE_EXPORT_PATH__;
 const signalExportPath = __HERMES_SIGNAL_EXPORT_PATH__;
 const backtestReportPath = __HERMES_BACKTEST_REPORT_PATH__;
+const outcomeReportPath = __HERMES_OUTCOME_REPORT_PATH__;
 const setupWatchPath = __HERMES_SETUP_WATCH_PATH__;
 
 const SUPPORTED_RUNTIME_EVENT_TYPES = new Set([
@@ -511,6 +514,41 @@ export function normalizeBacktestReport(raw, index = 0) {
   };
 }
 
+export function normalizeOutcomeReport(raw, index = 0) {
+  return {
+    outcome_id:
+      raw?.outcome_id ||
+      raw?.outcomeId ||
+      raw?.OutcomeId ||
+      `outcome_report_${index}`,
+    signal_id:
+      raw?.signal_id ||
+      raw?.signalId ||
+      raw?.SignalId ||
+      null,
+    symbol: asString(raw?.symbol ?? raw?.Symbol, 'UNKNOWN'),
+    timeframe: asString(raw?.timeframe ?? raw?.Timeframe, '-'),
+    direction: asString(raw?.direction ?? raw?.Direction, 'neutral'),
+    outcome_status: asString(
+      raw?.outcome_status ?? raw?.outcomeStatus ?? raw?.OutcomeStatus,
+      'unknown',
+    ),
+    hit_target: asBoolean(raw?.hit_target ?? raw?.hitTarget ?? raw?.HitTarget, false),
+    hit_stop: asBoolean(raw?.hit_stop ?? raw?.hitStop ?? raw?.HitStop, false),
+    expired: asBoolean(raw?.expired ?? raw?.Expired, false),
+    invalidated: asBoolean(raw?.invalidated ?? raw?.Invalidated, false),
+    mfe: asNumber(raw?.mfe ?? raw?.Mfe, 0),
+    mae: asNumber(raw?.mae ?? raw?.Mae, 0),
+    final_r: asNumber(raw?.final_r ?? raw?.finalR ?? raw?.FinalR, 0),
+    evaluated_at_utc:
+      raw?.evaluated_at_utc ||
+      raw?.evaluatedAtUtc ||
+      raw?.EvaluatedAtUtc ||
+      null,
+    notes: asString(raw?.notes ?? raw?.Notes, ''),
+  };
+}
+
 function parseJsonlRows(text, normalizeRow, warningPrefix) {
   const warnings = [];
   const items = text
@@ -566,6 +604,23 @@ function buildBacktestReports(reports, reportFiles, dataSource, warnings = []) {
     reportFiles,
     counts: {
       reports: reports.length,
+    },
+    dataSource,
+    warnings,
+    sourcePath: reportFiles.filter(Boolean).join(' | '),
+  };
+}
+
+function buildOutcomeReports(outcomes, reportFiles, dataSource, warnings = []) {
+  return {
+    outcomes,
+    reportFiles,
+    counts: {
+      outcomes: outcomes.length,
+      targetHits: outcomes.filter((outcome) => outcome.hit_target).length,
+      stopHits: outcomes.filter((outcome) => outcome.hit_stop).length,
+      expired: outcomes.filter((outcome) => outcome.expired).length,
+      invalidated: outcomes.filter((outcome) => outcome.invalidated).length,
     },
     dataSource,
     warnings,
@@ -641,6 +696,15 @@ export function createBacktestReportsFallback(loadError = '') {
   return buildBacktestReports(
     runtimeBacktestReportsMock.reports.map(normalizeBacktestReport),
     [...runtimeBacktestReportsMock.report_files],
+    DATA_SOURCE.FIXTURE,
+    loadError ? [loadError] : [],
+  );
+}
+
+export function createOutcomeReportsFallback(loadError = '') {
+  return buildOutcomeReports(
+    runtimeOutcomeReportsMock.outcomes.map(normalizeOutcomeReport),
+    [...runtimeOutcomeReportsMock.report_files],
     DATA_SOURCE.FIXTURE,
     loadError ? [loadError] : [],
   );
@@ -963,6 +1027,34 @@ export async function loadBacktestReports() {
   }
 }
 
+export async function loadOutcomeReports() {
+  if (!outcomeReportUrl) {
+    return createOutcomeReportsFallback('Outcome-Report URL ist nicht konfiguriert.');
+  }
+
+  try {
+    const raw = await readJsonReadOnly(outcomeReportUrl);
+    const outcomes = Array.isArray(raw) ? raw : raw?.outcomes || [raw];
+    const normalizedOutcomes = outcomes.map(normalizeOutcomeReport);
+
+    if (!normalizedOutcomes.length) {
+      return createOutcomeReportsFallback(
+        'Outcome-Report Datei enthaelt keine lesbaren Outcomes.',
+      );
+    }
+
+    return buildOutcomeReports(
+      normalizedOutcomes,
+      [outcomeReportPath || outcomeReportUrl],
+      DATA_SOURCE.LIVE_FILE,
+    );
+  } catch (error) {
+    return createOutcomeReportsFallback(
+      warningFromError('Outcome-Reports nicht erreichbar', error),
+    );
+  }
+}
+
 export const runtimeDataAdapter = {
   loadRuntimeData,
   loadRuntimeHealth,
@@ -973,6 +1065,7 @@ export const runtimeDataAdapter = {
   loadRuntimeStorage,
   loadFeatureSignalExports,
   loadBacktestReports,
+  loadOutcomeReports,
   createRuntimeDataFallback,
   createRuntimeHealthFallback,
   createSetupWatchFallback,
@@ -981,4 +1074,5 @@ export const runtimeDataAdapter = {
   createRuntimeStorageFallback,
   createFeatureSignalExportsFallback,
   createBacktestReportsFallback,
+  createOutcomeReportsFallback,
 };
