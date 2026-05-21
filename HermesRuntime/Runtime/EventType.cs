@@ -14,6 +14,8 @@ public enum EventType
     SignalResultExported,
     BacktestStarted,
     BacktestCompleted,
+    OutcomeEvaluationStarted,
+    OutcomeEvaluationCompleted,
     JobCompleted,
     JobFailed,
     WorkerStopped,

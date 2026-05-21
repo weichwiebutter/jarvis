@@ -80,6 +80,8 @@ public sealed class RuntimeHost
         workerHost.RunOnce(FeatureExportWorker.FeatureExportJobType);
         workerHost.RunOnce(BacktestWorker.BacktestJobType);
 
+        var outcomeTrackerService = new OutcomeTrackerService(storage.Paths, eventBus, RuntimeVersion);
+        var outcomeResult = outcomeTrackerService.EvaluateDemoOutcomes();
         var replayManifestService = new ReplayManifestService(storage.Paths, eventBus, RuntimeVersion);
         var replayManifestResult = replayManifestService.CreateDemoReplayManifest();
         var setupWatchService = new SetupWatchService(storage.Paths, eventBus, RuntimeVersion);
@@ -119,6 +121,7 @@ public sealed class RuntimeHost
         Console.WriteLine($"Storage: {state.StorageRoot}");
         Console.WriteLine($"Events: {eventStore.EventFilePath}");
         Console.WriteLine($"Snapshot: {state.LastSnapshotPath}");
+        Console.WriteLine($"Outcomes: {outcomeResult.ReportPath}");
         Console.WriteLine($"ReplayManifest: {replayManifestResult.ManifestPath}");
         Console.WriteLine($"SetupWatch: {setupWatchResult.OutputPath}");
         Console.WriteLine($"Health: {healthResult.ReportPath}");

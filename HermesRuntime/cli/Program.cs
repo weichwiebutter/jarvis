@@ -34,6 +34,7 @@ internal sealed class HermesCli
             "features" => ShowFeatures(),
             "signals" => ShowSignals(),
             "backtests" => ShowBacktests(),
+            "outcomes" => ShowOutcomes(),
             "version" => ShowVersion(),
             _ => UnknownCommand(command)
         };
@@ -53,6 +54,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes backtests          Demo-Backtest-Reports anzeigen");
+        Console.WriteLine("  hermes outcomes           Signal-Outcome-Reports anzeigen");
         Console.WriteLine("  hermes version            CLI-/Runtime-Version anzeigen");
         Console.WriteLine();
         Console.WriteLine("Start ohne Installation:");
@@ -389,6 +391,46 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowOutcomes()
+    {
+        WriteHeader("Hermes Signal Outcomes");
+        var limit = ReadLimit(_args, 8);
+        var files = FindOutcomeReportFiles().TakeLast(limit).ToList();
+        if (files.Count == 0)
+        {
+            WriteWarning("Keine Outcome-Reports gefunden.");
+            WriteSafety();
+            return 0;
+        }
+
+        foreach (var file in files)
+        {
+            if (!TryLoadJson(file, out var root))
+            {
+                WriteWarning($"Outcome-Report nicht lesbar: {DisplayPath(file)}");
+                continue;
+            }
+
+            Console.WriteLine($"Quelle: {DisplayPath(file)}");
+            Console.WriteLine();
+
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var outcome in root.EnumerateArray())
+                {
+                    WriteOutcome(outcome);
+                }
+            }
+            else if (root.ValueKind == JsonValueKind.Object)
+            {
+                WriteOutcome(root);
+            }
+        }
+
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowVersion()
     {
         WriteHeader("Hermes CLI Version");
@@ -475,6 +517,42 @@ internal sealed class HermesCli
         {
             yield return file;
         }
+    }
+
+    private IEnumerable<string> FindOutcomeReportFiles()
+    {
+        var directory = Path.Combine(_dataRoot, "reports", "outcomes");
+        if (!Directory.Exists(directory))
+        {
+            yield break;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(directory, "*.json")
+                     .OrderBy(File.GetLastWriteTimeUtc)
+                     .ThenBy(path => path))
+        {
+            yield return file;
+        }
+    }
+
+    private void WriteOutcome(JsonElement root)
+    {
+        WriteSubHeader(GetString(root, "outcome_id", "outcomeId") ?? "unknown_outcome");
+        WriteField("Signal ID", GetString(root, "signal_id", "signalId"));
+        WriteField("Symbol", GetString(root, "symbol"));
+        WriteField("Timeframe", GetString(root, "timeframe"));
+        WriteField("Direction", GetString(root, "direction"));
+        WriteField("Outcome", GetString(root, "outcome_status", "outcomeStatus"));
+        WriteField("Hit Target", GetBoolText(root, "hit_target", "hitTarget"));
+        WriteField("Hit Stop", GetBoolText(root, "hit_stop", "hitStop"));
+        WriteField("Expired", GetBoolText(root, "expired"));
+        WriteField("Invalidated", GetBoolText(root, "invalidated"));
+        WriteField("MFE", $"{GetDouble(root, "mfe"):0.##} R");
+        WriteField("MAE", $"{GetDouble(root, "mae"):0.##} R");
+        WriteField("Final R", $"{GetDouble(root, "final_r", "finalR"):0.##} R");
+        WriteField("Evaluated UTC", GetString(root, "evaluated_at_utc", "evaluatedAtUtc"));
+        WriteField("Notes", GetString(root, "notes"));
+        Console.WriteLine();
     }
 
     private static IReadOnlyList<string> ReadRecentJsonlLines(string file, int limit)
