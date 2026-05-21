@@ -1,3 +1,4 @@
+import { runtimeBacktestReportsMock } from '../fixtures/runtimeBacktestReportsMock';
 import { runtimeFeatureSignalExportsMock } from '../fixtures/runtimeFeatureSignalExportsMock';
 import { runtimeHealthMock } from '../fixtures/runtimeHealthMock';
 import { runtimeJobsMock } from '../fixtures/runtimeJobsMock';
@@ -17,12 +18,14 @@ const runtimeEventsBaseUrl = __HERMES_RUNTIME_EVENTS_BASE_URL__;
 const runtimeJobsUrl = __HERMES_RUNTIME_JOBS_URL__;
 const featureExportUrl = __HERMES_FEATURE_EXPORT_URL__;
 const signalExportUrl = __HERMES_SIGNAL_EXPORT_URL__;
+const backtestReportUrl = __HERMES_BACKTEST_REPORT_URL__;
 const replayManifestUrl = __HERMES_REPLAY_MANIFEST_URL__;
 const setupWatchUrl = __HERMES_SETUP_WATCH_URL__;
 const runtimeHealthPath = __HERMES_RUNTIME_HEALTH_PATH__;
 const runtimeJobsPath = __HERMES_RUNTIME_JOBS_PATH__;
 const featureExportPath = __HERMES_FEATURE_EXPORT_PATH__;
 const signalExportPath = __HERMES_SIGNAL_EXPORT_PATH__;
+const backtestReportPath = __HERMES_BACKTEST_REPORT_PATH__;
 const setupWatchPath = __HERMES_SETUP_WATCH_PATH__;
 
 const SUPPORTED_RUNTIME_EVENT_TYPES = new Set([
@@ -471,6 +474,43 @@ export function normalizeSignalResult(raw, index = 0) {
   };
 }
 
+export function normalizeBacktestReport(raw, index = 0) {
+  return {
+    run_id:
+      raw?.run_id ||
+      raw?.runId ||
+      raw?.RunId ||
+      `backtest_report_${index}`,
+    symbol: asString(raw?.symbol ?? raw?.Symbol, 'UNKNOWN'),
+    timeframe: asString(raw?.timeframe ?? raw?.Timeframe, '-'),
+    strategy_name: asString(
+      raw?.strategy_name ?? raw?.strategyName ?? raw?.StrategyName,
+      '-',
+    ),
+    status: asString(raw?.status ?? raw?.Status, 'unknown'),
+    started_at_utc:
+      raw?.started_at_utc ||
+      raw?.startedAtUtc ||
+      raw?.StartedAtUtc ||
+      null,
+    completed_at_utc:
+      raw?.completed_at_utc ||
+      raw?.completedAtUtc ||
+      raw?.CompletedAtUtc ||
+      null,
+    trade_count: asNumber(raw?.trade_count ?? raw?.tradeCount ?? raw?.TradeCount, 0),
+    winrate: asNumber(raw?.winrate ?? raw?.Winrate, 0),
+    profit_factor: asNumber(raw?.profit_factor ?? raw?.profitFactor ?? raw?.ProfitFactor, 0),
+    max_drawdown: asNumber(raw?.max_drawdown ?? raw?.maxDrawdown ?? raw?.MaxDrawdown, 0),
+    expectancy: asNumber(raw?.expectancy ?? raw?.Expectancy, 0),
+    notes: asString(raw?.notes ?? raw?.Notes, ''),
+    no_auto_trading: asBoolean(
+      raw?.no_auto_trading ?? raw?.noAutoTrading ?? raw?.NoAutoTrading,
+      true,
+    ),
+  };
+}
+
 function parseJsonlRows(text, normalizeRow, warningPrefix) {
   const warnings = [];
   const items = text
@@ -517,6 +557,19 @@ function buildFeatureSignalExports(features, signals, exportFiles, dataSource, w
     dataSource,
     warnings,
     sourcePath: [exportFiles.features, exportFiles.signals].filter(Boolean).join(' | '),
+  };
+}
+
+function buildBacktestReports(reports, reportFiles, dataSource, warnings = []) {
+  return {
+    reports,
+    reportFiles,
+    counts: {
+      reports: reports.length,
+    },
+    dataSource,
+    warnings,
+    sourcePath: reportFiles.filter(Boolean).join(' | '),
   };
 }
 
@@ -579,6 +632,15 @@ export function createFeatureSignalExportsFallback(loadError = '') {
     features,
     signals,
     runtimeFeatureSignalExportsMock.export_files,
+    DATA_SOURCE.FIXTURE,
+    loadError ? [loadError] : [],
+  );
+}
+
+export function createBacktestReportsFallback(loadError = '') {
+  return buildBacktestReports(
+    runtimeBacktestReportsMock.reports.map(normalizeBacktestReport),
+    [...runtimeBacktestReportsMock.report_files],
     DATA_SOURCE.FIXTURE,
     loadError ? [loadError] : [],
   );
@@ -873,6 +935,34 @@ export async function loadFeatureSignalExports() {
   }
 }
 
+export async function loadBacktestReports() {
+  if (!backtestReportUrl) {
+    return createBacktestReportsFallback('Backtest-Report URL ist nicht konfiguriert.');
+  }
+
+  try {
+    const raw = await readJsonReadOnly(backtestReportUrl);
+    const reports = Array.isArray(raw) ? raw : raw?.reports || [raw];
+    const normalizedReports = reports.map(normalizeBacktestReport);
+
+    if (!normalizedReports.length) {
+      return createBacktestReportsFallback(
+        'Backtest-Report Datei enthaelt keinen lesbaren Report.',
+      );
+    }
+
+    return buildBacktestReports(
+      normalizedReports,
+      [backtestReportPath || backtestReportUrl],
+      DATA_SOURCE.LIVE_FILE,
+    );
+  } catch (error) {
+    return createBacktestReportsFallback(
+      warningFromError('Backtest-Reports nicht erreichbar', error),
+    );
+  }
+}
+
 export const runtimeDataAdapter = {
   loadRuntimeData,
   loadRuntimeHealth,
@@ -882,6 +972,7 @@ export const runtimeDataAdapter = {
   loadRuntimeJobs,
   loadRuntimeStorage,
   loadFeatureSignalExports,
+  loadBacktestReports,
   createRuntimeDataFallback,
   createRuntimeHealthFallback,
   createSetupWatchFallback,
@@ -889,4 +980,5 @@ export const runtimeDataAdapter = {
   createRuntimeJobsFallback,
   createRuntimeStorageFallback,
   createFeatureSignalExportsFallback,
+  createBacktestReportsFallback,
 };

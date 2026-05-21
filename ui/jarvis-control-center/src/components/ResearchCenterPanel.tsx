@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
+  createBacktestReportsFallback,
   createFeatureSignalExportsFallback,
+  loadBacktestReports,
   loadFeatureSignalExports,
 } from '../data/runtimeDataAdapter';
 import {
@@ -66,6 +68,30 @@ function exportStatusLabel(state) {
   }
 
   return t.backtestResearch.fixture;
+}
+
+function backtestReportStatusTone(status) {
+  if (String(status).includes('completed')) {
+    return 'good';
+  }
+
+  if (String(status).includes('failed')) {
+    return 'danger';
+  }
+
+  return 'warn';
+}
+
+function backtestReportStatusLabel(status) {
+  if (status === 'completed_demo') {
+    return t.backtestResearch.completedDemo;
+  }
+
+  return researchStatusLabel(status);
+}
+
+function formatDecimal(value, digits = 2) {
+  return Number(value || 0).toFixed(digits);
 }
 
 function FeatureSignalExportSection({ exportState }) {
@@ -172,8 +198,98 @@ function FeatureSignalExportSection({ exportState }) {
   );
 }
 
+function BacktestReportsSection({ backtestReportState }) {
+  const fixtureActive = backtestReportState.dataSource === 'fixture';
+  const reports = backtestReportState.reports.slice(0, 3);
+
+  return (
+    <section className="research-section backtest-report-section">
+      <div className="research-section-head">
+        <h3>{t.backtestResearch.backtestReportsTitle}</h3>
+        <StatusPill tone={sourceTone(backtestReportState.dataSource)}>
+          {exportStatusLabel(backtestReportState)}
+        </StatusPill>
+      </div>
+      {fixtureActive ? <p className="runtime-warning">{t.common.demoFixtureActive}</p> : null}
+      <div className="backtest-report-safety">
+        <strong>{t.backtestResearch.demoNoRealTrading}</strong>
+        <strong>{t.backtestResearch.noLiveTrades}</strong>
+        <strong>{t.backtestResearch.noAutoTrading}</strong>
+      </div>
+      <div className="backtest-report-grid">
+        {reports.map((report) => (
+          <article
+            className={`backtest-report-card ${toneClass(backtestReportStatusTone(report.status))}`}
+            key={report.run_id}
+          >
+            <div className="backtest-card-head">
+              <div>
+                <span>{t.backtestResearch.backtestRunId}</span>
+                <strong>{report.run_id}</strong>
+              </div>
+              <StatusPill tone={backtestReportStatusTone(report.status)}>
+                {backtestReportStatusLabel(report.status)}
+              </StatusPill>
+            </div>
+            <div className="backtest-report-identity">
+              <div>
+                <span>{t.backtestResearch.symbol}</span>
+                <strong>{report.symbol}</strong>
+              </div>
+              <div>
+                <span>{t.backtestResearch.timeframe}</span>
+                <strong>{report.timeframe}</strong>
+              </div>
+              <div>
+                <span>{t.backtestResearch.strategy}</span>
+                <strong>{report.strategy_name}</strong>
+              </div>
+            </div>
+            <div className="backtest-report-metrics">
+              <div>
+                <span>{t.backtestResearch.tradeCount}</span>
+                <strong>{report.trade_count}</strong>
+              </div>
+              <div>
+                <span>{t.backtestResearch.winrate}</span>
+                <strong>{confidencePercent(report.winrate)}</strong>
+              </div>
+              <div>
+                <span>{t.backtestResearch.profitFactor}</span>
+                <strong>{formatDecimal(report.profit_factor)}</strong>
+              </div>
+              <div>
+                <span>{t.backtestResearch.maxDrawdown}</span>
+                <strong>{confidencePercent(report.max_drawdown)}</strong>
+              </div>
+              <div>
+                <span>{t.backtestResearch.expectancy}</span>
+                <strong>{formatDecimal(report.expectancy)}</strong>
+              </div>
+              <div>
+                <span>{t.backtestResearch.noAutoTrading}</span>
+                <strong>{report.no_auto_trading ? t.common.active : t.common.inactive}</strong>
+              </div>
+            </div>
+            {report.notes ? <p className="backtest-report-note">{report.notes}</p> : null}
+          </article>
+        ))}
+      </div>
+      <div className="feature-export-file-grid">
+        <article>
+          <span>{t.backtestResearch.reportFiles}</span>
+          <code>{backtestReportState.sourcePath || t.common.notReported}</code>
+        </article>
+      </div>
+    </section>
+  );
+}
+
 export function ResearchCenterPanel() {
   const [exportState, setExportState] = useState(() => createFeatureSignalExportsFallback());
+  const [backtestReportState, setBacktestReportState] = useState(() =>
+    createBacktestReportsFallback(),
+  );
 
   useEffect(() => {
     let active = true;
@@ -181,6 +297,12 @@ export function ResearchCenterPanel() {
     loadFeatureSignalExports().then((nextState) => {
       if (active) {
         setExportState(nextState);
+      }
+    });
+
+    loadBacktestReports().then((nextState) => {
+      if (active) {
+        setBacktestReportState(nextState);
       }
     });
 
@@ -203,6 +325,7 @@ export function ResearchCenterPanel() {
       </div>
 
       <FeatureSignalExportSection exportState={exportState} />
+      <BacktestReportsSection backtestReportState={backtestReportState} />
 
       <div className="research-overview-grid">
         <section className="research-block">

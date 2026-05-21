@@ -55,6 +55,7 @@ The adapter is browser-only and read-only. It prepares access to:
 - `HermesRuntime/data/setup_watch/setup_watch.json`
 - runtime JSONL event files under `HermesRuntime/data/events/runtime/`
 - future queue/job snapshots under `HermesRuntime/data/jobs/`
+- latest demo backtest report under `HermesRuntime/data/reports/backtests/`
 
 `RuntimeHealthPanel` and `SetupWatchPanel` both load through
 `loadRuntimeData()` from the adapter. `EventTimelinePanel` uses
@@ -62,7 +63,9 @@ The adapter is browser-only and read-only. It prepares access to:
 display. `JobsQueuePanel` uses `loadRuntimeJobs()` and currently falls back to
 fixtures unless a read-only queue snapshot is available. `StorageRetentionPanel`
 uses `loadRuntimeStorage()` and combines `free_disk_gb` from Runtime Health with
-storage root/path/threshold fixtures. The normalized runtime shape is:
+storage root/path/threshold fixtures. `ResearchCenterPanel` uses
+`loadFeatureSignalExports()` and `loadBacktestReports()` for read-only research
+artifacts. The normalized runtime shape is:
 
 ```ts
 {
@@ -150,6 +153,18 @@ paths, warning/critical thresholds, and retention/safety policy text stay in
 `src/fixtures/runtimeStorageMock.ts` until HermesRuntime exposes a read-only
 storage snapshot or bridge.
 
+Backtest reports are loaded in dev mode from the latest matching file:
+
+```text
+HermesRuntime/data/reports/backtests/*.backtest.json
+```
+
+The adapter normalizes `run_id`, `symbol`, `timeframe`, `strategy_name`,
+`status`, `trade_count`, `winrate`, `profit_factor`, `max_drawdown`,
+`expectancy`, and `no_auto_trading`. If the browser cannot read the local report
+file, the Research Center uses `src/fixtures/runtimeBacktestReportsMock.ts` and
+shows the normal "Demo-/Fixture-Daten aktiv" hint.
+
 The adapter uses Vite `/@fs/...` URLs in development, never sends commands to
 `HermesRuntime`, never opens a backend API, never writes runtime files, and does
 not use WebSockets. If a browser or static hosting context blocks local file
@@ -159,6 +174,7 @@ access, the UI keeps working through fixture fallback data:
 - `src/fixtures/setupWatchMock.ts`
 - `src/fixtures/runtimeJobsMock.ts`
 - `src/fixtures/runtimeStorageMock.ts`
+- `src/fixtures/runtimeBacktestReportsMock.ts`
 - existing mock event data in `src/fixtures/controlCenterMockData.ts`
 
 This means the React prototype can show real local JSON when reachable, but it

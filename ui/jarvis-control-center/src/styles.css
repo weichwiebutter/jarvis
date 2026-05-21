@@ -763,6 +763,15 @@ h2 {
   background: rgba(4, 10, 18, 0.34);
 }
 
+.backtest-report-section {
+  padding: 14px;
+  border: 1px solid rgba(74, 222, 128, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(74, 222, 128, 0.055), transparent 54%),
+    rgba(4, 10, 18, 0.34);
+}
+
 .research-block {
   min-width: 0;
 }
@@ -787,6 +796,7 @@ h2 {
 .feature-export-file-grid,
 .feature-export-preview-grid,
 .feature-row-list,
+.backtest-report-grid,
 .backtest-card-list,
 .cluster-heatmap,
 .regime-card-list {
@@ -811,6 +821,27 @@ h2 {
   border-radius: 8px;
   color: var(--green);
   background: rgba(74, 222, 128, 0.07);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.backtest-report-safety {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.backtest-report-safety strong {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 10px;
+  border: 1px solid rgba(248, 193, 74, 0.38);
+  border-radius: 8px;
+  color: var(--amber);
+  background: rgba(248, 193, 74, 0.075);
   font-size: 0.8rem;
   text-align: center;
 }
@@ -1007,6 +1038,7 @@ h2 {
 
 .research-asset,
 .research-replay-note,
+.backtest-report-card,
 .backtest-card,
 .cluster-tile,
 .regime-card {
@@ -1032,6 +1064,63 @@ h2 {
   gap: 6px;
   margin-top: 10px;
   padding: 13px;
+}
+
+.backtest-report-grid {
+  grid-template-columns: repeat(2, minmax(330px, 1fr));
+}
+
+.backtest-report-card {
+  display: grid;
+  gap: 13px;
+  min-height: 300px;
+  padding: 16px;
+  border-color: currentColor;
+  background:
+    radial-gradient(circle at top right, rgba(74, 222, 128, 0.08), transparent 38%),
+    rgba(4, 10, 18, 0.72);
+  box-shadow: inset 4px 0 0 currentColor;
+}
+
+.backtest-report-identity,
+.backtest-report-metrics {
+  display: grid;
+  gap: 8px;
+}
+
+.backtest-report-identity {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.backtest-report-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.backtest-report-identity div,
+.backtest-report-metrics div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid rgba(132, 204, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.backtest-report-card span,
+.backtest-report-note {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.backtest-report-card strong {
+  overflow-wrap: anywhere;
+}
+
+.backtest-report-note {
+  margin: 0;
+  color: var(--soft);
+  line-height: 1.45;
 }
 
 .backtest-card-list {
@@ -1933,6 +2022,7 @@ h2 {
   .research-overview-grid,
   .research-analysis-grid,
   .backtest-card-list,
+  .backtest-report-grid,
   .feature-export-summary-grid,
   .feature-export-preview-grid,
   .storage-summary-grid,
@@ -1967,6 +2057,7 @@ h2 {
   }
 
   .feature-export-guard,
+  .backtest-report-safety,
   .feature-export-file-grid {
     grid-template-columns: 1fr;
   }
@@ -2004,6 +2095,10 @@ h2 {
   .research-asset-grid,
   .feature-export-summary-grid,
   .feature-export-preview-grid,
+  .backtest-report-grid,
+  .backtest-report-safety,
+  .backtest-report-identity,
+  .backtest-report-metrics,
   .backtest-meta,
   .backtest-metrics,
   .cluster-heatmap,
