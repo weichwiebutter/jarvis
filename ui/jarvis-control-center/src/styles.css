@@ -756,6 +756,13 @@ h2 {
   margin-top: 16px;
 }
 
+.feature-export-section {
+  padding: 14px;
+  border: 1px solid rgba(132, 204, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.34);
+}
+
 .research-block {
   min-width: 0;
 }
@@ -776,11 +783,155 @@ h2 {
 
 .research-job-list,
 .research-asset-grid,
+.feature-export-summary-grid,
+.feature-export-file-grid,
+.feature-export-preview-grid,
+.feature-row-list,
 .backtest-card-list,
 .cluster-heatmap,
 .regime-card-list {
   display: grid;
   gap: 10px;
+}
+
+.feature-export-guard {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.feature-export-guard strong {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 10px;
+  border: 1px solid rgba(74, 222, 128, 0.28);
+  border-radius: 8px;
+  color: var(--green);
+  background: rgba(74, 222, 128, 0.07);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.feature-export-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.feature-export-summary-card {
+  display: grid;
+  min-height: 116px;
+  align-content: center;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 60%),
+    rgba(5, 11, 18, 0.72);
+}
+
+.feature-export-summary-card span,
+.feature-export-file-grid span,
+.feature-row-card span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.feature-export-summary-card strong {
+  color: var(--text);
+  font-size: 1.35rem;
+  overflow-wrap: anywhere;
+}
+
+.feature-export-summary-card p,
+.feature-row-card p {
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.feature-symbol-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.feature-symbol-strip b {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 5px 9px;
+  border: 1px solid rgba(248, 193, 74, 0.42);
+  border-radius: 999px;
+  color: var(--amber);
+  background: rgba(248, 193, 74, 0.08);
+  font-size: 0.76rem;
+}
+
+.feature-export-file-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.feature-export-file-grid article {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(132, 204, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.feature-export-file-grid code {
+  overflow-wrap: anywhere;
+}
+
+.feature-export-preview-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.feature-row-card {
+  display: grid;
+  gap: 9px;
+  min-height: 156px;
+  padding: 13px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.68);
+}
+
+.feature-row-card > div:first-child {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.feature-row-card strong {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.feature-row-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.feature-row-metrics span {
+  padding: 6px 8px;
+  border: 1px solid rgba(132, 204, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.feature-row-metrics b {
+  color: var(--text);
 }
 
 .research-job {
@@ -1782,6 +1933,8 @@ h2 {
   .research-overview-grid,
   .research-analysis-grid,
   .backtest-card-list,
+  .feature-export-summary-grid,
+  .feature-export-preview-grid,
   .storage-summary-grid,
   .storage-policy-grid,
   .cli-console-grid,
@@ -1810,6 +1963,11 @@ h2 {
   }
 
   .research-safety-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-export-guard,
+  .feature-export-file-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1844,6 +2002,8 @@ h2 {
   .event-safety-strip,
   .research-safety-strip,
   .research-asset-grid,
+  .feature-export-summary-grid,
+  .feature-export-preview-grid,
   .backtest-meta,
   .backtest-metrics,
   .cluster-heatmap,
@@ -1869,6 +2029,7 @@ h2 {
   .job-card-head,
   .job-foot,
   .research-job-top,
+  .feature-row-card > div:first-child,
   .backtest-card-head,
   .storage-bucket-head,
   .cli-output-head,

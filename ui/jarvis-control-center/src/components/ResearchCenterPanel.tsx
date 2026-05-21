@@ -1,3 +1,8 @@
+import { useEffect, useState } from 'react';
+import {
+  createFeatureSignalExportsFallback,
+  loadFeatureSignalExports,
+} from '../data/runtimeDataAdapter';
 import {
   backtestRuns,
   clusterScores,
@@ -6,6 +11,7 @@ import {
   researchJobs,
 } from '../fixtures/controlCenterMockData';
 import { de as t } from '../i18n/de';
+import { confidencePercent, sourceModeLabel, sourceTone } from '../utils/controlCenterFormatters';
 import { Panel, StatusPill, toneClass } from './StatusCard';
 
 function researchStatusTone(status) {
@@ -54,7 +60,135 @@ function outOfSampleTone(status) {
   return 'warn';
 }
 
+function exportStatusLabel(state) {
+  if (state.dataSource === 'live_file') {
+    return t.backtestResearch.ready;
+  }
+
+  return t.backtestResearch.fixture;
+}
+
+function FeatureSignalExportSection({ exportState }) {
+  const fixtureActive = exportState.dataSource === 'fixture';
+  const latestFeatureRows = exportState.features.slice(0, 3);
+  const latestSignalRows = exportState.signals.slice(0, 3);
+
+  return (
+    <section className="research-section feature-export-section">
+      <div className="research-section-head">
+        <h3>{t.backtestResearch.featureSignalTitle}</h3>
+        <StatusPill tone={sourceTone(exportState.dataSource)}>
+          {exportStatusLabel(exportState)}
+        </StatusPill>
+      </div>
+      {fixtureActive ? <p className="runtime-warning">{t.common.demoFixtureActive}</p> : null}
+      <div className="feature-export-guard">
+        <strong>{t.backtestResearch.analysisOnly}</strong>
+        <strong>{t.backtestResearch.noAutoTrading}</strong>
+        <strong>{t.backtestResearch.learningDataBasis}</strong>
+      </div>
+      <div className="feature-export-summary-grid">
+        <article className="feature-export-summary-card tone-info">
+          <span>{t.backtestResearch.featureExports}</span>
+          <strong>{exportState.counts.features}</strong>
+          <p>{t.backtestResearch.featureRows}</p>
+        </article>
+        <article className="feature-export-summary-card tone-good">
+          <span>{t.backtestResearch.signalExports}</span>
+          <strong>{exportState.counts.signals}</strong>
+          <p>{t.backtestResearch.signalRows}</p>
+        </article>
+        <article className="feature-export-summary-card tone-warn">
+          <span>{t.backtestResearch.symbols}</span>
+          <div className="feature-symbol-strip">
+            {exportState.symbols.map((symbol) => (
+              <b key={symbol}>{symbol}</b>
+            ))}
+          </div>
+        </article>
+        <article className="feature-export-summary-card tone-muted">
+          <span>{t.backtestResearch.latestExport}</span>
+          <strong>{exportState.latestExportTimestamp || t.common.notReported}</strong>
+          <p>{sourceModeLabel(exportState.dataSource)}</p>
+        </article>
+      </div>
+      <div className="feature-export-file-grid">
+        <article>
+          <span>{t.backtestResearch.featureExports}</span>
+          <code>{exportState.exportFiles.features || t.common.notReported}</code>
+        </article>
+        <article>
+          <span>{t.backtestResearch.signalExports}</span>
+          <code>{exportState.exportFiles.signals || t.common.notReported}</code>
+        </article>
+      </div>
+      <div className="feature-export-preview-grid">
+        <section>
+          <div className="research-section-head">
+            <h3>{t.backtestResearch.featureExports}</h3>
+            <StatusPill tone="info">{latestFeatureRows.length}</StatusPill>
+          </div>
+          <div className="feature-row-list">
+            {latestFeatureRows.map((row) => (
+              <article className="feature-row-card tone-info" key={row.id}>
+                <div>
+                  <span>{row.timeframe}</span>
+                  <strong>{row.symbol}</strong>
+                </div>
+                <p>{row.pattern_candidate} / {row.h4_regime}</p>
+                <div className="feature-row-metrics">
+                  <span>{t.backtestResearch.signalScore}: <b>{row.signal_score.toFixed(2)}</b></span>
+                  <span>ADX: <b>{row.adx.toFixed(1)}</b></span>
+                  <span>RSI: <b>{row.rsi.toFixed(1)}</b></span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+        <section>
+          <div className="research-section-head">
+            <h3>{t.backtestResearch.signalExports}</h3>
+            <StatusPill tone="good">{latestSignalRows.length}</StatusPill>
+          </div>
+          <div className="feature-row-list">
+            {latestSignalRows.map((row) => (
+              <article className="feature-row-card tone-good" key={row.id}>
+                <div>
+                  <span>{t.backtestResearch.direction}</span>
+                  <strong>{row.symbol} / {row.direction}</strong>
+                </div>
+                <p>{row.signal_type}</p>
+                <div className="feature-row-metrics">
+                  <span>{t.backtestResearch.signalScore}: <b>{row.score.toFixed(2)}</b></span>
+                  <span>{t.backtestResearch.confidence}: <b>{confidencePercent(row.confidence)}</b></span>
+                </div>
+                <p>{t.backtestResearch.reasonCodes}: {row.reason_codes.join(', ')}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 export function ResearchCenterPanel() {
+  const [exportState, setExportState] = useState(() => createFeatureSignalExportsFallback());
+
+  useEffect(() => {
+    let active = true;
+
+    loadFeatureSignalExports().then((nextState) => {
+      if (active) {
+        setExportState(nextState);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <Panel
       eyebrow={t.backtestResearch.eyebrow}
@@ -67,6 +201,8 @@ export function ResearchCenterPanel() {
         <strong>{t.backtestResearch.noAutoApproval}</strong>
         <strong>{t.backtestResearch.humanReviewRequired}</strong>
       </div>
+
+      <FeatureSignalExportSection exportState={exportState} />
 
       <div className="research-overview-grid">
         <section className="research-block">

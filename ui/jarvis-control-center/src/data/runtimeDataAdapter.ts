@@ -1,3 +1,4 @@
+import { runtimeFeatureSignalExportsMock } from '../fixtures/runtimeFeatureSignalExportsMock';
 import { runtimeHealthMock } from '../fixtures/runtimeHealthMock';
 import { runtimeJobsMock } from '../fixtures/runtimeJobsMock';
 import { runtimeStorageMock } from '../fixtures/runtimeStorageMock';
@@ -14,10 +15,14 @@ export const DATA_SOURCE = {
 const runtimeHealthDevUrl = __HERMES_RUNTIME_HEALTH_URL__;
 const runtimeEventsBaseUrl = __HERMES_RUNTIME_EVENTS_BASE_URL__;
 const runtimeJobsUrl = __HERMES_RUNTIME_JOBS_URL__;
+const featureExportUrl = __HERMES_FEATURE_EXPORT_URL__;
+const signalExportUrl = __HERMES_SIGNAL_EXPORT_URL__;
 const replayManifestUrl = __HERMES_REPLAY_MANIFEST_URL__;
 const setupWatchUrl = __HERMES_SETUP_WATCH_URL__;
 const runtimeHealthPath = __HERMES_RUNTIME_HEALTH_PATH__;
 const runtimeJobsPath = __HERMES_RUNTIME_JOBS_PATH__;
+const featureExportPath = __HERMES_FEATURE_EXPORT_PATH__;
+const signalExportPath = __HERMES_SIGNAL_EXPORT_PATH__;
 const setupWatchPath = __HERMES_SETUP_WATCH_PATH__;
 
 const SUPPORTED_RUNTIME_EVENT_TYPES = new Set([
@@ -427,6 +432,94 @@ export function normalizeRuntimeStorage(raw, runtimeHealth) {
   };
 }
 
+export function normalizeFeatureVector(raw, index = 0) {
+  return {
+    id: raw?.id || `${raw?.symbol || 'UNKNOWN'}_feature_${index}`,
+    timestamp_utc: raw?.timestamp_utc || raw?.timestampUtc || null,
+    symbol: asString(raw?.symbol, 'UNKNOWN'),
+    timeframe: asString(raw?.timeframe, '-'),
+    session: asString(raw?.session, '-'),
+    h4_regime: asString(raw?.h4_regime ?? raw?.h4Regime, '-'),
+    h1_bias: asString(raw?.h1_bias ?? raw?.h1Bias, '-'),
+    m15_setup: asString(raw?.m15_setup ?? raw?.m15Setup, '-'),
+    m5_trigger: asString(raw?.m5_trigger ?? raw?.m5Trigger, '-'),
+    adx: asNumber(raw?.adx, 0),
+    atr: asNumber(raw?.atr, 0),
+    rsi: asNumber(raw?.rsi, 0),
+    structure_state: asString(raw?.structure_state ?? raw?.structureState, '-'),
+    pattern_candidate: asString(raw?.pattern_candidate ?? raw?.patternCandidate, '-'),
+    signal_score: asNumber(raw?.signal_score ?? raw?.signalScore, 0),
+    spread: asNumber(raw?.spread, 0),
+  };
+}
+
+export function normalizeSignalResult(raw, index = 0) {
+  const reasonCodes = raw?.reason_codes || raw?.reasonCodes || [];
+
+  return {
+    id: raw?.id || `${raw?.symbol || 'UNKNOWN'}_signal_${index}`,
+    timestamp_utc: raw?.timestamp_utc || raw?.timestampUtc || null,
+    symbol: asString(raw?.symbol, 'UNKNOWN'),
+    direction: asString(raw?.direction, 'neutral'),
+    signal_type: asString(raw?.signal_type ?? raw?.signalType, '-'),
+    score: asNumber(raw?.score, 0),
+    confidence: asNumber(raw?.confidence, 0),
+    theoretical_entry: asNumber(raw?.theoretical_entry ?? raw?.theoreticalEntry, 0),
+    theoretical_stop: asNumber(raw?.theoretical_stop ?? raw?.theoreticalStop, 0),
+    theoretical_target: asNumber(raw?.theoretical_target ?? raw?.theoreticalTarget, 0),
+    reason_codes: Array.isArray(reasonCodes) ? reasonCodes.map(String) : [],
+  };
+}
+
+function parseJsonlRows(text, normalizeRow, warningPrefix) {
+  const warnings = [];
+  const items = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line, index) => {
+      try {
+        return [normalizeRow(JSON.parse(line), index)];
+      } catch (error) {
+        warnings.push(warningFromError(`${warningPrefix} Zeile ${index + 1} nicht lesbar`, error));
+        return [];
+      }
+    });
+
+  return { items, warnings };
+}
+
+function latestTimestampFromRows(rows) {
+  return rows
+    .map((row) => row.timestamp_utc)
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(right) - Date.parse(left))[0] || null;
+}
+
+function uniqueSymbolsFromRows(features, signals) {
+  return [...new Set([...features, ...signals].map((row) => row.symbol).filter(Boolean))].sort();
+}
+
+function buildFeatureSignalExports(features, signals, exportFiles, dataSource, warnings = []) {
+  const latestExportTimestamp = latestTimestampFromRows([...features, ...signals]);
+
+  return {
+    features,
+    signals,
+    exportFiles,
+    symbols: uniqueSymbolsFromRows(features, signals),
+    latestExportTimestamp,
+    counts: {
+      features: features.length,
+      signals: signals.length,
+    },
+    status: dataSource === DATA_SOURCE.LIVE_FILE ? 'ready' : 'fixture',
+    dataSource,
+    warnings,
+    sourcePath: [exportFiles.features, exportFiles.signals].filter(Boolean).join(' | '),
+  };
+}
+
 function parseRuntimeJsonl(text) {
   const warnings = [];
   const items = text
@@ -476,6 +569,19 @@ export function createRuntimeStorageFallback(loadError = '') {
     warnings: loadError ? [loadError] : [],
     sourcePath: 'src/fixtures/runtimeStorageMock.ts',
   };
+}
+
+export function createFeatureSignalExportsFallback(loadError = '') {
+  const features = runtimeFeatureSignalExportsMock.features.map(normalizeFeatureVector);
+  const signals = runtimeFeatureSignalExportsMock.signals.map(normalizeSignalResult);
+
+  return buildFeatureSignalExports(
+    features,
+    signals,
+    runtimeFeatureSignalExportsMock.export_files,
+    DATA_SOURCE.FIXTURE,
+    loadError ? [loadError] : [],
+  );
 }
 
 function getRuntimeEventStoreUrl(timestampUtc) {
@@ -729,6 +835,44 @@ export async function loadRuntimeStorage() {
   };
 }
 
+export async function loadFeatureSignalExports() {
+  if (!featureExportUrl || !signalExportUrl) {
+    return createFeatureSignalExportsFallback(
+      'Feature-/Signal-Export URLs sind nicht konfiguriert.',
+    );
+  }
+
+  try {
+    const [featureText, signalText] = await Promise.all([
+      readTextReadOnly(featureExportUrl),
+      readTextReadOnly(signalExportUrl),
+    ]);
+    const featureRows = parseJsonlRows(featureText, normalizeFeatureVector, 'Feature Export');
+    const signalRows = parseJsonlRows(signalText, normalizeSignalResult, 'Signal Export');
+
+    if (!featureRows.items.length && !signalRows.items.length) {
+      return createFeatureSignalExportsFallback(
+        'Feature-/Signal-Export Dateien enthalten keine lesbaren Zeilen.',
+      );
+    }
+
+    return buildFeatureSignalExports(
+      featureRows.items,
+      signalRows.items,
+      {
+        features: featureExportPath || featureExportUrl,
+        signals: signalExportPath || signalExportUrl,
+      },
+      DATA_SOURCE.LIVE_FILE,
+      [...featureRows.warnings, ...signalRows.warnings],
+    );
+  } catch (error) {
+    return createFeatureSignalExportsFallback(
+      warningFromError('Feature-/Signal-Exports nicht erreichbar', error),
+    );
+  }
+}
+
 export const runtimeDataAdapter = {
   loadRuntimeData,
   loadRuntimeHealth,
@@ -737,10 +881,12 @@ export const runtimeDataAdapter = {
   loadRuntimeTimelineEvents,
   loadRuntimeJobs,
   loadRuntimeStorage,
+  loadFeatureSignalExports,
   createRuntimeDataFallback,
   createRuntimeHealthFallback,
   createSetupWatchFallback,
   createRuntimeEventFallback,
   createRuntimeJobsFallback,
   createRuntimeStorageFallback,
+  createFeatureSignalExportsFallback,
 };
