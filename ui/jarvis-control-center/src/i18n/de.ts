@@ -179,6 +179,23 @@ export const de = {
     safeModeStorage: 'Safe Mode bei Storage-Problemen',
     emergencyTempOnly: 'Emergency Cleanup nur fuer Temp/Cache',
   },
+  hermesCli: {
+    eyebrow: 'CLI',
+    title: 'Hermes CLI / Dev-Konsole',
+    status: 'Mock / keine Ausfuehrung',
+    commandsTitle: 'Beispiel-Kommandos',
+    outputTitle: 'Mock-Ausgaben',
+    safetyTitle: 'CLI-Sicherheitsmodus',
+    commandLabel: 'Kommando',
+    mockOutput: 'Mock-Ausgabe',
+    readOnly: 'Read-only',
+    noRuntimeControl: 'Keine Runtime-Steuerung',
+    noTradingExecution: 'Keine Trading-Ausfuehrung',
+    noAutoTradingActive: 'no_auto_trading aktiv',
+    humanReviewRequiredActive: 'human_review_required aktiv',
+    note:
+      'Dieses Panel zeigt nur geplante CLI-Kommandos und Beispielausgaben. Es fuehrt keine Shell-Kommandos aus, startet keine Runtime und schreibt keine Dateien.',
+  },
   hermesBrain: {
     eyebrow: 'Denkebene',
     title: 'Hermes Brain',

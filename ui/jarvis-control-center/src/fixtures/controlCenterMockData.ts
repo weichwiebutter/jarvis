@@ -369,6 +369,119 @@ export const storageSafetyRules = [
   { label: t.storageRetention.emergencyTempOnly, tone: 'warn' },
 ];
 
+export const hermesCliCommands = [
+  {
+    id: 'cli-health',
+    command: 'hermes health',
+    description: 'Runtime Health, Safety Flags und Queue-Zahlen anzeigen.',
+    tone: 'good',
+  },
+  {
+    id: 'cli-setup-watch',
+    command: 'hermes setup-watch',
+    description: 'Setup-Beobachtungen mit Entry, Stop, Ziel und Status lesen.',
+    tone: 'warn',
+  },
+  {
+    id: 'cli-events',
+    command: 'hermes events recent',
+    description: 'Letzte Runtime-Events aus lokalen JSONL-Dateien anzeigen.',
+    tone: 'info',
+  },
+  {
+    id: 'cli-jobs',
+    command: 'hermes jobs',
+    description: 'Queue-Status und Job-Manifeste read-only zusammenfassen.',
+    tone: 'info',
+  },
+  {
+    id: 'cli-storage',
+    command: 'hermes storage',
+    description: 'Lokale Storage-Verzeichnisse und freien Speicher anzeigen.',
+    tone: 'warn',
+  },
+  {
+    id: 'cli-version',
+    command: 'hermes version',
+    description: 'CLI- und Runtime-Projektversion anzeigen.',
+    tone: 'muted',
+  },
+];
+
+export const hermesCliOutputs = [
+  {
+    id: 'output-health',
+    title: 'Runtime Health',
+    command: 'hermes health',
+    tone: 'good',
+    lines: [
+      'Runtime State: stopped',
+      'Safe Mode: false',
+      'no_auto_trading: true',
+      'human_review_required: true',
+      'Pending Jobs: 1',
+      'Active Setup Watches: 2',
+    ],
+  },
+  {
+    id: 'output-setup-watch',
+    title: 'Setup-Watch Status',
+    command: 'hermes setup-watch',
+    tone: 'warn',
+    lines: [
+      'XAUUSD long: watching, Confidence 68%',
+      'EURUSD neutral: expired, Confidence 42%',
+      'GER40 possible_breakout: armed, Confidence 57%',
+      'Keine Orderausfuehrung',
+    ],
+  },
+  {
+    id: 'output-events',
+    title: 'Letzte Events',
+    command: 'hermes events recent',
+    tone: 'info',
+    lines: [
+      'SetupWatchCreated / Info',
+      'SetupWatchUpdated / Info',
+      'SnapshotCreated / Info',
+      'RuntimeStopped / Info',
+    ],
+  },
+  {
+    id: 'output-jobs',
+    title: 'Job-Status',
+    command: 'hermes jobs',
+    tone: 'info',
+    lines: [
+      'Pending: 1',
+      'Running: 0',
+      'Completed: 8',
+      'Failed: 0',
+      'Quarantined: 0',
+    ],
+  },
+  {
+    id: 'output-storage',
+    title: 'Storage-Status',
+    command: 'hermes storage',
+    tone: 'warn',
+    lines: [
+      'Data Root: HermesRuntime/data',
+      'Free Disk: 887.88 GB',
+      'Events: 121.83 KB',
+      'Jobs: 7.94 KB',
+    ],
+  },
+];
+
+export const hermesCliSafetyFlags = [
+  { label: t.hermesCli.readOnly, tone: 'good' },
+  { label: t.hermesCli.noRuntimeControl, tone: 'warn' },
+  { label: t.hermesCli.noTradingExecution, tone: 'danger' },
+  { label: t.hermesCli.noAutoTradingActive, tone: 'warn' },
+  { label: t.hermesCli.humanReviewRequiredActive, tone: 'info' },
+];
+
 export const providers = [
   { name: 'GPT-5.5', role: t.providers.seniorArchitect, status: t.providers.manualRoute },
   { name: 'Ollama / Qwen', role: t.providers.localWorker, status: t.providers.ready },
