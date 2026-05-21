@@ -59,10 +59,16 @@ public sealed class RuntimeHost
 
         PublishRuntimeStarted(eventBus, state, diskSpaceCheck);
         PublishStorageInitialized(eventBus, state, storage.Paths, eventStore.EventFilePath);
-        var demoJob = CreateDemoFeatureExportJobIfMissing(queueManager);
-        if (demoJob is not null)
+        var demoFeatureJob = CreateDemoFeatureExportJobIfMissing(queueManager);
+        if (demoFeatureJob is not null)
         {
-            PublishJobCreated(eventBus, demoJob, queueManager.Status);
+            PublishJobCreated(eventBus, demoFeatureJob, queueManager.Status);
+        }
+
+        var demoBacktestJob = CreateDemoBacktestJobIfMissing(queueManager);
+        if (demoBacktestJob is not null)
+        {
+            PublishJobCreated(eventBus, demoBacktestJob, queueManager.Status);
         }
 
         if (state.SafeMode)
@@ -71,7 +77,8 @@ public sealed class RuntimeHost
         }
 
         var workerHost = new WorkerHost(storage.Paths, queueManager, eventBus, RuntimeVersion);
-        workerHost.RunOnce();
+        workerHost.RunOnce(FeatureExportWorker.FeatureExportJobType);
+        workerHost.RunOnce(BacktestWorker.BacktestJobType);
 
         var replayManifestService = new ReplayManifestService(storage.Paths, eventBus, RuntimeVersion);
         var replayManifestResult = replayManifestService.CreateDemoReplayManifest();
@@ -244,6 +251,44 @@ public sealed class RuntimeHost
                 ["symbols"] = new[] { "XAUUSD", "EURUSD", "GER40" },
                 ["source"] = "stub",
                 ["note"] = "Feature Logging v1 demo export. Uses mock feature and signal data only."
+            });
+
+        return queueManager.Enqueue(manifest);
+    }
+
+    private static JobManifest? CreateDemoBacktestJobIfMissing(QueueManager queueManager)
+    {
+        if (queueManager.GetJobs(JobStatus.Pending).Any(job => job.JobType == BacktestWorker.BacktestJobType))
+        {
+            return null;
+        }
+
+        var createdAtUtc = DateTimeOffset.UtcNow;
+        var request = new BacktestJobRequest(
+            Symbol: "XAUUSD",
+            Timeframe: "M5",
+            Period: "Demo",
+            StrategyName: "DemoTrendPullback");
+
+        var manifest = new JobManifest(
+            JobId: $"job_backtest_demo_{createdAtUtc:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
+            JobType: BacktestWorker.BacktestJobType,
+            Priority: 5,
+            Status: JobStatus.Pending,
+            CreatedAtUtc: createdAtUtc,
+            RequestedBy: "hermes_runtime_backtest_stub_v1",
+            ResourceProfile: "local_stub",
+            MaxRuntimeMinutes: 5,
+            MaxRetries: 0,
+            RetryCount: 0,
+            Parameters: new Dictionary<string, object?>
+            {
+                ["demo"] = true,
+                ["symbol"] = request.Symbol,
+                ["timeframe"] = request.Timeframe,
+                ["period"] = request.Period,
+                ["strategy_name"] = request.StrategyName,
+                ["note"] = "Backtest Job Stub v1. Creates a local demo report only."
             });
 
         return queueManager.Enqueue(manifest);

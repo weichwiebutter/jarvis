@@ -24,18 +24,19 @@ public sealed class WorkerHost
         _runtimeVersion = runtimeVersion;
 
         _workerRegistry.Register(new FeatureExportWorker(_storagePaths));
+        _workerRegistry.Register(new BacktestWorker(_storagePaths));
     }
 
-    public void RunOnce()
+    public void RunOnce(string? jobType = null)
     {
         PublishWorkerStarted();
         PublishHeartbeat("idle", currentJobId: null);
 
-        if (!_queueManager.TryDequeue(FeatureExportWorker.FeatureExportJobType, out var job, out var lease)
+        if (!TryDequeueRegisteredJob(jobType, out var job, out var lease)
             || job is null
             || lease is null)
         {
-            PublishWorkerStopped("no_feature_export_job");
+            PublishWorkerStopped(jobType is null ? "no_registered_job" : $"no_{jobType}_job");
             return;
         }
 
@@ -49,10 +50,9 @@ public sealed class WorkerHost
                 throw new InvalidOperationException($"No worker registered for job type: {job.JobType}");
             }
 
-            PublishFeatureExportStarted(job);
+            PublishWorkerJobStarted(job);
             var workerResult = worker.Execute(job);
-            PublishFeatureExportCompleted(job, workerResult);
-            PublishSignalResultExported(job, workerResult);
+            PublishWorkerJobCompleted(job, workerResult);
 
             var completed = _queueManager.MarkCompleted(
                 job.JobId,
@@ -81,6 +81,36 @@ public sealed class WorkerHost
         {
             PublishWorkerStopped("run_once_completed");
         }
+    }
+
+    private bool TryDequeueRegisteredJob(
+        string? jobType,
+        out JobManifest? job,
+        out JobLease? lease)
+    {
+        if (!string.IsNullOrWhiteSpace(jobType))
+        {
+            if (!_workerRegistry.CanHandle(jobType))
+            {
+                job = null;
+                lease = null;
+                return false;
+            }
+
+            return _queueManager.TryDequeue(jobType, out job, out lease);
+        }
+
+        foreach (var worker in _workerRegistry.Workers)
+        {
+            if (_queueManager.TryDequeue(worker.JobType, out job, out lease))
+            {
+                return true;
+            }
+        }
+
+        job = null;
+        lease = null;
+        return false;
     }
 
     private void PublishWorkerStarted()
@@ -173,6 +203,72 @@ public sealed class WorkerHost
                 result.OutputPath,
                 result.Metrics
             }));
+    }
+
+    private void PublishBacktestStarted(JobManifest job)
+    {
+        _eventBus.Publish(EventEnvelope.Create(
+            EventType.BacktestStarted,
+            WorkerSource,
+            EventSeverity.Info,
+            _runtimeVersion,
+            new
+            {
+                message = "Demo backtest started. No market replay or trading execution is possible.",
+                job.JobId,
+                job.JobType,
+                job.Parameters,
+                reportDirectory = Path.Combine(_storagePaths.Root, "reports", "backtests"),
+                noAutoTrading = true,
+                humanReviewRequired = true
+            }));
+    }
+
+    private void PublishBacktestCompleted(JobManifest job, WorkerExecutionResult result)
+    {
+        _eventBus.Publish(EventEnvelope.Create(
+            EventType.BacktestCompleted,
+            WorkerSource,
+            EventSeverity.Info,
+            _runtimeVersion,
+            new
+            {
+                message = "Demo backtest completed. Report is local and read-only for UI/CLI.",
+                job.JobId,
+                result.OutputPath,
+                result.Metrics,
+                noAutoTrading = true,
+                humanReviewRequired = true
+            }));
+    }
+
+    private void PublishWorkerJobStarted(JobManifest job)
+    {
+        if (job.JobType == FeatureExportWorker.FeatureExportJobType)
+        {
+            PublishFeatureExportStarted(job);
+            return;
+        }
+
+        if (job.JobType == BacktestWorker.BacktestJobType)
+        {
+            PublishBacktestStarted(job);
+        }
+    }
+
+    private void PublishWorkerJobCompleted(JobManifest job, WorkerExecutionResult result)
+    {
+        if (job.JobType == FeatureExportWorker.FeatureExportJobType)
+        {
+            PublishFeatureExportCompleted(job, result);
+            PublishSignalResultExported(job, result);
+            return;
+        }
+
+        if (job.JobType == BacktestWorker.BacktestJobType)
+        {
+            PublishBacktestCompleted(job, result);
+        }
     }
 
     private void PublishSignalResultExported(JobManifest job, WorkerExecutionResult result)

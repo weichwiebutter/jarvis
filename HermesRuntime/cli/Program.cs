@@ -33,6 +33,7 @@ internal sealed class HermesCli
             "storage" => ShowStorage(),
             "features" => ShowFeatures(),
             "signals" => ShowSignals(),
+            "backtests" => ShowBacktests(),
             "version" => ShowVersion(),
             _ => UnknownCommand(command)
         };
@@ -51,6 +52,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes storage            lokale Storage-Uebersicht anzeigen");
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
+        Console.WriteLine("  hermes backtests          Demo-Backtest-Reports anzeigen");
         Console.WriteLine("  hermes version            CLI-/Runtime-Version anzeigen");
         Console.WriteLine();
         Console.WriteLine("Start ohne Installation:");
@@ -345,6 +347,48 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowBacktests()
+    {
+        WriteHeader("Hermes Backtest Reports");
+        var limit = ReadLimit(_args, 8);
+        var files = FindBacktestReportFiles().TakeLast(limit).ToList();
+        if (files.Count == 0)
+        {
+            WriteWarning("Keine Backtest-Reports gefunden.");
+            WriteSafety();
+            return 0;
+        }
+
+        foreach (var file in files)
+        {
+            if (!TryLoadJson(file, out var root))
+            {
+                WriteWarning($"Backtest-Report nicht lesbar: {DisplayPath(file)}");
+                continue;
+            }
+
+            WriteSubHeader(GetString(root, "run_id", "runId") ?? Path.GetFileNameWithoutExtension(file));
+            WriteField("Symbol", GetString(root, "symbol"));
+            WriteField("Timeframe", GetString(root, "timeframe"));
+            WriteField("Strategy", GetString(root, "strategy_name", "strategyName"));
+            WriteField("Status", GetString(root, "status"));
+            WriteField("Started UTC", GetString(root, "started_at_utc", "startedAtUtc"));
+            WriteField("Completed UTC", GetString(root, "completed_at_utc", "completedAtUtc"));
+            WriteField("Trade Count", GetInt(root, "trade_count", "tradeCount").ToString());
+            WriteField("Winrate", $"{GetDouble(root, "winrate") * 100:0}%");
+            WriteField("Profit Factor", $"{GetDouble(root, "profit_factor", "profitFactor"):0.##}");
+            WriteField("Max Drawdown", $"{GetDouble(root, "max_drawdown", "maxDrawdown") * 100:0.#}%");
+            WriteField("Expectancy", $"{GetDouble(root, "expectancy"):0.##}");
+            WriteField("no_auto_trading", GetBoolText(root, "no_auto_trading", "noAutoTrading"));
+            WriteField("Notes", GetString(root, "notes"));
+            WriteField("Path", DisplayPath(file));
+            Console.WriteLine();
+        }
+
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowVersion()
     {
         WriteHeader("Hermes CLI Version");
@@ -410,6 +454,22 @@ internal sealed class HermesCli
         }
 
         foreach (var file in Directory.EnumerateFiles(directory, "*.jsonl")
+                     .OrderBy(File.GetLastWriteTimeUtc)
+                     .ThenBy(path => path))
+        {
+            yield return file;
+        }
+    }
+
+    private IEnumerable<string> FindBacktestReportFiles()
+    {
+        var directory = Path.Combine(_dataRoot, "reports", "backtests");
+        if (!Directory.Exists(directory))
+        {
+            yield break;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(directory, "*.json")
                      .OrderBy(File.GetLastWriteTimeUtc)
                      .ThenBy(path => path))
         {
