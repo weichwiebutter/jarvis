@@ -1,4 +1,5 @@
 import { runtimeHealthMock } from '../fixtures/runtimeHealthMock';
+import { runtimeJobsMock } from '../fixtures/runtimeJobsMock';
 import { setupWatchMock } from '../fixtures/setupWatchMock';
 import { runtimeEvents } from '../fixtures/controlCenterMockData';
 import { de } from '../i18n/de';
@@ -11,9 +12,11 @@ export const DATA_SOURCE = {
 
 const runtimeHealthDevUrl = __HERMES_RUNTIME_HEALTH_URL__;
 const runtimeEventsBaseUrl = __HERMES_RUNTIME_EVENTS_BASE_URL__;
+const runtimeJobsUrl = __HERMES_RUNTIME_JOBS_URL__;
 const replayManifestUrl = __HERMES_REPLAY_MANIFEST_URL__;
 const setupWatchUrl = __HERMES_SETUP_WATCH_URL__;
 const runtimeHealthPath = __HERMES_RUNTIME_HEALTH_PATH__;
+const runtimeJobsPath = __HERMES_RUNTIME_JOBS_PATH__;
 const setupWatchPath = __HERMES_SETUP_WATCH_PATH__;
 
 const SUPPORTED_RUNTIME_EVENT_TYPES = new Set([
@@ -28,6 +31,8 @@ const SUPPORTED_RUNTIME_EVENT_TYPES = new Set([
   'JobCompleted',
   'RuntimeStopped',
 ]);
+
+const JOB_STATUSES = ['pending', 'running', 'completed', 'failed', 'quarantined'];
 
 function asBoolean(value, fallback = false) {
   if (typeof value === 'boolean') {
@@ -295,6 +300,84 @@ export function normalizeRuntimeEvent(raw, index = 0) {
   };
 }
 
+function normalizeJobStatus(status, fallback = 'pending') {
+  const value = asString(status, fallback).toLowerCase();
+
+  return JOB_STATUSES.includes(value) ? value : fallback;
+}
+
+export function normalizeRuntimeJob(raw, fallbackStatus = 'pending', index = 0) {
+  const status = normalizeJobStatus(raw?.status ?? raw?.Status, fallbackStatus);
+  const jobType = asString(raw?.job_type ?? raw?.jobType ?? raw?.JobType, 'UnknownJob');
+  const parameters = raw?.parameters || raw?.Parameters || {};
+
+  return {
+    job_id:
+      raw?.job_id ||
+      raw?.jobId ||
+      raw?.JobId ||
+      raw?.id ||
+      `${status}_${jobType.toLowerCase().replace(/\s+/g, '_')}_${index}`,
+    job_type: jobType,
+    priority: asNumber(raw?.priority ?? raw?.Priority, 0),
+    status,
+    created_at_utc: raw?.created_at_utc || raw?.createdAtUtc || raw?.CreatedAtUtc || null,
+    started_at_utc: raw?.started_at_utc || raw?.startedAtUtc || raw?.StartedAtUtc || null,
+    completed_at_utc: raw?.completed_at_utc || raw?.completedAtUtc || raw?.CompletedAtUtc || null,
+    requested_by: asString(raw?.requested_by ?? raw?.requestedBy ?? raw?.RequestedBy, 'unknown'),
+    resource_profile: asString(
+      raw?.resource_profile ?? raw?.resourceProfile ?? raw?.ResourceProfile,
+      'local',
+    ),
+    max_runtime_minutes: asNumber(
+      raw?.max_runtime_minutes ?? raw?.maxRuntimeMinutes ?? raw?.MaxRuntimeMinutes,
+      0,
+    ),
+    max_retries: asNumber(raw?.max_retries ?? raw?.maxRetries ?? raw?.MaxRetries, 0),
+    retry_count: asNumber(raw?.retry_count ?? raw?.retryCount ?? raw?.RetryCount, 0),
+    output_path: raw?.output_path || raw?.outputPath || raw?.OutputPath || null,
+    error_message: raw?.error_message || raw?.errorMessage || raw?.ErrorMessage || null,
+    summary:
+      raw?.summary ||
+      raw?.description ||
+      raw?.Description ||
+      parameters.note ||
+      `${jobType} ist im Status ${status}.`,
+    parameters,
+    metrics: raw?.metrics || raw?.Metrics || {},
+  };
+}
+
+function createEmptyRuntimeJobs() {
+  return JOB_STATUSES.reduce((jobs, status) => {
+    jobs[status] = [];
+    return jobs;
+  }, {});
+}
+
+export function normalizeRuntimeJobs(raw) {
+  const normalized = createEmptyRuntimeJobs();
+  const source = raw?.jobs || raw;
+
+  if (Array.isArray(source)) {
+    source.forEach((job, index) => {
+      const normalizedJob = normalizeRuntimeJob(job, job?.status || 'pending', index);
+      normalized[normalizedJob.status].push(normalizedJob);
+    });
+
+    return normalized;
+  }
+
+  JOB_STATUSES.forEach((status) => {
+    const candidates = source?.[status] || source?.[`${status}_jobs`] || [];
+    normalized[status] = Array.isArray(candidates)
+      ? candidates.map((job, index) => normalizeRuntimeJob(job, status, index))
+      : [];
+  });
+
+  return normalized;
+}
+
 function parseRuntimeJsonl(text) {
   const warnings = [];
   const items = text
@@ -319,6 +402,15 @@ export function createRuntimeEventFallback(loadError = '') {
     dataSource: DATA_SOURCE.FIXTURE,
     warnings: loadError ? [loadError] : [],
     sourcePath: 'src/fixtures/controlCenterMockData.ts',
+  };
+}
+
+export function createRuntimeJobsFallback(loadError = '') {
+  return {
+    jobs: normalizeRuntimeJobs(runtimeJobsMock),
+    dataSource: DATA_SOURCE.FIXTURE,
+    warnings: loadError ? [loadError] : [],
+    sourcePath: 'src/fixtures/runtimeJobsMock.ts',
   };
 }
 
@@ -543,14 +635,35 @@ export async function loadRuntimeTimelineEvents() {
   return loadRuntimeEvents(timestampUtc, runtimeEvents);
 }
 
+export async function loadRuntimeJobs() {
+  if (!runtimeJobsUrl) {
+    return createRuntimeJobsFallback('Runtime Jobs URL ist nicht konfiguriert.');
+  }
+
+  try {
+    const raw = await readJsonReadOnly(runtimeJobsUrl);
+
+    return {
+      jobs: normalizeRuntimeJobs(raw),
+      dataSource: DATA_SOURCE.LIVE_FILE,
+      warnings: [],
+      sourcePath: runtimeJobsPath,
+    };
+  } catch (error) {
+    return createRuntimeJobsFallback(warningFromError('Runtime Jobs JSON nicht erreichbar', error));
+  }
+}
+
 export const runtimeDataAdapter = {
   loadRuntimeData,
   loadRuntimeHealth,
   loadSetupWatches,
   loadRuntimeEvents,
   loadRuntimeTimelineEvents,
+  loadRuntimeJobs,
   createRuntimeDataFallback,
   createRuntimeHealthFallback,
   createSetupWatchFallback,
   createRuntimeEventFallback,
+  createRuntimeJobsFallback,
 };

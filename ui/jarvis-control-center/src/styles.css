@@ -186,6 +186,10 @@ h2 {
   grid-column: span 12;
 }
 
+.jobs-queue-panel {
+  grid-column: span 12;
+}
+
 .learning-panel {
   grid-column: span 8;
 }
@@ -1286,6 +1290,170 @@ h2 {
   font-size: 1.05rem;
 }
 
+.jobs-safety-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.jobs-safety-strip strong {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  border: 1px solid rgba(74, 222, 128, 0.32);
+  border-radius: 8px;
+  color: var(--green);
+  background: rgba(74, 222, 128, 0.07);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.jobs-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.job-count-card {
+  display: grid;
+  min-height: 82px;
+  align-content: center;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 62%),
+    rgba(4, 10, 18, 0.68);
+}
+
+.job-count-card span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.job-count-card strong {
+  color: var(--text);
+  font-size: 1.8rem;
+}
+
+.jobs-board {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.job-lane {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(132, 204, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.38);
+}
+
+.job-lane-head,
+.job-card-head,
+.job-foot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.job-lane-head span {
+  color: var(--soft);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.job-card-list {
+  display: grid;
+  gap: 10px;
+}
+
+.job-card {
+  display: grid;
+  gap: 10px;
+  min-height: 210px;
+  padding: 13px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+    rgba(5, 11, 18, 0.76);
+}
+
+.job-card-head div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.job-card-head span,
+.job-meta-grid span,
+.job-foot,
+.job-empty {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.job-card-head strong {
+  color: var(--text);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.job-card p {
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.job-meta-grid {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(132, 204, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.job-meta-grid b,
+.job-foot span:last-child {
+  color: var(--text);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.job-path,
+.job-error {
+  padding-top: 8px;
+  border-top: 1px solid rgba(132, 204, 255, 0.1);
+  overflow-wrap: anywhere;
+}
+
+.job-error {
+  color: var(--red) !important;
+}
+
+.job-empty {
+  min-height: 70px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  border: 1px dashed rgba(132, 204, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .learning-guard-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1599,6 +1767,7 @@ h2 {
   .backtest-panel,
   .storage-retention-panel,
   .cli-panel,
+  .jobs-queue-panel,
   .learning-panel,
   .approval-panel,
   .reflective-panel,
@@ -1615,8 +1784,13 @@ h2 {
   .backtest-card-list,
   .storage-summary-grid,
   .storage-policy-grid,
-  .cli-console-grid {
+  .cli-console-grid,
+  .jobs-board {
     grid-template-columns: 1fr;
+  }
+
+  .jobs-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .storage-bucket-grid {
@@ -1636,6 +1810,10 @@ h2 {
   }
 
   .research-safety-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .jobs-safety-strip {
     grid-template-columns: 1fr;
   }
 
@@ -1673,6 +1851,9 @@ h2 {
   .storage-bucket-grid,
   .storage-policy-grid,
   .cli-safety-strip,
+  .jobs-safety-strip,
+  .jobs-summary-grid,
+  .jobs-board,
   .cli-console-grid,
   .storage-status,
   .runtime-capability-grid,
@@ -1684,6 +1865,9 @@ h2 {
   .watch-symbol,
   .watch-source,
   .queue-item,
+  .job-lane-head,
+  .job-card-head,
+  .job-foot,
   .research-job-top,
   .backtest-card-head,
   .storage-bucket-head,

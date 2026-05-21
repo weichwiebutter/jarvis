@@ -5,6 +5,7 @@ import { SetupWatchPanel } from './components/SetupWatchPanel';
 import { ResearchCenterPanel } from './components/ResearchCenterPanel';
 import { StorageRetentionPanel } from './components/StorageRetentionPanel';
 import { HermesCliPanel } from './components/HermesCliPanel';
+import { JobsQueuePanel } from './components/JobsQueuePanel';
 import { EventTimelinePanel } from './components/EventTimelinePanel';
 import { CostProviderPanel, SafetyPanel } from './components/SafetyPanel';
 
@@ -18,6 +19,7 @@ export default function App() {
         <SetupWatchPanel />
         <ResearchCenterPanel />
         <StorageRetentionPanel />
+        <JobsQueuePanel />
         <HermesCliPanel />
         <LearningQueuePanel />
         <ApprovalQueuePanel />
