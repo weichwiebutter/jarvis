@@ -171,6 +171,7 @@ export const de = {
     events: 'Events',
     snapshots: 'Snapshots',
     replays: 'Replays',
+    exports: 'Exports',
     featureStore: 'Feature Store',
     backtestRuns: 'Backtest Runs',
     archive: 'Archive',

@@ -1,10 +1,10 @@
+import { useEffect, useState } from 'react';
 import {
-  retentionRules,
-  storageBuckets,
-  storageSafetyRules,
-  storageSummary,
-} from '../fixtures/controlCenterMockData';
+  createRuntimeStorageFallback,
+  loadRuntimeStorage,
+} from '../data/runtimeDataAdapter';
 import { de as t } from '../i18n/de';
+import { sourceModeLabel, sourceTone } from '../utils/controlCenterFormatters';
 import { Panel, StatusPill, toneClass } from './StatusCard';
 
 function storagePressureTone(percent) {
@@ -20,33 +20,56 @@ function storagePressureTone(percent) {
 }
 
 export function StorageRetentionPanel() {
+  const [storageState, setStorageState] = useState(() => createRuntimeStorageFallback());
+  const { summary, buckets, retentionRules, storageSafetyRules } = storageState;
+  const fixtureActive = storageState.dataSource === 'fixture';
+
+  useEffect(() => {
+    let active = true;
+
+    loadRuntimeStorage().then((nextState) => {
+      if (active) {
+        setStorageState(nextState);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <Panel
       eyebrow={t.storageRetention.eyebrow}
       title={t.storageRetention.title}
-      action={<StatusPill tone="warn">{t.storageRetention.status}</StatusPill>}
+      action={
+        <StatusPill tone={sourceTone(storageState.dataSource)}>
+          {sourceModeLabel(storageState.dataSource)}
+        </StatusPill>
+      }
       className="storage-retention-panel"
     >
+      {fixtureActive ? <p className="runtime-warning">{t.common.demoFixtureActive}</p> : null}
       <div className="storage-summary-grid">
         <article className="storage-root-card">
           <span>{t.storageRetention.root}</span>
-          <strong>{storageSummary.root}</strong>
+          <strong>{summary.root}</strong>
           <div className="storage-main-meter">
             <div>
-              <span>{t.storageRetention.used}: {storageSummary.usedPercent}%</span>
-              <strong>{storageSummary.freeDiskGb} GB {t.storageRetention.freeDisk}</strong>
+              <span>{t.storageRetention.used}: {summary.usedPercent}%</span>
+              <strong>{summary.freeDiskGb} GB {t.storageRetention.freeDisk}</strong>
             </div>
-            <i style={{ width: `${storageSummary.usedPercent}%` }} />
+            <i style={{ width: `${summary.usedPercent}%` }} />
           </div>
         </article>
         <article className="storage-threshold-card tone-warn">
           <span>{t.storageRetention.warningThreshold}</span>
-          <strong>{storageSummary.warningThreshold}</strong>
+          <strong>{summary.warningThreshold}</strong>
           <p>Neue Research- und Replay-Jobs werden spaeter gedrosselt.</p>
         </article>
         <article className="storage-threshold-card tone-danger">
           <span>{t.storageRetention.criticalThreshold}</span>
-          <strong>{storageSummary.criticalThreshold}</strong>
+          <strong>{summary.criticalThreshold}</strong>
           <p>Safe Mode und Stop neuer Research-Jobs werden spaeter Pflicht.</p>
         </article>
       </div>
@@ -54,12 +77,12 @@ export function StorageRetentionPanel() {
       <section className="storage-section">
         <div className="research-section-head">
           <h3>{t.storageRetention.dataLake}</h3>
-          <StatusPill tone={storagePressureTone(storageSummary.usedPercent)}>
-            {storageSummary.usedPercent}% {t.storageRetention.used}
+          <StatusPill tone={storagePressureTone(summary.usedPercent)}>
+            {summary.usedPercent}% {t.storageRetention.used}
           </StatusPill>
         </div>
         <div className="storage-bucket-grid">
-          {storageBuckets.map((bucket) => (
+          {buckets.map((bucket) => (
             <article className={`storage-bucket ${toneClass(bucket.tone)}`} key={bucket.id}>
               <div className="storage-bucket-head">
                 <div>

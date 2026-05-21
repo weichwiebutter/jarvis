@@ -1,5 +1,6 @@
 import { runtimeHealthMock } from '../fixtures/runtimeHealthMock';
 import { runtimeJobsMock } from '../fixtures/runtimeJobsMock';
+import { runtimeStorageMock } from '../fixtures/runtimeStorageMock';
 import { setupWatchMock } from '../fixtures/setupWatchMock';
 import { runtimeEvents } from '../fixtures/controlCenterMockData';
 import { de } from '../i18n/de';
@@ -57,6 +58,10 @@ function asNullableBoolean(value) {
 function asNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clampNumber(value, min = 0, max = 100) {
+  return Math.min(max, Math.max(min, asNumber(value, min)));
 }
 
 function asString(value, fallback = '') {
@@ -378,6 +383,50 @@ export function normalizeRuntimeJobs(raw) {
   return normalized;
 }
 
+export function normalizeRuntimeStorage(raw, runtimeHealth) {
+  const totalDiskGb = asNumber(raw?.total_disk_gb ?? raw?.totalDiskGb, 0);
+  const freeDiskGb = asNumber(
+    runtimeHealth?.free_disk_gb,
+    asNumber(raw?.free_disk_gb ?? raw?.freeDiskGb, 0),
+  );
+  const usedPercent = totalDiskGb
+    ? clampNumber(Math.round(((totalDiskGb - freeDiskGb) / totalDiskGb) * 100))
+    : clampNumber(raw?.used_percent ?? raw?.usedPercent, 0);
+  const warningThresholdPercent = asNumber(
+    raw?.warning_threshold_percent ?? raw?.warningThresholdPercent,
+    75,
+  );
+  const criticalThresholdPercent = asNumber(
+    raw?.critical_threshold_percent ?? raw?.criticalThresholdPercent,
+    90,
+  );
+
+  return {
+    summary: {
+      root: asString(raw?.root, 'HermesRuntime/data'),
+      freeDiskGb,
+      totalDiskGb,
+      usedPercent,
+      warningThreshold: `${warningThresholdPercent}%`,
+      criticalThreshold: `${criticalThresholdPercent}%`,
+      warningThresholdPercent,
+      criticalThresholdPercent,
+      safeMode: Boolean(runtimeHealth?.safe_mode),
+    },
+    buckets: (raw?.buckets || []).map((bucket) => ({
+      id: asString(bucket?.id, 'storage_bucket'),
+      label: asString(bucket?.label, bucket?.id || 'Storage'),
+      path: asString(bucket?.path, '-'),
+      used: asString(bucket?.used, '-'),
+      percent: clampNumber(bucket?.percent, 0),
+      tone: asString(bucket?.tone, 'info'),
+      detail: asString(bucket?.detail, ''),
+    })),
+    retentionRules: raw?.retention_rules || raw?.retentionRules || [],
+    storageSafetyRules: raw?.safety_rules || raw?.safetyRules || [],
+  };
+}
+
 function parseRuntimeJsonl(text) {
   const warnings = [];
   const items = text
@@ -411,6 +460,21 @@ export function createRuntimeJobsFallback(loadError = '') {
     dataSource: DATA_SOURCE.FIXTURE,
     warnings: loadError ? [loadError] : [],
     sourcePath: 'src/fixtures/runtimeJobsMock.ts',
+  };
+}
+
+export function createRuntimeStorageFallback(loadError = '') {
+  const runtimeHealth = normalizeRuntimeHealth(runtimeHealthMock, {
+    label: de.common.fixtureFallback,
+    url: 'src/fixtures/runtimeHealthMock.ts',
+    readOnly: true,
+  });
+
+  return {
+    ...normalizeRuntimeStorage(runtimeStorageMock, runtimeHealth),
+    dataSource: DATA_SOURCE.FIXTURE,
+    warnings: loadError ? [loadError] : [],
+    sourcePath: 'src/fixtures/runtimeStorageMock.ts',
   };
 }
 
@@ -654,6 +718,17 @@ export async function loadRuntimeJobs() {
   }
 }
 
+export async function loadRuntimeStorage() {
+  const runtimeEntry = await loadRuntimeHealthEntry();
+
+  return {
+    ...normalizeRuntimeStorage(runtimeStorageMock, runtimeEntry.runtimeHealth),
+    dataSource: runtimeEntry.source.dataSource,
+    warnings: runtimeEntry.source.warnings,
+    sourcePath: runtimeEntry.source.path,
+  };
+}
+
 export const runtimeDataAdapter = {
   loadRuntimeData,
   loadRuntimeHealth,
@@ -661,9 +736,11 @@ export const runtimeDataAdapter = {
   loadRuntimeEvents,
   loadRuntimeTimelineEvents,
   loadRuntimeJobs,
+  loadRuntimeStorage,
   createRuntimeDataFallback,
   createRuntimeHealthFallback,
   createSetupWatchFallback,
   createRuntimeEventFallback,
   createRuntimeJobsFallback,
+  createRuntimeStorageFallback,
 };

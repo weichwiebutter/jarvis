@@ -60,8 +60,9 @@ The adapter is browser-only and read-only. It prepares access to:
 `loadRuntimeData()` from the adapter. `EventTimelinePanel` uses
 `loadRuntimeTimelineEvents()` and prepares read-only JSONL events for timeline
 display. `JobsQueuePanel` uses `loadRuntimeJobs()` and currently falls back to
-fixtures unless a read-only queue snapshot is available. The normalized runtime
-shape is:
+fixtures unless a read-only queue snapshot is available. `StorageRetentionPanel`
+uses `loadRuntimeStorage()` and combines `free_disk_gb` from Runtime Health with
+storage root/path/threshold fixtures. The normalized runtime shape is:
 
 ```ts
 {
@@ -126,6 +127,29 @@ enumerate those local directories, so this prototype intentionally uses
 `src/fixtures/runtimeJobsMock.ts` until a queue index export, read-only localhost
 bridge, or Tauri file access is available.
 
+Runtime storage data is prepared as a read-only Data Lake view:
+
+```ts
+{
+  summary: {
+    root,
+    freeDiskGb,
+    totalDiskGb,
+    usedPercent,
+    warningThreshold,
+    criticalThreshold,
+  },
+  buckets,
+  retentionRules,
+  storageSafetyRules,
+}
+```
+
+Only `freeDiskGb` is read from `runtime_health.json` today. Storage root, bucket
+paths, warning/critical thresholds, and retention/safety policy text stay in
+`src/fixtures/runtimeStorageMock.ts` until HermesRuntime exposes a read-only
+storage snapshot or bridge.
+
 The adapter uses Vite `/@fs/...` URLs in development, never sends commands to
 `HermesRuntime`, never opens a backend API, never writes runtime files, and does
 not use WebSockets. If a browser or static hosting context blocks local file
@@ -134,6 +158,7 @@ access, the UI keeps working through fixture fallback data:
 - `src/fixtures/runtimeHealthMock.ts`
 - `src/fixtures/setupWatchMock.ts`
 - `src/fixtures/runtimeJobsMock.ts`
+- `src/fixtures/runtimeStorageMock.ts`
 - existing mock event data in `src/fixtures/controlCenterMockData.ts`
 
 This means the React prototype can show real local JSON when reachable, but it
