@@ -7,4 +7,10 @@
     <AssemblyName>Hermes.Runtime</AssemblyName>
     <RootNamespace>Hermes.Runtime</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="cli/**/*.cs" />
+    <Compile Remove="bin/**/*.cs" />
+    <Compile Remove="obj/**/*.cs" />
+  </ItemGroup>
 </Project>
