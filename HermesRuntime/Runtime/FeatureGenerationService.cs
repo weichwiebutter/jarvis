@@ -59,32 +59,55 @@ public sealed class FeatureGenerationService
 
     private IEnumerable<MarketDataCandle> ReadCandles(string symbol, string timeframe)
     {
-        var path = Path.Combine(_storagePaths.Root, "market_data", "candles", symbol, $"{timeframe}.candles.jsonl");
-        if (!File.Exists(path))
+        foreach (var path in FindCandleFiles(symbol, timeframe))
+        {
+            foreach (var line in File.ReadLines(path))
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                MarketDataCandle? candle;
+                try
+                {
+                    candle = JsonSerializer.Deserialize<MarketDataCandle>(line, JsonDefaults.SnapshotReadOptions);
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                if (candle is not null)
+                {
+                    yield return candle;
+                }
+            }
+        }
+    }
+
+    private IEnumerable<string> FindCandleFiles(string symbol, string timeframe)
+    {
+        var symbolRoot = Path.Combine(_storagePaths.Root, "market_data", "candles", symbol);
+        var legacyPath = Path.Combine(symbolRoot, $"{timeframe}.candles.jsonl");
+        if (File.Exists(legacyPath))
+        {
+            yield return legacyPath;
+        }
+
+        var timeframeDirectory = Path.Combine(symbolRoot, timeframe);
+        if (!Directory.Exists(timeframeDirectory))
         {
             yield break;
         }
 
-        foreach (var line in File.ReadLines(path))
+        foreach (var path in Directory.EnumerateFiles(timeframeDirectory, "*.jsonl", SearchOption.TopDirectoryOnly)
+                     .OrderBy(File.GetLastWriteTimeUtc)
+                     .ThenBy(path => path))
         {
-            if (string.IsNullOrWhiteSpace(line))
+            if (!path.Equals(legacyPath, StringComparison.OrdinalIgnoreCase))
             {
-                continue;
-            }
-
-            MarketDataCandle? candle;
-            try
-            {
-                candle = JsonSerializer.Deserialize<MarketDataCandle>(line, JsonDefaults.SnapshotReadOptions);
-            }
-            catch (JsonException)
-            {
-                continue;
-            }
-
-            if (candle is not null)
-            {
-                yield return candle;
+                yield return path;
             }
         }
     }

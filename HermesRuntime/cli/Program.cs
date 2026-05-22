@@ -32,6 +32,7 @@ internal sealed class HermesCli
             "events" => ShowEvents(),
             "jobs" => ShowJobs(),
             "storage" => ShowStorage(),
+            "import-csv" => ImportCsv(),
             "generate-features" => GenerateFeatures(),
             "features" => ShowFeatures(),
             "signals" => ShowSignals(),
@@ -54,6 +55,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes events recent      letzte Runtime-Events anzeigen");
         Console.WriteLine("  hermes jobs               Queue/Jobjournale anzeigen");
         Console.WriteLine("  hermes storage            lokale Storage-Uebersicht anzeigen");
+        Console.WriteLine("  hermes import-csv         cTrader Candle-CSV lokal importieren");
         Console.WriteLine("  hermes generate-features  FeatureVectors aus lokalen Candle-Daten erzeugen");
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
@@ -361,6 +363,56 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ImportCsv()
+    {
+        WriteHeader("Hermes cTrader CSV Import");
+        var symbol = ReadOption(_args, "--symbol");
+        var timeframe = ReadOption(_args, "--timeframe");
+        var file = ReadOption(_args, "--file");
+
+        if (string.IsNullOrWhiteSpace(symbol)
+            || string.IsNullOrWhiteSpace(timeframe)
+            || string.IsNullOrWhiteSpace(file))
+        {
+            WriteError("Pflichtargumente fehlen.");
+            Console.WriteLine("Beispiel:");
+            Console.WriteLine("  dotnet run --project ./cli/Hermes.Cli.csproj -- import-csv --symbol XAUUSD --timeframe M5 --file path/to/file.csv");
+            WriteSafety();
+            return 2;
+        }
+
+        var storagePaths = BuildStoragePaths();
+        using var eventStore = new EventStore(storagePaths);
+        var eventBus = new EventBus();
+        eventBus.Subscribe(eventStore.Append);
+
+        var importer = new CTraderCsvCandleImporter(storagePaths, eventBus, CliVersion);
+        var result = importer.Import(symbol, timeframe, file);
+        eventStore.Flush();
+
+        WriteField("Import ID", result.ImportId);
+        WriteField("Symbol", result.Symbol);
+        WriteField("Timeframe", result.Timeframe);
+        WriteField("Format", result.Format.ToString());
+        WriteField("Source", result.SourcePath);
+        WriteField("Status", result.Validation.IsValid ? "imported" : "failed_validation");
+        WriteField("Source Rows", result.Validation.SourceRowCount.ToString());
+        WriteField("Imported Rows", result.Validation.ImportedRowCount.ToString());
+        WriteField("Invalid Rows", result.Validation.InvalidRowCount.ToString());
+        WriteField("From UTC", result.Validation.FromUtc?.ToString("O"));
+        WriteField("To UTC", result.Validation.ToUtc?.ToString("O"));
+        WriteField("Output", result.OutputPath is null ? "-" : DisplayPath(result.OutputPath));
+        WriteField("Raw Copy", result.RawImportPath is null ? "-" : DisplayPath(result.RawImportPath));
+
+        WriteMessages("Missing Columns", result.Validation.MissingColumns);
+        WriteMessages("Warnings", result.Validation.Warnings);
+        WriteMessages("Invalid Rows", result.Validation.InvalidRows);
+        Console.WriteLine();
+
+        WriteSafety();
+        return result.Validation.IsValid ? 0 : 1;
+    }
+
     private int ShowSignals()
     {
         WriteHeader("Hermes Signal Results");
@@ -503,8 +555,7 @@ internal sealed class HermesCli
 
         foreach (var file in files)
         {
-            var symbol = Path.GetFileName(Path.GetDirectoryName(file)) ?? "UNKNOWN";
-            var timeframe = Path.GetFileName(file).Split('.', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "-";
+            var (symbol, timeframe) = ResolveMarketDataIdentity(candlesRoot, file);
             WriteSubHeader($"{symbol} {timeframe}");
             WriteField("Rows", CountJsonlRows(file).ToString());
             WriteField("Path", DisplayPath(file));
@@ -653,6 +704,24 @@ internal sealed class HermesCli
         }
     }
 
+    private static (string Symbol, string Timeframe) ResolveMarketDataIdentity(string candlesRoot, string file)
+    {
+        var relative = Path.GetRelativePath(candlesRoot, file);
+        var parts = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (parts.Length >= 3)
+        {
+            return (parts[0], parts[1]);
+        }
+
+        if (parts.Length >= 2)
+        {
+            var timeframe = Path.GetFileName(file).Split('.', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "-";
+            return (parts[0], timeframe);
+        }
+
+        return ("UNKNOWN", Path.GetFileNameWithoutExtension(file));
+    }
+
     private void WriteOutcome(JsonElement root)
     {
         WriteSubHeader(GetString(root, "outcome_id", "outcomeId") ?? "unknown_outcome");
@@ -704,6 +773,33 @@ internal sealed class HermesCli
         }
 
         return fallback;
+    }
+
+    private static string? ReadOption(string[] args, string name)
+    {
+        for (var index = 0; index < args.Length - 1; index++)
+        {
+            if (args[index].Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                return args[index + 1];
+            }
+        }
+
+        return null;
+    }
+
+    private static void WriteMessages(string label, IReadOnlyList<string> messages)
+    {
+        if (messages.Count == 0)
+        {
+            return;
+        }
+
+        WriteField(label, string.Empty);
+        foreach (var message in messages)
+        {
+            Console.WriteLine($"  - {message}");
+        }
     }
 
     private bool TryLoadJson(string path, out JsonElement root)

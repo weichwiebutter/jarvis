@@ -18,6 +18,7 @@ public enum EventType
     OutcomeEvaluationCompleted,
     HistoricalImportStarted,
     HistoricalImportCompleted,
+    HistoricalImportFailed,
     FeatureGenerationStarted,
     FeatureGenerationCompleted,
     JobCompleted,
