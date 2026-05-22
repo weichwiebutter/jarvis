@@ -17,6 +17,10 @@ public sealed record StoragePaths(
         Logs,
         Cache,
         Jobs,
-        Archive
+        Archive,
+        Path.Combine(Root, "market_data"),
+        Path.Combine(Root, "exports"),
+        Path.Combine(Root, "reports"),
+        Path.Combine(Root, "replays")
     ];
 }

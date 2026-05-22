@@ -49,18 +49,24 @@ HermesRuntime/
 
 ## Storage Structure
 
-Die Runtime erzeugt bei normalem Start lokal:
+Die Runtime erzeugt bei normalem Start unter dem konfigurierten Storage-Root:
 
 ```text
-HermesRuntime/data/
+/mnt/d/HermesData/
   events/
   snapshots/
   logs/
   cache/
+  market_data/
+  exports/
+  reports/
+  replays/
   archive/
 ```
 
-`HermesRuntime/data/` ist ueber `HermesRuntime/.gitignore` ausgeschlossen.
+Unter WSL entspricht ein Windows-Laufwerk `D:/HermesData` dem Pfad
+`/mnt/d/HermesData`. Massendaten sollen nicht im Repo unter
+`HermesRuntime/data/` liegen.
 
 ## Configuration
 
@@ -76,8 +82,9 @@ Storage profile:
 HermesRuntime/config/storage.profile.json
 ```
 
-Das Default-Profil nutzt `../data` relativ zum Config-Ordner, also
-`HermesRuntime/data/`.
+Das lokale Profil nutzt fuer Research-/Backtest-/Feature-Daten
+`/mnt/d/HermesData`. Alternativ kann `D:/HermesData` konfiguriert werden; die
+Runtime normalisiert Windows-Drive-Pfade unter WSL auf `/mnt/d/...`.
 
 ## Safe Mode
 

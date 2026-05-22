@@ -18,7 +18,7 @@ internal sealed class HermesCli
     {
         _args = args;
         _runtimeRoot = ResolveRuntimeRoot(args);
-        _dataRoot = Path.Combine(_runtimeRoot, "data");
+        _dataRoot = ResolveDataRoot(_runtimeRoot);
     }
 
     public int Run()
@@ -381,7 +381,7 @@ internal sealed class HermesCli
 
         if (result.FeatureCount == 0)
         {
-            WriteWarning("Keine Features erzeugt. Pruefe lokale Candle-Daten unter data/market_data/candles/.");
+            WriteWarning($"Keine Features erzeugt. Pruefe lokale Candle-Daten unter {DisplayPath(Path.Combine(storagePaths.Root, "market_data", "candles"))}.");
         }
 
         WriteSafety();
@@ -1721,14 +1721,57 @@ internal sealed class HermesCli
 
     private StoragePaths BuildStoragePaths()
     {
+        var profilePath = Path.Combine(_runtimeRoot, "config", "storage.profile.json");
+        if (File.Exists(profilePath))
+        {
+            var paths = StorageProfile.Load(profilePath).ToPaths(Path.GetDirectoryName(profilePath) ?? _runtimeRoot);
+            EnsureStorageDirectories(paths);
+            return paths;
+        }
+
+        var fallbackPaths = BuildFallbackStoragePaths(_dataRoot);
+        EnsureStorageDirectories(fallbackPaths);
+        return fallbackPaths;
+    }
+
+    private static string ResolveDataRoot(string runtimeRoot)
+    {
+        var profilePath = Path.Combine(runtimeRoot, "config", "storage.profile.json");
+        if (!File.Exists(profilePath))
+        {
+            return Path.Combine(runtimeRoot, "data");
+        }
+
+        try
+        {
+            return StorageProfile.Load(profilePath)
+                .ToPaths(Path.GetDirectoryName(profilePath) ?? runtimeRoot)
+                .Root;
+        }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            return Path.Combine(runtimeRoot, "data");
+        }
+    }
+
+    private static StoragePaths BuildFallbackStoragePaths(string dataRoot)
+    {
         return new StoragePaths(
-            Root: _dataRoot,
-            Events: Path.Combine(_dataRoot, "events"),
-            Snapshots: Path.Combine(_dataRoot, "snapshots"),
-            Logs: Path.Combine(_dataRoot, "logs"),
-            Cache: Path.Combine(_dataRoot, "cache"),
-            Jobs: Path.Combine(_dataRoot, "jobs"),
-            Archive: Path.Combine(_dataRoot, "archive"));
+            Root: dataRoot,
+            Events: Path.Combine(dataRoot, "events"),
+            Snapshots: Path.Combine(dataRoot, "snapshots"),
+            Logs: Path.Combine(dataRoot, "logs"),
+            Cache: Path.Combine(dataRoot, "cache"),
+            Jobs: Path.Combine(dataRoot, "jobs"),
+            Archive: Path.Combine(dataRoot, "archive"));
+    }
+
+    private static void EnsureStorageDirectories(StoragePaths paths)
+    {
+        foreach (var directory in paths.AllDirectories)
+        {
+            Directory.CreateDirectory(directory);
+        }
     }
 
     private CTraderOpenApiConfigLoadResult LoadCTraderConfig()

@@ -32,7 +32,7 @@ public sealed class ResearchPipelineCoordinator
 
             if (featureResult.CandleCount == 0)
             {
-                warnings.Add("No historical candles were found under data/market_data/candles.");
+                warnings.Add($"No historical candles were found under {Path.Combine(_storagePaths.Root, "market_data", "candles")}.");
             }
 
             var signalGenerationStub = new SignalGenerationStub(_storagePaths, _eventBus, _runtimeVersion);

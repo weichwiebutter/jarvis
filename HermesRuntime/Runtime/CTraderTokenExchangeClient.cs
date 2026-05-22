@@ -19,31 +19,39 @@ public sealed class CTraderTokenExchangeClient
     {
         ValidateConfig(config);
 
-        if (string.IsNullOrWhiteSpace(authorizationCode)
-            || authorizationCode.Contains('<', StringComparison.Ordinal)
-            || authorizationCode.Contains('>', StringComparison.Ordinal))
+        var code = NormalizeAuthorizationCode(authorizationCode);
+        if (string.IsNullOrWhiteSpace(code)
+            || code.Contains('<', StringComparison.Ordinal)
+            || code.Contains('>', StringComparison.Ordinal))
         {
             throw new InvalidOperationException("A fresh cTrader OAuth redirect code is required. Placeholder values are rejected.");
         }
 
-        var tokenUri = BuildTokenUri(config, authorizationCode.Trim());
+        var tokenUri = BuildTokenUri(config, code);
         using var request = new HttpRequestMessage(HttpMethod.Get, tokenUri);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.TryAddWithoutValidation("Content-Type", "application/json");
 
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                $"cTrader token exchange failed with HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Verify the redirect code, redirect_uri and local client credentials. OAuth codes expire quickly.");
+                BuildFailureMessage(response, responseText));
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        using var document = ParseTokenResponse(response, responseText);
         var root = document.RootElement;
+        var errorMessage = BuildCTraderErrorSummary(root);
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            throw new InvalidOperationException(BuildFailureMessage(response, responseText));
+        }
+
         var accessToken = ReadString(root, "accessToken", "access_token");
         if (string.IsNullOrWhiteSpace(accessToken))
         {
-            throw new InvalidOperationException("cTrader token exchange response did not contain an access token.");
+            throw new InvalidOperationException(BuildFailureMessage(response, responseText));
         }
 
         var expiresIn = ReadLong(root, "expiresIn", "expires_in");
@@ -80,6 +88,139 @@ public sealed class CTraderTokenExchangeClient
                 $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
 
         return new Uri(url);
+    }
+
+    private static string NormalizeAuthorizationCode(string authorizationCode)
+    {
+        var trimmed = authorizationCode.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            return ExtractCodeFromQuery(uri.Query) ?? trimmed;
+        }
+
+        var queryStart = trimmed.IndexOf('?', StringComparison.Ordinal);
+        if (queryStart >= 0 && queryStart < trimmed.Length - 1)
+        {
+            return ExtractCodeFromQuery(trimmed[queryStart..]) ?? trimmed;
+        }
+
+        if (trimmed.Contains("code=", StringComparison.OrdinalIgnoreCase))
+        {
+            return ExtractCodeFromQuery(trimmed) ?? trimmed;
+        }
+
+        return trimmed;
+    }
+
+    private static string? ExtractCodeFromQuery(string query)
+    {
+        var trimmed = query.TrimStart('?');
+        foreach (var part in trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separator = part.IndexOf('=', StringComparison.Ordinal);
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            var name = Uri.UnescapeDataString(part[..separator]);
+            if (!name.Equals("code", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return Uri.UnescapeDataString(part[(separator + 1)..]);
+        }
+
+        return null;
+    }
+
+    private static JsonDocument ParseTokenResponse(HttpResponseMessage response, string responseText)
+    {
+        try
+        {
+            return JsonDocument.Parse(responseText);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"cTrader token exchange failed with HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Response was not valid JSON: {ex.Message}");
+        }
+    }
+
+    private static string BuildFailureMessage(HttpResponseMessage response, string responseText)
+    {
+        var status = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}";
+        var details = new List<string>
+        {
+            $"cTrader token exchange failed with {status}.",
+            "Sent parameters: grant_type=authorization_code, code=<redacted>, client_id=<configured>, client_secret=<redacted>, redirect_uri=<configured exactly from config>."
+        };
+
+        try
+        {
+            using var document = JsonDocument.Parse(responseText);
+            var root = document.RootElement;
+            var errorSummary = BuildCTraderErrorSummary(root);
+            if (!string.IsNullOrWhiteSpace(errorSummary))
+            {
+                details.Add(errorSummary);
+            }
+
+            details.Add($"Response keys: {string.Join(", ", SafeResponseKeys(root))}.");
+        }
+        catch (JsonException ex)
+        {
+            details.Add($"Response JSON parse error: {ex.Message}");
+        }
+
+        details.Add("OAuth authorization codes are single-use and expire quickly; generate a new URL/code before retrying.");
+        return string.Join(" ", details);
+    }
+
+    private static string? BuildCTraderErrorSummary(JsonElement root)
+    {
+        var error = ReadString(root, "error", "errorCode", "error_code");
+        var description = ReadString(root, "error_description", "description");
+
+        if (string.IsNullOrWhiteSpace(error) && string.IsNullOrWhiteSpace(description))
+        {
+            return null;
+        }
+
+        return $"cTrader error: {SanitizeDiagnosticValue(error) ?? "-"}; description: {SanitizeDiagnosticValue(description) ?? "-"}.";
+    }
+
+    private static IReadOnlyList<string> SafeResponseKeys(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return [$"<{root.ValueKind}>"];
+        }
+
+        return root.EnumerateObject()
+            .Select(property => property.Name)
+            .Where(name => !IsSensitiveKey(name))
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static bool IsSensitiveKey(string key)
+    {
+        return key.Contains("token", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("secret", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? SanitizeDiagnosticValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value
+            .Replace("\r", " ", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal);
     }
 
     private static void ValidateConfig(CTraderOpenApiConfig config)
@@ -169,4 +310,3 @@ public sealed class CTraderTokenExchangeClient
         return false;
     }
 }
-

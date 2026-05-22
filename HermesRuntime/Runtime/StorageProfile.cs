@@ -37,9 +37,10 @@ public sealed class StorageProfile
 
     public StoragePaths ToPaths(string profileDirectory)
     {
-        var root = Path.IsPathRooted(RootPath)
-            ? RootPath
-            : Path.Combine(profileDirectory, RootPath);
+        var normalizedRootPath = NormalizeRootPath(RootPath);
+        var root = Path.IsPathRooted(normalizedRootPath)
+            ? normalizedRootPath
+            : Path.Combine(profileDirectory, normalizedRootPath);
 
         root = Path.GetFullPath(root);
 
@@ -51,5 +52,28 @@ public sealed class StorageProfile
             Path.Combine(root, CacheDirectory),
             Path.Combine(root, JobsDirectory),
             Path.Combine(root, ArchiveDirectory));
+    }
+
+    private static string NormalizeRootPath(string rootPath)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath))
+        {
+            return "../data";
+        }
+
+        if (!OperatingSystem.IsWindows()
+            && rootPath.Length >= 3
+            && char.IsLetter(rootPath[0])
+            && rootPath[1] == ':'
+            && (rootPath[2] == '/' || rootPath[2] == '\\'))
+        {
+            var drive = char.ToLowerInvariant(rootPath[0]);
+            var remainder = rootPath[3..].Replace('\\', '/').TrimStart('/');
+            return string.IsNullOrWhiteSpace(remainder)
+                ? $"/mnt/{drive}"
+                : $"/mnt/{drive}/{remainder}";
+        }
+
+        return rootPath;
     }
 }

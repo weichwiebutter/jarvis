@@ -1,6 +1,6 @@
 {
   "profileName": "local-default",
-  "rootPath": "../data",
+  "rootPath": "/mnt/d/HermesData",
   "eventsDirectory": "events",
   "snapshotsDirectory": "snapshots",
   "logsDirectory": "logs",
