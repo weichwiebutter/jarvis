@@ -1,0 +1,20 @@
+{
+  "client_id": "example_client_id",
+  "redirect_uri": "http://127.0.0.1:17890/callback",
+  "environment": "demo",
+  "account_id": null,
+  "no_orders": true,
+  "stub_mode": true,
+  "allowed_symbols": [
+    "XAUUSD",
+    "EURUSD",
+    "GER40",
+    "US500"
+  ],
+  "allowed_timeframes": [
+    "H4",
+    "H1",
+    "M15",
+    "M5"
+  ]
+}

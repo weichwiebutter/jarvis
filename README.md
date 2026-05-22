@@ -65,8 +65,10 @@ dotnet run --project ./Hermes.Runtime.csproj
 
 ### C. Hermes CLI
 
-Rolle: Hermes CLI ist eine read-only Dev Console fuer lokale Runtime-Dateien.
-Sie startet/stoppt die Runtime nicht und fuehrt keine Trading-Aktionen aus.
+Rolle: Hermes CLI ist eine lokale Dev Console fuer Runtime-Status und sichere
+Datenvorbereitung. Statusbefehle lesen lokale Runtime-Dateien; Import- und
+Download-Stub-Befehle schreiben nur lokale Analyseartefakte. Die CLI
+startet/stoppt die Runtime nicht und fuehrt keine Trading-Aktionen aus.
 
 ```bash
 cd ~/jarvis/HermesRuntime
@@ -75,8 +77,15 @@ dotnet run --project ./cli/Hermes.Cli.csproj -- setup-watch
 dotnet run --project ./cli/Hermes.Cli.csproj -- events recent
 dotnet run --project ./cli/Hermes.Cli.csproj -- jobs
 dotnet run --project ./cli/Hermes.Cli.csproj -- storage
+dotnet run --project ./cli/Hermes.Cli.csproj -- ctrader-health
+dotnet run --project ./cli/Hermes.Cli.csproj -- ctrader-symbols
+dotnet run --project ./cli/Hermes.Cli.csproj -- download-history --symbol XAUUSD --timeframe M5 --from 2025-01-01 --to 2025-01-02
 dotnet run --project ./cli/Hermes.Cli.csproj -- version
 ```
+
+cTrader Open API local configuration must stay local. Use
+`HermesRuntime/config/ctrader.openapi.local.json` only on the machine that owns
+the credentials; never commit this file or OAuth tokens.
 
 ### D. React Jarvis Control Center
 
@@ -112,8 +121,9 @@ Falls Port `5173` belegt ist, zeigt Vite die tatsaechliche URL im Terminal.
 - Keine Brokerverbindung und keine cTrader-Anbindung in der aktuellen Phase.
 - Trading bleibt Analyse/Alerts only; Orders und Broker-Anbindungen sind nicht
   implementiert.
-- Hermes CLI Foundation ist read-only: keine Runtime-Steuerung, keine
-  Delete-Kommandos, keine Trading-Kommandos.
+- Hermes CLI Foundation bietet read-only Statusbefehle und lokale
+  Datenvorbereitungsbefehle. Sie enthaelt keine Runtime-Steuerung, keine
+  Delete-Kommandos und keine Trading-Kommandos.
 
 ## Hermes CLI Foundation
 

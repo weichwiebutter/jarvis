@@ -1,4 +1,5 @@
 using Hermes.Runtime;
+using System.Globalization;
 using System.Text.Json;
 using System.Xml.Linq;
 
@@ -32,6 +33,9 @@ internal sealed class HermesCli
             "events" => ShowEvents(),
             "jobs" => ShowJobs(),
             "storage" => ShowStorage(),
+            "ctrader-health" => ShowCTraderHealth(),
+            "ctrader-symbols" => ShowCTraderSymbols(),
+            "download-history" => DownloadCTraderHistory(),
             "import-csv" => ImportCsv(),
             "generate-features" => GenerateFeatures(),
             "features" => ShowFeatures(),
@@ -55,6 +59,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes events recent      letzte Runtime-Events anzeigen");
         Console.WriteLine("  hermes jobs               Queue/Jobjournale anzeigen");
         Console.WriteLine("  hermes storage            lokale Storage-Uebersicht anzeigen");
+        Console.WriteLine("  hermes ctrader-health     cTrader Open API Stub-Health anzeigen");
+        Console.WriteLine("  hermes ctrader-symbols    cTrader Symbol-Mapping anzeigen");
+        Console.WriteLine("  hermes download-history   historische Stub-Candles lokal erzeugen");
         Console.WriteLine("  hermes import-csv         cTrader Candle-CSV lokal importieren");
         Console.WriteLine("  hermes generate-features  FeatureVectors aus lokalen Candle-Daten erzeugen");
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
@@ -361,6 +368,197 @@ internal sealed class HermesCli
 
         WriteSafety();
         return 0;
+    }
+
+    private int ShowCTraderHealth()
+    {
+        WriteHeader("Hermes cTrader Open API Health");
+        var config = LoadCTraderConfig(out var configPath, out var localConfigLoaded);
+        var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
+        var client = new CTraderHistoricalDataClientStub(config, mapper);
+        var health = client.CheckHealth();
+
+        using var eventStore = new EventStore(BuildStoragePaths());
+        var eventBus = new EventBus();
+        eventBus.Subscribe(eventStore.Append);
+        PublishCTraderEvent(
+            eventBus,
+            EventType.CTraderConnectorHealthChecked,
+            EventSeverity.Info,
+            new
+            {
+                message = "cTrader Open API connector health checked. Stub only, no live connection.",
+                health,
+                configPath,
+                localConfigLoaded,
+                noAutoTrading = true,
+                humanReviewRequired = true
+            });
+        eventStore.Flush();
+
+        Console.WriteLine("Open API connector stub active");
+        WriteField("Status", health.Status);
+        WriteField("Environment", health.Environment);
+        WriteField("Stub Active", health.StubActive.ToString().ToLowerInvariant());
+        WriteField("Auth Configured", health.AuthConfigured.ToString().ToLowerInvariant());
+        WriteField("Client ID Configured", health.ClientIdConfigured.ToString().ToLowerInvariant());
+        WriteField("Account ID Configured", health.AccountIdConfigured.ToString().ToLowerInvariant());
+        WriteField("no_orders", health.NoOrders.ToString().ToLowerInvariant());
+        WriteField("Read-only Market Data", health.ReadOnlyMarketData.ToString().ToLowerInvariant());
+        WriteField("Config", DisplayPath(configPath));
+        WriteField("Local Config Loaded", localConfigLoaded.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", health.Warnings);
+        Console.WriteLine();
+
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCTraderSymbols()
+    {
+        WriteHeader("Hermes cTrader Symbol Mapping");
+        var config = LoadCTraderConfig(out var configPath, out var localConfigLoaded);
+        var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
+
+        Console.WriteLine("Open API connector stub active");
+        WriteField("Config", DisplayPath(configPath));
+        WriteField("Local Config Loaded", localConfigLoaded.ToString().ToLowerInvariant());
+        WriteField("Allowed Timeframes", string.Join(", ", config.AllowedTimeframes));
+        Console.WriteLine();
+
+        foreach (var mapping in mapper.GetMappings())
+        {
+            WriteSubHeader(mapping.HermesSymbol);
+            WriteField("cTrader Name", mapping.CTraderSymbolName);
+            WriteField("cTrader Symbol ID", mapping.CTraderSymbolId);
+            WriteField("Aliases", string.Join(", ", mapping.Aliases));
+            WriteField("Stub Mapping", mapping.StubMapping.ToString().ToLowerInvariant());
+            Console.WriteLine();
+        }
+
+        WriteSafety();
+        return 0;
+    }
+
+    private int DownloadCTraderHistory()
+    {
+        WriteHeader("Hermes cTrader Historical Download");
+        var symbol = ReadOption(_args, "--symbol");
+        var timeframe = ReadOption(_args, "--timeframe");
+        var fromText = ReadOption(_args, "--from");
+        var toText = ReadOption(_args, "--to");
+
+        if (string.IsNullOrWhiteSpace(symbol)
+            || string.IsNullOrWhiteSpace(timeframe)
+            || string.IsNullOrWhiteSpace(fromText)
+            || string.IsNullOrWhiteSpace(toText)
+            || !TryParseCliDate(fromText, out var fromUtc)
+            || !TryParseCliDate(toText, out var toUtc))
+        {
+            WriteError("Pflichtargumente fehlen oder Datumswerte sind ungueltig.");
+            Console.WriteLine("Beispiel:");
+            Console.WriteLine("  dotnet run --project ./cli/Hermes.Cli.csproj -- download-history --symbol XAUUSD --timeframe M5 --from 2025-01-01 --to 2025-01-02");
+            WriteSafety();
+            return 2;
+        }
+
+        var storagePaths = BuildStoragePaths();
+        using var eventStore = new EventStore(storagePaths);
+        var eventBus = new EventBus();
+        eventBus.Subscribe(eventStore.Append);
+
+        var request = new CTraderHistoricalDataRequest(
+            Symbol: symbol.Trim().ToUpperInvariant(),
+            Timeframe: timeframe.Trim().ToUpperInvariant(),
+            FromUtc: fromUtc,
+            ToUtc: toUtc);
+
+        PublishCTraderEvent(
+            eventBus,
+            EventType.CTraderHistoricalDownloadStarted,
+            EventSeverity.Info,
+            new
+            {
+                message = "cTrader historical download started. Stub only, no live Open API call.",
+                request.Symbol,
+                request.Timeframe,
+                request.FromUtc,
+                request.ToUtc,
+                stubActive = true,
+                noAutoTrading = true,
+                humanReviewRequired = true
+            });
+
+        try
+        {
+            var config = LoadCTraderConfig(out var configPath, out var localConfigLoaded);
+            var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
+            var client = new CTraderHistoricalDataClientStub(config, mapper);
+            var candles = client.DownloadHistoricalCandles(request);
+            var importer = new CTraderTrendbarImporter(storagePaths);
+            var result = importer.ImportStubCandles(request, candles);
+
+            PublishCTraderEvent(
+                eventBus,
+                EventType.CTraderHistoricalDownloadCompleted,
+                EventSeverity.Info,
+                new
+                {
+                    message = "cTrader historical download completed with stub data. No real cTrader data was loaded.",
+                    result.DownloadId,
+                    result.Symbol,
+                    result.Timeframe,
+                    result.OutputPath,
+                    result.CandleCount,
+                    result.FromUtc,
+                    result.ToUtc,
+                    result.StubData,
+                    configPath,
+                    localConfigLoaded,
+                    noAutoTrading = true,
+                    humanReviewRequired = true
+                });
+            eventStore.Flush();
+
+            Console.WriteLine("Open API connector stub active");
+            Console.WriteLine("No real cTrader data was loaded.");
+            WriteField("Download ID", result.DownloadId);
+            WriteField("Symbol", result.Symbol);
+            WriteField("Timeframe", result.Timeframe);
+            WriteField("Rows", result.CandleCount.ToString());
+            WriteField("From UTC", result.FromUtc?.ToString("O"));
+            WriteField("To UTC", result.ToUtc?.ToString("O"));
+            WriteField("Output", DisplayPath(result.OutputPath));
+            WriteField("Stub Data", result.StubData.ToString().ToLowerInvariant());
+            Console.WriteLine();
+
+            WriteSafety();
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            PublishCTraderEvent(
+                eventBus,
+                EventType.CTraderHistoricalDownloadFailed,
+                EventSeverity.Warning,
+                new
+                {
+                    message = "cTrader historical download failed before any trading action. Stub only.",
+                    request.Symbol,
+                    request.Timeframe,
+                    request.FromUtc,
+                    request.ToUtc,
+                    error = ex.Message,
+                    stubActive = true,
+                    noAutoTrading = true,
+                    humanReviewRequired = true
+                });
+            eventStore.Flush();
+
+            WriteError(ex.Message);
+            WriteSafety();
+            return 1;
+        }
     }
 
     private int ImportCsv()
@@ -788,6 +986,19 @@ internal sealed class HermesCli
         return null;
     }
 
+    private static bool TryParseCliDate(string value, out DateTimeOffset timestampUtc)
+    {
+        var styles = DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal;
+        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, styles, out var parsed))
+        {
+            timestampUtc = parsed.ToUniversalTime();
+            return true;
+        }
+
+        timestampUtc = default;
+        return false;
+    }
+
     private static void WriteMessages(string label, IReadOnlyList<string> messages)
     {
         if (messages.Count == 0)
@@ -1002,6 +1213,36 @@ internal sealed class HermesCli
             Cache: Path.Combine(_dataRoot, "cache"),
             Jobs: Path.Combine(_dataRoot, "jobs"),
             Archive: Path.Combine(_dataRoot, "archive"));
+    }
+
+    private CTraderOpenApiConfig LoadCTraderConfig(out string configPath, out bool localConfigLoaded)
+    {
+        var localPath = Path.Combine(_runtimeRoot, "config", "ctrader.openapi.local.json");
+        if (File.Exists(localPath))
+        {
+            configPath = localPath;
+            localConfigLoaded = true;
+            return CTraderOpenApiConfig.LoadOrDefault(localPath);
+        }
+
+        var examplePath = Path.Combine(_runtimeRoot, "config", "ctrader.openapi.example.json");
+        configPath = examplePath;
+        localConfigLoaded = false;
+        return CTraderOpenApiConfig.LoadOrDefault(examplePath);
+    }
+
+    private static void PublishCTraderEvent(
+        EventBus eventBus,
+        EventType eventType,
+        EventSeverity severity,
+        object payload)
+    {
+        eventBus.Publish(EventEnvelope.Create(
+            eventType,
+            "hermes_ctrader_openapi_stub",
+            severity,
+            CliVersion,
+            payload));
     }
 
     private static long DirectorySize(string directory)
