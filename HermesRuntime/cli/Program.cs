@@ -38,6 +38,8 @@ internal sealed class HermesCli
             "download-history" => DownloadCTraderHistory(),
             "import-csv" => ImportCsv(),
             "generate-features" => GenerateFeatures(),
+            "run-nightly-research" => RunNightlyResearch(),
+            "research-status" => ShowResearchStatus(),
             "features" => ShowFeatures(),
             "signals" => ShowSignals(),
             "backtests" => ShowBacktests(),
@@ -64,6 +66,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes download-history   historische Stub-Candles lokal erzeugen");
         Console.WriteLine("  hermes import-csv         cTrader Candle-CSV lokal importieren");
         Console.WriteLine("  hermes generate-features  FeatureVectors aus lokalen Candle-Daten erzeugen");
+        Console.WriteLine("  hermes run-nightly-research lokale Research-Pipeline ausfuehren");
+        Console.WriteLine("  hermes research-status    letzten Nightly-Research-Report anzeigen");
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes backtests          Demo-Backtest-Reports anzeigen");
@@ -365,6 +369,65 @@ internal sealed class HermesCli
         {
             WriteWarning("Keine Features erzeugt. Pruefe lokale Candle-Daten unter data/market_data/candles/.");
         }
+
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunNightlyResearch()
+    {
+        WriteHeader("Hermes Nightly Research");
+        var storagePaths = BuildStoragePaths();
+        using var eventStore = new EventStore(storagePaths);
+        var eventBus = new EventBus();
+        eventBus.Subscribe(eventStore.Append);
+
+        var schedule = new ResearchJobScheduleStub();
+        var job = schedule.CreateDemoNightlyRun("hermes_cli");
+        var coordinator = new ResearchPipelineCoordinator(storagePaths, eventBus, CliVersion);
+        var report = coordinator.RunNightlyResearch(job);
+        eventStore.Flush();
+
+        WriteResearchReport(report);
+        WriteSafety();
+        return report.Status.Equals("completed", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+    }
+
+    private int ShowResearchStatus()
+    {
+        WriteHeader("Hermes Research Status");
+        var latestPath = Path.Combine(_dataRoot, "reports", "nightly", "latest_nightly_research.json");
+        if (!TryLoadJson(latestPath, out var root))
+        {
+            var latestReport = FindNightlyResearchReports().LastOrDefault();
+            if (latestReport is null || !TryLoadJson(latestReport, out root))
+            {
+                WriteWarning("Kein Nightly-Research-Report gefunden.");
+                WriteSafety();
+                return 0;
+            }
+
+            latestPath = latestReport;
+        }
+
+        WriteField("Latest Report", DisplayPath(latestPath));
+        WriteField("Job ID", GetString(root, "job_id", "jobId"));
+        WriteField("Status", GetString(root, "status"));
+        WriteField("Last Run UTC", GetString(root, "completed_at_utc", "completedAtUtc"));
+        WriteField("Started UTC", GetString(root, "started_at_utc", "startedAtUtc"));
+        WriteField("Duration", $"{GetDouble(root, "duration_seconds", "durationSeconds"):0.###} s");
+        WriteField("Features", GetInt(root, "feature_count", "featureCount").ToString());
+        WriteField("Signals", GetInt(root, "signal_count", "signalCount").ToString());
+        WriteField("Outcomes", GetInt(root, "outcome_count", "outcomeCount").ToString());
+        WriteField("Backtests", GetInt(root, "backtest_count", "backtestCount").ToString());
+        WriteField("Feature Output", DisplayOptionalPath(GetString(root, "feature_output_path", "featureOutputPath")));
+        WriteField("Signal Output", DisplayOptionalPath(GetString(root, "signal_output_path", "signalOutputPath")));
+        WriteField("Outcome Report", DisplayOptionalPath(GetString(root, "outcome_report_path", "outcomeReportPath")));
+        WriteField("Backtest Report", DisplayOptionalPath(GetString(root, "backtest_report_path", "backtestReportPath")));
+        WriteField("no_auto_trading", GetBoolText(root, "no_auto_trading", "noAutoTrading"));
+        WriteField("human_review_required", GetBoolText(root, "human_review_required", "humanReviewRequired"));
+        WriteMessages("Warnings", GetStringArray(root, "warnings"));
+        Console.WriteLine();
 
         WriteSafety();
         return 0;
@@ -887,6 +950,22 @@ internal sealed class HermesCli
         }
     }
 
+    private IEnumerable<string> FindNightlyResearchReports()
+    {
+        var directory = Path.Combine(_dataRoot, "reports", "nightly");
+        if (!Directory.Exists(directory))
+        {
+            yield break;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(directory, "*.nightly.json")
+                     .OrderBy(File.GetLastWriteTimeUtc)
+                     .ThenBy(path => path))
+        {
+            yield return file;
+        }
+    }
+
     private IEnumerable<string> FindMarketDataCandleFiles()
     {
         var directory = Path.Combine(_dataRoot, "market_data", "candles");
@@ -937,6 +1016,27 @@ internal sealed class HermesCli
         WriteField("Final R", $"{GetDouble(root, "final_r", "finalR"):0.##} R");
         WriteField("Evaluated UTC", GetString(root, "evaluated_at_utc", "evaluatedAtUtc"));
         WriteField("Notes", GetString(root, "notes"));
+        Console.WriteLine();
+    }
+
+    private void WriteResearchReport(NightlyResearchReport report)
+    {
+        WriteField("Job ID", report.JobId);
+        WriteField("Status", report.Status);
+        WriteField("Started UTC", report.StartedAtUtc.ToString("O"));
+        WriteField("Completed UTC", report.CompletedAtUtc.ToString("O"));
+        WriteField("Duration", $"{report.DurationSeconds:0.###} s");
+        WriteField("Features", report.FeatureCount.ToString());
+        WriteField("Signals", report.SignalCount.ToString());
+        WriteField("Outcomes", report.OutcomeCount.ToString());
+        WriteField("Backtests", report.BacktestCount.ToString());
+        WriteField("Feature Output", DisplayOptionalPath(report.FeatureOutputPath));
+        WriteField("Signal Output", DisplayOptionalPath(report.SignalOutputPath));
+        WriteField("Outcome Report", DisplayOptionalPath(report.OutcomeReportPath));
+        WriteField("Backtest Report", DisplayOptionalPath(report.BacktestReportPath));
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
     }
 
@@ -1273,6 +1373,11 @@ internal sealed class HermesCli
     {
         var relative = Path.GetRelativePath(_runtimeRoot, path);
         return relative.StartsWith("..", StringComparison.Ordinal) ? path : relative;
+    }
+
+    private string DisplayOptionalPath(string? path)
+    {
+        return string.IsNullOrWhiteSpace(path) ? "-" : DisplayPath(path);
     }
 
     private static string FormatBytes(long bytes)
