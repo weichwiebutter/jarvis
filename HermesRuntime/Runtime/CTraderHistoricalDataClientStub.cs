@@ -1,18 +1,21 @@
 namespace Hermes.Runtime;
 
-public sealed class CTraderHistoricalDataClientStub
+public sealed class CTraderHistoricalDataClientStub : ICTraderHistoricalDataClient
 {
     private const int MaxStubCandles = 500;
 
     private readonly CTraderOpenApiConfig _config;
     private readonly CTraderSymbolMapper _symbolMapper;
+    private readonly CTraderAuthTokenState _authTokenState;
 
     public CTraderHistoricalDataClientStub(
         CTraderOpenApiConfig config,
-        CTraderSymbolMapper symbolMapper)
+        CTraderSymbolMapper symbolMapper,
+        CTraderAuthTokenState? authTokenState = null)
     {
         _config = config;
         _symbolMapper = symbolMapper;
+        _authTokenState = authTokenState ?? CTraderAuthTokenPlaceholder.Evaluate(config, localConfigLoaded: false);
     }
 
     public CTraderConnectionHealth CheckHealth()
@@ -23,25 +26,30 @@ public sealed class CTraderHistoricalDataClientStub
             "OAuth/token handling is not implemented in foundation v1.",
             "Historical downloads are deterministic demo data until a real read-only client is added."
         };
+        warnings.AddRange(_authTokenState.Warnings);
         if (!_config.NoOrders)
         {
             warnings.Add("Invalid local config: no_orders must remain true for connector foundation v1.");
         }
+        if (!_config.ReadOnlyMarketData)
+        {
+            warnings.Add("Invalid local config: read_only_market_data must remain true for connector foundation v1.");
+        }
 
         return new CTraderConnectionHealth(
             TimestampUtc: DateTimeOffset.UtcNow,
-            Status: !_config.NoOrders
-                ? "config_invalid_no_orders_false"
+            Status: !_config.NoOrders || !_config.ReadOnlyMarketData
+                ? "config_invalid_readonly_required"
                 : _config.StubMode
                     ? "stub_ready"
                     : "not_connected",
             Environment: _config.Environment,
             StubActive: true,
-            AuthConfigured: false,
+            AuthConfigured: _authTokenState.AuthConfigured,
             ClientIdConfigured: IsConfiguredValue(_config.ClientId, "example_client_id"),
             AccountIdConfigured: !string.IsNullOrWhiteSpace(_config.AccountId),
             NoOrders: _config.NoOrders,
-            ReadOnlyMarketData: _config.NoOrders,
+            ReadOnlyMarketData: _config.NoOrders && _config.ReadOnlyMarketData,
             Warnings: warnings);
     }
 
@@ -50,6 +58,10 @@ public sealed class CTraderHistoricalDataClientStub
         if (!_config.NoOrders)
         {
             throw new InvalidOperationException("Invalid cTrader config: no_orders must be true for connector foundation v1.");
+        }
+        if (!_config.ReadOnlyMarketData)
+        {
+            throw new InvalidOperationException("Invalid cTrader config: read_only_market_data must be true for connector foundation v1.");
         }
 
         if (!_symbolMapper.TryMap(request.Symbol, out var mapping))

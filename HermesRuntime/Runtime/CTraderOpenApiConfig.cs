@@ -20,8 +20,17 @@ public sealed class CTraderOpenApiConfig
     [JsonPropertyName("no_orders")]
     public bool NoOrders { get; init; } = true;
 
+    [JsonPropertyName("read_only_market_data")]
+    public bool ReadOnlyMarketData { get; init; } = true;
+
     [JsonPropertyName("stub_mode")]
     public bool StubMode { get; init; } = true;
+
+    [JsonPropertyName("auth_mode")]
+    public string AuthMode { get; init; } = "not_configured";
+
+    [JsonPropertyName("token_cache_path")]
+    public string? TokenCachePath { get; init; }
 
     [JsonPropertyName("allowed_symbols")]
     public string[] AllowedSymbols { get; init; } = ["XAUUSD", "EURUSD", "GER40", "US500"];

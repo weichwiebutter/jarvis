@@ -588,9 +588,11 @@ internal sealed class HermesCli
     private int ShowCTraderHealth()
     {
         WriteHeader("Hermes cTrader Open API Health");
-        var config = LoadCTraderConfig(out var configPath, out var localConfigLoaded);
+        var configLoad = LoadCTraderConfig();
+        var config = configLoad.Config;
+        var authTokenState = CTraderAuthTokenPlaceholder.Evaluate(config, configLoad.LocalConfigLoaded);
         var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
-        var client = new CTraderHistoricalDataClientStub(config, mapper);
+        ICTraderHistoricalDataClient client = new CTraderHistoricalDataClientStub(config, mapper, authTokenState);
         var health = client.CheckHealth();
 
         using var eventStore = new EventStore(BuildStoragePaths());
@@ -602,27 +604,34 @@ internal sealed class HermesCli
             EventSeverity.Info,
             new
             {
-                message = "cTrader Open API connector health checked. Stub only, no live connection.",
+                message = "cTrader Open API connector health checked. Read-only stub fallback; no live connection.",
                 health,
-                configPath,
-                localConfigLoaded,
+                configPath = configLoad.ConfigPath,
+                configLoad.LocalConfigLoaded,
+                configLoad.LocalConfigMissing,
+                authMode = authTokenState.AuthMode,
+                tokenAvailable = authTokenState.TokenAvailable,
                 noAutoTrading = true,
                 humanReviewRequired = true
             });
         eventStore.Flush();
 
         Console.WriteLine("Open API connector stub active");
+        Console.WriteLine("No real cTrader connection was opened.");
         WriteField("Status", health.Status);
         WriteField("Environment", health.Environment);
         WriteField("Stub Active", health.StubActive.ToString().ToLowerInvariant());
         WriteField("Auth Configured", health.AuthConfigured.ToString().ToLowerInvariant());
+        WriteField("Auth Mode", authTokenState.AuthMode);
+        WriteField("Token Placeholder", authTokenState.TokenAvailable ? "token_available" : "not_loaded");
         WriteField("Client ID Configured", health.ClientIdConfigured.ToString().ToLowerInvariant());
         WriteField("Account ID Configured", health.AccountIdConfigured.ToString().ToLowerInvariant());
         WriteField("no_orders", health.NoOrders.ToString().ToLowerInvariant());
         WriteField("Read-only Market Data", health.ReadOnlyMarketData.ToString().ToLowerInvariant());
-        WriteField("Config", DisplayPath(configPath));
-        WriteField("Local Config Loaded", localConfigLoaded.ToString().ToLowerInvariant());
-        WriteMessages("Warnings", health.Warnings);
+        WriteField("Config", DisplayPath(configLoad.ConfigPath));
+        WriteField("Local Config Loaded", configLoad.LocalConfigLoaded.ToString().ToLowerInvariant());
+        WriteField("Local Config Missing", configLoad.LocalConfigMissing.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", [.. configLoad.Warnings, .. health.Warnings]);
         Console.WriteLine();
 
         WriteSafety();
@@ -632,13 +641,16 @@ internal sealed class HermesCli
     private int ShowCTraderSymbols()
     {
         WriteHeader("Hermes cTrader Symbol Mapping");
-        var config = LoadCTraderConfig(out var configPath, out var localConfigLoaded);
+        var configLoad = LoadCTraderConfig();
+        var config = configLoad.Config;
         var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
 
         Console.WriteLine("Open API connector stub active");
-        WriteField("Config", DisplayPath(configPath));
-        WriteField("Local Config Loaded", localConfigLoaded.ToString().ToLowerInvariant());
+        WriteField("Config", DisplayPath(configLoad.ConfigPath));
+        WriteField("Local Config Loaded", configLoad.LocalConfigLoaded.ToString().ToLowerInvariant());
+        WriteField("Local Config Missing", configLoad.LocalConfigMissing.ToString().ToLowerInvariant());
         WriteField("Allowed Timeframes", string.Join(", ", config.AllowedTimeframes));
+        WriteMessages("Warnings", configLoad.Warnings);
         Console.WriteLine();
 
         foreach (var mapping in mapper.GetMappings())
@@ -706,9 +718,11 @@ internal sealed class HermesCli
 
         try
         {
-            var config = LoadCTraderConfig(out var configPath, out var localConfigLoaded);
+            var configLoad = LoadCTraderConfig();
+            var config = configLoad.Config;
+            var authTokenState = CTraderAuthTokenPlaceholder.Evaluate(config, configLoad.LocalConfigLoaded);
             var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
-            var client = new CTraderHistoricalDataClientStub(config, mapper);
+            ICTraderHistoricalDataClient client = new CTraderHistoricalDataClientStub(config, mapper, authTokenState);
             var candles = client.DownloadHistoricalCandles(request);
             var importer = new CTraderTrendbarImporter(storagePaths);
             var result = importer.ImportStubCandles(request, candles);
@@ -728,8 +742,11 @@ internal sealed class HermesCli
                     result.FromUtc,
                     result.ToUtc,
                     result.StubData,
-                    configPath,
-                    localConfigLoaded,
+                    configPath = configLoad.ConfigPath,
+                    configLoad.LocalConfigLoaded,
+                    configLoad.LocalConfigMissing,
+                    authMode = authTokenState.AuthMode,
+                    tokenAvailable = authTokenState.TokenAvailable,
                     noAutoTrading = true,
                     humanReviewRequired = true
                 });
@@ -737,6 +754,15 @@ internal sealed class HermesCli
 
             Console.WriteLine("Open API connector stub active");
             Console.WriteLine("No real cTrader data was loaded.");
+            if (configLoad.LocalConfigMissing)
+            {
+                Console.WriteLine("Local config missing: config/ctrader.openapi.local.json. Stub active.");
+            }
+            else if (!config.StubMode)
+            {
+                Console.WriteLine("Local config loaded, but real read-only client is not implemented yet. Stub fallback active.");
+            }
+
             WriteField("Download ID", result.DownloadId);
             WriteField("Symbol", result.Symbol);
             WriteField("Timeframe", result.Timeframe);
@@ -745,6 +771,9 @@ internal sealed class HermesCli
             WriteField("To UTC", result.ToUtc?.ToString("O"));
             WriteField("Output", DisplayPath(result.OutputPath));
             WriteField("Stub Data", result.StubData.ToString().ToLowerInvariant());
+            WriteField("Config", DisplayPath(configLoad.ConfigPath));
+            WriteField("Local Config Loaded", configLoad.LocalConfigLoaded.ToString().ToLowerInvariant());
+            WriteMessages("Warnings", [.. configLoad.Warnings, .. authTokenState.Warnings]);
             Console.WriteLine();
 
             WriteSafety();
@@ -1530,20 +1559,10 @@ internal sealed class HermesCli
             Archive: Path.Combine(_dataRoot, "archive"));
     }
 
-    private CTraderOpenApiConfig LoadCTraderConfig(out string configPath, out bool localConfigLoaded)
+    private CTraderOpenApiConfigLoadResult LoadCTraderConfig()
     {
-        var localPath = Path.Combine(_runtimeRoot, "config", "ctrader.openapi.local.json");
-        if (File.Exists(localPath))
-        {
-            configPath = localPath;
-            localConfigLoaded = true;
-            return CTraderOpenApiConfig.LoadOrDefault(localPath);
-        }
-
-        var examplePath = Path.Combine(_runtimeRoot, "config", "ctrader.openapi.example.json");
-        configPath = examplePath;
-        localConfigLoaded = false;
-        return CTraderOpenApiConfig.LoadOrDefault(examplePath);
+        var loader = new CTraderOpenApiConfigLoader();
+        return loader.Load(_runtimeRoot);
     }
 
     private static void PublishCTraderEvent(
