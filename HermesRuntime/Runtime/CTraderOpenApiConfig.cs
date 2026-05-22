@@ -11,6 +11,9 @@ public sealed class CTraderOpenApiConfig
     [JsonPropertyName("redirect_uri")]
     public string RedirectUri { get; init; } = "http://127.0.0.1:17890/callback";
 
+    [JsonPropertyName("oauth_authorize_url")]
+    public string OAuthAuthorizeUrl { get; init; } = "https://id.ctrader.com/my/settings/openapi/grantingaccess/";
+
     [JsonPropertyName("environment")]
     public string Environment { get; init; } = "demo";
 
@@ -31,6 +34,9 @@ public sealed class CTraderOpenApiConfig
 
     [JsonPropertyName("token_cache_path")]
     public string? TokenCachePath { get; init; }
+
+    [JsonPropertyName("scopes")]
+    public string[] Scopes { get; init; } = ["market_data"];
 
     [JsonPropertyName("allowed_symbols")]
     public string[] AllowedSymbols { get; init; } = ["XAUUSD", "EURUSD", "GER40", "US500"];

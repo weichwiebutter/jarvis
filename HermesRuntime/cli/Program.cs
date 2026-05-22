@@ -35,6 +35,8 @@ internal sealed class HermesCli
             "storage" => ShowStorage(),
             "ctrader-health" => ShowCTraderHealth(),
             "ctrader-symbols" => ShowCTraderSymbols(),
+            "ctrader-auth-url" => ShowCTraderAuthUrl(),
+            "ctrader-auth-status" => ShowCTraderAuthStatus(),
             "download-history" => DownloadCTraderHistory(),
             "import-csv" => ImportCsv(),
             "generate-features" => GenerateFeatures(),
@@ -66,6 +68,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes storage            lokale Storage-Uebersicht anzeigen");
         Console.WriteLine("  hermes ctrader-health     cTrader Open API Stub-Health anzeigen");
         Console.WriteLine("  hermes ctrader-symbols    cTrader Symbol-Mapping anzeigen");
+        Console.WriteLine("  hermes ctrader-auth-url   cTrader OAuth URL anzeigen");
+        Console.WriteLine("  hermes ctrader-auth-status lokalen cTrader Token-Status anzeigen");
         Console.WriteLine("  hermes download-history   historische Stub-Candles lokal erzeugen");
         Console.WriteLine("  hermes import-csv         cTrader Candle-CSV lokal importieren");
         Console.WriteLine("  hermes generate-features  FeatureVectors aus lokalen Candle-Daten erzeugen");
@@ -590,12 +594,13 @@ internal sealed class HermesCli
         WriteHeader("Hermes cTrader Open API Health");
         var configLoad = LoadCTraderConfig();
         var config = configLoad.Config;
-        var authTokenState = CTraderAuthTokenPlaceholder.Evaluate(config, configLoad.LocalConfigLoaded);
+        var storagePaths = BuildStoragePaths();
+        var authContext = BuildCTraderAuthContext(configLoad, storagePaths);
         var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
-        ICTraderHistoricalDataClient client = new CTraderHistoricalDataClientStub(config, mapper, authTokenState);
+        ICTraderHistoricalDataClient client = new CTraderHistoricalDataClientStub(config, mapper, authContext.TokenState);
         var health = client.CheckHealth();
 
-        using var eventStore = new EventStore(BuildStoragePaths());
+        using var eventStore = new EventStore(storagePaths);
         var eventBus = new EventBus();
         eventBus.Subscribe(eventStore.Append);
         PublishCTraderEvent(
@@ -609,8 +614,10 @@ internal sealed class HermesCli
                 configPath = configLoad.ConfigPath,
                 configLoad.LocalConfigLoaded,
                 configLoad.LocalConfigMissing,
-                authMode = authTokenState.AuthMode,
-                tokenAvailable = authTokenState.TokenAvailable,
+                authMode = authContext.AuthStatus.AuthMode,
+                authUrlAvailable = authContext.AuthStatus.AuthUrlAvailable,
+                tokenLoaded = authContext.AuthStatus.TokenLoaded,
+                authStatus = authContext.AuthStatus.Status,
                 noAutoTrading = true,
                 humanReviewRequired = true
             });
@@ -622,8 +629,11 @@ internal sealed class HermesCli
         WriteField("Environment", health.Environment);
         WriteField("Stub Active", health.StubActive.ToString().ToLowerInvariant());
         WriteField("Auth Configured", health.AuthConfigured.ToString().ToLowerInvariant());
-        WriteField("Auth Mode", authTokenState.AuthMode);
-        WriteField("Token Placeholder", authTokenState.TokenAvailable ? "token_available" : "not_loaded");
+        WriteField("Auth Mode", authContext.AuthStatus.AuthMode);
+        WriteField("Auth URL Available", authContext.AuthStatus.AuthUrlAvailable.ToString().ToLowerInvariant());
+        WriteField("Auth Status", authContext.AuthStatus.Status);
+        WriteField("Token Store Path", DisplayPath(authContext.AuthStatus.TokenStorePath));
+        WriteField("Token Loaded", authContext.AuthStatus.TokenLoaded.ToString().ToLowerInvariant());
         WriteField("Client ID Configured", health.ClientIdConfigured.ToString().ToLowerInvariant());
         WriteField("Account ID Configured", health.AccountIdConfigured.ToString().ToLowerInvariant());
         WriteField("no_orders", health.NoOrders.ToString().ToLowerInvariant());
@@ -631,7 +641,63 @@ internal sealed class HermesCli
         WriteField("Config", DisplayPath(configLoad.ConfigPath));
         WriteField("Local Config Loaded", configLoad.LocalConfigLoaded.ToString().ToLowerInvariant());
         WriteField("Local Config Missing", configLoad.LocalConfigMissing.ToString().ToLowerInvariant());
-        WriteMessages("Warnings", [.. configLoad.Warnings, .. health.Warnings]);
+        WriteMessages("Warnings", CombineWarnings(configLoad.Warnings, health.Warnings, authContext.AuthStatus.Warnings));
+        Console.WriteLine();
+
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCTraderAuthUrl()
+    {
+        WriteHeader("Hermes cTrader OAuth URL");
+        var configLoad = LoadCTraderConfig();
+        var oauthUrl = new CTraderOAuthUrlBuilder().Build(configLoad.Config);
+
+        WriteField("Auth URL Available", oauthUrl.Available.ToString().ToLowerInvariant());
+        WriteField("Config", DisplayPath(configLoad.ConfigPath));
+        WriteField("Local Config Loaded", configLoad.LocalConfigLoaded.ToString().ToLowerInvariant());
+        WriteField("Redirect URI", oauthUrl.RedirectUri);
+        WriteField("Scopes", string.Join(", ", oauthUrl.Scopes));
+        WriteField("no_orders", configLoad.Config.NoOrders.ToString().ToLowerInvariant());
+        WriteField("Read-only Market Data", configLoad.Config.ReadOnlyMarketData.ToString().ToLowerInvariant());
+        Console.WriteLine();
+
+        if (oauthUrl.Url is not null)
+        {
+            Console.WriteLine("OAuth URL:");
+            Console.WriteLine(oauthUrl.Url);
+            Console.WriteLine();
+            Console.WriteLine("Browser nicht automatisch geoeffnet.");
+            Console.WriteLine("Oeffne die URL manuell im Browser, melde dich bei cTrader an und kopiere danach den Redirect-Code.");
+        }
+
+        WriteMessages("Warnings", CombineWarnings(configLoad.Warnings, oauthUrl.Warnings));
+        Console.WriteLine();
+        WriteSafety();
+        return oauthUrl.Available ? 0 : 1;
+    }
+
+    private int ShowCTraderAuthStatus()
+    {
+        WriteHeader("Hermes cTrader Auth Status");
+        var configLoad = LoadCTraderConfig();
+        var authContext = BuildCTraderAuthContext(configLoad, BuildStoragePaths());
+        var status = authContext.AuthStatus;
+
+        WriteField("Status", status.Status);
+        WriteField("Auth URL Available", status.AuthUrlAvailable.ToString().ToLowerInvariant());
+        WriteField("Auth Configured", status.AuthConfigured.ToString().ToLowerInvariant());
+        WriteField("Auth Mode", status.AuthMode);
+        WriteField("Token Store Path", DisplayPath(status.TokenStorePath));
+        WriteField("Token Store Exists", status.TokenStoreExists.ToString().ToLowerInvariant());
+        WriteField("Token Loaded", status.TokenLoaded.ToString().ToLowerInvariant());
+        WriteField("Expires UTC", status.ExpiresAtUtc?.ToString("O") ?? "-");
+        WriteField("Config", DisplayPath(configLoad.ConfigPath));
+        WriteField("Local Config Loaded", configLoad.LocalConfigLoaded.ToString().ToLowerInvariant());
+        WriteField("no_orders", configLoad.Config.NoOrders.ToString().ToLowerInvariant());
+        WriteField("Read-only Market Data", configLoad.Config.ReadOnlyMarketData.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", status.Warnings);
         Console.WriteLine();
 
         WriteSafety();
@@ -720,9 +786,9 @@ internal sealed class HermesCli
         {
             var configLoad = LoadCTraderConfig();
             var config = configLoad.Config;
-            var authTokenState = CTraderAuthTokenPlaceholder.Evaluate(config, configLoad.LocalConfigLoaded);
+            var authContext = BuildCTraderAuthContext(configLoad, storagePaths);
             var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
-            ICTraderHistoricalDataClient client = new CTraderHistoricalDataClientStub(config, mapper, authTokenState);
+            ICTraderHistoricalDataClient client = new CTraderHistoricalDataClientStub(config, mapper, authContext.TokenState);
             var candles = client.DownloadHistoricalCandles(request);
             var importer = new CTraderTrendbarImporter(storagePaths);
             var result = importer.ImportStubCandles(request, candles);
@@ -745,8 +811,9 @@ internal sealed class HermesCli
                     configPath = configLoad.ConfigPath,
                     configLoad.LocalConfigLoaded,
                     configLoad.LocalConfigMissing,
-                    authMode = authTokenState.AuthMode,
-                    tokenAvailable = authTokenState.TokenAvailable,
+                    authMode = authContext.AuthStatus.AuthMode,
+                    tokenLoaded = authContext.AuthStatus.TokenLoaded,
+                    authStatus = authContext.AuthStatus.Status,
                     noAutoTrading = true,
                     humanReviewRequired = true
                 });
@@ -773,7 +840,7 @@ internal sealed class HermesCli
             WriteField("Stub Data", result.StubData.ToString().ToLowerInvariant());
             WriteField("Config", DisplayPath(configLoad.ConfigPath));
             WriteField("Local Config Loaded", configLoad.LocalConfigLoaded.ToString().ToLowerInvariant());
-            WriteMessages("Warnings", [.. configLoad.Warnings, .. authTokenState.Warnings]);
+            WriteMessages("Warnings", CombineWarnings(configLoad.Warnings, authContext.AuthStatus.Warnings));
             Console.WriteLine();
 
             WriteSafety();
@@ -1563,6 +1630,35 @@ internal sealed class HermesCli
     {
         var loader = new CTraderOpenApiConfigLoader();
         return loader.Load(_runtimeRoot);
+    }
+
+    private static (
+        CTraderOAuthUrlResult OAuthUrl,
+        CTraderAuthStatus AuthStatus,
+        CTraderAuthTokenState TokenState) BuildCTraderAuthContext(
+            CTraderOpenApiConfigLoadResult configLoad,
+            StoragePaths storagePaths)
+    {
+        var oauthUrl = new CTraderOAuthUrlBuilder().Build(configLoad.Config);
+        var tokenStore = new CTraderTokenStore(storagePaths);
+        var authStatus = tokenStore.GetStatus(configLoad.Config, configLoad, oauthUrl);
+        var tokenState = new CTraderAuthTokenState(
+            AuthConfigured: authStatus.AuthConfigured,
+            TokenAvailable: authStatus.TokenLoaded,
+            AuthMode: authStatus.AuthMode,
+            TokenCachePath: authStatus.TokenStorePath,
+            Warnings: authStatus.Warnings);
+
+        return (oauthUrl, authStatus, tokenState);
+    }
+
+    private static IReadOnlyList<string> CombineWarnings(params IEnumerable<string>[] groups)
+    {
+        return groups
+            .SelectMany(group => group)
+            .Where(warning => !string.IsNullOrWhiteSpace(warning))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     private static void PublishCTraderEvent(

@@ -1,4 +1,6 @@
 bin/
 obj/
 data/
+data/auth/
+data/auth/ctrader_tokens.json
 config/ctrader.openapi.local.json
