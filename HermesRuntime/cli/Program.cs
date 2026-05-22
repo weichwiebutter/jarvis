@@ -41,6 +41,8 @@ internal sealed class HermesCli
             "run-nightly-research" => RunNightlyResearch(),
             "research-status" => ShowResearchStatus(),
             "research-report" => ShowResearchReport(),
+            "run-beta-learning" => RunBetaLearning(),
+            "beta-status" => ShowBetaStatus(),
             "features" => ShowFeatures(),
             "signals" => ShowSignals(),
             "backtests" => ShowBacktests(),
@@ -70,6 +72,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes run-nightly-research lokale Research-Pipeline ausfuehren");
         Console.WriteLine("  hermes research-status    letzten Nightly-Research-Report anzeigen");
         Console.WriteLine("  hermes research-report    letzten ResearchSummaryReport anzeigen");
+        Console.WriteLine("  hermes run-beta-learning  Trading Learning Beta 1 lokal ausfuehren");
+        Console.WriteLine("  hermes beta-status        letzten Trading Learning Beta Report anzeigen");
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes backtests          Demo-Backtest-Reports anzeigen");
@@ -433,6 +437,41 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunBetaLearning()
+    {
+        WriteHeader("Hermes Trading Learning Beta 1");
+        var storagePaths = BuildStoragePaths();
+        using var eventStore = new EventStore(storagePaths);
+        var eventBus = new EventBus();
+        eventBus.Subscribe(eventStore.Append);
+
+        var pipeline = new TradingLearningBetaPipeline(storagePaths, eventBus, CliVersion);
+        var report = pipeline.Run();
+        eventStore.Flush();
+
+        WriteBetaReport(report);
+        WriteSafety();
+        return report.Status.Equals("completed", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+    }
+
+    private int ShowBetaStatus()
+    {
+        WriteHeader("Hermes Trading Learning Beta Status");
+        if (!TryLoadLatestBetaReport(out var latestPath, out var root))
+        {
+            WriteWarning("Kein Trading Learning Beta Report gefunden.");
+            WriteSafety();
+            return 0;
+        }
+
+        WriteField("Latest Report", DisplayPath(latestPath));
+        WriteBetaReportFields(root, detailed: true);
+        Console.WriteLine();
+
+        WriteSafety();
+        return 0;
+    }
+
     private bool TryLoadLatestResearchReport(out string path, out JsonElement root)
     {
         var preferredPaths = new[]
@@ -452,6 +491,27 @@ internal sealed class HermesCli
 
         var latestReport = FindResearchSummaryReports().LastOrDefault()
             ?? FindNightlyResearchReports().LastOrDefault();
+        if (latestReport is not null && TryLoadJson(latestReport, out root))
+        {
+            path = latestReport;
+            return true;
+        }
+
+        path = string.Empty;
+        root = default;
+        return false;
+    }
+
+    private bool TryLoadLatestBetaReport(out string path, out JsonElement root)
+    {
+        var latestPath = Path.Combine(_dataRoot, "reports", "beta", "latest_beta_learning.json");
+        if (TryLoadJson(latestPath, out root))
+        {
+            path = latestPath;
+            return true;
+        }
+
+        var latestReport = FindBetaReports().LastOrDefault();
         if (latestReport is not null && TryLoadJson(latestReport, out root))
         {
             path = latestReport;
@@ -489,6 +549,37 @@ internal sealed class HermesCli
             WriteField("Backtest Report", DisplayOptionalPath(GetString(root, "backtest_report_path", "backtestReportPath")));
             WriteField("Nightly Report", DisplayOptionalPath(GetString(root, "nightly_report_path", "nightlyReportPath")));
             WriteField("Research Report", DisplayOptionalPath(GetString(root, "research_report_path", "researchReportPath")));
+        }
+
+        WriteMessages("Warnings", GetStringArray(root, "warnings"));
+    }
+
+    private void WriteBetaReportFields(JsonElement root, bool detailed)
+    {
+        var symbolsProcessed = GetStringArray(root, "symbols_processed", "symbolsProcessed");
+        WriteField("Run ID", GetString(root, "run_id", "runId"));
+        WriteField("Status", GetString(root, "status"));
+        WriteField("Started UTC", GetString(root, "started_at_utc", "startedAtUtc"));
+        WriteField("Completed UTC", GetString(root, "completed_at_utc", "completedAtUtc"));
+        WriteField("Symbols Processed", symbolsProcessed.Count == 0 ? "-" : string.Join(", ", symbolsProcessed));
+        WriteField("Candles Processed", GetInt(root, "candles_processed", "candlesProcessed").ToString());
+        WriteField("Features", GetInt(root, "features_generated", "featuresGenerated").ToString());
+        WriteField("Signals", GetInt(root, "signals_generated", "signalsGenerated").ToString());
+        WriteField("Outcomes", GetInt(root, "outcomes_generated", "outcomesGenerated").ToString());
+        WriteField("Backtests", GetInt(root, "backtests_generated", "backtestsGenerated").ToString());
+        WriteField("Duration", $"{GetDouble(root, "duration_seconds", "durationSeconds"):0.###} s");
+        WriteField("learning_ready", GetBoolText(root, "learning_ready", "learningReady"));
+        WriteField("no_auto_trading", GetBoolText(root, "no_auto_trading", "noAutoTrading"));
+        WriteField("human_review_required", GetBoolText(root, "human_review_required", "humanReviewRequired"));
+
+        if (detailed)
+        {
+            WriteField("Beta Report", DisplayOptionalPath(GetString(root, "beta_report_path", "betaReportPath")));
+            WriteField("Research Report", DisplayOptionalPath(GetString(root, "research_report_path", "researchReportPath")));
+            WriteField("Feature Output", DisplayOptionalPath(GetString(root, "feature_output_path", "featureOutputPath")));
+            WriteField("Signal Output", DisplayOptionalPath(GetString(root, "signal_output_path", "signalOutputPath")));
+            WriteField("Outcome Report", DisplayOptionalPath(GetString(root, "outcome_report_path", "outcomeReportPath")));
+            WriteField("Backtest Report", DisplayOptionalPath(GetString(root, "backtest_report_path", "backtestReportPath")));
         }
 
         WriteMessages("Warnings", GetStringArray(root, "warnings"));
@@ -1043,6 +1134,22 @@ internal sealed class HermesCli
         }
     }
 
+    private IEnumerable<string> FindBetaReports()
+    {
+        var directory = Path.Combine(_dataRoot, "reports", "beta");
+        if (!Directory.Exists(directory))
+        {
+            yield break;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(directory, "*.beta_report.json")
+                     .OrderBy(File.GetLastWriteTimeUtc)
+                     .ThenBy(path => path))
+        {
+            yield return file;
+        }
+    }
+
     private IEnumerable<string> FindMarketDataCandleFiles()
     {
         var directory = Path.Combine(_dataRoot, "market_data", "candles");
@@ -1118,6 +1225,32 @@ internal sealed class HermesCli
         WriteField("Research Report", DisplayOptionalPath(report.ResearchReportPath));
         WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+    }
+
+    private void WriteBetaReport(TradingLearningBetaReport report)
+    {
+        WriteField("Run ID", report.RunId);
+        WriteField("Status", report.Status);
+        WriteField("Started UTC", report.StartedAtUtc.ToString("O"));
+        WriteField("Completed UTC", report.CompletedAtUtc.ToString("O"));
+        WriteField("Symbols Processed", report.SymbolsProcessed.Count == 0 ? "-" : string.Join(", ", report.SymbolsProcessed));
+        WriteField("Candles Processed", report.CandlesProcessed.ToString());
+        WriteField("Features", report.FeaturesGenerated.ToString());
+        WriteField("Signals", report.SignalsGenerated.ToString());
+        WriteField("Outcomes", report.OutcomesGenerated.ToString());
+        WriteField("Backtests", report.BacktestsGenerated.ToString());
+        WriteField("Duration", $"{report.DurationSeconds:0.###} s");
+        WriteField("learning_ready", report.LearningReady.ToString().ToLowerInvariant());
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Beta Report", DisplayOptionalPath(report.BetaReportPath));
+        WriteField("Research Report", DisplayOptionalPath(report.ResearchReportPath));
+        WriteField("Feature Output", DisplayOptionalPath(report.FeatureOutputPath));
+        WriteField("Signal Output", DisplayOptionalPath(report.SignalOutputPath));
+        WriteField("Outcome Report", DisplayOptionalPath(report.OutcomeReportPath));
+        WriteField("Backtest Report", DisplayOptionalPath(report.BacktestReportPath));
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
     }
