@@ -84,6 +84,8 @@ public sealed class RuntimeHost
         var outcomeResult = outcomeTrackerService.EvaluateDemoOutcomes();
         var historicalDataImportService = new HistoricalDataImportService(storage.Paths, eventBus, RuntimeVersion);
         var historicalImportResult = historicalDataImportService.ImportDemoHistoricalCandles();
+        var featureGenerationService = new FeatureGenerationService(storage.Paths, eventBus, RuntimeVersion);
+        var featureGenerationResult = featureGenerationService.GenerateFromMarketData();
         var replayManifestService = new ReplayManifestService(storage.Paths, eventBus, RuntimeVersion);
         var replayManifestResult = replayManifestService.CreateDemoReplayManifest();
         var setupWatchService = new SetupWatchService(storage.Paths, eventBus, RuntimeVersion);
@@ -125,6 +127,7 @@ public sealed class RuntimeHost
         Console.WriteLine($"Snapshot: {state.LastSnapshotPath}");
         Console.WriteLine($"Outcomes: {outcomeResult.ReportPath}");
         Console.WriteLine($"MarketData: {historicalImportResult.CandleCount} candles -> {Path.Combine(storage.Paths.Root, "market_data", "candles")}");
+        Console.WriteLine($"GeneratedFeatures: {featureGenerationResult.FeatureCount} rows -> {featureGenerationResult.OutputPath}");
         Console.WriteLine($"ReplayManifest: {replayManifestResult.ManifestPath}");
         Console.WriteLine($"SetupWatch: {setupWatchResult.OutputPath}");
         Console.WriteLine($"Health: {healthResult.ReportPath}");

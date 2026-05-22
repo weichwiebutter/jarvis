@@ -1,3 +1,4 @@
+using Hermes.Runtime;
 using System.Text.Json;
 using System.Xml.Linq;
 
@@ -31,6 +32,7 @@ internal sealed class HermesCli
             "events" => ShowEvents(),
             "jobs" => ShowJobs(),
             "storage" => ShowStorage(),
+            "generate-features" => GenerateFeatures(),
             "features" => ShowFeatures(),
             "signals" => ShowSignals(),
             "backtests" => ShowBacktests(),
@@ -44,7 +46,7 @@ internal sealed class HermesCli
     private int ShowHelp()
     {
         WriteHeader("Hermes CLI Foundation");
-        Console.WriteLine("Read-only lokale Status-CLI fuer HermesRuntime.");
+        Console.WriteLine("Lokale Sicherheits-CLI fuer HermesRuntime. Status-Kommandos sind read-only; generate-features schreibt nur lokale Analyseartefakte.");
         Console.WriteLine();
         Console.WriteLine("Kommandos:");
         Console.WriteLine("  hermes health             RuntimeHealth anzeigen");
@@ -52,6 +54,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes events recent      letzte Runtime-Events anzeigen");
         Console.WriteLine("  hermes jobs               Queue/Jobjournale anzeigen");
         Console.WriteLine("  hermes storage            lokale Storage-Uebersicht anzeigen");
+        Console.WriteLine("  hermes generate-features  FeatureVectors aus lokalen Candle-Daten erzeugen");
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes backtests          Demo-Backtest-Reports anzeigen");
@@ -292,19 +295,66 @@ internal sealed class HermesCli
 
             WriteSubHeader($"{GetString(root, "symbol") ?? "UNKNOWN"} {GetString(root, "timeframe") ?? "-"}");
             WriteField("Timestamp UTC", GetString(root, "timestamp_utc", "timestampUtc"));
-            WriteField("Session", GetString(root, "session"));
-            WriteField("H4 Regime", GetString(root, "h4_regime", "h4Regime"));
-            WriteField("H1 Bias", GetString(root, "h1_bias", "h1Bias"));
-            WriteField("M15 Setup", GetString(root, "m15_setup", "m15Setup"));
-            WriteField("M5 Trigger", GetString(root, "m5_trigger", "m5Trigger"));
-            WriteField("ADX", $"{GetDouble(root, "adx"):0.##}");
-            WriteField("ATR", $"{GetDouble(root, "atr"):0.#####}");
-            WriteField("RSI", $"{GetDouble(root, "rsi"):0.##}");
-            WriteField("Structure", GetString(root, "structure_state", "structureState"));
-            WriteField("Pattern", GetString(root, "pattern_candidate", "patternCandidate"));
-            WriteField("Signal Score", $"{GetDouble(root, "signal_score", "signalScore"):0.##}");
-            WriteField("Spread", $"{GetDouble(root, "spread"):0.#####}");
+            if (TryGetProperty(root, out _, "simple_return", "simpleReturn"))
+            {
+                WriteField("Schema", "generated_from_market_data_v1");
+                WriteField("Close", $"{GetDouble(root, "close"):0.#####}");
+                WriteField("Simple Return", $"{GetDouble(root, "simple_return", "simpleReturn"):0.########}");
+                WriteField("Candle Range", $"{GetDouble(root, "candle_range", "candleRange"):0.#####}");
+                WriteField("Body Size", $"{GetDouble(root, "body_size", "bodySize"):0.#####}");
+                WriteField("Direction", GetString(root, "direction"));
+                WriteField("Mock Session", GetString(root, "mock_session", "mockSession"));
+                WriteField("Mock Regime", GetString(root, "mock_regime", "mockRegime"));
+                WriteField("Mock Signal Score", $"{GetDouble(root, "mock_signal_score", "mockSignalScore"):0.####}");
+            }
+            else
+            {
+                WriteField("Schema", "feature_export_demo_v1");
+                WriteField("Session", GetString(root, "session"));
+                WriteField("H4 Regime", GetString(root, "h4_regime", "h4Regime"));
+                WriteField("H1 Bias", GetString(root, "h1_bias", "h1Bias"));
+                WriteField("M15 Setup", GetString(root, "m15_setup", "m15Setup"));
+                WriteField("M5 Trigger", GetString(root, "m5_trigger", "m5Trigger"));
+                WriteField("ADX", $"{GetDouble(root, "adx"):0.##}");
+                WriteField("ATR", $"{GetDouble(root, "atr"):0.#####}");
+                WriteField("RSI", $"{GetDouble(root, "rsi"):0.##}");
+                WriteField("Structure", GetString(root, "structure_state", "structureState"));
+                WriteField("Pattern", GetString(root, "pattern_candidate", "patternCandidate"));
+                WriteField("Signal Score", $"{GetDouble(root, "signal_score", "signalScore"):0.##}");
+                WriteField("Spread", $"{GetDouble(root, "spread"):0.#####}");
+            }
+
             Console.WriteLine();
+        }
+
+        WriteSafety();
+        return 0;
+    }
+
+    private int GenerateFeatures()
+    {
+        WriteHeader("Hermes Feature Generation");
+        var storagePaths = BuildStoragePaths();
+
+        using var eventStore = new EventStore(storagePaths);
+        var eventBus = new EventBus();
+        eventBus.Subscribe(eventStore.Append);
+
+        var service = new FeatureGenerationService(storagePaths, eventBus, CliVersion);
+        var result = service.GenerateFromMarketData();
+        eventStore.Flush();
+
+        WriteField("Generation ID", result.Job.GenerationId);
+        WriteField("Source", DisplayPath(result.Job.SourceRoot));
+        WriteField("Output", DisplayPath(result.OutputPath));
+        WriteField("Feature Rows", result.FeatureCount.ToString());
+        WriteField("Symbols", string.Join(", ", result.Job.Symbols));
+        WriteField("Timeframes", string.Join(", ", result.Job.Timeframes));
+        Console.WriteLine();
+
+        if (result.FeatureCount == 0)
+        {
+            WriteWarning("Keine Features erzeugt. Pruefe lokale Candle-Daten unter data/market_data/candles/.");
         }
 
         WriteSafety();
@@ -846,6 +896,18 @@ internal sealed class HermesCli
         return Directory.GetCurrentDirectory();
     }
 
+    private StoragePaths BuildStoragePaths()
+    {
+        return new StoragePaths(
+            Root: _dataRoot,
+            Events: Path.Combine(_dataRoot, "events"),
+            Snapshots: Path.Combine(_dataRoot, "snapshots"),
+            Logs: Path.Combine(_dataRoot, "logs"),
+            Cache: Path.Combine(_dataRoot, "cache"),
+            Jobs: Path.Combine(_dataRoot, "jobs"),
+            Archive: Path.Combine(_dataRoot, "archive"));
+    }
+
     private static long DirectorySize(string directory)
     {
         try
@@ -928,7 +990,7 @@ internal sealed class HermesCli
 
     private static void WriteSafety()
     {
-        Console.WriteLine("Safety: read-only CLI, keine Runtime-Steuerung, keine Trading-Ausfuehrung, no_auto_trading sichtbar, human_review_required sichtbar.");
+        Console.WriteLine("Safety: keine Runtime-Steuerung, keine Trading-Ausfuehrung, no_auto_trading sichtbar, human_review_required sichtbar.");
     }
 
     private static void WriteWarning(string message) => WriteColored($"WARN: {message}", ConsoleColor.Yellow);

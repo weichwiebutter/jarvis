@@ -7,4 +7,8 @@
     <AssemblyName>Hermes.Cli</AssemblyName>
     <RootNamespace>Hermes.Cli</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Hermes.Runtime.csproj" />
+  </ItemGroup>
 </Project>
