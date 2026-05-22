@@ -21,6 +21,8 @@ public enum EventType
     HistoricalImportFailed,
     FeatureGenerationStarted,
     FeatureGenerationCompleted,
+    SignalGenerationStarted,
+    SignalGenerationCompleted,
     CTraderConnectorHealthChecked,
     CTraderHistoricalDownloadStarted,
     CTraderHistoricalDownloadCompleted,

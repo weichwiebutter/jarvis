@@ -20,9 +20,11 @@ public sealed class OutcomeTrackerService
         _runtimeVersion = runtimeVersion;
     }
 
-    public (string ReportPath, int OutcomeCount) EvaluateDemoOutcomes()
+    public (string ReportPath, int OutcomeCount) EvaluateDemoOutcomes(string? signalPathOverride = null)
     {
-        var signalPath = FindLatestSignalExportPath();
+        var signalPath = string.IsNullOrWhiteSpace(signalPathOverride)
+            ? FindLatestSignalExportPath()
+            : signalPathOverride;
         var startedAtUtc = DateTimeOffset.UtcNow;
         PublishOutcomeEvaluationStarted(signalPath, startedAtUtc);
 

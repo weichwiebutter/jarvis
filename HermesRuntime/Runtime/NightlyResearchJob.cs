@@ -6,5 +6,7 @@ public sealed record NightlyResearchJob(
     DateTimeOffset StartedAtUtc,
     string RequestedBy,
     string Mode,
+    IReadOnlyList<string> Symbols,
+    IReadOnlyList<string> Timeframes,
     bool NoAutoTrading,
     bool HumanReviewRequired);

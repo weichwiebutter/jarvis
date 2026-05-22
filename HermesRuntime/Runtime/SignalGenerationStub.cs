@@ -4,15 +4,25 @@ namespace Hermes.Runtime;
 
 public sealed class SignalGenerationStub
 {
-    private readonly StoragePaths _storagePaths;
+    private const string SignalSource = "hermes_signal_generation_stub";
 
-    public SignalGenerationStub(StoragePaths storagePaths)
+    private readonly StoragePaths _storagePaths;
+    private readonly EventBus? _eventBus;
+    private readonly string _runtimeVersion;
+
+    public SignalGenerationStub(
+        StoragePaths storagePaths,
+        EventBus? eventBus = null,
+        string runtimeVersion = "0.1.0")
     {
         _storagePaths = storagePaths;
+        _eventBus = eventBus;
+        _runtimeVersion = runtimeVersion;
     }
 
     public SignalGenerationStubResult GenerateSignalsFromFeatures(string featureOutputPath, string researchJobId)
     {
+        PublishSignalGenerationStarted(featureOutputPath, researchJobId);
         var warnings = new List<string>();
         var features = ReadFeatures(featureOutputPath);
         if (features.Count == 0)
@@ -33,7 +43,21 @@ public sealed class SignalGenerationStub
             outputPath,
             signals.Select(signal => JsonSerializer.Serialize(signal, JsonDefaults.WriteOptions)));
 
-        return new SignalGenerationStubResult(outputPath, signals.Count, warnings);
+        var symbolsProcessed = signals
+            .Select(signal => signal.Symbol)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(symbol => symbol)
+            .ToList();
+
+        PublishSignalGenerationCompleted(
+            featureOutputPath,
+            outputPath,
+            researchJobId,
+            signals.Count,
+            symbolsProcessed,
+            warnings);
+
+        return new SignalGenerationStubResult(outputPath, signals.Count, symbolsProcessed, warnings);
     }
 
     private static IReadOnlyList<GeneratedFeatureVector> ReadFeatures(string featureOutputPath)
@@ -117,4 +141,48 @@ public sealed class SignalGenerationStub
             "GER40" or "US500" => Math.Round(value, 1),
             _ => Math.Round(value, 2)
         };
+
+    private void PublishSignalGenerationStarted(string featureOutputPath, string researchJobId)
+    {
+        _eventBus?.Publish(EventEnvelope.Create(
+            EventType.SignalGenerationStarted,
+            SignalSource,
+            EventSeverity.Info,
+            _runtimeVersion,
+            new
+            {
+                message = "Signal generation stub started from local FeatureVectors.",
+                researchJobId,
+                featureOutputPath,
+                noAutoTrading = true,
+                humanReviewRequired = true
+            }));
+    }
+
+    private void PublishSignalGenerationCompleted(
+        string featureOutputPath,
+        string outputPath,
+        string researchJobId,
+        int signalCount,
+        IReadOnlyList<string> symbolsProcessed,
+        IReadOnlyList<string> warnings)
+    {
+        _eventBus?.Publish(EventEnvelope.Create(
+            EventType.SignalGenerationCompleted,
+            SignalSource,
+            EventSeverity.Info,
+            _runtimeVersion,
+            new
+            {
+                message = "Signal generation stub completed. Signals are local evaluation candidates only.",
+                researchJobId,
+                featureOutputPath,
+                outputPath,
+                signalCount,
+                symbolsProcessed,
+                warnings,
+                noAutoTrading = true,
+                humanReviewRequired = true
+            }));
+    }
 }

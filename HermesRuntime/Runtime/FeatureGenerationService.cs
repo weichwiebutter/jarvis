@@ -23,7 +23,7 @@ public sealed class FeatureGenerationService
         _runtimeVersion = runtimeVersion;
     }
 
-    public (FeatureGenerationJob Job, int FeatureCount, string OutputPath) GenerateFromMarketData()
+    public FeatureGenerationResult GenerateFromMarketData()
     {
         var requestedAtUtc = DateTimeOffset.UtcNow;
         var sourceRoot = Path.Combine(_storagePaths.Root, "market_data", "candles");
@@ -38,11 +38,19 @@ public sealed class FeatureGenerationService
         PublishFeatureGenerationStarted(job);
 
         var features = new List<GeneratedFeatureVector>();
+        var candleCount = 0;
+        var symbolsProcessed = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var symbol in SupportedSymbols)
         {
             foreach (var timeframe in SupportedTimeframes)
             {
                 var candles = ReadCandles(symbol, timeframe).ToList();
+                candleCount += candles.Count;
+                if (candles.Count > 0)
+                {
+                    symbolsProcessed.Add(symbol);
+                }
+
                 features.AddRange(CreateFeatures(candles));
             }
         }
@@ -53,8 +61,8 @@ public sealed class FeatureGenerationService
         var outputPath = Path.Combine(outputDirectory, $"{job.GenerationId}.features.jsonl");
         WriteJsonl(outputPath, features);
 
-        PublishFeatureGenerationCompleted(job, outputPath, features.Count);
-        return (job, features.Count, outputPath);
+        PublishFeatureGenerationCompleted(job, outputPath, candleCount, features.Count, symbolsProcessed.ToList());
+        return new FeatureGenerationResult(job, candleCount, features.Count, symbolsProcessed.ToList(), outputPath);
     }
 
     private IEnumerable<MarketDataCandle> ReadCandles(string symbol, string timeframe)
@@ -236,7 +244,9 @@ public sealed class FeatureGenerationService
     private void PublishFeatureGenerationCompleted(
         FeatureGenerationJob job,
         string outputPath,
-        int featureCount)
+        int candleCount,
+        int featureCount,
+        IReadOnlyList<string> symbolsProcessed)
     {
         _eventBus.Publish(EventEnvelope.Create(
             EventType.FeatureGenerationCompleted,
@@ -248,7 +258,9 @@ public sealed class FeatureGenerationService
                 message = "Feature generation from local historical candle data completed.",
                 job.GenerationId,
                 outputPath,
+                candleCount,
                 featureCount,
+                symbolsProcessed,
                 noAutoTrading = true,
                 humanReviewRequired = true
             }));

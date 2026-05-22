@@ -11,6 +11,8 @@ public sealed class ResearchJobScheduleStub
             StartedAtUtc: startedAtUtc,
             RequestedBy: requestedBy,
             Mode: "demo_nightly_run",
+            Symbols: ["XAUUSD", "EURUSD", "GER40"],
+            Timeframes: ["M5", "M15", "H1", "H4"],
             NoAutoTrading: true,
             HumanReviewRequired: true);
     }
