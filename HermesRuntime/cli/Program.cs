@@ -35,6 +35,7 @@ internal sealed class HermesCli
             "signals" => ShowSignals(),
             "backtests" => ShowBacktests(),
             "outcomes" => ShowOutcomes(),
+            "market-data" => ShowMarketData(),
             "version" => ShowVersion(),
             _ => UnknownCommand(command)
         };
@@ -55,6 +56,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes backtests          Demo-Backtest-Reports anzeigen");
         Console.WriteLine("  hermes outcomes           Signal-Outcome-Reports anzeigen");
+        Console.WriteLine("  hermes market-data        historische Candle-JSONL-Dateien anzeigen");
         Console.WriteLine("  hermes version            CLI-/Runtime-Version anzeigen");
         Console.WriteLine();
         Console.WriteLine("Start ohne Installation:");
@@ -252,7 +254,7 @@ internal sealed class HermesCli
         }
 
         Console.WriteLine();
-        foreach (var name in new[] { "cache", "events", "snapshots", "replays", "exports", "jobs", "reports", "setup_watch", "archive" })
+        foreach (var name in new[] { "cache", "events", "snapshots", "replays", "exports", "market_data", "jobs", "reports", "setup_watch", "archive" })
         {
             var directory = Path.Combine(_dataRoot, name);
             var size = Directory.Exists(directory) ? DirectorySize(directory) : 0;
@@ -431,6 +433,57 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowMarketData()
+    {
+        WriteHeader("Hermes Historical Market Data");
+        var limit = ReadLimit(_args, 2);
+        var candlesRoot = Path.Combine(_dataRoot, "market_data", "candles");
+        var files = FindMarketDataCandleFiles().ToList();
+        if (files.Count == 0)
+        {
+            WriteWarning($"Keine historischen Candle-Dateien gefunden: {DisplayPath(candlesRoot)}");
+            WriteSafety();
+            return 0;
+        }
+
+        WriteField("Root", DisplayPath(candlesRoot));
+        WriteField("Candle Files", files.Count.ToString());
+        WriteField("Rows Total", files.Sum(CountJsonlRows).ToString());
+        Console.WriteLine();
+
+        foreach (var file in files)
+        {
+            var symbol = Path.GetFileName(Path.GetDirectoryName(file)) ?? "UNKNOWN";
+            var timeframe = Path.GetFileName(file).Split('.', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "-";
+            WriteSubHeader($"{symbol} {timeframe}");
+            WriteField("Rows", CountJsonlRows(file).ToString());
+            WriteField("Path", DisplayPath(file));
+
+            foreach (var line in ReadRecentJsonlLines(file, limit))
+            {
+                if (!TryParseJsonLine(line, out var root))
+                {
+                    WriteWarning("Ungueltige Candle-JSONL-Zeile uebersprungen.");
+                    continue;
+                }
+
+                var timestamp = GetString(root, "timestamp_utc", "timestampUtc") ?? "-";
+                var open = GetDouble(root, "open");
+                var high = GetDouble(root, "high");
+                var low = GetDouble(root, "low");
+                var close = GetDouble(root, "close");
+                var volume = GetDouble(root, "volume");
+                Console.WriteLine(
+                    $"  {timestamp}  O {open:0.#####} H {high:0.#####} L {low:0.#####} C {close:0.#####} V {volume:0.##}");
+            }
+
+            Console.WriteLine();
+        }
+
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowVersion()
     {
         WriteHeader("Hermes CLI Version");
@@ -535,6 +588,21 @@ internal sealed class HermesCli
         }
     }
 
+    private IEnumerable<string> FindMarketDataCandleFiles()
+    {
+        var directory = Path.Combine(_dataRoot, "market_data", "candles");
+        if (!Directory.Exists(directory))
+        {
+            yield break;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(directory, "*.jsonl", SearchOption.AllDirectories)
+                     .OrderBy(path => path))
+        {
+            yield return file;
+        }
+    }
+
     private void WriteOutcome(JsonElement root)
     {
         WriteSubHeader(GetString(root, "outcome_id", "outcomeId") ?? "unknown_outcome");
@@ -561,6 +629,18 @@ internal sealed class HermesCli
             .Where(line => !string.IsNullOrWhiteSpace(line))
             .TakeLast(limit)
             .ToList();
+    }
+
+    private static int CountJsonlRows(string file)
+    {
+        try
+        {
+            return File.ReadLines(file).Count(line => !string.IsNullOrWhiteSpace(line));
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     private static int ReadLimit(string[] args, int fallback)

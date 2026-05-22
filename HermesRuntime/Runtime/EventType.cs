@@ -16,6 +16,8 @@ public enum EventType
     BacktestCompleted,
     OutcomeEvaluationStarted,
     OutcomeEvaluationCompleted,
+    HistoricalImportStarted,
+    HistoricalImportCompleted,
     JobCompleted,
     JobFailed,
     WorkerStopped,
