@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
   createBacktestReportsFallback,
+  createBetaReportFallback,
   createFeatureSignalExportsFallback,
   createOutcomeReportsFallback,
   loadBacktestReports,
+  loadBetaReport,
   loadFeatureSignalExports,
   loadOutcomeReports,
 } from '../data/runtimeDataAdapter';
@@ -135,6 +137,66 @@ function formatR(value) {
 
 function boolLabel(value) {
   return value ? t.common.yes : t.common.no;
+}
+
+function BetaLearningSection({ betaState }) {
+  const fixtureActive = betaState.dataSource === 'fixture';
+  const report = betaState.report;
+  const warnings = [...(betaState.warnings || []), ...(report.warnings || [])];
+
+  return (
+    <section className="research-section feature-export-section">
+      <div className="research-section-head">
+        <h3>{t.backtestResearch.betaLearningTitle}</h3>
+        <StatusPill tone={report.learning_ready ? 'good' : 'warn'}>
+          {t.backtestResearch.learningReady}: {boolLabel(report.learning_ready)}
+        </StatusPill>
+      </div>
+      {fixtureActive ? <p className="runtime-warning">{t.common.demoFixtureActive}</p> : null}
+      <div className="feature-export-guard">
+        <strong>{t.backtestResearch.betaGoal}</strong>
+        <strong>{t.backtestResearch.historicalDemoData}</strong>
+        <strong>{t.backtestResearch.noOrderExecution}</strong>
+      </div>
+      <div className="feature-export-summary-grid">
+        <article className="feature-export-summary-card tone-info">
+          <span>{t.backtestResearch.candlesProcessed}</span>
+          <strong>{report.candles_processed}</strong>
+          <p>{report.symbols_processed.join(', ') || t.common.notReported}</p>
+        </article>
+        <article className="feature-export-summary-card tone-good">
+          <span>{t.backtestResearch.featuresGenerated}</span>
+          <strong>{report.features_generated}</strong>
+          <p>{t.backtestResearch.signalExports}: {report.signals_generated}</p>
+        </article>
+        <article className="feature-export-summary-card tone-warn">
+          <span>{t.backtestResearch.outcomesGenerated}</span>
+          <strong>{report.outcomes_generated}</strong>
+          <p>{t.backtestResearch.backtestsGenerated}: {report.backtests_generated}</p>
+        </article>
+        <article className="feature-export-summary-card tone-muted">
+          <span>{t.backtestResearch.durationSeconds}</span>
+          <strong>{formatDecimal(report.duration_seconds, 3)} s</strong>
+          <p>{sourceModeLabel(betaState.dataSource)}</p>
+        </article>
+      </div>
+      <div className="feature-export-file-grid">
+        <article>
+          <span>{t.backtestResearch.backtestRunId}</span>
+          <code>{report.run_id}</code>
+        </article>
+        <article>
+          <span>{t.backtestResearch.reportFiles}</span>
+          <code>{report.beta_report_path || betaState.sourcePath || t.common.notReported}</code>
+        </article>
+      </div>
+      {warnings.length ? (
+        <p className="runtime-warning">
+          {t.backtestResearch.warnings}: {warnings.join(', ')}
+        </p>
+      ) : null}
+    </section>
+  );
 }
 
 function FeatureSignalExportSection({ exportState }) {
@@ -439,6 +501,7 @@ function OutcomeReportsSection({ outcomeReportState }) {
 }
 
 export function ResearchCenterPanel() {
+  const [betaState, setBetaState] = useState(() => createBetaReportFallback());
   const [exportState, setExportState] = useState(() => createFeatureSignalExportsFallback());
   const [backtestReportState, setBacktestReportState] = useState(() =>
     createBacktestReportsFallback(),
@@ -453,6 +516,12 @@ export function ResearchCenterPanel() {
     loadFeatureSignalExports().then((nextState) => {
       if (active) {
         setExportState(nextState);
+      }
+    });
+
+    loadBetaReport().then((nextState) => {
+      if (active) {
+        setBetaState(nextState);
       }
     });
 
@@ -486,6 +555,7 @@ export function ResearchCenterPanel() {
         <strong>{t.backtestResearch.humanReviewRequired}</strong>
       </div>
 
+      <BetaLearningSection betaState={betaState} />
       <FeatureSignalExportSection exportState={exportState} />
       <BacktestReportsSection backtestReportState={backtestReportState} />
       <OutcomeReportsSection outcomeReportState={outcomeReportState} />

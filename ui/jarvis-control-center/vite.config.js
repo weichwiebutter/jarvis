@@ -15,6 +15,7 @@ const featureExportsPath = resolve(repoRoot, 'HermesRuntime/data/exports/feature
 const signalExportsPath = resolve(repoRoot, 'HermesRuntime/data/exports/signals');
 const backtestReportsPath = resolve(repoRoot, 'HermesRuntime/data/reports/backtests');
 const outcomeReportsPath = resolve(repoRoot, 'HermesRuntime/data/reports/outcomes');
+const betaReportPath = resolve(repoRoot, 'HermesRuntime/data/reports/beta/latest_beta_learning.json');
 
 function findLatestReplayManifest() {
   try {
@@ -69,6 +70,7 @@ export default defineConfig({
     __HERMES_OUTCOME_REPORT_URL__: JSON.stringify(
       latestOutcomeReportPath ? `/@fs/${latestOutcomeReportPath}` : '',
     ),
+    __HERMES_BETA_REPORT_URL__: JSON.stringify(`/@fs/${betaReportPath}`),
     __HERMES_SETUP_WATCH_URL__: JSON.stringify(`/@fs/${setupWatchPath}`),
     __HERMES_RUNTIME_HEALTH_PATH__: JSON.stringify(
       'HermesRuntime/data/reports/runtime_health.json',
@@ -93,6 +95,9 @@ export default defineConfig({
       latestOutcomeReportPath
         ? `HermesRuntime/data/reports/outcomes/${latestOutcomeReportPath.split('/').at(-1)}`
         : '',
+    ),
+    __HERMES_BETA_REPORT_PATH__: JSON.stringify(
+      'HermesRuntime/data/reports/beta/latest_beta_learning.json',
     ),
     __HERMES_SETUP_WATCH_PATH__: JSON.stringify('HermesRuntime/data/setup_watch/setup_watch.json'),
   },

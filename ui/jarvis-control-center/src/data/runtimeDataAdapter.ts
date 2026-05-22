@@ -1,4 +1,5 @@
 import { runtimeBacktestReportsMock } from '../fixtures/runtimeBacktestReportsMock';
+import { runtimeBetaStatusMock } from '../fixtures/runtimeBetaStatusMock';
 import { runtimeFeatureSignalExportsMock } from '../fixtures/runtimeFeatureSignalExportsMock';
 import { runtimeHealthMock } from '../fixtures/runtimeHealthMock';
 import { runtimeJobsMock } from '../fixtures/runtimeJobsMock';
@@ -21,6 +22,7 @@ const featureExportUrl = __HERMES_FEATURE_EXPORT_URL__;
 const signalExportUrl = __HERMES_SIGNAL_EXPORT_URL__;
 const backtestReportUrl = __HERMES_BACKTEST_REPORT_URL__;
 const outcomeReportUrl = __HERMES_OUTCOME_REPORT_URL__;
+const betaReportUrl = __HERMES_BETA_REPORT_URL__;
 const replayManifestUrl = __HERMES_REPLAY_MANIFEST_URL__;
 const setupWatchUrl = __HERMES_SETUP_WATCH_URL__;
 const runtimeHealthPath = __HERMES_RUNTIME_HEALTH_PATH__;
@@ -29,6 +31,7 @@ const featureExportPath = __HERMES_FEATURE_EXPORT_PATH__;
 const signalExportPath = __HERMES_SIGNAL_EXPORT_PATH__;
 const backtestReportPath = __HERMES_BACKTEST_REPORT_PATH__;
 const outcomeReportPath = __HERMES_OUTCOME_REPORT_PATH__;
+const betaReportPath = __HERMES_BETA_REPORT_PATH__;
 const setupWatchPath = __HERMES_SETUP_WATCH_PATH__;
 
 const SUPPORTED_RUNTIME_EVENT_TYPES = new Set([
@@ -549,6 +552,95 @@ export function normalizeOutcomeReport(raw, index = 0) {
   };
 }
 
+export function normalizeBetaReport(raw) {
+  const warnings = raw?.warnings || raw?.Warnings || [];
+  const symbols = raw?.symbols_processed || raw?.symbolsProcessed || raw?.SymbolsProcessed || [];
+
+  return {
+    run_id: asString(raw?.run_id ?? raw?.runId ?? raw?.RunId, 'beta_learning_unknown'),
+    status: asString(raw?.status ?? raw?.Status, 'unknown'),
+    started_at_utc:
+      raw?.started_at_utc ||
+      raw?.startedAtUtc ||
+      raw?.StartedAtUtc ||
+      null,
+    completed_at_utc:
+      raw?.completed_at_utc ||
+      raw?.completedAtUtc ||
+      raw?.CompletedAtUtc ||
+      null,
+    symbols_processed: Array.isArray(symbols) ? symbols.map(String) : [],
+    candles_processed: asNumber(
+      raw?.candles_processed ?? raw?.candlesProcessed ?? raw?.CandlesProcessed,
+      0,
+    ),
+    features_generated: asNumber(
+      raw?.features_generated ?? raw?.featuresGenerated ?? raw?.FeaturesGenerated,
+      0,
+    ),
+    signals_generated: asNumber(
+      raw?.signals_generated ?? raw?.signalsGenerated ?? raw?.SignalsGenerated,
+      0,
+    ),
+    outcomes_generated: asNumber(
+      raw?.outcomes_generated ?? raw?.outcomesGenerated ?? raw?.OutcomesGenerated,
+      0,
+    ),
+    backtests_generated: asNumber(
+      raw?.backtests_generated ?? raw?.backtestsGenerated ?? raw?.BacktestsGenerated,
+      0,
+    ),
+    warnings: Array.isArray(warnings) ? warnings.map(String) : [],
+    duration_seconds: asNumber(
+      raw?.duration_seconds ?? raw?.durationSeconds ?? raw?.DurationSeconds,
+      0,
+    ),
+    learning_ready: asBoolean(
+      raw?.learning_ready ?? raw?.learningReady ?? raw?.LearningReady,
+      false,
+    ),
+    no_auto_trading: asBoolean(
+      raw?.no_auto_trading ?? raw?.noAutoTrading ?? raw?.NoAutoTrading,
+      true,
+    ),
+    human_review_required: asBoolean(
+      raw?.human_review_required ?? raw?.humanReviewRequired ?? raw?.HumanReviewRequired,
+      true,
+    ),
+    beta_report_path:
+      raw?.beta_report_path ||
+      raw?.betaReportPath ||
+      raw?.BetaReportPath ||
+      betaReportPath ||
+      null,
+    research_report_path:
+      raw?.research_report_path ||
+      raw?.researchReportPath ||
+      raw?.ResearchReportPath ||
+      null,
+    feature_output_path:
+      raw?.feature_output_path ||
+      raw?.featureOutputPath ||
+      raw?.FeatureOutputPath ||
+      null,
+    signal_output_path:
+      raw?.signal_output_path ||
+      raw?.signalOutputPath ||
+      raw?.SignalOutputPath ||
+      null,
+    outcome_report_path:
+      raw?.outcome_report_path ||
+      raw?.outcomeReportPath ||
+      raw?.OutcomeReportPath ||
+      null,
+    backtest_report_path:
+      raw?.backtest_report_path ||
+      raw?.backtestReportPath ||
+      raw?.BacktestReportPath ||
+      null,
+  };
+}
+
 function parseJsonlRows(text, normalizeRow, warningPrefix) {
   const warnings = [];
   const items = text
@@ -625,6 +717,15 @@ function buildOutcomeReports(outcomes, reportFiles, dataSource, warnings = []) {
     dataSource,
     warnings,
     sourcePath: reportFiles.filter(Boolean).join(' | '),
+  };
+}
+
+function buildBetaReport(report, dataSource, warnings = [], sourcePath = '') {
+  return {
+    report,
+    dataSource,
+    warnings,
+    sourcePath,
   };
 }
 
@@ -707,6 +808,15 @@ export function createOutcomeReportsFallback(loadError = '') {
     [...runtimeOutcomeReportsMock.report_files],
     DATA_SOURCE.FIXTURE,
     loadError ? [loadError] : [],
+  );
+}
+
+export function createBetaReportFallback(loadError = '') {
+  return buildBetaReport(
+    normalizeBetaReport(runtimeBetaStatusMock),
+    DATA_SOURCE.FIXTURE,
+    loadError ? [loadError] : [],
+    'src/fixtures/runtimeBetaStatusMock.ts',
   );
 }
 
@@ -1055,6 +1165,32 @@ export async function loadOutcomeReports() {
   }
 }
 
+export async function loadBetaReport() {
+  if (!betaReportUrl) {
+    return createBetaReportFallback('Beta-Report URL ist nicht konfiguriert.');
+  }
+
+  try {
+    const raw = await readJsonReadOnly(betaReportUrl);
+    const normalizedReport = normalizeBetaReport(raw);
+
+    if (!normalizedReport.run_id || normalizedReport.status === 'unknown') {
+      return createBetaReportFallback('Beta-Report enthaelt keinen lesbaren Lauf.');
+    }
+
+    return buildBetaReport(
+      normalizedReport,
+      DATA_SOURCE.LIVE_FILE,
+      [],
+      betaReportPath || betaReportUrl,
+    );
+  } catch (error) {
+    return createBetaReportFallback(
+      warningFromError('Beta-Report nicht erreichbar', error),
+    );
+  }
+}
+
 export const runtimeDataAdapter = {
   loadRuntimeData,
   loadRuntimeHealth,
@@ -1066,6 +1202,7 @@ export const runtimeDataAdapter = {
   loadFeatureSignalExports,
   loadBacktestReports,
   loadOutcomeReports,
+  loadBetaReport,
   createRuntimeDataFallback,
   createRuntimeHealthFallback,
   createSetupWatchFallback,
@@ -1075,4 +1212,5 @@ export const runtimeDataAdapter = {
   createFeatureSignalExportsFallback,
   createBacktestReportsFallback,
   createOutcomeReportsFallback,
+  createBetaReportFallback,
 };
