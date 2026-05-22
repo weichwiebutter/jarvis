@@ -13,6 +13,43 @@ public sealed class CTraderTokenStore
 
     public string TokenStorePath => Path.Combine(_storagePaths.Root, "auth", "ctrader_tokens.json");
 
+    public CTraderStoredToken? LoadToken()
+    {
+        if (!File.Exists(TokenStorePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var stream = File.OpenRead(TokenStorePath);
+            using var document = JsonDocument.Parse(stream);
+            return ParseStoredToken(document.RootElement);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    public void SaveToken(CTraderStoredToken token)
+    {
+        if (string.IsNullOrWhiteSpace(token.AccessToken))
+        {
+            throw new InvalidOperationException("Cannot save an empty cTrader access token.");
+        }
+
+        var directory = Path.GetDirectoryName(TokenStorePath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(
+            TokenStorePath,
+            JsonSerializer.Serialize(token, JsonDefaults.WriteOptions));
+    }
+
     public CTraderAuthStatus GetStatus(
         CTraderOpenApiConfig config,
         CTraderOpenApiConfigLoadResult configLoad,
@@ -95,6 +132,49 @@ public sealed class CTraderTokenStore
     private static string NormalizeAuthMode(string? authMode)
     {
         return string.IsNullOrWhiteSpace(authMode) ? "not_configured" : authMode;
+    }
+
+    private static CTraderStoredToken? ParseStoredToken(JsonElement root)
+    {
+        var accessToken = ReadString(root, "access_token", "accessToken");
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            return null;
+        }
+
+        return new CTraderStoredToken
+        {
+            AccessToken = accessToken,
+            RefreshToken = ReadString(root, "refresh_token", "refreshToken"),
+            TokenType = ReadString(root, "token_type", "tokenType"),
+            ExpiresIn = ReadLong(root, "expires_in", "expiresIn"),
+            ExpiresAtUtc = ReadDateTimeOffset(root, "expires_at_utc", "expiresAtUtc", "expires_at"),
+            CreatedAtUtc = ReadDateTimeOffset(root, "created_at_utc", "createdAtUtc") ?? DateTimeOffset.UtcNow
+        };
+    }
+
+    private static string? ReadString(JsonElement root, params string[] names)
+    {
+        return TryGetProperty(root, out var value, names)
+            && value.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(value.GetString())
+                ? value.GetString()
+                : null;
+    }
+
+    private static long? ReadLong(JsonElement root, params string[] names)
+    {
+        if (!TryGetProperty(root, out var value, names))
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number when value.TryGetInt64(out var number) => number,
+            JsonValueKind.String when long.TryParse(value.GetString(), out var number) => number,
+            _ => null
+        };
     }
 
     private static bool HasNonEmptyString(JsonElement root, params string[] names)

@@ -12,10 +12,6 @@ public sealed class CTraderOpenApiConfigLoader
         {
             var config = LoadConfig(localPath, warnings);
             AppendSafetyWarnings(config, warnings);
-            if (!config.StubMode)
-            {
-                warnings.Add("Local config requests stub_mode=false, but the real read-only Open API client is not implemented yet. Stub fallback remains active.");
-            }
 
             return new CTraderOpenApiConfigLoadResult(
                 config,

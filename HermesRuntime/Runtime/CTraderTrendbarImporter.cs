@@ -15,7 +15,17 @@ public sealed class CTraderTrendbarImporter
         CTraderHistoricalDataRequest request,
         IReadOnlyList<MarketDataCandle> candles)
     {
-        var downloadId = $"ctrader_openapi_stub_{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}";
+        return ImportCandles(request, candles, sourceName: "ctrader_openapi_stub", stubData: true);
+    }
+
+    public CTraderTrendbarImportResult ImportCandles(
+        CTraderHistoricalDataRequest request,
+        IReadOnlyList<MarketDataCandle> candles,
+        string sourceName,
+        bool stubData)
+    {
+        var safeSource = NormalizeSegment(sourceName);
+        var downloadId = $"{safeSource.ToLowerInvariant()}_{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}";
         var symbol = NormalizeSegment(request.Symbol);
         var timeframe = NormalizeSegment(request.Timeframe);
         var outputDirectory = Path.Combine(_storagePaths.Root, "market_data", "candles", symbol, timeframe);
@@ -35,7 +45,7 @@ public sealed class CTraderTrendbarImporter
             CandleCount: orderedCandles.Count,
             FromUtc: orderedCandles.Count > 0 ? orderedCandles[0].TimestampUtc : null,
             ToUtc: orderedCandles.Count > 0 ? orderedCandles[^1].TimestampUtc : null,
-            StubData: true);
+            StubData: stubData);
     }
 
     private static string NormalizeSegment(string value)

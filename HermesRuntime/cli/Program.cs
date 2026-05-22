@@ -36,6 +36,7 @@ internal sealed class HermesCli
             "ctrader-health" => ShowCTraderHealth(),
             "ctrader-symbols" => ShowCTraderSymbols(),
             "ctrader-auth-url" => ShowCTraderAuthUrl(),
+            "ctrader-auth-code" => ExchangeCTraderAuthCode(),
             "ctrader-auth-status" => ShowCTraderAuthStatus(),
             "download-history" => DownloadCTraderHistory(),
             "import-csv" => ImportCsv(),
@@ -66,11 +67,12 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes events recent      letzte Runtime-Events anzeigen");
         Console.WriteLine("  hermes jobs               Queue/Jobjournale anzeigen");
         Console.WriteLine("  hermes storage            lokale Storage-Uebersicht anzeigen");
-        Console.WriteLine("  hermes ctrader-health     cTrader Open API Stub-Health anzeigen");
+        Console.WriteLine("  hermes ctrader-health     cTrader Open API Health anzeigen");
         Console.WriteLine("  hermes ctrader-symbols    cTrader Symbol-Mapping anzeigen");
         Console.WriteLine("  hermes ctrader-auth-url   cTrader OAuth URL anzeigen");
+        Console.WriteLine("  hermes ctrader-auth-code  OAuth Redirect-Code gegen Token tauschen");
         Console.WriteLine("  hermes ctrader-auth-status lokalen cTrader Token-Status anzeigen");
-        Console.WriteLine("  hermes download-history   historische Stub-Candles lokal erzeugen");
+        Console.WriteLine("  hermes download-history   historische cTrader-Candles read-only laden oder Stub-Fallback nutzen");
         Console.WriteLine("  hermes import-csv         cTrader Candle-CSV lokal importieren");
         Console.WriteLine("  hermes generate-features  FeatureVectors aus lokalen Candle-Daten erzeugen");
         Console.WriteLine("  hermes run-nightly-research lokale Research-Pipeline ausfuehren");
@@ -597,7 +599,12 @@ internal sealed class HermesCli
         var storagePaths = BuildStoragePaths();
         var authContext = BuildCTraderAuthContext(configLoad, storagePaths);
         var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
-        ICTraderHistoricalDataClient client = new CTraderHistoricalDataClientStub(config, mapper, authContext.TokenState);
+        var tokenStore = new CTraderTokenStore(storagePaths);
+        var storedToken = tokenStore.LoadToken();
+        ICTraderHistoricalDataClient client = configLoad.LocalConfigLoaded
+                && config.AuthMode.Equals("oauth", StringComparison.OrdinalIgnoreCase)
+            ? new CTraderOpenApiHistoricalDataClient(config, mapper, storedToken ?? new CTraderStoredToken())
+            : new CTraderHistoricalDataClientStub(config, mapper, authContext.TokenState);
         var health = client.CheckHealth();
 
         using var eventStore = new EventStore(storagePaths);
@@ -609,7 +616,9 @@ internal sealed class HermesCli
             EventSeverity.Info,
             new
             {
-                message = "cTrader Open API connector health checked. Read-only stub fallback; no live connection.",
+                message = health.StubActive
+                    ? "cTrader Open API connector health checked. Stub fallback; no live connection."
+                    : "cTrader Open API connector health checked. Real read-only client configured; no download performed.",
                 health,
                 configPath = configLoad.ConfigPath,
                 configLoad.LocalConfigLoaded,
@@ -623,8 +632,10 @@ internal sealed class HermesCli
             });
         eventStore.Flush();
 
-        Console.WriteLine("Open API connector stub active");
-        Console.WriteLine("No real cTrader connection was opened.");
+        Console.WriteLine(health.StubActive
+            ? "Open API connector stub active"
+            : "Open API read-only client configured");
+        Console.WriteLine("No cTrader download was performed by health check.");
         WriteField("Status", health.Status);
         WriteField("Environment", health.Environment);
         WriteField("Stub Active", health.StubActive.ToString().ToLowerInvariant());
@@ -678,6 +689,71 @@ internal sealed class HermesCli
         return oauthUrl.Available ? 0 : 1;
     }
 
+    private int ExchangeCTraderAuthCode()
+    {
+        WriteHeader("Hermes cTrader OAuth Code Exchange");
+        var code = ReadOption(_args, "--code");
+        if (string.IsNullOrWhiteSpace(code)
+            || code.Contains('<', StringComparison.Ordinal)
+            || code.Contains('>', StringComparison.Ordinal))
+        {
+            WriteError("Ein frischer OAuth Redirect-Code ist erforderlich. Beispiel: ctrader-auth-code --code ABC123");
+            WriteSafety();
+            return 2;
+        }
+
+        var configLoad = LoadCTraderConfig();
+        var storagePaths = BuildStoragePaths();
+        var tokenStore = new CTraderTokenStore(storagePaths);
+        var oauthUrl = new CTraderOAuthUrlBuilder().Build(configLoad.Config);
+
+        if (!configLoad.LocalConfigLoaded)
+        {
+            WriteError("config/ctrader.openapi.local.json fehlt. Kein Token Exchange ausgefuehrt.");
+            WriteMessages("Warnings", CombineWarnings(configLoad.Warnings, oauthUrl.Warnings));
+            WriteSafety();
+            return 1;
+        }
+
+        if (!oauthUrl.Available)
+        {
+            WriteError("cTrader OAuth ist nicht sicher konfiguriert. Kein Token Exchange ausgefuehrt.");
+            WriteMessages("Warnings", CombineWarnings(configLoad.Warnings, oauthUrl.Warnings));
+            WriteSafety();
+            return 1;
+        }
+
+        try
+        {
+            using var httpClient = new HttpClient();
+            var exchangeClient = new CTraderTokenExchangeClient(httpClient);
+            var token = exchangeClient
+                .ExchangeAuthorizationCodeAsync(configLoad.Config, code.Trim())
+                .GetAwaiter()
+                .GetResult();
+            tokenStore.SaveToken(token);
+
+            WriteField("Status", "authenticated");
+            WriteField("Token Store Path", DisplayPath(tokenStore.TokenStorePath));
+            WriteField("Token Loaded", "true");
+            WriteField("Expires UTC", token.ExpiresAtUtc?.ToString("O") ?? "-");
+            WriteField("Tokens Printed", "false");
+            Console.WriteLine();
+            Console.WriteLine("Token wurde lokal gespeichert. Access-/Refresh-Token werden nicht ausgegeben.");
+            WriteSafety();
+            return 0;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            WriteError(ex.Message);
+            WriteField("Token Store Path", DisplayPath(tokenStore.TokenStorePath));
+            WriteField("Token Written", "false");
+            Console.WriteLine();
+            WriteSafety();
+            return 1;
+        }
+    }
+
     private int ShowCTraderAuthStatus()
     {
         WriteHeader("Hermes cTrader Auth Status");
@@ -711,7 +787,7 @@ internal sealed class HermesCli
         var config = configLoad.Config;
         var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
 
-        Console.WriteLine("Open API connector stub active");
+        Console.WriteLine("Lokales Symbol-Mapping; echte brokerseitige Symbol-IDs werden beim Download aus der cTrader Symbol-Liste aufgeloest.");
         WriteField("Config", DisplayPath(configLoad.ConfigPath));
         WriteField("Local Config Loaded", configLoad.LocalConfigLoaded.ToString().ToLowerInvariant());
         WriteField("Local Config Missing", configLoad.LocalConfigMissing.ToString().ToLowerInvariant());
@@ -756,6 +832,12 @@ internal sealed class HermesCli
         }
 
         var storagePaths = BuildStoragePaths();
+        var configLoad = LoadCTraderConfig();
+        var config = configLoad.Config;
+        var authContext = BuildCTraderAuthContext(configLoad, storagePaths);
+        var useRealClient = configLoad.LocalConfigLoaded
+            && config.AuthMode.Equals("oauth", StringComparison.OrdinalIgnoreCase);
+        var stubActive = !useRealClient;
         using var eventStore = new EventStore(storagePaths);
         var eventBus = new EventBus();
         eventBus.Subscribe(eventStore.Append);
@@ -772,26 +854,45 @@ internal sealed class HermesCli
             EventSeverity.Info,
             new
             {
-                message = "cTrader historical download started. Stub only, no live Open API call.",
+                message = useRealClient
+                    ? "cTrader historical download started. Real read-only Open API path."
+                    : "cTrader historical download started. Stub fallback; no live Open API call.",
                 request.Symbol,
                 request.Timeframe,
                 request.FromUtc,
                 request.ToUtc,
-                stubActive = true,
+                stubActive,
                 noAutoTrading = true,
                 humanReviewRequired = true
             });
 
         try
         {
-            var configLoad = LoadCTraderConfig();
-            var config = configLoad.Config;
-            var authContext = BuildCTraderAuthContext(configLoad, storagePaths);
             var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
-            ICTraderHistoricalDataClient client = new CTraderHistoricalDataClientStub(config, mapper, authContext.TokenState);
+            var tokenStore = new CTraderTokenStore(storagePaths);
+            var storedToken = tokenStore.LoadToken();
+            ICTraderHistoricalDataClient client;
+
+            if (useRealClient)
+            {
+                if (storedToken is null || !storedToken.HasAccessToken)
+                {
+                    throw new InvalidOperationException(
+                        "cTrader OAuth token missing. Run ctrader-auth-url, open the URL in a browser, then run ctrader-auth-code --code <CODE> with a fresh redirect code. No real cTrader data was downloaded.");
+                }
+
+                client = new CTraderOpenApiHistoricalDataClient(config, mapper, storedToken);
+            }
+            else
+            {
+                client = new CTraderHistoricalDataClientStub(config, mapper, authContext.TokenState);
+            }
+
             var candles = client.DownloadHistoricalCandles(request);
             var importer = new CTraderTrendbarImporter(storagePaths);
-            var result = importer.ImportStubCandles(request, candles);
+            var result = useRealClient
+                ? importer.ImportCandles(request, candles, sourceName: "ctrader_openapi", stubData: false)
+                : importer.ImportStubCandles(request, candles);
 
             PublishCTraderEvent(
                 eventBus,
@@ -799,7 +900,9 @@ internal sealed class HermesCli
                 EventSeverity.Info,
                 new
                 {
-                    message = "cTrader historical download completed with stub data. No real cTrader data was loaded.",
+                    message = useRealClient
+                        ? "cTrader historical download completed with real read-only Open API data."
+                        : "cTrader historical download completed with stub data. No real cTrader data was loaded.",
                     result.DownloadId,
                     result.Symbol,
                     result.Timeframe,
@@ -819,15 +922,15 @@ internal sealed class HermesCli
                 });
             eventStore.Flush();
 
-            Console.WriteLine("Open API connector stub active");
-            Console.WriteLine("No real cTrader data was loaded.");
-            if (configLoad.LocalConfigMissing)
+            Console.WriteLine(useRealClient
+                ? "Open API read-only historical download completed"
+                : "Open API connector stub active");
+            Console.WriteLine(useRealClient
+                ? "Echte cTrader Candles wurden lokal normalisiert und gespeichert."
+                : "No real cTrader data was loaded.");
+            if (!useRealClient && configLoad.LocalConfigMissing)
             {
                 Console.WriteLine("Local config missing: config/ctrader.openapi.local.json. Stub active.");
-            }
-            else if (!config.StubMode)
-            {
-                Console.WriteLine("Local config loaded, but real read-only client is not implemented yet. Stub fallback active.");
             }
 
             WriteField("Download ID", result.DownloadId);
@@ -854,13 +957,15 @@ internal sealed class HermesCli
                 EventSeverity.Warning,
                 new
                 {
-                    message = "cTrader historical download failed before any trading action. Stub only.",
+                    message = useRealClient
+                        ? "cTrader historical download failed before any trading action. Real read-only path."
+                        : "cTrader historical download failed before any trading action. Stub fallback.",
                     request.Symbol,
                     request.Timeframe,
                     request.FromUtc,
                     request.ToUtc,
                     error = ex.Message,
-                    stubActive = true,
+                    stubActive,
                     noAutoTrading = true,
                     humanReviewRequired = true
                 });
@@ -1669,7 +1774,7 @@ internal sealed class HermesCli
     {
         eventBus.Publish(EventEnvelope.Create(
             eventType,
-            "hermes_ctrader_openapi_stub",
+            "hermes_ctrader_openapi",
             severity,
             CliVersion,
             payload));

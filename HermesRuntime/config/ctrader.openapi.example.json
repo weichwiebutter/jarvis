@@ -1,8 +1,13 @@
 {
   "client_id": "example_client_id",
+  "client_secret": null,
   "redirect_uri": "http://127.0.0.1:17890/callback",
   "oauth_authorize_url": "https://id.ctrader.com/my/settings/openapi/grantingaccess/",
+  "token_endpoint_url": "https://openapi.ctrader.com/apps/token",
   "environment": "demo",
+  "openapi_json_host": null,
+  "openapi_json_port": 5036,
+  "openapi_timeout_seconds": 20,
   "account_id": null,
   "no_orders": true,
   "read_only_market_data": true,
@@ -10,7 +15,7 @@
   "auth_mode": "not_configured",
   "token_cache_path": null,
   "scopes": [
-    "market_data"
+    "accounts"
   ],
   "allowed_symbols": [
     "XAUUSD",

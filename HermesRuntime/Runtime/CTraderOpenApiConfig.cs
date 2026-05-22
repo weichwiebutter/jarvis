@@ -8,14 +8,29 @@ public sealed class CTraderOpenApiConfig
     [JsonPropertyName("client_id")]
     public string ClientId { get; init; } = "example_client_id";
 
+    [JsonPropertyName("client_secret")]
+    public string? ClientSecret { get; init; }
+
     [JsonPropertyName("redirect_uri")]
     public string RedirectUri { get; init; } = "http://127.0.0.1:17890/callback";
 
     [JsonPropertyName("oauth_authorize_url")]
     public string OAuthAuthorizeUrl { get; init; } = "https://id.ctrader.com/my/settings/openapi/grantingaccess/";
 
+    [JsonPropertyName("token_endpoint_url")]
+    public string TokenEndpointUrl { get; init; } = "https://openapi.ctrader.com/apps/token";
+
     [JsonPropertyName("environment")]
     public string Environment { get; init; } = "demo";
+
+    [JsonPropertyName("openapi_json_host")]
+    public string? OpenApiJsonHost { get; init; }
+
+    [JsonPropertyName("openapi_json_port")]
+    public int OpenApiJsonPort { get; init; } = 5036;
+
+    [JsonPropertyName("openapi_timeout_seconds")]
+    public int OpenApiTimeoutSeconds { get; init; } = 20;
 
     [JsonPropertyName("account_id")]
     public string? AccountId { get; init; }
@@ -36,7 +51,7 @@ public sealed class CTraderOpenApiConfig
     public string? TokenCachePath { get; init; }
 
     [JsonPropertyName("scopes")]
-    public string[] Scopes { get; init; } = ["market_data"];
+    public string[] Scopes { get; init; } = ["accounts"];
 
     [JsonPropertyName("allowed_symbols")]
     public string[] AllowedSymbols { get; init; } = ["XAUUSD", "EURUSD", "GER40", "US500"];

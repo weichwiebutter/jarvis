@@ -23,8 +23,7 @@ public sealed class CTraderHistoricalDataClientStub : ICTraderHistoricalDataClie
         var warnings = new List<string>
         {
             "Open API connector stub active. No live cTrader connection was opened.",
-            "OAuth/token handling is not implemented in foundation v1.",
-            "Historical downloads are deterministic demo data until a real read-only client is added."
+            "Historical downloads are deterministic demo data while stub_mode=true or local config/auth is missing."
         };
         warnings.AddRange(_authTokenState.Warnings);
         if (!_config.NoOrders)

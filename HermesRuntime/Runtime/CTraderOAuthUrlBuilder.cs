@@ -34,12 +34,25 @@ public sealed class CTraderOAuthUrlBuilder
 
         if (scopes.Count == 0)
         {
-            warnings.Add("No OAuth scopes configured. Defaulting to market_data.");
-            scopes.Add("market_data");
+            warnings.Add("No OAuth scopes configured. Defaulting to official read-only account scope.");
+            scopes.Add("accounts");
         }
+
+        if (scopes.RemoveAll(scope => scope.Equals("market_data", StringComparison.OrdinalIgnoreCase)
+                || scope.Equals("read_only_market_data", StringComparison.OrdinalIgnoreCase)) > 0)
+        {
+            warnings.Add("Legacy market_data scope was mapped to the official cTrader Open API accounts scope.");
+            scopes.Add("accounts");
+        }
+
+        scopes = scopes
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         var forbiddenScopes = scopes
             .Where(scope => scope.Contains("order", StringComparison.OrdinalIgnoreCase)
-                || scope.Contains("trade", StringComparison.OrdinalIgnoreCase))
+                || scope.Contains("trade", StringComparison.OrdinalIgnoreCase)
+                || scope.Equals("trading", StringComparison.OrdinalIgnoreCase))
             .ToList();
         if (forbiddenScopes.Count > 0)
         {
@@ -54,8 +67,8 @@ public sealed class CTraderOAuthUrlBuilder
         {
             ["client_id"] = config.ClientId,
             ["redirect_uri"] = redirectUri,
-            ["response_type"] = "code",
             ["scope"] = string.Join(' ', scopes),
+            ["product"] = "web",
             ["environment"] = config.Environment
         };
 
