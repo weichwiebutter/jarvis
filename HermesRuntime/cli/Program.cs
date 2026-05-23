@@ -983,6 +983,7 @@ internal sealed class HermesCli
         var timeframe = ReadOption(_args, "--timeframe");
         var fromText = ReadOption(_args, "--from");
         var toText = ReadOption(_args, "--to");
+        var maxRequests = ReadIntOption(_args, "--max-requests", fallback: 500, min: 1, max: 500);
 
         if (string.IsNullOrWhiteSpace(symbol)
             || string.IsNullOrWhiteSpace(timeframe)
@@ -1055,11 +1056,11 @@ internal sealed class HermesCli
                 client = new CTraderHistoricalDataClientStub(config, mapper, authContext.TokenState);
             }
 
-            var candles = client.DownloadHistoricalCandles(request);
+            var download = DownloadPagedHistoricalCandles(client, request, maxRequests);
             var importer = new CTraderTrendbarImporter(storagePaths);
             var result = useRealClient
-                ? importer.ImportCandles(request, candles, sourceName: "ctrader_openapi", stubData: false)
-                : importer.ImportStubCandles(request, candles);
+                ? importer.ImportCandles(request, download.Candles, sourceName: "ctrader_openapi_paged", stubData: false)
+                : importer.ImportStubCandles(request, download.Candles);
 
             PublishCTraderEvent(
                 eventBus,
@@ -1078,6 +1079,10 @@ internal sealed class HermesCli
                     result.FromUtc,
                     result.ToUtc,
                     result.StubData,
+                    requests = download.Requests,
+                    duplicatesSkipped = download.DuplicatesSkipped,
+                    download.Truncated,
+                    download.Warnings,
                     configPath = configLoad.ConfigPath,
                     configLoad.LocalConfigLoaded,
                     configLoad.LocalConfigMissing,
@@ -1104,13 +1109,17 @@ internal sealed class HermesCli
             WriteField("Symbol", result.Symbol);
             WriteField("Timeframe", result.Timeframe);
             WriteField("Rows", result.CandleCount.ToString());
+            WriteField("Requests", download.Requests.ToString());
+            WriteField("Max Requests", maxRequests.ToString());
+            WriteField("Duplicates Skipped", download.DuplicatesSkipped.ToString());
+            WriteField("Truncated", download.Truncated.ToString().ToLowerInvariant());
             WriteField("From UTC", result.FromUtc?.ToString("O"));
             WriteField("To UTC", result.ToUtc?.ToString("O"));
             WriteField("Output", DisplayPath(result.OutputPath));
             WriteField("Stub Data", result.StubData.ToString().ToLowerInvariant());
             WriteField("Config", DisplayPath(configLoad.ConfigPath));
             WriteField("Local Config Loaded", configLoad.LocalConfigLoaded.ToString().ToLowerInvariant());
-            WriteMessages("Warnings", CombineWarnings(configLoad.Warnings, authContext.AuthStatus.Warnings));
+            WriteMessages("Warnings", CombineWarnings(configLoad.Warnings, authContext.AuthStatus.Warnings, download.Warnings));
             Console.WriteLine();
 
             WriteSafety();
@@ -1142,6 +1151,79 @@ internal sealed class HermesCli
             WriteSafety();
             return 1;
         }
+    }
+
+    private HistoricalDownloadPageResult DownloadPagedHistoricalCandles(
+        ICTraderHistoricalDataClient client,
+        CTraderHistoricalDataRequest request,
+        int maxRequests)
+    {
+        var interval = TimeframeInterval(request.Timeframe);
+        var candlesByTimestamp = new Dictionary<DateTimeOffset, MarketDataCandle>();
+        var warnings = new List<string>();
+        var currentToUtc = request.ToUtc;
+        var requests = 0;
+        var duplicatesSkipped = 0;
+        var truncated = false;
+
+        while (currentToUtc >= request.FromUtc)
+        {
+            if (requests >= maxRequests)
+            {
+                truncated = true;
+                warnings.Add($"download-history stopped at max_requests={maxRequests}; requested range may be incomplete.");
+                break;
+            }
+
+            var pageRequest = request with { ToUtc = currentToUtc };
+            var page = client.DownloadHistoricalCandles(pageRequest)
+                .Where(candle => candle.TimestampUtc >= request.FromUtc && candle.TimestampUtc <= request.ToUtc)
+                .OrderBy(candle => candle.TimestampUtc)
+                .ToList();
+            requests++;
+
+            if (page.Count == 0)
+            {
+                break;
+            }
+
+            foreach (var candle in page)
+            {
+                if (!candlesByTimestamp.TryAdd(candle.TimestampUtc, candle))
+                {
+                    duplicatesSkipped++;
+                }
+            }
+
+            var earliest = page[0].TimestampUtc;
+            if (earliest <= request.FromUtc || page.Count < 1000)
+            {
+                break;
+            }
+
+            var nextToUtc = earliest - interval;
+            if (nextToUtc >= currentToUtc)
+            {
+                truncated = true;
+                warnings.Add("download-history paging stopped because cTrader returned a non-progressing page.");
+                break;
+            }
+
+            currentToUtc = nextToUtc;
+            Thread.Sleep(50);
+        }
+
+        var candles = candlesByTimestamp
+            .Values
+            .OrderBy(candle => candle.TimestampUtc)
+            .ToList();
+
+        return new HistoricalDownloadPageResult(
+            Candles: candles,
+            Requests: requests,
+            DuplicatesSkipped: duplicatesSkipped,
+            Truncated: truncated,
+            Warnings: warnings);
     }
 
     private int ImportCsv()
@@ -1670,6 +1752,20 @@ internal sealed class HermesCli
         return fallback;
     }
 
+    private static int ReadIntOption(string[] args, string name, int fallback, int min, int max)
+    {
+        for (var index = 0; index < args.Length - 1; index++)
+        {
+            if (args[index].Equals(name, StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(args[index + 1], out var value))
+            {
+                return Math.Clamp(value, min, max);
+            }
+        }
+
+        return fallback;
+    }
+
     private static string? ReadOption(string[] args, string name)
     {
         for (var index = 0; index < args.Length - 1; index++)
@@ -1695,6 +1791,16 @@ internal sealed class HermesCli
         timestampUtc = default;
         return false;
     }
+
+    private static TimeSpan TimeframeInterval(string timeframe) =>
+        timeframe.ToUpperInvariant() switch
+        {
+            "H4" => TimeSpan.FromHours(4),
+            "H1" => TimeSpan.FromHours(1),
+            "M15" => TimeSpan.FromMinutes(15),
+            "M5" => TimeSpan.FromMinutes(5),
+            _ => TimeSpan.FromMinutes(5)
+        };
 
     private static void WriteMessages(string label, IReadOnlyList<string> messages)
     {
@@ -1851,7 +1957,7 @@ internal sealed class HermesCli
         for (var index = 0; index < args.Length; index++)
         {
             var arg = args[index];
-            if (arg is "--root" or "--limit")
+            if (arg is "--root" or "--limit" or "--hours" or "--max-requests")
             {
                 index++;
                 continue;
@@ -1865,6 +1971,13 @@ internal sealed class HermesCli
 
         return commandIndex < commands.Count ? commands[commandIndex] : string.Empty;
     }
+
+    private sealed record HistoricalDownloadPageResult(
+        IReadOnlyList<MarketDataCandle> Candles,
+        int Requests,
+        int DuplicatesSkipped,
+        bool Truncated,
+        IReadOnlyList<string> Warnings);
 
     private static string ResolveRuntimeRoot(string[] args)
     {
