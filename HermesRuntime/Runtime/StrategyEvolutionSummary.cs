@@ -15,5 +15,6 @@ public sealed record StrategyEvolutionSummary(
     IReadOnlyList<string> TimeframeComparisons,
     IReadOnlyList<StrategyCluster> Clusters,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
-
+    bool HumanReviewRequired,
+    IReadOnlyList<string>? BestPatterns = null,
+    IReadOnlyList<string>? WeakPatterns = null);

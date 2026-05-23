@@ -26,6 +26,8 @@ public sealed class StrategyResearchService
         Directory.CreateDirectory(StrategyResearchRoot);
         Directory.CreateDirectory(ResultsDirectory);
 
+        var patternCatalog = new StrategyPatternCatalog(_storagePaths);
+        var patterns = patternCatalog.LoadOrCreateCatalog();
         var memory = LoadMemory() ?? EmptyMemory();
         var tested = memory.TestedVariantIds.ToHashSet(StringComparer.Ordinal);
         var features = ReadLatestFeatures();
@@ -36,7 +38,7 @@ public sealed class StrategyResearchService
         }
 
         var newResults = new List<StrategyResearchResult>();
-        foreach (var variant in GenerateVariants(memory)
+        foreach (var variant in GenerateVariants(memory, patterns)
                      .Where(variant => !tested.Contains(variant.VariantId))
                      .Take(128))
         {
@@ -94,41 +96,49 @@ public sealed class StrategyResearchService
         new("strategy_trend_continuation_v1", "trend_continuation", "Trend continuation candidate on repeated directional features.")
     ];
 
-    private static IReadOnlyList<StrategyVariant> GenerateVariants(StrategyResearchMemory memory)
+    private static IReadOnlyList<StrategyVariant> GenerateVariants(
+        StrategyResearchMemory memory,
+        IReadOnlyList<StrategyPatternDefinition> patterns)
     {
         var variants = new List<StrategyVariant>();
         var fastEmaValues = new[] { 9, 12 };
         var slowEmaValues = new[] { 21, 34 };
         var rrValues = new[] { 1.4, 1.8 };
         var slValues = new[] { 1.0, 1.5 };
+        var patternContexts = patterns.Count == 0
+            ? StrategyDefinitions()
+                .Select(definition => (definition.Family, PatternId: (string?)null))
+                .ToList()
+            : patterns
+                .Select(pattern => (Family: StrategyPatternCatalog.StrategyFamilyForPattern(pattern.Id), PatternId: (string?)pattern.Id))
+                .ToList();
 
-        foreach (var definition in StrategyDefinitions())
+        foreach (var fastEma in fastEmaValues)
+        foreach (var slowEma in slowEmaValues)
+        foreach (var rr in rrValues)
+        foreach (var sl in slValues)
+        foreach (var confirmation in new[] { false, true })
+        foreach (var volatilityFilter in new[] { false, true })
+        foreach (var context in patternContexts)
         {
-            foreach (var fastEma in fastEmaValues)
-            foreach (var slowEma in slowEmaValues)
-            foreach (var rr in rrValues)
-            foreach (var sl in slValues)
-            foreach (var confirmation in new[] { false, true })
-            foreach (var volatilityFilter in new[] { false, true })
+            if (fastEma >= slowEma)
             {
-                if (fastEma >= slowEma)
-                {
-                    continue;
-                }
-
-                var idSeed = $"{definition.Family}|{fastEma}|{slowEma}|{rr:0.00}|{sl:0.00}|{confirmation}|{volatilityFilter}";
-                variants.Add(CreateVariant(definition.Family, fastEma, slowEma, rr, sl, confirmation, volatilityFilter));
+                continue;
             }
+
+            variants.Add(CreateVariant(context.Family, fastEma, slowEma, rr, sl, confirmation, volatilityFilter, context.PatternId));
         }
 
-        variants.AddRange(GenerateAdaptiveVariants(memory));
+        variants.AddRange(GenerateAdaptiveVariants(memory, patterns));
         return variants
             .GroupBy(variant => variant.VariantId)
             .Select(group => group.First())
             .ToList();
     }
 
-    private static IEnumerable<StrategyVariant> GenerateAdaptiveVariants(StrategyResearchMemory memory)
+    private static IEnumerable<StrategyVariant> GenerateAdaptiveVariants(
+        StrategyResearchMemory memory,
+        IReadOnlyList<StrategyPatternDefinition> patterns)
     {
         var tested = memory.TestedVariantIds.ToHashSet(StringComparer.Ordinal);
         var topSeeds = memory.TopVariants
@@ -142,10 +152,10 @@ public sealed class StrategyResearchService
         {
             topSeeds =
             [
-                CreateVariant("ema_pullback", 9, 21, 1.8, 1.0, true, false),
-                CreateVariant("breakout", 12, 34, 1.8, 1.5, true, true),
-                CreateVariant("mean_reversion", 9, 21, 1.4, 1.0, false, false),
-                CreateVariant("trend_continuation", 12, 34, 1.8, 1.0, true, true)
+                CreateVariant("ema_pullback", 9, 21, 1.8, 1.0, true, false, "ema_pullback"),
+                CreateVariant("breakout", 12, 34, 1.8, 1.5, true, true, "inside_bar_breakout"),
+                CreateVariant("mean_reversion", 9, 21, 1.4, 1.0, false, false, "mean_reversion_rejection"),
+                CreateVariant("trend_continuation", 12, 34, 1.8, 1.0, true, true, "breakout_continuation")
             ];
         }
 
@@ -163,7 +173,7 @@ public sealed class StrategyResearchService
                     continue;
                 }
 
-                var variant = CreateVariant(seed.Family, fast, slow, rr, sl, confirmation, volatilityFilter);
+                var variant = CreateVariant(seed.Family, fast, slow, rr, sl, confirmation, volatilityFilter, seed.PatternId);
                 if (!tested.Contains(variant.VariantId))
                 {
                     yield return variant;
@@ -171,14 +181,21 @@ public sealed class StrategyResearchService
             }
         }
 
-        foreach (var family in StrategyDefinitions().Select(definition => definition.Family))
+        var patternContexts = patterns.Count == 0
+            ? StrategyDefinitions()
+                .Select(definition => (definition.Family, PatternId: (string?)null))
+                .ToList()
+            : patterns
+                .Select(pattern => (Family: StrategyPatternCatalog.StrategyFamilyForPattern(pattern.Id), PatternId: (string?)pattern.Id))
+                .ToList();
+        foreach (var context in patternContexts)
         {
             foreach (var variant in new[]
             {
-                CreateVariant(family, 8, 24, 1.6, 1.2, true, true),
-                CreateVariant(family, 14, 40, 2.0, 1.8, true, false),
-                CreateVariant(family, 6, 18, 1.2, 0.8, false, true),
-                CreateVariant(family, 16, 55, 2.2, 2.0, true, true)
+                CreateVariant(context.Family, 8, 24, 1.6, 1.2, true, true, context.PatternId),
+                CreateVariant(context.Family, 14, 40, 2.0, 1.8, true, false, context.PatternId),
+                CreateVariant(context.Family, 6, 18, 1.2, 0.8, false, true, context.PatternId),
+                CreateVariant(context.Family, 16, 55, 2.2, 2.0, true, true, context.PatternId)
             })
             {
                 if (!tested.Contains(variant.VariantId))
@@ -212,9 +229,10 @@ public sealed class StrategyResearchService
         double rr,
         double sl,
         bool confirmation,
-        bool volatilityFilter)
+        bool volatilityFilter,
+        string? patternId = null)
     {
-        var idSeed = $"{family}|{fastEma}|{slowEma}|{rr:0.00}|{sl:0.00}|{confirmation}|{volatilityFilter}";
+        var idSeed = $"{family}|{patternId ?? "no_pattern"}|{fastEma}|{slowEma}|{rr:0.00}|{sl:0.00}|{confirmation}|{volatilityFilter}";
         return new StrategyVariant(
             VariantId: $"variant_{ShortHash(idSeed)}",
             Family: family,
@@ -223,7 +241,8 @@ public sealed class StrategyResearchService
             RiskRewardRatio: rr,
             StopLossAtrMultiplier: sl,
             RequireConfirmationCandle: confirmation,
-            UseVolatilityFilter: volatilityFilter);
+            UseVolatilityFilter: volatilityFilter,
+            PatternId: patternId);
     }
 
     private StrategyResearchResult EvaluateVariant(
@@ -301,6 +320,28 @@ public sealed class StrategyResearchService
             return false;
         }
 
+        if (variant.PatternId == "bullish_engulfing" && feature.Direction != "up")
+        {
+            return false;
+        }
+
+        if (variant.PatternId == "bearish_engulfing" && feature.Direction != "down")
+        {
+            return false;
+        }
+
+        if (variant.PatternId == "first_candle_breakout"
+            && feature.MockSession.Equals("off_session", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (variant.PatternId == "liquidity_sweep_reversal"
+            && feature.MockRegime is not ("range" or "high_volatility"))
+        {
+            return false;
+        }
+
         if (variant.Family == "mean_reversion")
         {
             return feature.MockSignalScore >= scoreThreshold
@@ -324,10 +365,22 @@ public sealed class StrategyResearchService
         };
         var confirmationEdge = variant.RequireConfirmationCandle ? 0.025 : -0.01;
         var volatilityEdge = variant.UseVolatilityFilter && feature.MockRegime == "high_volatility" ? 0.035 : 0;
+        var patternEdge = variant.PatternId switch
+        {
+            "breakout_continuation" when feature.MockRegime.StartsWith("trend", StringComparison.OrdinalIgnoreCase) => 0.035,
+            "inside_bar_breakout" when feature.MockRegime == "range" => 0.025,
+            "first_candle_breakout" when feature.MockSession is "london" or "new_york" => 0.03,
+            "ema_pullback" when feature.MockRegime.StartsWith("trend", StringComparison.OrdinalIgnoreCase) => 0.025,
+            "mean_reversion_rejection" when feature.MockRegime == "range" => 0.03,
+            "liquidity_sweep_reversal" when feature.MockRegime == "high_volatility" => 0.02,
+            "bullish_engulfing" when feature.Direction == "up" => 0.018,
+            "bearish_engulfing" when feature.Direction == "down" => 0.018,
+            _ => 0
+        };
         var rrEdge = (variant.RiskRewardRatio - 1.0) * 0.08;
         var slPenalty = Math.Abs(variant.StopLossAtrMultiplier - 1.2) * 0.04;
         var emaPenalty = Math.Abs(variant.FastEma - 10) * 0.002 + Math.Abs(variant.SlowEma - 21) * 0.001;
-        var expectation = baseEdge + familyEdge + confirmationEdge + volatilityEdge + rrEdge - slPenalty - emaPenalty;
+        var expectation = baseEdge + familyEdge + confirmationEdge + volatilityEdge + patternEdge + rrEdge - slPenalty - emaPenalty;
 
         return expectation >= 0.12
             ? variant.RiskRewardRatio

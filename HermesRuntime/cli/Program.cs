@@ -54,6 +54,8 @@ internal sealed class HermesCli
             "top-strategies" => ShowTopStrategies(),
             "research-insights" => ShowResearchInsights(),
             "strategy-clusters" => ShowStrategyClusters(),
+            "pattern-catalog" => ShowPatternCatalog(),
+            "pattern-performance" => ShowPatternPerformance(),
             "features" => ShowFeatures(),
             "signals" => ShowSignals(),
             "backtests" => ShowBacktests(),
@@ -96,6 +98,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes top-strategies     beste Strategy-Research-Varianten anzeigen");
         Console.WriteLine("  hermes research-insights  Strategy-Research-Insights anzeigen");
         Console.WriteLine("  hermes strategy-clusters  Strategy-Cluster anzeigen");
+        Console.WriteLine("  hermes pattern-catalog    Strategy/Pattern Knowledge Base anzeigen");
+        Console.WriteLine("  hermes pattern-performance Pattern-Fitness aggregiert anzeigen");
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes backtests          Demo-Backtest-Reports anzeigen");
@@ -698,6 +702,48 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowPatternCatalog()
+    {
+        WriteHeader("Hermes Strategy/Pattern Knowledge Base");
+        var catalog = new StrategyPatternCatalog(BuildStoragePaths());
+        var patterns = catalog.LoadOrCreateCatalog();
+
+        WriteField("Catalog", DisplayPath(catalog.CatalogPath));
+        WriteField("Patterns", patterns.Count.ToString());
+        foreach (var pattern in patterns)
+        {
+            WriteSubHeader($"{pattern.Name} / {pattern.Id}");
+            WriteField("Direction Bias", pattern.DirectionBias);
+            WriteField("Strategy Family", StrategyPatternCatalog.StrategyFamilyForPattern(pattern.Id));
+            WriteField("Timeframes", string.Join(", ", pattern.RequiredTimeframes));
+            WriteField("Sessions", string.Join(", ", pattern.PreferredSessions));
+            WriteField("Regimes", string.Join(", ", pattern.MarketRegimes));
+            WriteField("Risk Hint", pattern.RiskModelHint);
+            WriteMessages("Trigger Rules", pattern.TriggerRules.Select(rule => $"{rule.RuleId}: {rule.Description}").ToList());
+            WriteMessages("Invalidation Rules", pattern.InvalidationRules.Select(rule => $"{rule.RuleId}: {rule.Description}").ToList());
+            WriteMessages("Tags", pattern.Tags.Select(tag => tag.Id).ToList());
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPatternPerformance()
+    {
+        WriteHeader("Hermes Pattern Performance");
+        var generator = new ResearchInsightsGenerator(BuildStoragePaths());
+        var catalog = new StrategyPatternCatalog(BuildStoragePaths());
+        var performance = generator.LoadPatternPerformance();
+
+        WriteField("Catalog", DisplayPath(catalog.CatalogPath));
+        WriteField("Insights", DisplayPath(generator.InsightsPath));
+        WriteMessages("Pattern Performance", performance);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowTopStrategies()
     {
         WriteHeader("Hermes Top Strategies");
@@ -897,7 +943,10 @@ internal sealed class HermesCli
 
     private void WriteStrategyResult(StrategyResearchResult result)
     {
-        WriteSubHeader($"{result.Variant.Family} / {result.Variant.VariantId}");
+        var patternName = ResolvePatternName(result.Variant.PatternId);
+        WriteSubHeader($"{result.Variant.Family} / {patternName} / {result.Variant.VariantId}");
+        WriteField("Pattern ID", result.Variant.PatternId ?? "-");
+        WriteField("Pattern", patternName);
         WriteField("Score", $"{result.Fitness.Score:0.####}");
         WriteField("Winrate", $"{result.Fitness.Winrate * 100:0.##}%");
         WriteField("Average RR", $"{result.Fitness.AverageRr:0.####}");
@@ -927,6 +976,8 @@ internal sealed class HermesCli
         WriteMessages("Fitness Trends", insights.FitnessTrends.TakeLast(5).ToList());
         WriteMessages("Exploration Coverage", insights.ExplorationCoverage);
         WriteMessages("Strategy Rankings", insights.StrategyRankings);
+        WriteMessages("Best Patterns", insights.BestPatterns ?? Array.Empty<string>());
+        WriteMessages("Weak Patterns", insights.WeakPatterns ?? Array.Empty<string>());
         WriteMessages("Parameter Statistics", insights.ParameterStatistics);
         WriteMessages("Timeframe Comparisons", insights.TimeframeComparisons);
         WriteField("no_auto_trading", insights.NoAutoTrading.ToString().ToLowerInvariant());
@@ -944,6 +995,17 @@ internal sealed class HermesCli
         WriteField("Prioritized", cluster.Prioritized.ToString().ToLowerInvariant());
         WriteField("Reduced", cluster.Reduced.ToString().ToLowerInvariant());
         WriteMessages("Common Parameters", cluster.CommonParameters);
+    }
+
+    private string ResolvePatternName(string? patternId)
+    {
+        if (string.IsNullOrWhiteSpace(patternId))
+        {
+            return "-";
+        }
+
+        var catalog = new StrategyPatternCatalog(BuildStoragePaths());
+        return StrategyPatternCatalog.PatternName(catalog.LoadOrCreateCatalog(), patternId);
     }
 
     private int ShowCTraderHealth()

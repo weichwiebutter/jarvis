@@ -22,6 +22,7 @@ public sealed class ResearchInsightsGenerator
     public StrategyEvolutionSummary Generate()
     {
         Directory.CreateDirectory(StrategyResearchRoot);
+        var patterns = new StrategyPatternCatalog(_storagePaths).LoadOrCreateCatalog();
         var results = LoadResults().ToList();
         var completed = results
             .Where(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase))
@@ -53,7 +54,9 @@ public sealed class ResearchInsightsGenerator
             TimeframeComparisons: BuildTimeframeComparisons(completed),
             Clusters: clusters,
             NoAutoTrading: true,
-            HumanReviewRequired: true);
+            HumanReviewRequired: true,
+            BestPatterns: BuildPatternPerformance(completed, patterns, descending: true, limit: 8),
+            WeakPatterns: BuildPatternPerformance(completed, patterns, descending: false, limit: 8));
 
         File.WriteAllText(InsightsPath, JsonSerializer.Serialize(summary, JsonDefaults.WriteOptions));
         File.WriteAllText(ClustersPath, JsonSerializer.Serialize(clusters, JsonDefaults.WriteOptions));
@@ -96,6 +99,16 @@ public sealed class ResearchInsightsGenerator
         {
             return [];
         }
+    }
+
+    public IReadOnlyList<string> LoadPatternPerformance()
+    {
+        var patterns = new StrategyPatternCatalog(_storagePaths).LoadOrCreateCatalog();
+        var completed = LoadResults()
+            .Where(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return BuildPatternPerformance(completed, patterns, descending: true, limit: 50);
     }
 
     private IEnumerable<StrategyResearchResult> LoadResults()
@@ -202,6 +215,7 @@ public sealed class ResearchInsightsGenerator
         [
             $"variants:{results.Count}",
             $"families:{results.Select(result => result.Variant.Family).Distinct(StringComparer.OrdinalIgnoreCase).Count()}",
+            $"patterns:{results.Select(result => result.Variant.PatternId ?? "no_pattern").Distinct(StringComparer.OrdinalIgnoreCase).Count()}",
             $"fast_ema_values:{string.Join("/", results.Select(result => result.Variant.FastEma).Distinct().OrderBy(value => value))}",
             $"slow_ema_values:{string.Join("/", results.Select(result => result.Variant.SlowEma).Distinct().OrderBy(value => value))}",
             $"rr_values:{string.Join("/", results.Select(result => result.Variant.RiskRewardRatio).Distinct().OrderBy(value => value).Select(value => value.ToString("0.##")))}"
@@ -264,5 +278,48 @@ public sealed class ResearchInsightsGenerator
 
         return best is null ? "-" : $"{best.Value}:avg={best.Score:0.####},count={best.Count}";
     }
-}
 
+    private static IReadOnlyList<string> BuildPatternPerformance(
+        IReadOnlyList<StrategyResearchResult> results,
+        IReadOnlyList<StrategyPatternDefinition> patterns,
+        bool descending,
+        int limit)
+    {
+        if (results.Count == 0)
+        {
+            return ["no_pattern_results"];
+        }
+
+        var patternNames = patterns.ToDictionary(
+            pattern => pattern.Id,
+            pattern => pattern.Name,
+            StringComparer.OrdinalIgnoreCase);
+        var groups = results
+            .GroupBy(result => result.Variant.PatternId ?? $"family:{result.Variant.Family}", StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var average = group.Average(result => result.Fitness.Score);
+                var best = group.Max(result => result.Fitness.Score);
+                var trades = group.Sum(result => result.TradeCount);
+                var key = group.Key;
+                var name = patternNames.TryGetValue(key, out var patternName)
+                    ? patternName
+                    : key;
+
+                return new
+                {
+                    Line = $"{name} ({key}):avg={average:0.####},best={best:0.####},count={group.Count()},trades={trades}",
+                    Score = average
+                };
+            });
+
+        groups = descending
+            ? groups.OrderByDescending(item => item.Score).ThenBy(item => item.Line, StringComparer.OrdinalIgnoreCase)
+            : groups.OrderBy(item => item.Score).ThenBy(item => item.Line, StringComparer.OrdinalIgnoreCase);
+
+        return groups
+            .Take(limit)
+            .Select(item => item.Line)
+            .ToList();
+    }
+}

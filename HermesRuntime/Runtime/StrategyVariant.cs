@@ -8,5 +8,5 @@ public sealed record StrategyVariant(
     double RiskRewardRatio,
     double StopLossAtrMultiplier,
     bool RequireConfirmationCandle,
-    bool UseVolatilityFilter);
-
+    bool UseVolatilityFilter,
+    string? PatternId = null);
