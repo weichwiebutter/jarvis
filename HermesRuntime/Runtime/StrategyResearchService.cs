@@ -36,13 +36,10 @@ public sealed class StrategyResearchService
         }
 
         var newResults = new List<StrategyResearchResult>();
-        foreach (var variant in GenerateVariants())
+        foreach (var variant in GenerateVariants(memory)
+                     .Where(variant => !tested.Contains(variant.VariantId))
+                     .Take(128))
         {
-            if (tested.Contains(variant.VariantId))
-            {
-                continue;
-            }
-
             var result = EvaluateVariant(variant, features);
             WriteResult(result);
             newResults.Add(result);
@@ -97,7 +94,7 @@ public sealed class StrategyResearchService
         new("strategy_trend_continuation_v1", "trend_continuation", "Trend continuation candidate on repeated directional features.")
     ];
 
-    private static IReadOnlyList<StrategyVariant> GenerateVariants()
+    private static IReadOnlyList<StrategyVariant> GenerateVariants(StrategyResearchMemory memory)
     {
         var variants = new List<StrategyVariant>();
         var fastEmaValues = new[] { 9, 12 };
@@ -120,19 +117,113 @@ public sealed class StrategyResearchService
                 }
 
                 var idSeed = $"{definition.Family}|{fastEma}|{slowEma}|{rr:0.00}|{sl:0.00}|{confirmation}|{volatilityFilter}";
-                variants.Add(new StrategyVariant(
-                    VariantId: $"variant_{ShortHash(idSeed)}",
-                    Family: definition.Family,
-                    FastEma: fastEma,
-                    SlowEma: slowEma,
-                    RiskRewardRatio: rr,
-                    StopLossAtrMultiplier: sl,
-                    RequireConfirmationCandle: confirmation,
-                    UseVolatilityFilter: volatilityFilter));
+                variants.Add(CreateVariant(definition.Family, fastEma, slowEma, rr, sl, confirmation, volatilityFilter));
             }
         }
 
-        return variants;
+        variants.AddRange(GenerateAdaptiveVariants(memory));
+        return variants
+            .GroupBy(variant => variant.VariantId)
+            .Select(group => group.First())
+            .ToList();
+    }
+
+    private static IEnumerable<StrategyVariant> GenerateAdaptiveVariants(StrategyResearchMemory memory)
+    {
+        var tested = memory.TestedVariantIds.ToHashSet(StringComparer.Ordinal);
+        var topSeeds = memory.TopVariants
+            .OrderByDescending(result => result.Fitness.Score)
+            .ThenByDescending(result => result.TradeCount)
+            .Take(8)
+            .Select(result => result.Variant)
+            .ToList();
+
+        if (topSeeds.Count == 0)
+        {
+            topSeeds =
+            [
+                CreateVariant("ema_pullback", 9, 21, 1.8, 1.0, true, false),
+                CreateVariant("breakout", 12, 34, 1.8, 1.5, true, true),
+                CreateVariant("mean_reversion", 9, 21, 1.4, 1.0, false, false),
+                CreateVariant("trend_continuation", 12, 34, 1.8, 1.0, true, true)
+            ];
+        }
+
+        foreach (var seed in topSeeds)
+        {
+            foreach (var fast in NeighborInts(seed.FastEma, [6, 8, 9, 10, 12, 14, 16, 18]))
+            foreach (var slow in NeighborInts(seed.SlowEma, [18, 21, 24, 30, 34, 40, 55, 72]))
+            foreach (var rr in NeighborDoubles(seed.RiskRewardRatio, [1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.5]))
+            foreach (var sl in NeighborDoubles(seed.StopLossAtrMultiplier, [0.8, 1.0, 1.2, 1.5, 1.8, 2.0]))
+            foreach (var confirmation in new[] { seed.RequireConfirmationCandle, !seed.RequireConfirmationCandle })
+            foreach (var volatilityFilter in new[] { seed.UseVolatilityFilter, !seed.UseVolatilityFilter })
+            {
+                if (fast >= slow)
+                {
+                    continue;
+                }
+
+                var variant = CreateVariant(seed.Family, fast, slow, rr, sl, confirmation, volatilityFilter);
+                if (!tested.Contains(variant.VariantId))
+                {
+                    yield return variant;
+                }
+            }
+        }
+
+        foreach (var family in StrategyDefinitions().Select(definition => definition.Family))
+        {
+            foreach (var variant in new[]
+            {
+                CreateVariant(family, 8, 24, 1.6, 1.2, true, true),
+                CreateVariant(family, 14, 40, 2.0, 1.8, true, false),
+                CreateVariant(family, 6, 18, 1.2, 0.8, false, true),
+                CreateVariant(family, 16, 55, 2.2, 2.0, true, true)
+            })
+            {
+                if (!tested.Contains(variant.VariantId))
+                {
+                    yield return variant;
+                }
+            }
+        }
+    }
+
+    private static IReadOnlyList<int> NeighborInts(int seed, IReadOnlyList<int> values)
+    {
+        return values
+            .OrderBy(value => Math.Abs(value - seed))
+            .Take(4)
+            .ToList();
+    }
+
+    private static IReadOnlyList<double> NeighborDoubles(double seed, IReadOnlyList<double> values)
+    {
+        return values
+            .OrderBy(value => Math.Abs(value - seed))
+            .Take(4)
+            .ToList();
+    }
+
+    private static StrategyVariant CreateVariant(
+        string family,
+        int fastEma,
+        int slowEma,
+        double rr,
+        double sl,
+        bool confirmation,
+        bool volatilityFilter)
+    {
+        var idSeed = $"{family}|{fastEma}|{slowEma}|{rr:0.00}|{sl:0.00}|{confirmation}|{volatilityFilter}";
+        return new StrategyVariant(
+            VariantId: $"variant_{ShortHash(idSeed)}",
+            Family: family,
+            FastEma: fastEma,
+            SlowEma: slowEma,
+            RiskRewardRatio: rr,
+            StopLossAtrMultiplier: sl,
+            RequireConfirmationCandle: confirmation,
+            UseVolatilityFilter: volatilityFilter);
     }
 
     private StrategyResearchResult EvaluateVariant(
@@ -393,4 +484,3 @@ public sealed class StrategyResearchService
         return Convert.ToHexString(bytes)[..16].ToLowerInvariant();
     }
 }
-

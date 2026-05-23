@@ -52,6 +52,8 @@ internal sealed class HermesCli
             "run-strategy-research" => RunStrategyResearch(),
             "strategy-research-status" => ShowStrategyResearchStatus(),
             "top-strategies" => ShowTopStrategies(),
+            "research-insights" => ShowResearchInsights(),
+            "strategy-clusters" => ShowStrategyClusters(),
             "features" => ShowFeatures(),
             "signals" => ShowSignals(),
             "backtests" => ShowBacktests(),
@@ -92,6 +94,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes run-strategy-research adaptive Strategy-Research-Varianten bewerten");
         Console.WriteLine("  hermes strategy-research-status Strategy-Research-Memory anzeigen");
         Console.WriteLine("  hermes top-strategies     beste Strategy-Research-Varianten anzeigen");
+        Console.WriteLine("  hermes research-insights  Strategy-Research-Insights anzeigen");
+        Console.WriteLine("  hermes strategy-clusters  Strategy-Cluster anzeigen");
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes backtests          Demo-Backtest-Reports anzeigen");
@@ -569,19 +573,23 @@ internal sealed class HermesCli
             && existingIndex.LearningReady
             && service.BuildMarketDataFingerprint(existingIndex.ProcessedRanges) == currentFingerprint)
         {
+            var strategyStep = RunStrategyResearchAndInsights(storagePaths);
             var checkpoint = service.WriteCheckpoint(
                 job,
                 iteration: 0,
-                status: "stopped_no_new_data",
-                message: "Current market-data ranges already match the Research Memory Index. No duplicate beta run started.",
+                status: strategyStep.TestedNow > 0 ? "strategy_research_checkpointed" : "stopped_no_new_data",
+                message: $"Current market-data ranges already match the Research Memory Index. No duplicate beta run started. Strategy variants tested: {strategyStep.TestedNow}.",
                 existingIndex,
                 betaRunId: null);
 
             WriteField("Job ID", job.JobId);
-            WriteField("Status", "stopped_no_new_data");
+            WriteField("Status", strategyStep.TestedNow > 0 ? "strategy_research_checkpointed" : "stopped_no_new_data");
             WriteField("Checkpoint", DisplayPath(checkpoint));
             WriteField("Market Data Candles", currentCandleCount.ToString());
+            WriteField("Strategy Variants Tested", strategyStep.TestedNow.ToString());
+            WriteField("Strategy Insights", DisplayPath(strategyStep.InsightsPath));
             WriteResearchMemoryIndex(existingIndex);
+            WriteStrategyResearchMemory(strategyStep.Memory, limit: 3);
             Console.WriteLine();
             WriteSafety();
             return 0;
@@ -596,12 +604,13 @@ internal sealed class HermesCli
         eventStore.Flush();
 
         var updatedIndex = service.UpdateIndex();
+        var strategyResearch = RunStrategyResearchAndInsights(storagePaths);
         var finalStatus = betaReport.CandlesProcessed == 0
             ? "stopped_no_data"
             : "checkpointed_no_new_data";
         var finalMessage = betaReport.CandlesProcessed == 0
             ? "Beta learning produced no candle-based work; long-run research stopped."
-            : "Beta learning checkpoint written. No second iteration was started without new market-data ranges.";
+            : $"Beta learning checkpoint written. Strategy variants tested: {strategyResearch.TestedNow}. No second iteration was started without new market-data ranges.";
         var finalCheckpoint = service.WriteCheckpoint(
             job,
             iteration: 1,
@@ -617,7 +626,10 @@ internal sealed class HermesCli
         WriteField("Checkpoint", DisplayPath(finalCheckpoint));
         WriteField("Beta Run", betaReport.RunId);
         WriteField("Beta Report", DisplayOptionalPath(betaReport.BetaReportPath));
+        WriteField("Strategy Variants Tested", strategyResearch.TestedNow.ToString());
+        WriteField("Strategy Insights", DisplayPath(strategyResearch.InsightsPath));
         WriteResearchMemoryIndex(updatedIndex);
+        WriteStrategyResearchMemory(strategyResearch.Memory, limit: 3);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -626,15 +638,15 @@ internal sealed class HermesCli
     private int RunStrategyResearch()
     {
         WriteHeader("Hermes Strategy Research Beta 2");
-        var service = new StrategyResearchService(BuildStoragePaths());
-        var before = service.LoadOrCreateMemory().VariantsTested;
-        var memory = service.RunResearch();
-        var testedNow = Math.Max(0, memory.VariantsTested - before);
+        var storagePaths = BuildStoragePaths();
+        var service = new StrategyResearchService(storagePaths);
+        var strategyStep = RunStrategyResearchAndInsights(storagePaths);
 
         WriteField("Memory", DisplayPath(service.MemoryPath));
-        WriteField("Variants Tested Total", memory.VariantsTested.ToString());
-        WriteField("Variants Tested This Run", testedNow.ToString());
-        WriteStrategyResearchMemory(memory, limit: 5);
+        WriteField("Variants Tested Total", strategyStep.Memory.VariantsTested.ToString());
+        WriteField("Variants Tested This Run", strategyStep.TestedNow.ToString());
+        WriteField("Research Insights", DisplayPath(strategyStep.InsightsPath));
+        WriteStrategyResearchMemory(strategyStep.Memory, limit: 5);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -649,6 +661,39 @@ internal sealed class HermesCli
         WriteField("Memory", DisplayPath(service.MemoryPath));
         WriteStrategyResearchMemory(memory, limit: 5);
         Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowResearchInsights()
+    {
+        WriteHeader("Hermes Research Insights");
+        var generator = new ResearchInsightsGenerator(BuildStoragePaths());
+        var insights = generator.LoadInsights() ?? generator.Generate();
+
+        WriteField("Insights", DisplayPath(generator.InsightsPath));
+        WriteResearchInsights(insights);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyClusters()
+    {
+        WriteHeader("Hermes Strategy Clusters");
+        var generator = new ResearchInsightsGenerator(BuildStoragePaths());
+        var clusters = generator.LoadClusters();
+        if (clusters.Count == 0)
+        {
+            clusters = generator.Generate().Clusters;
+        }
+
+        WriteField("Clusters", DisplayPath(generator.ClustersPath));
+        foreach (var cluster in clusters)
+        {
+            WriteStrategyCluster(cluster);
+        }
+
         WriteSafety();
         return 0;
     }
@@ -673,6 +718,23 @@ internal sealed class HermesCli
 
         WriteSafety();
         return 0;
+    }
+
+    private StrategyResearchStepResult RunStrategyResearchAndInsights(StoragePaths storagePaths)
+    {
+        var service = new StrategyResearchService(storagePaths);
+        var before = service.LoadOrCreateMemory().VariantsTested;
+        var memory = service.RunResearch();
+        var testedNow = Math.Max(0, memory.VariantsTested - before);
+        var generator = new ResearchInsightsGenerator(storagePaths);
+        var insights = generator.Generate();
+
+        return new StrategyResearchStepResult(
+            memory,
+            testedNow,
+            generator.InsightsPath,
+            generator.ClustersPath,
+            insights);
     }
 
     private bool TryLoadLatestResearchReport(out string path, out JsonElement root)
@@ -851,6 +913,37 @@ internal sealed class HermesCli
         WriteField("SL ATR", $"{result.Variant.StopLossAtrMultiplier:0.##}");
         WriteField("Confirmation", result.Variant.RequireConfirmationCandle.ToString().ToLowerInvariant());
         WriteField("Vol Filter", result.Variant.UseVolatilityFilter.ToString().ToLowerInvariant());
+    }
+
+    private void WriteResearchInsights(StrategyEvolutionSummary insights)
+    {
+        WriteField("Generated UTC", insights.GeneratedAtUtc.ToString("O"));
+        WriteField("Top Strategies", insights.TopStrategies.Count.ToString());
+        WriteField("Weak Strategies", insights.WeakStrategies.Count.ToString());
+        WriteField("Clusters", insights.Clusters.Count.ToString());
+        WriteField("Best Symbols", insights.BestSymbols.Count == 0 ? "-" : string.Join(", ", insights.BestSymbols));
+        WriteField("Best Timeframes", insights.BestTimeframes.Count == 0 ? "-" : string.Join(", ", insights.BestTimeframes));
+        WriteMessages("Stability Metrics", insights.StabilityMetrics);
+        WriteMessages("Fitness Trends", insights.FitnessTrends.TakeLast(5).ToList());
+        WriteMessages("Exploration Coverage", insights.ExplorationCoverage);
+        WriteMessages("Strategy Rankings", insights.StrategyRankings);
+        WriteMessages("Parameter Statistics", insights.ParameterStatistics);
+        WriteMessages("Timeframe Comparisons", insights.TimeframeComparisons);
+        WriteField("no_auto_trading", insights.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", insights.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteStrategyCluster(StrategyCluster cluster)
+    {
+        WriteSubHeader($"{cluster.Family} / {cluster.ClusterId}");
+        WriteField("Variants", cluster.VariantCount.ToString());
+        WriteField("Average Fitness", $"{cluster.AverageFitness:0.####}");
+        WriteField("Best Fitness", $"{cluster.BestFitness:0.####}");
+        WriteField("Average Winrate", $"{cluster.AverageWinrate * 100:0.##}%");
+        WriteField("Average Trades", $"{cluster.AverageTradeCount:0.##}");
+        WriteField("Prioritized", cluster.Prioritized.ToString().ToLowerInvariant());
+        WriteField("Reduced", cluster.Reduced.ToString().ToLowerInvariant());
+        WriteMessages("Common Parameters", cluster.CommonParameters);
     }
 
     private int ShowCTraderHealth()
@@ -2073,6 +2166,13 @@ internal sealed class HermesCli
         int DuplicatesSkipped,
         bool Truncated,
         IReadOnlyList<string> Warnings);
+
+    private sealed record StrategyResearchStepResult(
+        StrategyResearchMemory Memory,
+        int TestedNow,
+        string InsightsPath,
+        string ClustersPath,
+        StrategyEvolutionSummary Insights);
 
     private static string ResolveRuntimeRoot(string[] args)
     {

@@ -1,0 +1,19 @@
+namespace Hermes.Runtime;
+
+public sealed record StrategyEvolutionSummary(
+    string SummaryVersion,
+    DateTimeOffset GeneratedAtUtc,
+    IReadOnlyList<StrategyResearchResult> TopStrategies,
+    IReadOnlyList<StrategyResearchResult> WeakStrategies,
+    IReadOnlyList<string> BestSymbols,
+    IReadOnlyList<string> BestTimeframes,
+    IReadOnlyList<string> StabilityMetrics,
+    IReadOnlyList<string> FitnessTrends,
+    IReadOnlyList<string> ExplorationCoverage,
+    IReadOnlyList<string> StrategyRankings,
+    IReadOnlyList<string> ParameterStatistics,
+    IReadOnlyList<string> TimeframeComparisons,
+    IReadOnlyList<StrategyCluster> Clusters,
+    bool NoAutoTrading,
+    bool HumanReviewRequired);
+

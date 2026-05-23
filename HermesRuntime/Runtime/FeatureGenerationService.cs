@@ -6,8 +6,8 @@ public sealed class FeatureGenerationService
 {
     private const string GenerationSource = "hermes_feature_generation";
 
-    private static readonly string[] SupportedSymbols = ["XAUUSD", "EURUSD", "GER40"];
-    private static readonly string[] SupportedTimeframes = ["M5", "M15", "H1", "H4"];
+    private static readonly string[] SupportedSymbols = ["XAUUSD", "EURUSD", "GER40", "US500"];
+    private static readonly string[] SupportedTimeframes = ["M5", "M15", "H1"];
 
     private readonly StoragePaths _storagePaths;
     private readonly EventBus _eventBus;
