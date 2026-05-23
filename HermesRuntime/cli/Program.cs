@@ -46,6 +46,9 @@ internal sealed class HermesCli
             "research-report" => ShowResearchReport(),
             "run-beta-learning" => RunBetaLearning(),
             "beta-status" => ShowBetaStatus(),
+            "update-research-memory" => UpdateResearchMemory(),
+            "research-memory" => ShowResearchMemory(),
+            "run-long-research" => RunLongResearch(),
             "features" => ShowFeatures(),
             "signals" => ShowSignals(),
             "backtests" => ShowBacktests(),
@@ -80,6 +83,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes research-report    letzten ResearchSummaryReport anzeigen");
         Console.WriteLine("  hermes run-beta-learning  Trading Learning Beta 1 lokal ausfuehren");
         Console.WriteLine("  hermes beta-status        letzten Trading Learning Beta Report anzeigen");
+        Console.WriteLine("  hermes update-research-memory Research Memory Index aktualisieren");
+        Console.WriteLine("  hermes research-memory    Research Memory Index anzeigen");
+        Console.WriteLine("  hermes run-long-research  checkpointed Long-Run Research starten");
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes backtests          Demo-Backtest-Reports anzeigen");
@@ -478,6 +484,139 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int UpdateResearchMemory()
+    {
+        WriteHeader("Hermes Research Memory Update");
+        var storagePaths = BuildStoragePaths();
+        var service = new ResearchMemoryIndexService(storagePaths);
+        var index = service.UpdateIndex();
+
+        WriteField("Index", DisplayPath(service.IndexPath));
+        WriteResearchMemoryIndex(index);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowResearchMemory()
+    {
+        WriteHeader("Hermes Research Memory");
+        var storagePaths = BuildStoragePaths();
+        var service = new ResearchMemoryIndexService(storagePaths);
+        var index = service.LoadIndex();
+        if (index is null)
+        {
+            WriteWarning($"Kein Research Memory Index gefunden: {DisplayPath(service.IndexPath)}");
+            WriteSafety();
+            return 0;
+        }
+
+        WriteField("Index", DisplayPath(service.IndexPath));
+        WriteResearchMemoryIndex(index);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunLongResearch()
+    {
+        WriteHeader("Hermes Long-Run Research");
+        var hours = ReadHours(_args, 1);
+        var storagePaths = BuildStoragePaths();
+        var service = new ResearchMemoryIndexService(storagePaths);
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        var job = new LongRunResearchJob(
+            JobId: $"long_research_{startedAtUtc:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
+            StartedAtUtc: startedAtUtc,
+            DeadlineUtc: startedAtUtc.AddHours(hours),
+            RequestedHours: hours,
+            RequestedBy: "hermes_cli",
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+
+        var existingIndex = service.LoadIndex();
+        var currentRanges = service.GetCurrentMarketDataRanges();
+        var currentCandleCount = currentRanges.Sum(range => range.CandleCount);
+        if (currentCandleCount == 0)
+        {
+            var index = service.UpdateIndex();
+            var checkpoint = service.WriteCheckpoint(
+                job,
+                iteration: 0,
+                status: "stopped_no_data",
+                message: "No historical candle data found. Long-run research stopped before beta learning.",
+                index,
+                betaRunId: null);
+
+            WriteField("Job ID", job.JobId);
+            WriteField("Status", "stopped_no_data");
+            WriteField("Checkpoint", DisplayPath(checkpoint));
+            WriteField("Market Data Candles", "0");
+            WriteResearchMemoryIndex(index);
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+
+        var currentFingerprint = service.BuildMarketDataFingerprint(currentRanges);
+        if (existingIndex is not null
+            && existingIndex.LearningReady
+            && service.BuildMarketDataFingerprint(existingIndex.ProcessedRanges) == currentFingerprint)
+        {
+            var checkpoint = service.WriteCheckpoint(
+                job,
+                iteration: 0,
+                status: "stopped_no_new_data",
+                message: "Current market-data ranges already match the Research Memory Index. No duplicate beta run started.",
+                existingIndex,
+                betaRunId: null);
+
+            WriteField("Job ID", job.JobId);
+            WriteField("Status", "stopped_no_new_data");
+            WriteField("Checkpoint", DisplayPath(checkpoint));
+            WriteField("Market Data Candles", currentCandleCount.ToString());
+            WriteResearchMemoryIndex(existingIndex);
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+
+        using var eventStore = new EventStore(storagePaths);
+        var eventBus = new EventBus();
+        eventBus.Subscribe(eventStore.Append);
+
+        var pipeline = new TradingLearningBetaPipeline(storagePaths, eventBus, CliVersion);
+        var betaReport = pipeline.Run();
+        eventStore.Flush();
+
+        var updatedIndex = service.UpdateIndex();
+        var finalStatus = betaReport.CandlesProcessed == 0
+            ? "stopped_no_data"
+            : "checkpointed_no_new_data";
+        var finalMessage = betaReport.CandlesProcessed == 0
+            ? "Beta learning produced no candle-based work; long-run research stopped."
+            : "Beta learning checkpoint written. No second iteration was started without new market-data ranges.";
+        var finalCheckpoint = service.WriteCheckpoint(
+            job,
+            iteration: 1,
+            status: finalStatus,
+            message: finalMessage,
+            updatedIndex,
+            betaReport.RunId);
+
+        WriteField("Job ID", job.JobId);
+        WriteField("Requested Hours", $"{job.RequestedHours:0.##}");
+        WriteField("Status", finalStatus);
+        WriteField("Iterations", "1");
+        WriteField("Checkpoint", DisplayPath(finalCheckpoint));
+        WriteField("Beta Run", betaReport.RunId);
+        WriteField("Beta Report", DisplayOptionalPath(betaReport.BetaReportPath));
+        WriteResearchMemoryIndex(updatedIndex);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private bool TryLoadLatestResearchReport(out string path, out JsonElement root)
     {
         var preferredPaths = new[]
@@ -589,6 +728,34 @@ internal sealed class HermesCli
         }
 
         WriteMessages("Warnings", GetStringArray(root, "warnings"));
+    }
+
+    private void WriteResearchMemoryIndex(ResearchMemoryIndex index)
+    {
+        WriteField("Updated UTC", index.UpdatedAtUtc.ToString("O"));
+        WriteField("Last Run UTC", index.LastRunAt?.ToString("O") ?? "-");
+        WriteField("Run Count", index.RunCount.ToString());
+        WriteField("Symbols Processed", index.SymbolsProcessed.Count == 0 ? "-" : string.Join(", ", index.SymbolsProcessed));
+        WriteField("Timeframes Processed", index.TimeframesProcessed.Count == 0 ? "-" : string.Join(", ", index.TimeframesProcessed));
+        WriteField("Candles Processed", index.CandlesProcessed.ToString());
+        WriteField("Features", index.FeaturesGenerated.ToString());
+        WriteField("Signals", index.SignalsGenerated.ToString());
+        WriteField("Outcomes", index.OutcomesGenerated.ToString());
+        WriteField("Backtests", index.BacktestsGenerated.ToString());
+        WriteField("Processed Ranges", index.ProcessedRanges.Count.ToString());
+        WriteField("learning_ready", index.LearningReady.ToString().ToLowerInvariant());
+        WriteField("Indexed Run IDs", index.IndexedRunIds.Count.ToString());
+
+        foreach (var range in index.ProcessedRanges.TakeLast(5))
+        {
+            WriteSubHeader($"{range.Symbol} {range.Timeframe}");
+            WriteField("Candles", range.CandleCount.ToString());
+            WriteField("From UTC", range.FromUtc?.ToString("O") ?? "-");
+            WriteField("To UTC", range.ToUtc?.ToString("O") ?? "-");
+            WriteField("Source", DisplayPath(range.SourcePath));
+        }
+
+        WriteMessages("Warnings", index.Warnings);
     }
 
     private int ShowCTraderHealth()
@@ -1483,6 +1650,20 @@ internal sealed class HermesCli
             if (args[index] == "--limit" && int.TryParse(args[index + 1], out var value))
             {
                 return Math.Clamp(value, 1, 100);
+            }
+        }
+
+        return fallback;
+    }
+
+    private static double ReadHours(string[] args, double fallback)
+    {
+        for (var index = 0; index < args.Length - 1; index++)
+        {
+            if (args[index].Equals("--hours", StringComparison.OrdinalIgnoreCase)
+                && double.TryParse(args[index + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+            {
+                return Math.Clamp(value, 0.01, 168);
             }
         }
 
