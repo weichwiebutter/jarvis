@@ -49,6 +49,9 @@ internal sealed class HermesCli
             "update-research-memory" => UpdateResearchMemory(),
             "research-memory" => ShowResearchMemory(),
             "run-long-research" => RunLongResearch(),
+            "run-strategy-research" => RunStrategyResearch(),
+            "strategy-research-status" => ShowStrategyResearchStatus(),
+            "top-strategies" => ShowTopStrategies(),
             "features" => ShowFeatures(),
             "signals" => ShowSignals(),
             "backtests" => ShowBacktests(),
@@ -86,6 +89,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes update-research-memory Research Memory Index aktualisieren");
         Console.WriteLine("  hermes research-memory    Research Memory Index anzeigen");
         Console.WriteLine("  hermes run-long-research  checkpointed Long-Run Research starten");
+        Console.WriteLine("  hermes run-strategy-research adaptive Strategy-Research-Varianten bewerten");
+        Console.WriteLine("  hermes strategy-research-status Strategy-Research-Memory anzeigen");
+        Console.WriteLine("  hermes top-strategies     beste Strategy-Research-Varianten anzeigen");
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes signals            letzte Signal-JSONL-Zeilen anzeigen");
         Console.WriteLine("  hermes backtests          Demo-Backtest-Reports anzeigen");
@@ -617,6 +623,58 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunStrategyResearch()
+    {
+        WriteHeader("Hermes Strategy Research Beta 2");
+        var service = new StrategyResearchService(BuildStoragePaths());
+        var before = service.LoadOrCreateMemory().VariantsTested;
+        var memory = service.RunResearch();
+        var testedNow = Math.Max(0, memory.VariantsTested - before);
+
+        WriteField("Memory", DisplayPath(service.MemoryPath));
+        WriteField("Variants Tested Total", memory.VariantsTested.ToString());
+        WriteField("Variants Tested This Run", testedNow.ToString());
+        WriteStrategyResearchMemory(memory, limit: 5);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyResearchStatus()
+    {
+        WriteHeader("Hermes Strategy Research Status");
+        var service = new StrategyResearchService(BuildStoragePaths());
+        var memory = service.LoadOrCreateMemory();
+
+        WriteField("Memory", DisplayPath(service.MemoryPath));
+        WriteStrategyResearchMemory(memory, limit: 5);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowTopStrategies()
+    {
+        WriteHeader("Hermes Top Strategies");
+        var service = new StrategyResearchService(BuildStoragePaths());
+        var memory = service.LoadOrCreateMemory();
+
+        if (memory.TopVariants.Count == 0)
+        {
+            WriteWarning("Noch keine Strategy-Research-Ergebnisse vorhanden.");
+            WriteSafety();
+            return 0;
+        }
+
+        foreach (var result in memory.TopVariants.Take(10))
+        {
+            WriteStrategyResult(result);
+        }
+
+        WriteSafety();
+        return 0;
+    }
+
     private bool TryLoadLatestResearchReport(out string path, out JsonElement root)
     {
         var preferredPaths = new[]
@@ -756,6 +814,43 @@ internal sealed class HermesCli
         }
 
         WriteMessages("Warnings", index.Warnings);
+    }
+
+    private void WriteStrategyResearchMemory(StrategyResearchMemory memory, int limit)
+    {
+        WriteField("Updated UTC", memory.UpdatedAtUtc.ToString("O"));
+        WriteField("Variants Tested", memory.VariantsTested.ToString());
+        WriteField("Top Variants", memory.TopVariants.Count.ToString());
+        WriteField("Rejected Variants", memory.RejectedVariants.Count.ToString());
+        WriteField("no_auto_trading", memory.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", memory.HumanReviewRequired.ToString().ToLowerInvariant());
+
+        foreach (var result in memory.TopVariants.Take(limit))
+        {
+            WriteStrategyResult(result);
+        }
+
+        WriteMessages("Warnings", memory.Warnings);
+    }
+
+    private void WriteStrategyResult(StrategyResearchResult result)
+    {
+        WriteSubHeader($"{result.Variant.Family} / {result.Variant.VariantId}");
+        WriteField("Score", $"{result.Fitness.Score:0.####}");
+        WriteField("Winrate", $"{result.Fitness.Winrate * 100:0.##}%");
+        WriteField("Average RR", $"{result.Fitness.AverageRr:0.####}");
+        WriteField("Drawdown Penalty", $"{result.Fitness.DrawdownPenalty:0.####}");
+        WriteField("Stability Bonus", $"{result.Fitness.StabilityBonus:0.####}");
+        WriteField("Trade Count Factor", $"{result.Fitness.TradeCountFactor:0.####}");
+        WriteField("Trades", result.TradeCount.ToString());
+        WriteField("Wins/Losses", $"{result.WinCount}/{result.LossCount}");
+        WriteField("Avg R", $"{result.AverageR:0.####}");
+        WriteField("Max Drawdown", $"{result.MaxDrawdown:0.####}");
+        WriteField("EMA", $"{result.Variant.FastEma}/{result.Variant.SlowEma}");
+        WriteField("RR", $"{result.Variant.RiskRewardRatio:0.##}");
+        WriteField("SL ATR", $"{result.Variant.StopLossAtrMultiplier:0.##}");
+        WriteField("Confirmation", result.Variant.RequireConfirmationCandle.ToString().ToLowerInvariant());
+        WriteField("Vol Filter", result.Variant.UseVolatilityFilter.ToString().ToLowerInvariant());
     }
 
     private int ShowCTraderHealth()
