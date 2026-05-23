@@ -49,6 +49,7 @@ internal sealed class HermesCli
             "update-research-memory" => UpdateResearchMemory(),
             "research-memory" => ShowResearchMemory(),
             "run-long-research" => RunLongResearch(),
+            "run-research-autopilot" => RunResearchAutopilot(),
             "run-strategy-research" => RunStrategyResearch(),
             "strategy-research-status" => ShowStrategyResearchStatus(),
             "top-strategies" => ShowTopStrategies(),
@@ -93,6 +94,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes update-research-memory Research Memory Index aktualisieren");
         Console.WriteLine("  hermes research-memory    Research Memory Index anzeigen");
         Console.WriteLine("  hermes run-long-research  checkpointed Long-Run Research starten");
+        Console.WriteLine("  hermes run-research-autopilot kombinierte Data-/Pattern-/Strategy-Research-Pipeline starten");
         Console.WriteLine("  hermes run-strategy-research adaptive Strategy-Research-Varianten bewerten");
         Console.WriteLine("  hermes strategy-research-status Strategy-Research-Memory anzeigen");
         Console.WriteLine("  hermes top-strategies     beste Strategy-Research-Varianten anzeigen");
@@ -639,6 +641,138 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunResearchAutopilot()
+    {
+        WriteHeader("Hermes Research Autopilot Beta");
+        var hours = ReadHours(_args, 1);
+        var maxDownloads = ReadIntOption(
+            _args,
+            "--max-downloads",
+            fallback: Math.Clamp((int)Math.Ceiling(hours), 1, 9),
+            min: 0,
+            max: 27);
+        var maxRequests = ReadIntOption(_args, "--max-requests", fallback: 500, min: 1, max: 500);
+        var targetToUtc = new DateTimeOffset(DateTime.UtcNow.Year, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var targetFromUtc = targetToUtc.AddYears(-1);
+        var fromOption = ReadOption(_args, "--from");
+        if (!string.IsNullOrWhiteSpace(fromOption) && TryParseCliDate(fromOption, out var fromOverride))
+        {
+            targetFromUtc = fromOverride;
+        }
+
+        var toOption = ReadOption(_args, "--to");
+        if (!string.IsNullOrWhiteSpace(toOption) && TryParseCliDate(toOption, out var toOverride))
+        {
+            targetToUtc = toOverride;
+        }
+
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        var storagePaths = BuildStoragePaths();
+        var catalog = new StrategyPatternCatalog(storagePaths);
+        var patterns = catalog.LoadOrCreateCatalog();
+        var memoryService = new ResearchMemoryIndexService(storagePaths);
+        var configLoad = LoadCTraderConfig();
+        var authContext = BuildCTraderAuthContext(configLoad, storagePaths);
+        var currentRanges = memoryService.GetCurrentMarketDataRanges();
+        var plans = BuildAutopilotDownloadPlans(currentRanges, targetFromUtc, targetToUtc);
+        var selectedPlans = plans.Take(maxDownloads).ToList();
+        var warnings = new List<string>();
+        var downloadResults = new List<AutopilotDownloadResult>();
+
+        using var eventStore = new EventStore(storagePaths);
+        var eventBus = new EventBus();
+        eventBus.Subscribe(eventStore.Append);
+
+        foreach (var plan in selectedPlans)
+        {
+            try
+            {
+                var download = DownloadHistoricalRangeForAutopilot(
+                    storagePaths,
+                    configLoad,
+                    authContext,
+                    eventBus,
+                    plan.Request,
+                    maxRequests);
+                downloadResults.Add(download);
+                warnings.AddRange(download.Warnings);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException or IOException)
+            {
+                warnings.Add($"{plan.Request.Symbol} {plan.Request.Timeframe} {plan.Reason}: {ex.Message}");
+            }
+        }
+
+        eventStore.Flush();
+
+        TradingLearningBetaReport? betaReport = null;
+        if (memoryService.GetCurrentMarketDataRanges().Sum(range => range.CandleCount) > 0)
+        {
+            using var betaEventStore = new EventStore(storagePaths);
+            var betaBus = new EventBus();
+            betaBus.Subscribe(betaEventStore.Append);
+            var pipeline = new TradingLearningBetaPipeline(storagePaths, betaBus, CliVersion);
+            betaReport = pipeline.Run();
+            betaEventStore.Flush();
+        }
+        else
+        {
+            warnings.Add("No candle data available after Autopilot data expansion; beta pipeline skipped.");
+        }
+
+        var updatedIndex = memoryService.UpdateIndex();
+        var strategyResearch = RunStrategyResearchAndInsights(storagePaths);
+        var report = WriteResearchAutopilotReport(
+            storagePaths,
+            startedAtUtc,
+            hours,
+            targetFromUtc,
+            targetToUtc,
+            plans.Count,
+            selectedPlans.Count,
+            downloadResults,
+            strategyResearch,
+            catalog.CatalogPath,
+            warnings);
+
+        var job = new LongRunResearchJob(
+            JobId: report.ReportId,
+            StartedAtUtc: startedAtUtc,
+            DeadlineUtc: startedAtUtc.AddHours(hours),
+            RequestedHours: hours,
+            RequestedBy: "hermes_research_autopilot",
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+        var checkpoint = memoryService.WriteCheckpoint(
+            job,
+            iteration: 1,
+            status: report.Status,
+            message: $"Research Autopilot completed. Downloads attempted: {report.DownloadsAttempted}. Strategy variants tested: {report.StrategyVariantsTested}.",
+            updatedIndex,
+            betaRunId: betaReport?.RunId);
+
+        WriteField("Autopilot Report", DisplayPath(Path.Combine(storagePaths.Root, "strategy_research", "autopilot", $"{report.ReportId}.autopilot_report.json")));
+        WriteField("Checkpoint", DisplayPath(checkpoint));
+        WriteField("Requested Hours", $"{hours:0.##}");
+        WriteField("Target Range", $"{targetFromUtc:yyyy-MM-dd} -> {targetToUtc:yyyy-MM-dd}");
+        WriteField("Pattern Catalog", DisplayPath(catalog.CatalogPath));
+        WriteField("Patterns", patterns.Count.ToString());
+        WriteField("Download Plans", plans.Count.ToString());
+        WriteField("Downloads Attempted", report.DownloadsAttempted.ToString());
+        WriteField("Candles Downloaded", report.CandlesDownloaded.ToString());
+        WriteField("Download Requests", report.DownloadRequests.ToString());
+        WriteField("Strategy Variants Tested", report.StrategyVariantsTested.ToString());
+        WriteField("Strategy Memory Entries", report.StrategyResearchEntries.ToString());
+        WriteField("Insights", DisplayPath(strategyResearch.InsightsPath));
+        WriteField("Status", report.Status);
+        WriteResearchMemoryIndex(updatedIndex);
+        WriteStrategyResearchMemory(strategyResearch.Memory, limit: 3);
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int RunStrategyResearch()
     {
         WriteHeader("Hermes Strategy Research Beta 2");
@@ -930,6 +1064,7 @@ internal sealed class HermesCli
         WriteField("Variants Tested", memory.VariantsTested.ToString());
         WriteField("Top Variants", memory.TopVariants.Count.ToString());
         WriteField("Rejected Variants", memory.RejectedVariants.Count.ToString());
+        WriteField("Research Memory Entries", (memory.ResearchEntries?.Count ?? 0).ToString());
         WriteField("no_auto_trading", memory.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", memory.HumanReviewRequired.ToString().ToLowerInvariant());
 
@@ -962,6 +1097,10 @@ internal sealed class HermesCli
         WriteField("SL ATR", $"{result.Variant.StopLossAtrMultiplier:0.##}");
         WriteField("Confirmation", result.Variant.RequireConfirmationCandle.ToString().ToLowerInvariant());
         WriteField("Vol Filter", result.Variant.UseVolatilityFilter.ToString().ToLowerInvariant());
+        WriteField("Session Filter", result.Variant.SessionFilter ?? "any");
+        WriteField("Variant Timeframe", result.Variant.Timeframe ?? "any");
+        WriteField("From UTC", result.FromUtc?.ToString("O") ?? "-");
+        WriteField("To UTC", result.ToUtc?.ToString("O") ?? "-");
     }
 
     private void WriteResearchInsights(StrategyEvolutionSummary insights)
@@ -978,6 +1117,8 @@ internal sealed class HermesCli
         WriteMessages("Strategy Rankings", insights.StrategyRankings);
         WriteMessages("Best Patterns", insights.BestPatterns ?? Array.Empty<string>());
         WriteMessages("Weak Patterns", insights.WeakPatterns ?? Array.Empty<string>());
+        WriteMessages("Avoid Combinations", insights.AvoidCombinations ?? Array.Empty<string>());
+        WriteMessages("Next Recommended Tests", insights.NextRecommendedTests ?? Array.Empty<string>());
         WriteMessages("Parameter Statistics", insights.ParameterStatistics);
         WriteMessages("Timeframe Comparisons", insights.TimeframeComparisons);
         WriteField("no_auto_trading", insights.NoAutoTrading.ToString().ToLowerInvariant());
@@ -1474,6 +1615,196 @@ internal sealed class HermesCli
             DuplicatesSkipped: duplicatesSkipped,
             Truncated: truncated,
             Warnings: warnings);
+    }
+
+    private AutopilotDownloadResult DownloadHistoricalRangeForAutopilot(
+        StoragePaths storagePaths,
+        CTraderOpenApiConfigLoadResult configLoad,
+        (CTraderOAuthUrlResult OAuthUrl, CTraderAuthStatus AuthStatus, CTraderAuthTokenState TokenState) authContext,
+        EventBus eventBus,
+        CTraderHistoricalDataRequest request,
+        int maxRequests)
+    {
+        var config = configLoad.Config;
+        var useRealClient = configLoad.LocalConfigLoaded
+            && config.AuthMode.Equals("oauth", StringComparison.OrdinalIgnoreCase);
+        var stubActive = !useRealClient;
+
+        PublishCTraderEvent(
+            eventBus,
+            EventType.CTraderHistoricalDownloadStarted,
+            EventSeverity.Info,
+            new
+            {
+                message = useRealClient
+                    ? "Research Autopilot historical download started. Real read-only Open API path."
+                    : "Research Autopilot historical download started. Stub fallback; no live Open API call.",
+                request.Symbol,
+                request.Timeframe,
+                request.FromUtc,
+                request.ToUtc,
+                stubActive,
+                noAutoTrading = true,
+                humanReviewRequired = true
+            });
+
+        var mapper = new CTraderSymbolMapper(config.AllowedSymbols);
+        var tokenStore = new CTraderTokenStore(storagePaths);
+        var storedToken = tokenStore.LoadToken();
+        ICTraderHistoricalDataClient client;
+        if (useRealClient)
+        {
+            if (storedToken is null || !storedToken.HasAccessToken)
+            {
+                throw new InvalidOperationException(
+                    "cTrader OAuth token missing. Autopilot did not download real cTrader data for this range.");
+            }
+
+            client = new CTraderOpenApiHistoricalDataClient(config, mapper, storedToken);
+        }
+        else
+        {
+            client = new CTraderHistoricalDataClientStub(config, mapper, authContext.TokenState);
+        }
+
+        var download = DownloadPagedHistoricalCandles(client, request, maxRequests);
+        var importer = new CTraderTrendbarImporter(storagePaths);
+        var result = useRealClient
+            ? importer.ImportCandles(request, download.Candles, sourceName: "ctrader_openapi_autopilot_paged", stubData: false)
+            : importer.ImportStubCandles(request, download.Candles);
+
+        PublishCTraderEvent(
+            eventBus,
+            EventType.CTraderHistoricalDownloadCompleted,
+            EventSeverity.Info,
+            new
+            {
+                message = useRealClient
+                    ? "Research Autopilot historical download completed with real read-only Open API data."
+                    : "Research Autopilot historical download completed with stub data. No real cTrader data was loaded.",
+                result.DownloadId,
+                result.Symbol,
+                result.Timeframe,
+                result.OutputPath,
+                result.CandleCount,
+                result.FromUtc,
+                result.ToUtc,
+                result.StubData,
+                requests = download.Requests,
+                duplicatesSkipped = download.DuplicatesSkipped,
+                download.Truncated,
+                noAutoTrading = true,
+                humanReviewRequired = true
+            });
+
+        return new AutopilotDownloadResult(
+            Request: request,
+            ImportResult: result,
+            Requests: download.Requests,
+            DuplicatesSkipped: download.DuplicatesSkipped,
+            Truncated: download.Truncated,
+            Warnings: CombineWarnings(configLoad.Warnings, authContext.AuthStatus.Warnings, download.Warnings));
+    }
+
+    private IReadOnlyList<AutopilotDownloadPlan> BuildAutopilotDownloadPlans(
+        IReadOnlyList<ResearchProcessedRange> ranges,
+        DateTimeOffset targetFromUtc,
+        DateTimeOffset targetToUtc)
+    {
+        var plans = new List<AutopilotDownloadPlan>();
+        foreach (var symbol in new[] { "XAUUSD", "EURUSD", "GER40" })
+        foreach (var timeframe in new[] { "M5", "M15", "H1" })
+        {
+            var relevant = ranges
+                .Where(range => range.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase)
+                    && range.Timeframe.Equals(timeframe, StringComparison.OrdinalIgnoreCase)
+                    && range.FromUtc is not null
+                    && range.ToUtc is not null)
+                .ToList();
+            if (relevant.Count == 0)
+            {
+                plans.Add(CreateAutopilotPlan(symbol, timeframe, targetFromUtc, targetToUtc, "missing_range"));
+                continue;
+            }
+
+            var earliest = relevant.Min(range => range.FromUtc)!.Value;
+            var latest = relevant.Max(range => range.ToUtc)!.Value;
+            var interval = TimeframeInterval(timeframe);
+            if (latest < targetToUtc - interval)
+            {
+                plans.Add(CreateAutopilotPlan(symbol, timeframe, latest + interval, targetToUtc, "extend_forward"));
+            }
+            else if (earliest > targetFromUtc + interval)
+            {
+                plans.Add(CreateAutopilotPlan(symbol, timeframe, targetFromUtc, earliest - interval, "extend_backward"));
+            }
+        }
+
+        return plans
+            .Where(plan => plan.Request.FromUtc < plan.Request.ToUtc)
+            .OrderBy(plan => plan.Request.Timeframe == "M5" ? 0 : plan.Request.Timeframe == "M15" ? 1 : 2)
+            .ThenBy(plan => plan.Request.Symbol, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static AutopilotDownloadPlan CreateAutopilotPlan(
+        string symbol,
+        string timeframe,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        string reason)
+    {
+        return new AutopilotDownloadPlan(
+            new CTraderHistoricalDataRequest(
+                Symbol: symbol,
+                Timeframe: timeframe,
+                FromUtc: fromUtc,
+                ToUtc: toUtc),
+            reason);
+    }
+
+    private ResearchAutopilotReport WriteResearchAutopilotReport(
+        StoragePaths storagePaths,
+        DateTimeOffset startedAtUtc,
+        double requestedHours,
+        DateTimeOffset targetFromUtc,
+        DateTimeOffset targetToUtc,
+        int downloadPlans,
+        int downloadsAttempted,
+        IReadOnlyList<AutopilotDownloadResult> downloads,
+        StrategyResearchStepResult strategyResearch,
+        string patternCatalogPath,
+        IReadOnlyList<string> warnings)
+    {
+        var completedAtUtc = DateTimeOffset.UtcNow;
+        var report = new ResearchAutopilotReport(
+            ReportId: $"research_autopilot_{startedAtUtc:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
+            StartedAtUtc: startedAtUtc,
+            CompletedAtUtc: completedAtUtc,
+            RequestedHours: requestedHours,
+            TargetSymbols: ["XAUUSD", "EURUSD", "GER40"],
+            TargetTimeframes: ["M5", "M15", "H1"],
+            TargetFromUtc: targetFromUtc,
+            TargetToUtc: targetToUtc,
+            DownloadPlans: downloadPlans,
+            DownloadsAttempted: downloadsAttempted,
+            CandlesDownloaded: downloads.Sum(download => download.ImportResult.CandleCount),
+            DownloadRequests: downloads.Sum(download => download.Requests),
+            StrategyVariantsTested: strategyResearch.TestedNow,
+            StrategyResearchEntries: strategyResearch.Memory.ResearchEntries?.Count ?? 0,
+            PatternCatalogPath: patternCatalogPath,
+            InsightsPath: strategyResearch.InsightsPath,
+            Status: warnings.Count == 0 ? "completed" : "completed_with_warnings",
+            Warnings: warnings.Distinct(StringComparer.Ordinal).Take(80).ToList(),
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+
+        var directory = Path.Combine(storagePaths.Root, "strategy_research", "autopilot");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, $"{report.ReportId}.autopilot_report.json");
+        File.WriteAllText(path, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
+        File.WriteAllText(Path.Combine(directory, "latest_autopilot_report.json"), JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
+        return report;
     }
 
     private int ImportCsv()
@@ -2224,6 +2555,18 @@ internal sealed class HermesCli
 
     private sealed record HistoricalDownloadPageResult(
         IReadOnlyList<MarketDataCandle> Candles,
+        int Requests,
+        int DuplicatesSkipped,
+        bool Truncated,
+        IReadOnlyList<string> Warnings);
+
+    private sealed record AutopilotDownloadPlan(
+        CTraderHistoricalDataRequest Request,
+        string Reason);
+
+    private sealed record AutopilotDownloadResult(
+        CTraderHistoricalDataRequest Request,
+        CTraderTrendbarImportResult ImportResult,
         int Requests,
         int DuplicatesSkipped,
         bool Truncated,

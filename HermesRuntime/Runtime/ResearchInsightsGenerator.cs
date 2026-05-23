@@ -56,7 +56,9 @@ public sealed class ResearchInsightsGenerator
             NoAutoTrading: true,
             HumanReviewRequired: true,
             BestPatterns: BuildPatternPerformance(completed, patterns, descending: true, limit: 8),
-            WeakPatterns: BuildPatternPerformance(completed, patterns, descending: false, limit: 8));
+            WeakPatterns: BuildPatternPerformance(completed, patterns, descending: false, limit: 8),
+            AvoidCombinations: BuildAvoidCombinations(completed, patterns),
+            NextRecommendedTests: BuildNextRecommendedTests(completed, patterns));
 
         File.WriteAllText(InsightsPath, JsonSerializer.Serialize(summary, JsonDefaults.WriteOptions));
         File.WriteAllText(ClustersPath, JsonSerializer.Serialize(clusters, JsonDefaults.WriteOptions));
@@ -240,7 +242,11 @@ public sealed class ResearchInsightsGenerator
             $"best_sl:{BestParameter(results, result => result.Variant.StopLossAtrMultiplier.ToString("0.##"))}",
             $"weak_sl:{WeakParameter(results, result => result.Variant.StopLossAtrMultiplier.ToString("0.##"))}",
             $"best_confirmation:{BestParameter(results, result => result.Variant.RequireConfirmationCandle.ToString().ToLowerInvariant())}",
-            $"best_volatility_filter:{BestParameter(results, result => result.Variant.UseVolatilityFilter.ToString().ToLowerInvariant())}"
+            $"best_volatility_filter:{BestParameter(results, result => result.Variant.UseVolatilityFilter.ToString().ToLowerInvariant())}",
+            $"best_session:{BestParameter(results, result => result.Variant.SessionFilter ?? "any")}",
+            $"weak_session:{WeakParameter(results, result => result.Variant.SessionFilter ?? "any")}",
+            $"best_variant_timeframe:{BestParameter(results, result => result.Variant.Timeframe ?? "any")}",
+            $"weak_variant_timeframe:{WeakParameter(results, result => result.Variant.Timeframe ?? "any")}"
         ];
     }
 
@@ -320,6 +326,69 @@ public sealed class ResearchInsightsGenerator
         return groups
             .Take(limit)
             .Select(item => item.Line)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildAvoidCombinations(
+        IReadOnlyList<StrategyResearchResult> results,
+        IReadOnlyList<StrategyPatternDefinition> patterns)
+    {
+        var patternNames = patterns.ToDictionary(
+            pattern => pattern.Id,
+            pattern => pattern.Name,
+            StringComparer.OrdinalIgnoreCase);
+
+        return results
+            .Where(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(result => new
+            {
+                Pattern = result.Variant.PatternId ?? $"family:{result.Variant.Family}",
+                Session = result.Variant.SessionFilter ?? "any",
+                Timeframe = result.Variant.Timeframe ?? "any",
+                Rr = result.Variant.RiskRewardRatio.ToString("0.##"),
+                Sl = result.Variant.StopLossAtrMultiplier.ToString("0.##")
+            })
+            .Select(group =>
+            {
+                var name = patternNames.TryGetValue(group.Key.Pattern, out var patternName)
+                    ? patternName
+                    : group.Key.Pattern;
+                return new
+                {
+                    Line = $"{name}:session={group.Key.Session},timeframe={group.Key.Timeframe},rr={group.Key.Rr},sl={group.Key.Sl},avg={group.Average(result => result.Fitness.Score):0.####},count={group.Count()}",
+                    Score = group.Average(result => result.Fitness.Score),
+                    Count = group.Count()
+                };
+            })
+            .Where(item => item.Count >= 2 || item.Score < 0.55)
+            .OrderBy(item => item.Score)
+            .Take(8)
+            .Select(item => item.Line)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildNextRecommendedTests(
+        IReadOnlyList<StrategyResearchResult> results,
+        IReadOnlyList<StrategyPatternDefinition> patterns)
+    {
+        var patternNames = patterns.ToDictionary(
+            pattern => pattern.Id,
+            pattern => pattern.Name,
+            StringComparer.OrdinalIgnoreCase);
+
+        return results
+            .Where(result => result.Fitness.Score >= 0.82 && result.TradeCount > 0)
+            .GroupBy(result => result.Variant.PatternId ?? $"family:{result.Variant.Family}", StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(group => group.Average(result => result.Fitness.Score))
+            .Take(8)
+            .Select(group =>
+            {
+                var best = group.OrderByDescending(result => result.Fitness.Score).First();
+                var name = patternNames.TryGetValue(group.Key, out var patternName)
+                    ? patternName
+                    : group.Key;
+                return $"{name}: retest rr={best.Variant.RiskRewardRatio:0.##},sl={best.Variant.StopLossAtrMultiplier:0.##},session={best.Variant.SessionFilter ?? "any"},timeframe={best.Variant.Timeframe ?? "any"}";
+            })
             .ToList();
     }
 }

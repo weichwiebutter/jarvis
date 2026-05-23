@@ -16,5 +16,6 @@ public sealed record StrategyResearchResult(
     string Status,
     IReadOnlyList<string> Warnings,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
-
+    bool HumanReviewRequired,
+    DateTimeOffset? FromUtc = null,
+    DateTimeOffset? ToUtc = null);

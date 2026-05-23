@@ -9,4 +9,6 @@ public sealed record StrategyVariant(
     double StopLossAtrMultiplier,
     bool RequireConfirmationCandle,
     bool UseVolatilityFilter,
-    string? PatternId = null);
+    string? PatternId = null,
+    string? SessionFilter = null,
+    string? Timeframe = null);

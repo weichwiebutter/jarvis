@@ -17,4 +17,6 @@ public sealed record StrategyEvolutionSummary(
     bool NoAutoTrading,
     bool HumanReviewRequired,
     IReadOnlyList<string>? BestPatterns = null,
-    IReadOnlyList<string>? WeakPatterns = null);
+    IReadOnlyList<string>? WeakPatterns = null,
+    IReadOnlyList<string>? AvoidCombinations = null,
+    IReadOnlyList<string>? NextRecommendedTests = null);

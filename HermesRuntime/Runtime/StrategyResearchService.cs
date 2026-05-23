@@ -77,7 +77,8 @@ public sealed class StrategyResearchService
                 .Take(30)
                 .ToList(),
             NoAutoTrading: true,
-            HumanReviewRequired: true);
+            HumanReviewRequired: true,
+            ResearchEntries: BuildResearchEntries(allResults));
 
         WriteMemory(updated);
         return updated;
@@ -107,10 +108,14 @@ public sealed class StrategyResearchService
         var slValues = new[] { 1.0, 1.5 };
         var patternContexts = patterns.Count == 0
             ? StrategyDefinitions()
-                .Select(definition => (definition.Family, PatternId: (string?)null))
+                .Select(definition => (definition.Family, PatternId: (string?)null, Sessions: (IReadOnlyList<string?>)[null], Timeframes: (IReadOnlyList<string?>)[null]))
                 .ToList()
             : patterns
-                .Select(pattern => (Family: StrategyPatternCatalog.StrategyFamilyForPattern(pattern.Id), PatternId: (string?)pattern.Id))
+                .Select(pattern => (
+                    Family: StrategyPatternCatalog.StrategyFamilyForPattern(pattern.Id),
+                    PatternId: (string?)pattern.Id,
+                    Sessions: SessionFiltersFor(pattern),
+                    Timeframes: TimeframeFiltersFor(pattern)))
                 .ToList();
 
         foreach (var fastEma in fastEmaValues)
@@ -120,13 +125,25 @@ public sealed class StrategyResearchService
         foreach (var confirmation in new[] { false, true })
         foreach (var volatilityFilter in new[] { false, true })
         foreach (var context in patternContexts)
+        foreach (var sessionFilter in context.Sessions)
+        foreach (var timeframe in context.Timeframes)
         {
             if (fastEma >= slowEma)
             {
                 continue;
             }
 
-            variants.Add(CreateVariant(context.Family, fastEma, slowEma, rr, sl, confirmation, volatilityFilter, context.PatternId));
+            variants.Add(CreateVariant(
+                context.Family,
+                fastEma,
+                slowEma,
+                rr,
+                sl,
+                confirmation,
+                volatilityFilter,
+                context.PatternId,
+                sessionFilter,
+                timeframe));
         }
 
         variants.AddRange(GenerateAdaptiveVariants(memory, patterns));
@@ -173,7 +190,17 @@ public sealed class StrategyResearchService
                     continue;
                 }
 
-                var variant = CreateVariant(seed.Family, fast, slow, rr, sl, confirmation, volatilityFilter, seed.PatternId);
+                var variant = CreateVariant(
+                    seed.Family,
+                    fast,
+                    slow,
+                    rr,
+                    sl,
+                    confirmation,
+                    volatilityFilter,
+                    seed.PatternId,
+                    seed.SessionFilter,
+                    seed.Timeframe);
                 if (!tested.Contains(variant.VariantId))
                 {
                     yield return variant;
@@ -183,19 +210,25 @@ public sealed class StrategyResearchService
 
         var patternContexts = patterns.Count == 0
             ? StrategyDefinitions()
-                .Select(definition => (definition.Family, PatternId: (string?)null))
+                .Select(definition => (definition.Family, PatternId: (string?)null, Sessions: (IReadOnlyList<string?>)[null], Timeframes: (IReadOnlyList<string?>)[null]))
                 .ToList()
             : patterns
-                .Select(pattern => (Family: StrategyPatternCatalog.StrategyFamilyForPattern(pattern.Id), PatternId: (string?)pattern.Id))
+                .Select(pattern => (
+                    Family: StrategyPatternCatalog.StrategyFamilyForPattern(pattern.Id),
+                    PatternId: (string?)pattern.Id,
+                    Sessions: SessionFiltersFor(pattern),
+                    Timeframes: TimeframeFiltersFor(pattern)))
                 .ToList();
         foreach (var context in patternContexts)
         {
+            var sessionFilter = context.Sessions.FirstOrDefault();
+            var timeframe = context.Timeframes.FirstOrDefault();
             foreach (var variant in new[]
             {
-                CreateVariant(context.Family, 8, 24, 1.6, 1.2, true, true, context.PatternId),
-                CreateVariant(context.Family, 14, 40, 2.0, 1.8, true, false, context.PatternId),
-                CreateVariant(context.Family, 6, 18, 1.2, 0.8, false, true, context.PatternId),
-                CreateVariant(context.Family, 16, 55, 2.2, 2.0, true, true, context.PatternId)
+                CreateVariant(context.Family, 8, 24, 1.6, 1.2, true, true, context.PatternId, sessionFilter, timeframe),
+                CreateVariant(context.Family, 14, 40, 2.0, 1.8, true, false, context.PatternId, sessionFilter, timeframe),
+                CreateVariant(context.Family, 6, 18, 1.2, 0.8, false, true, context.PatternId, sessionFilter, timeframe),
+                CreateVariant(context.Family, 16, 55, 2.2, 2.0, true, true, context.PatternId, sessionFilter, timeframe)
             })
             {
                 if (!tested.Contains(variant.VariantId))
@@ -230,9 +263,11 @@ public sealed class StrategyResearchService
         double sl,
         bool confirmation,
         bool volatilityFilter,
-        string? patternId = null)
+        string? patternId = null,
+        string? sessionFilter = null,
+        string? timeframe = null)
     {
-        var idSeed = $"{family}|{patternId ?? "no_pattern"}|{fastEma}|{slowEma}|{rr:0.00}|{sl:0.00}|{confirmation}|{volatilityFilter}";
+        var idSeed = $"{family}|{patternId ?? "no_pattern"}|{sessionFilter ?? "any_session"}|{timeframe ?? "any_timeframe"}|{fastEma}|{slowEma}|{rr:0.00}|{sl:0.00}|{confirmation}|{volatilityFilter}";
         return new StrategyVariant(
             VariantId: $"variant_{ShortHash(idSeed)}",
             Family: family,
@@ -242,7 +277,9 @@ public sealed class StrategyResearchService
             StopLossAtrMultiplier: sl,
             RequireConfirmationCandle: confirmation,
             UseVolatilityFilter: volatilityFilter,
-            PatternId: patternId);
+            PatternId: patternId,
+            SessionFilter: sessionFilter,
+            Timeframe: timeframe);
     }
 
     private StrategyResearchResult EvaluateVariant(
@@ -251,10 +288,13 @@ public sealed class StrategyResearchService
     {
         var startedAtUtc = DateTimeOffset.UtcNow;
         var warnings = new List<string>();
-        var trades = features
+        var candidateFeatures = features
             .Where(feature => IsCandidate(variant, feature))
+            .ToList();
+        var trades = candidateFeatures
             .Select(feature => EvaluateTrade(variant, feature))
             .ToList();
+        var processedFeatures = candidateFeatures.Count == 0 ? features : candidateFeatures;
 
         if (trades.Count == 0)
         {
@@ -291,12 +331,14 @@ public sealed class StrategyResearchService
             LossCount: losses,
             AverageR: Math.Round(averageR, 4),
             MaxDrawdown: Math.Round(maxDrawdown, 4),
-            SymbolsProcessed: features.Select(feature => feature.Symbol).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value).ToList(),
-            TimeframesProcessed: features.Select(feature => feature.Timeframe).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value).ToList(),
+            SymbolsProcessed: processedFeatures.Select(feature => feature.Symbol).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value).ToList(),
+            TimeframesProcessed: processedFeatures.Select(feature => feature.Timeframe).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value).ToList(),
             Status: "completed",
             Warnings: warnings,
             NoAutoTrading: true,
-            HumanReviewRequired: true);
+            HumanReviewRequired: true,
+            FromUtc: processedFeatures.Count == 0 ? null : processedFeatures.Min(feature => feature.TimestampUtc),
+            ToUtc: processedFeatures.Count == 0 ? null : processedFeatures.Max(feature => feature.TimestampUtc));
     }
 
     private static bool IsCandidate(StrategyVariant variant, GeneratedFeatureVector feature)
@@ -316,6 +358,18 @@ public sealed class StrategyResearchService
         }
 
         if (variant.UseVolatilityFilter && feature.CandleRange <= 0)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(variant.SessionFilter)
+            && !feature.MockSession.Equals(variant.SessionFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(variant.Timeframe)
+            && !feature.Timeframe.Equals(variant.Timeframe, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -502,6 +556,64 @@ public sealed class StrategyResearchService
             Warnings: [],
             NoAutoTrading: true,
             HumanReviewRequired: true);
+    }
+
+    private static IReadOnlyList<StrategyResearchMemoryEntry> BuildResearchEntries(
+        IReadOnlyList<StrategyResearchResult> results)
+    {
+        return results
+            .Where(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(result => result.SymbolsProcessed.SelectMany(symbol => result.TimeframesProcessed.Select(timeframe =>
+                new StrategyResearchMemoryEntry(
+                    PatternId: result.Variant.PatternId ?? "-",
+                    StrategyVariantId: result.Variant.VariantId,
+                    Symbol: symbol,
+                    Timeframe: timeframe,
+                    FromUtc: result.FromUtc,
+                    ToUtc: result.ToUtc,
+                    FitnessScore: result.Fitness.Score,
+                    Status: ClassifyResearchStatus(result)))))
+            .OrderBy(entry => entry.PatternId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(entry => entry.StrategyVariantId, StringComparer.Ordinal)
+            .ThenBy(entry => entry.Symbol, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(entry => entry.Timeframe, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string ClassifyResearchStatus(StrategyResearchResult result)
+    {
+        if (result.TradeCount == 0 || result.Fitness.Score < 0.35)
+        {
+            return "rejected";
+        }
+
+        if (result.Fitness.Score < 0.55)
+        {
+            return "weak";
+        }
+
+        if (result.Fitness.Score < 0.82)
+        {
+            return "retest";
+        }
+
+        return "promising";
+    }
+
+    private static IReadOnlyList<string?> SessionFiltersFor(StrategyPatternDefinition pattern)
+    {
+        return new string?[] { null }
+            .Concat(pattern.PreferredSessions.Take(2))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string?> TimeframeFiltersFor(StrategyPatternDefinition pattern)
+    {
+        return new string?[] { null }
+            .Concat(pattern.RequiredTimeframes.Take(2))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static double CalculateMaxDrawdown(IReadOnlyList<double> trades)

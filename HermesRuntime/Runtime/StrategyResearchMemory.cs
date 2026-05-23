@@ -9,5 +9,5 @@ public sealed record StrategyResearchMemory(
     IReadOnlyList<StrategyResearchResult> RejectedVariants,
     IReadOnlyList<string> Warnings,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
-
+    bool HumanReviewRequired,
+    IReadOnlyList<StrategyResearchMemoryEntry>? ResearchEntries = null);
