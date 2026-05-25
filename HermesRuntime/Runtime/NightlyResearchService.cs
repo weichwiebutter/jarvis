@@ -19,6 +19,8 @@ public sealed class NightlyResearchService
 
     public string StatePath => Path.Combine(StateDirectory, "nightly_state.json");
 
+    public string StopRequestPath => Path.Combine(StateDirectory, "stop_requested.flag");
+
     public NightlyResearchConfig LoadConfig() => NightlyResearchConfig.LoadOrDefault(_configPath);
 
     public NightlyResearchState LoadState()
@@ -63,7 +65,14 @@ public sealed class NightlyResearchService
             LastAutopilotReportPath: null,
             LastError: null,
             NoAutoTrading: true,
-            HumanReviewRequired: true);
+            HumanReviewRequired: true,
+            NextScheduledStartUtc: CalculateNextScheduledStart(LoadConfig(), DateTimeOffset.Now).ToUniversalTime(),
+            LastStartUtc: null,
+            LastStopUtc: null,
+            CurrentlyRunning: false,
+            RuntimeDurationMinutes: 0,
+            ProcessId: null,
+            StopRequestedAtUtc: null);
 
     public NightlyResearchState CreateRunState(
         string runId,
@@ -87,6 +96,78 @@ public sealed class NightlyResearchService
             LastAutopilotReportPath: null,
             LastError: null,
             NoAutoTrading: true,
-            HumanReviewRequired: true);
+            HumanReviewRequired: true,
+            NextScheduledStartUtc: CalculateNextScheduledStart(LoadConfig(), DateTimeOffset.Now).ToUniversalTime(),
+            LastStartUtc: startedAtUtc,
+            LastStopUtc: null,
+            CurrentlyRunning: true,
+            RuntimeDurationMinutes: 0,
+            ProcessId: Environment.ProcessId,
+            StopRequestedAtUtc: null);
+    }
+
+    public bool IsStopRequested() => File.Exists(StopRequestPath);
+
+    public NightlyResearchState RequestStop()
+    {
+        Directory.CreateDirectory(StateDirectory);
+        File.WriteAllText(StopRequestPath, $"stop_requested_at={DateTimeOffset.UtcNow:O}{Environment.NewLine}");
+        var state = LoadState();
+        var updated = state with
+        {
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+            Status = state.CurrentlyRunning ? "stop_requested" : "stop_requested_no_running_process",
+            NextAction = state.CurrentlyRunning ? "wait_for_safe_stop_checkpoint" : "no_running_nightly_process",
+            StopRequestedAtUtc = DateTimeOffset.UtcNow,
+            LastStopUtc = state.CurrentlyRunning ? state.LastStopUtc : DateTimeOffset.UtcNow,
+            CurrentlyRunning = state.CurrentlyRunning
+        };
+
+        return WriteState(updated);
+    }
+
+    public DateTimeOffset? StopRequestedAtUtc()
+    {
+        if (!File.Exists(StopRequestPath))
+        {
+            return null;
+        }
+
+        return File.GetLastWriteTimeUtc(StopRequestPath);
+    }
+
+    public void ClearStopRequest()
+    {
+        try
+        {
+            if (File.Exists(StopRequestPath))
+            {
+                File.Delete(StopRequestPath);
+            }
+        }
+        catch (IOException)
+        {
+            // Best effort only; the next loop will observe the file if it remains.
+        }
+    }
+
+    public static DateTimeOffset CalculateNextScheduledStart(NightlyResearchConfig config, DateTimeOffset now)
+    {
+        var local = now.LocalDateTime;
+        var candidate = new DateTimeOffset(
+            local.Year,
+            local.Month,
+            local.Day,
+            config.StartHour,
+            0,
+            0,
+            now.Offset);
+
+        if (now >= candidate)
+        {
+            candidate = candidate.AddDays(1);
+        }
+
+        return candidate;
     }
 }

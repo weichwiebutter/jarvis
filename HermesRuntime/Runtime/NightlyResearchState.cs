@@ -15,4 +15,11 @@ public sealed record NightlyResearchState(
     string? LastAutopilotReportPath,
     string? LastError,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
+    bool HumanReviewRequired,
+    DateTimeOffset? NextScheduledStartUtc = null,
+    DateTimeOffset? LastStartUtc = null,
+    DateTimeOffset? LastStopUtc = null,
+    bool CurrentlyRunning = false,
+    double RuntimeDurationMinutes = 0,
+    int? ProcessId = null,
+    DateTimeOffset? StopRequestedAtUtc = null);

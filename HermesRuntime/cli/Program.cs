@@ -44,6 +44,7 @@ internal sealed class HermesCli
             "run-nightly-research" => RunNightlyResearch(),
             "run-nightly-beta3" => RunNightlyBeta3(),
             "nightly-status" => ShowNightlyStatus(),
+            "nightly-stop-request" => RequestNightlyStop(),
             "resource-status" => ShowResourceStatus(),
             "storage-status" => ShowStorageStatus(),
             "cleanup-plan" => ShowCleanupPlan(),
@@ -101,6 +102,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes run-nightly-research lokale Research-Pipeline ausfuehren");
         Console.WriteLine("  hermes run-nightly-beta3 Nightly Beta 3 Research-Orchestrierung starten");
         Console.WriteLine("  hermes nightly-status    Nightly Beta 3 Status anzeigen");
+        Console.WriteLine("  hermes nightly-stop-request sicheren Stop-Request fuer Nightly Beta 3 setzen");
         Console.WriteLine("  hermes resource-status   CPU/RAM/Disk ResourceGuard anzeigen");
         Console.WriteLine("  hermes storage-status    Storage-/Retention-Status anzeigen");
         Console.WriteLine("  hermes cleanup-plan      sicheren Storage Cleanup-Plan erzeugen");
@@ -552,10 +554,15 @@ internal sealed class HermesCli
 
         if (!config.IsInAllowedWindow(now))
         {
-            var state = nightly.WriteState(nightly.EmptyState("outside_nightly_window") with
+            var existing = nightly.LoadState();
+            var state = nightly.WriteState(existing with
             {
                 UpdatedAtUtc = DateTimeOffset.UtcNow,
-                NextAction = "wait_for_23_00_to_05_00_window"
+                Status = "outside_nightly_window",
+                NextAction = "wait_for_23_00_to_05_00_window",
+                NextScheduledStartUtc = NightlyResearchService.CalculateNextScheduledStart(config, now).ToUniversalTime(),
+                CurrentlyRunning = false,
+                ProcessId = null
             });
             WriteField("Status", state.Status);
             WriteField("Nightly State", DisplayPath(nightly.StatePath));
@@ -588,7 +595,9 @@ internal sealed class HermesCli
         var nextAction = "start_iteration";
         string? lastCheckpoint = null;
         string? lastError = null;
+        DateTimeOffset? stopRequestedAtUtc = null;
 
+        nightly.ClearStopRequest();
         nightly.WriteState(nightly.CreateRunState(runId, startedAtUtc, deadlineUtc, status, nextAction));
 
         using var eventStore = new EventStore(storagePaths);
@@ -597,6 +606,14 @@ internal sealed class HermesCli
 
         while (DateTimeOffset.UtcNow < deadlineUtc)
         {
+            if (nightly.IsStopRequested())
+            {
+                stopRequestedAtUtc = nightly.StopRequestedAtUtc();
+                status = "stopped_by_stop_request";
+                nextAction = "safe_stop_requested";
+                break;
+            }
+
             if (!config.IsInAllowedWindow(DateTimeOffset.Now))
             {
                 status = "stopped_outside_nightly_window";
@@ -673,7 +690,14 @@ internal sealed class HermesCli
                     LastAutopilotReportPath: null,
                     LastError: null,
                     NoAutoTrading: true,
-                    HumanReviewRequired: true));
+                    HumanReviewRequired: true,
+                    NextScheduledStartUtc: NightlyResearchService.CalculateNextScheduledStart(config, DateTimeOffset.Now).ToUniversalTime(),
+                    LastStartUtc: startedAtUtc,
+                    LastStopUtc: null,
+                    CurrentlyRunning: true,
+                    RuntimeDurationMinutes: Math.Round((DateTimeOffset.UtcNow - startedAtUtc).TotalMinutes, 2),
+                    ProcessId: Environment.ProcessId,
+                    StopRequestedAtUtc: null));
 
                 WriteSubHeader($"Nightly Iteration {iterations}");
                 WriteField("work_performed", iteration.WorkUnits.ToString());
@@ -706,7 +730,13 @@ internal sealed class HermesCli
                 break;
             }
 
-            Thread.Sleep(TimeSpan.FromSeconds(Math.Min(sleepSeconds, Math.Max(0, remaining.TotalSeconds))));
+            if (SleepUntilNextIterationOrStop(nightly, TimeSpan.FromSeconds(Math.Min(sleepSeconds, Math.Max(0, remaining.TotalSeconds)))))
+            {
+                stopRequestedAtUtc = nightly.StopRequestedAtUtc();
+                status = "stopped_by_stop_request";
+                nextAction = "safe_stop_requested";
+                break;
+            }
         }
 
         if (status == "running")
@@ -714,6 +744,14 @@ internal sealed class HermesCli
             status = "completed_deadline_reached";
             nextAction = "nightly_window_complete";
         }
+
+        lastCheckpoint ??= memoryService.WriteCheckpoint(
+            job,
+            iteration: iterations + 1,
+            status: status,
+            message: $"nightly_beta3 final checkpoint; status={status}; work_performed={workPerformed}; idle_iterations={idleIterations}",
+            memoryService.UpdateIndex(),
+            betaRunId: null);
 
         var finalState = nightly.WriteState(new NightlyResearchState(
             StateVersion: "nightly_research_state_v1",
@@ -730,13 +768,39 @@ internal sealed class HermesCli
             LastAutopilotReportPath: null,
             LastError: lastError,
             NoAutoTrading: true,
-            HumanReviewRequired: true));
+            HumanReviewRequired: true,
+            NextScheduledStartUtc: NightlyResearchService.CalculateNextScheduledStart(config, DateTimeOffset.Now).ToUniversalTime(),
+            LastStartUtc: startedAtUtc,
+            LastStopUtc: DateTimeOffset.UtcNow,
+            CurrentlyRunning: false,
+            RuntimeDurationMinutes: Math.Round((DateTimeOffset.UtcNow - startedAtUtc).TotalMinutes, 2),
+            ProcessId: null,
+            StopRequestedAtUtc: stopRequestedAtUtc));
+
+        nightly.ClearStopRequest();
 
         WriteField("Nightly State", DisplayPath(nightly.StatePath));
         WriteNightlyState(finalState);
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private static bool SleepUntilNextIterationOrStop(NightlyResearchService nightly, TimeSpan duration)
+    {
+        var deadline = DateTimeOffset.UtcNow.Add(duration);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (nightly.IsStopRequested())
+            {
+                return true;
+            }
+
+            var remaining = deadline - DateTimeOffset.UtcNow;
+            Thread.Sleep(TimeSpan.FromSeconds(Math.Min(5, Math.Max(0.1, remaining.TotalSeconds))));
+        }
+
+        return nightly.IsStopRequested();
     }
 
     private int ShowNightlyStatus()
@@ -746,6 +810,20 @@ internal sealed class HermesCli
         var service = new NightlyResearchService(storagePaths, Path.Combine(_runtimeRoot, "config", "nightly.research.json"));
         WriteField("State", DisplayPath(service.StatePath));
         WriteNightlyState(service.LoadState());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RequestNightlyStop()
+    {
+        WriteHeader("Hermes Nightly Beta 3 Stop Request");
+        var storagePaths = BuildStoragePaths();
+        var service = new NightlyResearchService(storagePaths, Path.Combine(_runtimeRoot, "config", "nightly.research.json"));
+        var state = service.RequestStop();
+        WriteField("Stop Request", DisplayPath(service.StopRequestPath));
+        WriteField("State", DisplayPath(service.StatePath));
+        WriteNightlyState(state);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -1836,8 +1914,19 @@ internal sealed class HermesCli
 
     private void WriteNightlyState(NightlyResearchState state)
     {
+        var currentlyRunning = state.CurrentlyRunning && IsProcessAlive(state.ProcessId);
+        var duration = currentlyRunning && state.LastStartUtc is not null
+            ? Math.Round((DateTimeOffset.UtcNow - state.LastStartUtc.Value).TotalMinutes, 2)
+            : state.RuntimeDurationMinutes;
+
         WriteField("Status", state.Status);
         WriteField("Run ID", string.IsNullOrWhiteSpace(state.RunId) ? "-" : state.RunId);
+        WriteField("Next Scheduled Start", state.NextScheduledStartUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "-");
+        WriteField("Last Start", state.LastStartUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "-");
+        WriteField("Last Stop", state.LastStopUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "-");
+        WriteField("Currently Running", currentlyRunning.ToString().ToLowerInvariant());
+        WriteField("Process ID", state.ProcessId?.ToString() ?? "-");
+        WriteField("Runtime Duration", $"{duration:0.##} min");
         WriteField("Started UTC", state.StartedAtUtc?.ToString("O") ?? "-");
         WriteField("Deadline UTC", state.DeadlineUtc?.ToString("O") ?? "-");
         WriteField("Iterations", state.IterationsCompleted.ToString());
@@ -1845,9 +1934,33 @@ internal sealed class HermesCli
         WriteField("Work Performed", state.WorkPerformed.ToString());
         WriteField("Next Action", state.NextAction);
         WriteField("Last Checkpoint", DisplayOptionalPath(state.LastCheckpointPath));
+        WriteField("Stop Requested UTC", state.StopRequestedAtUtc?.ToString("O") ?? "-");
         WriteField("Last Error", state.LastError ?? "-");
         WriteField("no_auto_trading", state.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", state.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private static bool IsProcessAlive(int? processId)
+    {
+        if (processId is null)
+        {
+            return false;
+        }
+
+        if (Directory.Exists($"/proc/{processId.Value}"))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(processId.Value);
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void WriteResourceSnapshot(ResourceSnapshot snapshot)
