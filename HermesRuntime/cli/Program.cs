@@ -51,8 +51,14 @@ internal sealed class HermesCli
             "run-long-research" => RunLongResearch(),
             "run-research-autopilot" => RunResearchAutopilot(),
             "run-strategy-research" => RunStrategyResearch(),
+            "run-walkforward-validation" => RunWalkForwardValidation(),
+            "simulation-status" => ShowSimulationStatus(),
+            "strategy-discovery-status" => ShowStrategyDiscoveryStatus(),
+            "overfit-report" => ShowOverfitReport(),
+            "robust-strategies" => ShowRobustStrategies(),
             "strategy-research-status" => ShowStrategyResearchStatus(),
             "top-strategies" => ShowTopStrategies(),
+            "knowledge-sources" => ShowKnowledgeSources(),
             "research-insights" => ShowResearchInsights(),
             "strategy-clusters" => ShowStrategyClusters(),
             "pattern-catalog" => ShowPatternCatalog(),
@@ -96,8 +102,14 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes run-long-research  checkpointed Long-Run Research starten");
         Console.WriteLine("  hermes run-research-autopilot kombinierte Data-/Pattern-/Strategy-Research-Pipeline starten");
         Console.WriteLine("  hermes run-strategy-research adaptive Strategy-Research-Varianten bewerten");
+        Console.WriteLine("  hermes run-walkforward-validation Walk-Forward-/Overfit-Validation ausfuehren");
+        Console.WriteLine("  hermes simulation-status Realistic Simulation Status anzeigen");
+        Console.WriteLine("  hermes strategy-discovery-status Trusted Strategy Discovery anzeigen");
+        Console.WriteLine("  hermes overfit-report     Overfit-/Risk-Report anzeigen");
+        Console.WriteLine("  hermes robust-strategies  robuste Strategy-Kandidaten anzeigen");
         Console.WriteLine("  hermes strategy-research-status Strategy-Research-Memory anzeigen");
         Console.WriteLine("  hermes top-strategies     beste Strategy-Research-Varianten anzeigen");
+        Console.WriteLine("  hermes knowledge-sources  kuratierte Strategy-Discovery-Quellen anzeigen");
         Console.WriteLine("  hermes research-insights  Strategy-Research-Insights anzeigen");
         Console.WriteLine("  hermes strategy-clusters  Strategy-Cluster anzeigen");
         Console.WriteLine("  hermes pattern-catalog    Strategy/Pattern Knowledge Base anzeigen");
@@ -722,6 +734,10 @@ internal sealed class HermesCli
 
         var updatedIndex = memoryService.UpdateIndex();
         var strategyResearch = RunStrategyResearchAndInsights(storagePaths);
+        var simulationReports = new RealisticSimulationService(storagePaths).Run();
+        var walkForward = new WalkForwardValidationService(storagePaths).Run();
+        var discovery = new StrategyDiscoveryService(storagePaths).Run();
+        new ResearchInsightsGenerator(storagePaths).Generate();
         var report = WriteResearchAutopilotReport(
             storagePaths,
             startedAtUtc,
@@ -763,11 +779,122 @@ internal sealed class HermesCli
         WriteField("Download Requests", report.DownloadRequests.ToString());
         WriteField("Strategy Variants Tested", report.StrategyVariantsTested.ToString());
         WriteField("Strategy Memory Entries", report.StrategyResearchEntries.ToString());
+        WriteField("Simulation Reports", simulationReports.Count.ToString());
+        WriteField("Walk-Forward Robust", walkForward.RobustStrategies.ToString());
+        WriteField("Overfit Suspects", walkForward.OverfitSuspectedStrategies.ToString());
+        WriteField("Discovery Strategies Analyzed", discovery.StrategiesAnalyzed.ToString());
+        WriteField("Discovery Risk Flags", discovery.RiskFlagsDetected.ToString());
         WriteField("Insights", DisplayPath(strategyResearch.InsightsPath));
         WriteField("Status", report.Status);
         WriteResearchMemoryIndex(updatedIndex);
         WriteStrategyResearchMemory(strategyResearch.Memory, limit: 3);
         WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunWalkForwardValidation()
+    {
+        WriteHeader("Hermes Walk-Forward Validation");
+        var storagePaths = BuildStoragePaths();
+        var simulations = new RealisticSimulationService(storagePaths).Run();
+        var report = new WalkForwardValidationService(storagePaths).Run();
+        new ResearchInsightsGenerator(storagePaths).Generate();
+
+        WriteField("Simulation Reports", simulations.Count.ToString());
+        WriteField("Walk-Forward Report", DisplayPath(Path.Combine(storagePaths.Root, "simulation", "walkforward_validation.json")));
+        WriteField("Overfit Report", DisplayPath(Path.Combine(storagePaths.Root, "simulation", "overfit_report.json")));
+        WriteWalkForwardSummary(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowSimulationStatus()
+    {
+        WriteHeader("Hermes Realistic Simulation Status");
+        var service = new RealisticSimulationService(BuildStoragePaths());
+        var reports = service.LoadReports();
+        if (reports.Count == 0)
+        {
+            WriteWarning("Keine Simulation-Reports gefunden. Nutze run-walkforward-validation.");
+            WriteSafety();
+            return 0;
+        }
+
+        WriteField("Simulation Root", DisplayPath(service.SimulationRoot));
+        WriteField("Reports", reports.Count.ToString());
+        WriteField("Latest UTC", reports.Max(report => report.CreatedAtUtc).ToString("O"));
+        WriteField("Average Stability", $"{reports.Average(report => report.Metrics.StabilityScore):0.####}");
+        WriteField("Average Profit Factor", $"{reports.Average(report => report.Metrics.ProfitFactor):0.####}");
+        WriteField("no_auto_trading", "true");
+        WriteField("human_review_required", "true");
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyDiscoveryStatus()
+    {
+        WriteHeader("Hermes Trusted Strategy Discovery");
+        var service = new StrategyDiscoveryService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Trusted Sources", DisplayPath(service.TrustedSourcesPath));
+        WriteField("Discovery Status", DisplayPath(service.DiscoveryStatusPath));
+        WriteField("Sources Whitelisted", report.SourcesWhitelisted.ToString());
+        WriteField("Local .cs Files Analyzed", report.LocalCsFilesAnalyzed.ToString());
+        WriteField("Strategies Analyzed", report.StrategiesAnalyzed.ToString());
+        WriteField("Risk Flags", report.RiskFlagsDetected.ToString());
+        WriteField("Foreign Code Executed", (!report.NoForeignCodeExecuted).ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowOverfitReport()
+    {
+        WriteHeader("Hermes Overfit Report");
+        var storagePaths = BuildStoragePaths();
+        var service = new WalkForwardValidationService(storagePaths);
+        var report = service.LoadReport() ?? service.Run();
+
+        WriteField("Overfit Report", DisplayPath(service.OverfitReportPath));
+        WriteWalkForwardSummary(report);
+        foreach (var item in report.Assessments.Where(item => item.StrategyConfidence == "overfit_suspected").Take(12))
+        {
+            WriteSubHeader($"{item.StrategyFamily} / {item.PatternId ?? "-"} / {item.StrategyVariantId}");
+            WriteField("Confidence", item.StrategyConfidence);
+            WriteField("Validation", $"{item.ValidationScore:0.####}");
+            WriteField("Out-of-Sample", $"{item.OutOfSampleScore:0.####}");
+            WriteMessages("Flags", item.OverfitFlags);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowRobustStrategies()
+    {
+        WriteHeader("Hermes Robust Strategies");
+        var storagePaths = BuildStoragePaths();
+        var service = new WalkForwardValidationService(storagePaths);
+        var report = service.LoadReport() ?? service.Run();
+
+        WriteField("Walk-Forward Report", DisplayPath(service.WalkForwardPath));
+        WriteWalkForwardSummary(report);
+        foreach (var item in report.Assessments.Where(item => item.Robust).Take(12))
+        {
+            WriteSubHeader($"{item.StrategyFamily} / {item.PatternId ?? "-"} / {item.StrategyVariantId}");
+            WriteField("Confidence", item.StrategyConfidence);
+            WriteField("Train", $"{item.TrainScore:0.####}");
+            WriteField("Validation", $"{item.ValidationScore:0.####}");
+            WriteField("Out-of-Sample", $"{item.OutOfSampleScore:0.####}");
+        }
+
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -816,6 +943,35 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowKnowledgeSources()
+    {
+        WriteHeader("Hermes Strategy Discovery Knowledge Sources");
+        var storagePaths = BuildStoragePaths();
+        var knowledgeCatalog = new TradingDeKnowledgeCatalog(storagePaths);
+        var sources = knowledgeCatalog.LoadOrCreateSources();
+        var patternCatalog = new StrategyPatternCatalog(storagePaths);
+        var patterns = patternCatalog.LoadOrCreateCatalog();
+        var tradingDePatterns = patterns
+            .Where(pattern => pattern.SourceName?.Equals("Trading.de", StringComparison.OrdinalIgnoreCase) == true)
+            .ToList();
+
+        WriteField("Sources", DisplayPath(knowledgeCatalog.SourcesPath));
+        WriteField("Source Count", sources.Count.ToString());
+        WriteField("Trading.de Catalog Entries", tradingDePatterns.Count.ToString());
+        foreach (var source in sources)
+        {
+            WriteSubHeader($"{source.SourceName} / {source.SourceId}");
+            WriteField("URL", source.SourceUrl);
+            WriteField("Category", source.Category);
+            WriteField("source_trust", source.SourceTrust);
+            WriteMessages("Concepts", source.ExtractedConcepts);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowStrategyClusters()
     {
         WriteHeader("Hermes Strategy Clusters");
@@ -847,9 +1003,15 @@ internal sealed class HermesCli
         foreach (var pattern in patterns)
         {
             WriteSubHeader($"{pattern.Name} / {pattern.Id}");
+            WriteField("Source", pattern.SourceName ?? "local");
+            WriteField("Source URL", pattern.SourceUrl ?? "-");
+            WriteField("source_trust", pattern.SourceTrust ?? "-");
+            WriteField("Category", pattern.Category ?? "-");
             WriteField("Direction Bias", pattern.DirectionBias);
             WriteField("Strategy Family", StrategyPatternCatalog.StrategyFamilyForPattern(pattern.Id));
             WriteField("Timeframes", string.Join(", ", pattern.RequiredTimeframes));
+            WriteField("Market Context", pattern.MarketContext ?? "-");
+            WriteField("Test Priority", pattern.TestPriority ?? "-");
             WriteField("Sessions", string.Join(", ", pattern.PreferredSessions));
             WriteField("Regimes", string.Join(", ", pattern.MarketRegimes));
             WriteField("Risk Hint", pattern.RiskModelHint);
@@ -869,10 +1031,12 @@ internal sealed class HermesCli
         var generator = new ResearchInsightsGenerator(BuildStoragePaths());
         var catalog = new StrategyPatternCatalog(BuildStoragePaths());
         var performance = generator.LoadPatternPerformance();
+        var sourcePerformance = generator.LoadSourcePerformance();
 
         WriteField("Catalog", DisplayPath(catalog.CatalogPath));
         WriteField("Insights", DisplayPath(generator.InsightsPath));
         WriteMessages("Pattern Performance", performance);
+        WriteMessages("Source Performance", sourcePerformance);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -1117,12 +1281,32 @@ internal sealed class HermesCli
         WriteMessages("Strategy Rankings", insights.StrategyRankings);
         WriteMessages("Best Patterns", insights.BestPatterns ?? Array.Empty<string>());
         WriteMessages("Weak Patterns", insights.WeakPatterns ?? Array.Empty<string>());
+        WriteMessages("Trading.de Best Patterns", insights.BestTradingDePatterns ?? Array.Empty<string>());
+        WriteMessages("Source Performance", insights.SourcePerformance ?? Array.Empty<string>());
+        WriteMessages("Robust Strategies", insights.RobustStrategies ?? Array.Empty<string>());
+        WriteMessages("Overfit Suspected", insights.OverfitSuspectedStrategies ?? Array.Empty<string>());
+        WriteMessages("High Risk Strategies", insights.HighRiskStrategies ?? Array.Empty<string>());
+        WriteMessages("Stable Symbol/Timeframe", insights.StableSymbolTimeframeCombinations ?? Array.Empty<string>());
         WriteMessages("Avoid Combinations", insights.AvoidCombinations ?? Array.Empty<string>());
         WriteMessages("Next Recommended Tests", insights.NextRecommendedTests ?? Array.Empty<string>());
         WriteMessages("Parameter Statistics", insights.ParameterStatistics);
         WriteMessages("Timeframe Comparisons", insights.TimeframeComparisons);
         WriteField("no_auto_trading", insights.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", insights.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteWalkForwardSummary(WalkForwardValidationReport report)
+    {
+        WriteField("Report ID", report.ReportId);
+        WriteField("Created UTC", report.CreatedAtUtc.ToString("O"));
+        WriteField("Train Range", $"{report.TrainFromUtc:yyyy-MM-dd} -> {report.TrainToUtc:yyyy-MM-dd}");
+        WriteField("Validation Range", $"{report.ValidationFromUtc:yyyy-MM-dd} -> {report.ValidationToUtc:yyyy-MM-dd}");
+        WriteField("Strategies Evaluated", report.StrategiesEvaluated.ToString());
+        WriteField("Robust Strategies", report.RobustStrategies.ToString());
+        WriteField("Overfit Suspected", report.OverfitSuspectedStrategies.ToString());
+        WriteField("High Risk Strategies", report.HighRiskStrategies.ToString());
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
     }
 
     private void WriteStrategyCluster(StrategyCluster cluster)

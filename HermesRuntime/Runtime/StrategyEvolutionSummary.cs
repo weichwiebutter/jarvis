@@ -19,4 +19,10 @@ public sealed record StrategyEvolutionSummary(
     IReadOnlyList<string>? BestPatterns = null,
     IReadOnlyList<string>? WeakPatterns = null,
     IReadOnlyList<string>? AvoidCombinations = null,
-    IReadOnlyList<string>? NextRecommendedTests = null);
+    IReadOnlyList<string>? NextRecommendedTests = null,
+    IReadOnlyList<string>? SourcePerformance = null,
+    IReadOnlyList<string>? BestTradingDePatterns = null,
+    IReadOnlyList<string>? RobustStrategies = null,
+    IReadOnlyList<string>? OverfitSuspectedStrategies = null,
+    IReadOnlyList<string>? HighRiskStrategies = null,
+    IReadOnlyList<string>? StableSymbolTimeframeCombinations = null);

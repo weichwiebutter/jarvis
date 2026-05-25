@@ -38,6 +38,7 @@ public sealed class ResearchInsightsGenerator
             .Take(12)
             .ToList();
         var clusters = BuildClusters(completed);
+        var walkForward = new WalkForwardValidationService(_storagePaths).LoadReport();
 
         var summary = new StrategyEvolutionSummary(
             SummaryVersion: SummaryVersion,
@@ -58,7 +59,13 @@ public sealed class ResearchInsightsGenerator
             BestPatterns: BuildPatternPerformance(completed, patterns, descending: true, limit: 8),
             WeakPatterns: BuildPatternPerformance(completed, patterns, descending: false, limit: 8),
             AvoidCombinations: BuildAvoidCombinations(completed, patterns),
-            NextRecommendedTests: BuildNextRecommendedTests(completed, patterns));
+            NextRecommendedTests: BuildNextRecommendedTests(completed, patterns),
+            SourcePerformance: BuildSourcePerformance(completed, patterns),
+            BestTradingDePatterns: BuildTradingDePatternPerformance(completed, patterns, limit: 8),
+            RobustStrategies: BuildRobustStrategies(walkForward, completed),
+            OverfitSuspectedStrategies: BuildOverfitStrategies(walkForward, completed),
+            HighRiskStrategies: BuildHighRiskStrategies(walkForward),
+            StableSymbolTimeframeCombinations: BuildStableSymbolTimeframeCombinations(completed));
 
         File.WriteAllText(InsightsPath, JsonSerializer.Serialize(summary, JsonDefaults.WriteOptions));
         File.WriteAllText(ClustersPath, JsonSerializer.Serialize(clusters, JsonDefaults.WriteOptions));
@@ -113,6 +120,16 @@ public sealed class ResearchInsightsGenerator
         return BuildPatternPerformance(completed, patterns, descending: true, limit: 50);
     }
 
+    public IReadOnlyList<string> LoadSourcePerformance()
+    {
+        var patterns = new StrategyPatternCatalog(_storagePaths).LoadOrCreateCatalog();
+        var completed = LoadResults()
+            .Where(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return BuildSourcePerformance(completed, patterns);
+    }
+
     private IEnumerable<StrategyResearchResult> LoadResults()
     {
         var directory = Path.Combine(StrategyResearchRoot, "results");
@@ -145,7 +162,7 @@ public sealed class ResearchInsightsGenerator
     private static IReadOnlyList<StrategyCluster> BuildClusters(IReadOnlyList<StrategyResearchResult> results)
     {
         return results
-            .GroupBy(result => result.Variant.Family)
+            .GroupBy(result => ClusterFamily(result))
             .Select(group =>
             {
                 var ordered = group.OrderByDescending(result => result.Fitness.Score).ToList();
@@ -170,6 +187,36 @@ public sealed class ResearchInsightsGenerator
             })
             .OrderByDescending(cluster => cluster.BestFitness)
             .ToList();
+    }
+
+    private static string ClusterFamily(StrategyResearchResult result)
+    {
+        var patternId = result.Variant.PatternId ?? string.Empty;
+        if (patternId.Contains("breakout", StringComparison.OrdinalIgnoreCase)
+            || patternId.Contains("range", StringComparison.OrdinalIgnoreCase)
+            || result.Variant.Family.Contains("breakout", StringComparison.OrdinalIgnoreCase))
+        {
+            return "breakout_family";
+        }
+
+        if (patternId.Contains("engulfing", StringComparison.OrdinalIgnoreCase))
+        {
+            return "engulfing_family";
+        }
+
+        if (patternId.Contains("pullback", StringComparison.OrdinalIgnoreCase)
+            || result.Variant.Family.Contains("pullback", StringComparison.OrdinalIgnoreCase))
+        {
+            return "pullback_family";
+        }
+
+        if (patternId.Contains("trend", StringComparison.OrdinalIgnoreCase)
+            || result.Variant.Family.Contains("trend", StringComparison.OrdinalIgnoreCase))
+        {
+            return "trend_family";
+        }
+
+        return result.Variant.Family;
     }
 
     private static IReadOnlyList<string> BestValues(IEnumerable<string> values)
@@ -329,6 +376,60 @@ public sealed class ResearchInsightsGenerator
             .ToList();
     }
 
+    private static IReadOnlyList<string> BuildTradingDePatternPerformance(
+        IReadOnlyList<StrategyResearchResult> results,
+        IReadOnlyList<StrategyPatternDefinition> patterns,
+        int limit)
+    {
+        var tradingDeIds = patterns
+            .Where(pattern => pattern.SourceName?.Equals("Trading.de", StringComparison.OrdinalIgnoreCase) == true)
+            .Select(pattern => pattern.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var tradingDeResults = results
+            .Where(result => result.Variant.PatternId is not null && tradingDeIds.Contains(result.Variant.PatternId))
+            .ToList();
+
+        return BuildPatternPerformance(tradingDeResults, patterns, descending: true, limit: limit);
+    }
+
+    private static IReadOnlyList<string> BuildSourcePerformance(
+        IReadOnlyList<StrategyResearchResult> results,
+        IReadOnlyList<StrategyPatternDefinition> patterns)
+    {
+        var patternsById = patterns.ToDictionary(
+            pattern => pattern.Id,
+            pattern => pattern,
+            StringComparer.OrdinalIgnoreCase);
+
+        return results
+            .GroupBy(result =>
+            {
+                if (result.Variant.PatternId is not null
+                    && patternsById.TryGetValue(result.Variant.PatternId, out var pattern))
+                {
+                    return $"{pattern.SourceName ?? "local"}|{pattern.SourceUrl ?? "-"}";
+                }
+
+                return $"local|family:{result.Variant.Family}";
+            }, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var parts = group.Key.Split('|', 2);
+                var sourceName = parts[0];
+                var sourceUrl = parts.Length > 1 ? parts[1] : "-";
+                return new
+                {
+                    Line = $"{sourceName}:{sourceUrl}:avg={group.Average(result => result.Fitness.Score):0.####},best={group.Max(result => result.Fitness.Score):0.####},count={group.Count()}",
+                    Score = group.Average(result => result.Fitness.Score)
+                };
+            })
+            .OrderByDescending(item => item.Score)
+            .ThenBy(item => item.Line, StringComparer.OrdinalIgnoreCase)
+            .Take(16)
+            .Select(item => item.Line)
+            .ToList();
+    }
+
     private static IReadOnlyList<string> BuildAvoidCombinations(
         IReadOnlyList<StrategyResearchResult> results,
         IReadOnlyList<StrategyPatternDefinition> patterns)
@@ -389,6 +490,69 @@ public sealed class ResearchInsightsGenerator
                     : group.Key;
                 return $"{name}: retest rr={best.Variant.RiskRewardRatio:0.##},sl={best.Variant.StopLossAtrMultiplier:0.##},session={best.Variant.SessionFilter ?? "any"},timeframe={best.Variant.Timeframe ?? "any"}";
             })
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildRobustStrategies(
+        WalkForwardValidationReport? walkForward,
+        IReadOnlyList<StrategyResearchResult> results)
+    {
+        if (walkForward is not null && walkForward.Assessments.Count > 0)
+        {
+            return walkForward.Assessments
+                .Where(item => item.Robust)
+                .OrderByDescending(item => item.ValidationScore)
+                .Take(12)
+                .Select(item => $"{item.StrategyFamily}/{item.PatternId ?? "-"}:{item.StrategyVariantId}:validation={item.ValidationScore:0.####},oos={item.OutOfSampleScore:0.####}")
+                .ToList();
+        }
+
+        return results
+            .Where(result => result.Fitness.Score >= 0.82 && result.Fitness.Winrate is >= 0.35 and <= 0.95)
+            .OrderByDescending(result => result.Fitness.Score)
+            .Take(12)
+            .Select(result => $"{result.Variant.Family}/{result.Variant.PatternId ?? "-"}:{result.Variant.VariantId}:score={result.Fitness.Score:0.####}")
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildOverfitStrategies(
+        WalkForwardValidationReport? walkForward,
+        IReadOnlyList<StrategyResearchResult> results)
+    {
+        if (walkForward is not null && walkForward.Assessments.Count > 0)
+        {
+            return walkForward.Assessments
+                .Where(item => item.StrategyConfidence == "overfit_suspected")
+                .Take(16)
+                .Select(item => $"{item.StrategyFamily}/{item.PatternId ?? "-"}:{item.StrategyVariantId}:{string.Join("+", item.OverfitFlags)}")
+                .ToList();
+        }
+
+        return results
+            .Where(result => result.Fitness.Winrate >= 0.98 && result.TradeCount >= 500)
+            .Take(16)
+            .Select(result => $"{result.Variant.Family}/{result.Variant.PatternId ?? "-"}:{result.Variant.VariantId}:suspicious_winrate={result.Fitness.Winrate:0.####}")
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildHighRiskStrategies(WalkForwardValidationReport? walkForward)
+    {
+        return walkForward?.Assessments
+            .Where(item => item.HighRisk)
+            .Take(16)
+            .Select(item => $"{item.StrategyFamily}/{item.PatternId ?? "-"}:{item.StrategyVariantId}:confidence={item.StrategyConfidence}")
+            .ToList() ?? [];
+    }
+
+    private static IReadOnlyList<string> BuildStableSymbolTimeframeCombinations(IReadOnlyList<StrategyResearchResult> results)
+    {
+        return results
+            .Where(result => result.Fitness.Score >= 0.72)
+            .SelectMany(result => result.SymbolsProcessed.SelectMany(symbol => result.TimeframesProcessed.Select(timeframe => new { symbol, timeframe, result.Fitness.Score })))
+            .GroupBy(item => $"{item.symbol}:{item.timeframe}", StringComparer.OrdinalIgnoreCase)
+            .Select(group => $"{group.Key}:avg={group.Average(item => item.Score):0.####},count={group.Count()}")
+            .OrderByDescending(line => line)
+            .Take(12)
             .ToList();
     }
 }

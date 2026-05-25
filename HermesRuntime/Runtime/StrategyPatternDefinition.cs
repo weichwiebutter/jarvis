@@ -11,4 +11,14 @@ public sealed record StrategyPatternDefinition(
     IReadOnlyList<PatternRuleStub> TriggerRules,
     IReadOnlyList<PatternRuleStub> InvalidationRules,
     string RiskModelHint,
-    IReadOnlyList<PatternTag> Tags);
+    IReadOnlyList<PatternTag> Tags,
+    string? SourceUrl = null,
+    string? SourceName = null,
+    string? Category = null,
+    string? DescriptionShort = null,
+    string? MarketContext = null,
+    IReadOnlyList<string>? PossibleTimeframes = null,
+    string? TriggerRuleStub = null,
+    string? InvalidationRuleStub = null,
+    string? TestPriority = null,
+    string? SourceTrust = null);

@@ -20,18 +20,22 @@ public sealed class StrategyPatternCatalog
         Directory.CreateDirectory(StrategyResearchRoot);
         var existing = LoadCatalog();
         var defaults = DefaultPatterns();
-        var missingDefaults = defaults
-            .Where(pattern => existing.All(current => !current.Id.Equals(pattern.Id, StringComparison.OrdinalIgnoreCase)))
-            .ToList();
-        if (missingDefaults.Count == 0 && existing.Count > 0)
+        var mergedById = defaults.ToDictionary(
+            pattern => pattern.Id,
+            pattern => pattern,
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var pattern in existing)
         {
-            return existing;
+            if (mergedById.TryGetValue(pattern.Id, out var curated)
+                && ShouldPreferCurated(curated, pattern))
+            {
+                continue;
+            }
+
+            mergedById[pattern.Id] = pattern;
         }
 
-        var merged = existing
-            .Concat(missingDefaults)
-            .GroupBy(pattern => pattern.Id, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
+        var merged = mergedById.Values
             .OrderBy(pattern => pattern.Id, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -76,13 +80,25 @@ public sealed class StrategyPatternCatalog
         patternId switch
         {
             "inside_bar_breakout" or "first_candle_breakout" => "breakout",
-            "breakout_continuation" => "trend_continuation",
-            "mean_reversion_rejection" or "liquidity_sweep_reversal" => "mean_reversion",
-            "bullish_engulfing" or "bearish_engulfing" or "ema_pullback" => "ema_pullback",
+            "breakout" or "support_resistance_breakout" or "triangle_breakout" or "gap_trading" or "session_breakout" or "volatility_expansion" or "range_breakout" => "breakout",
+            "breakout_continuation" or "trend_following" or "swing_trading" => "trend_continuation",
+            "mean_reversion" or "mean_reversion_rejection" or "liquidity_sweep" or "liquidity_sweep_reversal" or "support_resistance" or "smart_money_concepts" or "double_top" or "double_bottom" => "mean_reversion",
+            "bullish_engulfing" or "bearish_engulfing" or "ema_pullback" or "pullback" or "price_action" or "inside_bar" or "pin_bar" or "doji" or "hammer" or "shooting_star" => "ema_pullback",
+            "scalping" or "daytrading" or "news_trading" => "trend_continuation",
             _ => "ema_pullback"
         };
 
     public static IReadOnlyList<StrategyPatternDefinition> DefaultPatterns() =>
+        BasePatterns()
+            .Concat(TradingDeKnowledgeCatalog.PatternDefinitions())
+            .GroupBy(pattern => pattern.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group
+                .OrderByDescending(pattern => pattern.SourceName?.Equals("Trading.de", StringComparison.OrdinalIgnoreCase) == true)
+                .First())
+            .OrderBy(pattern => pattern.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static IReadOnlyList<StrategyPatternDefinition> BasePatterns() =>
     [
         new(
             Id: "bearish_engulfing",
@@ -237,6 +253,16 @@ public sealed class StrategyPatternCatalog
             RiskModelHint: "Stop beyond rejection extreme; avoid strong trend continuation regimes.",
             Tags: [Tag("mean_reversion"), Tag("rejection"), Tag("range")])
     ];
+
+    private static bool ShouldPreferCurated(
+        StrategyPatternDefinition curated,
+        StrategyPatternDefinition existing)
+    {
+        return !string.IsNullOrWhiteSpace(curated.SourceUrl)
+            && (string.IsNullOrWhiteSpace(existing.SourceUrl)
+                || string.IsNullOrWhiteSpace(existing.SourceTrust)
+                || !existing.SourceTrust.Equals("curated_public_education", StringComparison.OrdinalIgnoreCase));
+    }
 
     private static PatternRuleStub Rule(string id, string description, IReadOnlyList<string> inputs) =>
         new(id, description, inputs, StubOnly: true);
