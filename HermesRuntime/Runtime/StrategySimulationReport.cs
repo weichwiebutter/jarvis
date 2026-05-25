@@ -13,4 +13,7 @@ public sealed record StrategySimulationReport(
     IReadOnlyList<SimulationTrade> SampleTrades,
     IReadOnlyList<string> RealityAdjustments,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
+    bool HumanReviewRequired,
+    BrokerRealityProfile? BrokerRealityProfile = null,
+    SimulationCostModel? CostModel = null,
+    RealisticTradeSimulation? TradeSimulation = null);

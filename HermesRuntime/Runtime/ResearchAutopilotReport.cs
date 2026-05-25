@@ -20,4 +20,9 @@ public sealed record ResearchAutopilotReport(
     string Status,
     IReadOnlyList<string> Warnings,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
+    bool HumanReviewRequired,
+    double ElapsedMinutes = 0,
+    int IterationsCompleted = 1,
+    int WorkPerformed = 0,
+    int IdleIterations = 0,
+    string NextAction = "");

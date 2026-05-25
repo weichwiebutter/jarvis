@@ -42,6 +42,12 @@ internal sealed class HermesCli
             "import-csv" => ImportCsv(),
             "generate-features" => GenerateFeatures(),
             "run-nightly-research" => RunNightlyResearch(),
+            "run-nightly-beta3" => RunNightlyBeta3(),
+            "nightly-status" => ShowNightlyStatus(),
+            "resource-status" => ShowResourceStatus(),
+            "storage-status" => ShowStorageStatus(),
+            "cleanup-plan" => ShowCleanupPlan(),
+            "cleanup-apply" => ApplyCleanup(),
             "research-status" => ShowResearchStatus(),
             "research-report" => ShowResearchReport(),
             "run-beta-learning" => RunBetaLearning(),
@@ -93,6 +99,12 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes import-csv         cTrader Candle-CSV lokal importieren");
         Console.WriteLine("  hermes generate-features  FeatureVectors aus lokalen Candle-Daten erzeugen");
         Console.WriteLine("  hermes run-nightly-research lokale Research-Pipeline ausfuehren");
+        Console.WriteLine("  hermes run-nightly-beta3 Nightly Beta 3 Research-Orchestrierung starten");
+        Console.WriteLine("  hermes nightly-status    Nightly Beta 3 Status anzeigen");
+        Console.WriteLine("  hermes resource-status   CPU/RAM/Disk ResourceGuard anzeigen");
+        Console.WriteLine("  hermes storage-status    Storage-/Retention-Status anzeigen");
+        Console.WriteLine("  hermes cleanup-plan      sicheren Storage Cleanup-Plan erzeugen");
+        Console.WriteLine("  hermes cleanup-apply --safe sicheren Cleanup-Plan anwenden");
         Console.WriteLine("  hermes research-status    letzten Nightly-Research-Report anzeigen");
         Console.WriteLine("  hermes research-report    letzten ResearchSummaryReport anzeigen");
         Console.WriteLine("  hermes run-beta-learning  Trading Learning Beta 1 lokal ausfuehren");
@@ -512,6 +524,297 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunNightlyBeta3()
+    {
+        WriteHeader("Hermes Nightly Robust Research Beta 3");
+        var storagePaths = BuildStoragePaths();
+        var configPath = Path.Combine(_runtimeRoot, "config", "nightly.research.json");
+        var nightly = new NightlyResearchService(storagePaths, configPath);
+        var config = nightly.LoadConfig();
+        var now = DateTimeOffset.Now;
+        var maxRuntimeHours = ReadDoubleOption(_args, "--max-runtime-hours", config.MaxRuntimeHours, min: 0.01, max: 24);
+        var sleepSeconds = ReadIntOption(
+            _args,
+            "--sleep-seconds",
+            fallback: config.SleepSecondsBetweenIterations,
+            min: 0,
+            max: 3600);
+        var maxIdleIterations = ReadIntOption(
+            _args,
+            "--max-idle-iterations",
+            fallback: config.MaxIdleIterations,
+            min: 1,
+            max: 1000);
+
+        WriteField("Config", DisplayPath(configPath));
+        WriteField("Allowed Window", $"{config.StartHour:00}:00 -> {config.EndHour:00}:00");
+        WriteField("Current Local Time", now.ToString("yyyy-MM-dd HH:mm:ss zzz"));
+
+        if (!config.IsInAllowedWindow(now))
+        {
+            var state = nightly.WriteState(nightly.EmptyState("outside_nightly_window") with
+            {
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+                NextAction = "wait_for_23_00_to_05_00_window"
+            });
+            WriteField("Status", state.Status);
+            WriteField("Nightly State", DisplayPath(nightly.StatePath));
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        var deadlineUtc = startedAtUtc.AddHours(maxRuntimeHours);
+        var runId = $"nightly_beta3_{startedAtUtc:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}";
+        var memoryService = new ResearchMemoryIndexService(storagePaths);
+        var configLoad = LoadCTraderConfig();
+        var authContext = BuildCTraderAuthContext(configLoad, storagePaths);
+        var targetToUtc = new DateTimeOffset(DateTime.UtcNow.Year, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var targetFromUtc = targetToUtc.AddYears(-1);
+        var job = new LongRunResearchJob(
+            JobId: runId,
+            StartedAtUtc: startedAtUtc,
+            DeadlineUtc: deadlineUtc,
+            RequestedHours: maxRuntimeHours,
+            RequestedBy: "hermes_nightly_beta3",
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+
+        var iterations = 0;
+        var idleIterations = 0;
+        var workPerformed = 0;
+        var status = "running";
+        var nextAction = "start_iteration";
+        string? lastCheckpoint = null;
+        string? lastError = null;
+
+        nightly.WriteState(nightly.CreateRunState(runId, startedAtUtc, deadlineUtc, status, nextAction));
+
+        using var eventStore = new EventStore(storagePaths);
+        var eventBus = new EventBus();
+        eventBus.Subscribe(eventStore.Append);
+
+        while (DateTimeOffset.UtcNow < deadlineUtc)
+        {
+            if (!config.IsInAllowedWindow(DateTimeOffset.Now))
+            {
+                status = "stopped_outside_nightly_window";
+                nextAction = "wait_for_next_window";
+                break;
+            }
+
+            var resources = new ResourceGuard(storagePaths).Check();
+            var cleanupPlan = new StorageHygieneService(storagePaths).BuildPlan();
+            if (resources.ShouldStop)
+            {
+                status = "stopped_resource_guard";
+                nextAction = "review_resource_status";
+                break;
+            }
+
+            if (resources.ShouldPause)
+            {
+                status = "paused_resource_guard";
+                nextAction = "sleep_then_recheck_resources";
+                Thread.Sleep(TimeSpan.FromSeconds(sleepSeconds));
+                continue;
+            }
+
+            try
+            {
+                var iteration = RunResearchAutopilotIteration(
+                    storagePaths,
+                    memoryService,
+                    configLoad,
+                    authContext,
+                    eventBus,
+                    job,
+                    iterations + 1,
+                    targetFromUtc,
+                    targetToUtc,
+                    maxDownloads: Math.Min(9, config.AllowedSymbols.Count * config.AllowedTimeframes.Count),
+                    maxRequests: 500,
+                    inheritedWarnings: []);
+                eventStore.Flush();
+
+                iterations++;
+                if (iteration.WorkPerformed)
+                {
+                    idleIterations = 0;
+                    workPerformed += iteration.WorkUnits;
+                }
+                else
+                {
+                    idleIterations++;
+                }
+
+                nextAction = iteration.NextAction;
+                lastCheckpoint = memoryService.WriteCheckpoint(
+                    job,
+                    iterations,
+                    iteration.Status,
+                    $"nightly_beta3 work_performed={iteration.WorkUnits}; idle_iterations={idleIterations}; cleanup_candidates={cleanupPlan.Candidates.Count}",
+                    iteration.Index,
+                    betaRunId: iteration.BetaReport?.RunId);
+
+                nightly.WriteState(new NightlyResearchState(
+                    StateVersion: "nightly_research_state_v1",
+                    UpdatedAtUtc: DateTimeOffset.UtcNow,
+                    Status: "running",
+                    RunId: runId,
+                    StartedAtUtc: startedAtUtc,
+                    DeadlineUtc: deadlineUtc,
+                    IterationsCompleted: iterations,
+                    IdleIterations: idleIterations,
+                    WorkPerformed: workPerformed,
+                    NextAction: nextAction,
+                    LastCheckpointPath: lastCheckpoint,
+                    LastAutopilotReportPath: null,
+                    LastError: null,
+                    NoAutoTrading: true,
+                    HumanReviewRequired: true));
+
+                WriteSubHeader($"Nightly Iteration {iterations}");
+                WriteField("work_performed", iteration.WorkUnits.ToString());
+                WriteField("idle_iterations", idleIterations.ToString());
+                WriteField("resource_action", resources.Action);
+                WriteField("cleanup_candidates", cleanupPlan.Candidates.Count.ToString());
+                WriteField("checkpoint", DisplayPath(lastCheckpoint));
+                Console.WriteLine();
+
+                if (idleIterations >= maxIdleIterations)
+                {
+                    status = "stopped_max_idle_iterations";
+                    nextAction = "wait_for_new_data_or_new_strategy_space";
+                    break;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException)
+            {
+                lastError = ex.Message;
+                status = "stopped_critical_error";
+                nextAction = "review_last_error";
+                break;
+            }
+
+            var remaining = deadlineUtc - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+            {
+                status = "completed_deadline_reached";
+                nextAction = "nightly_window_complete";
+                break;
+            }
+
+            Thread.Sleep(TimeSpan.FromSeconds(Math.Min(sleepSeconds, Math.Max(0, remaining.TotalSeconds))));
+        }
+
+        if (status == "running")
+        {
+            status = "completed_deadline_reached";
+            nextAction = "nightly_window_complete";
+        }
+
+        var finalState = nightly.WriteState(new NightlyResearchState(
+            StateVersion: "nightly_research_state_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            Status: status,
+            RunId: runId,
+            StartedAtUtc: startedAtUtc,
+            DeadlineUtc: deadlineUtc,
+            IterationsCompleted: iterations,
+            IdleIterations: idleIterations,
+            WorkPerformed: workPerformed,
+            NextAction: nextAction,
+            LastCheckpointPath: lastCheckpoint,
+            LastAutopilotReportPath: null,
+            LastError: lastError,
+            NoAutoTrading: true,
+            HumanReviewRequired: true));
+
+        WriteField("Nightly State", DisplayPath(nightly.StatePath));
+        WriteNightlyState(finalState);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowNightlyStatus()
+    {
+        WriteHeader("Hermes Nightly Beta 3 Status");
+        var storagePaths = BuildStoragePaths();
+        var service = new NightlyResearchService(storagePaths, Path.Combine(_runtimeRoot, "config", "nightly.research.json"));
+        WriteField("State", DisplayPath(service.StatePath));
+        WriteNightlyState(service.LoadState());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowResourceStatus()
+    {
+        WriteHeader("Hermes Resource Guard");
+        var guard = new ResourceGuard(BuildStoragePaths());
+        var snapshot = guard.Check();
+        WriteField("Report", DisplayPath(guard.StatusPath));
+        WriteResourceSnapshot(snapshot);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStorageStatus()
+    {
+        WriteHeader("Hermes Storage Status");
+        var storagePaths = BuildStoragePaths();
+        var guard = new ResourceGuard(storagePaths);
+        var resource = guard.Check();
+        var hygiene = new StorageHygieneService(storagePaths);
+        var plan = hygiene.BuildPlan();
+        WriteField("Storage Root", DisplayPath(storagePaths.Root));
+        WriteField("Free Disk", $"{resource.FreeDiskMb / 1024.0:0.##} GB ({resource.FreeDiskPercent:0.##}%)");
+        WriteField("Resource Action", resource.Action);
+        WriteField("Cleanup Plan", DisplayPath(hygiene.CleanupPlanPath));
+        WriteCleanupPlan(plan, limit: 8);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCleanupPlan()
+    {
+        WriteHeader("Hermes Cleanup Plan");
+        var hygiene = new StorageHygieneService(BuildStoragePaths());
+        var plan = hygiene.BuildPlan();
+        WriteField("Cleanup Plan", DisplayPath(hygiene.CleanupPlanPath));
+        WriteCleanupPlan(plan, limit: 20);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ApplyCleanup()
+    {
+        WriteHeader("Hermes Safe Cleanup Apply");
+        if (!_args.Any(arg => arg.Equals("--safe", StringComparison.OrdinalIgnoreCase)))
+        {
+            WriteError("cleanup-apply braucht explizit --safe. Es wurden keine Dateien geloescht.");
+            WriteSafety();
+            return 2;
+        }
+
+        var hygiene = new StorageHygieneService(BuildStoragePaths());
+        var report = hygiene.ApplySafeCleanup();
+        WriteField("Cleanup Report", DisplayPath(hygiene.CleanupReportPath));
+        WriteField("Files Deleted", report.FilesDeleted.ToString());
+        WriteField("Bytes Freed", report.BytesFreed.ToString());
+        WriteField("Safe Mode", report.SafeMode.ToString().ToLowerInvariant());
+        WriteMessages("Skipped", report.SkippedPaths.Take(12).ToList());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int UpdateResearchMemory()
     {
         WriteHeader("Hermes Research Memory Update");
@@ -657,6 +960,9 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Research Autopilot Beta");
         var hours = ReadHours(_args, 1);
+        var deadlineUtc = DateTimeOffset.UtcNow.AddHours(hours);
+        var sleepSeconds = ReadIntOption(_args, "--sleep-seconds", fallback: 60, min: 0, max: 3600);
+        var maxIdleIterations = ReadIntOption(_args, "--max-idle-iterations", fallback: 10, min: 1, max: 1000);
         var maxDownloads = ReadIntOption(
             _args,
             "--max-downloads",
@@ -685,15 +991,255 @@ internal sealed class HermesCli
         var memoryService = new ResearchMemoryIndexService(storagePaths);
         var configLoad = LoadCTraderConfig();
         var authContext = BuildCTraderAuthContext(configLoad, storagePaths);
-        var currentRanges = memoryService.GetCurrentMarketDataRanges();
-        var plans = BuildAutopilotDownloadPlans(currentRanges, targetFromUtc, targetToUtc);
-        var selectedPlans = plans.Take(maxDownloads).ToList();
+        var job = new LongRunResearchJob(
+            JobId: $"research_autopilot_{startedAtUtc:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
+            StartedAtUtc: startedAtUtc,
+            DeadlineUtc: deadlineUtc,
+            RequestedHours: hours,
+            RequestedBy: "hermes_research_autopilot",
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
         var warnings = new List<string>();
         var downloadResults = new List<AutopilotDownloadResult>();
+        StrategyResearchStepResult? latestStrategyResearch = null;
+        ResearchMemoryIndex? latestIndex = null;
+        WalkForwardValidationReport? latestWalkForward = null;
+        StrategyDiscoveryReport? latestDiscovery = null;
+        var totalDownloadPlans = 0;
+        var totalDownloadsAttempted = 0;
+        var totalStrategyVariantsTested = 0;
+        var latestSimulationReports = 0;
+        var iterationsCompleted = 0;
+        var idleIterations = 0;
+        var totalWorkPerformed = 0;
+        var status = "completed";
+        var nextAction = "deadline_reached";
 
-        using var eventStore = new EventStore(storagePaths);
-        var eventBus = new EventBus();
-        eventBus.Subscribe(eventStore.Append);
+        using (var eventStore = new EventStore(storagePaths))
+        {
+            var eventBus = new EventBus();
+            eventBus.Subscribe(eventStore.Append);
+
+            while (DateTimeOffset.UtcNow < deadlineUtc)
+            {
+                var iteration = iterationsCompleted + 1;
+                var iterationResult = RunResearchAutopilotIteration(
+                    storagePaths,
+                    memoryService,
+                    configLoad,
+                    authContext,
+                    eventBus,
+                    job,
+                    iteration,
+                    targetFromUtc,
+                    targetToUtc,
+                    maxDownloads,
+                    maxRequests,
+                    warnings);
+
+                eventStore.Flush();
+
+                iterationsCompleted++;
+                totalDownloadPlans += iterationResult.DownloadPlans;
+                totalDownloadsAttempted += iterationResult.DownloadsAttempted;
+                totalStrategyVariantsTested += iterationResult.StrategyResearch.TestedNow;
+                latestStrategyResearch = iterationResult.StrategyResearch;
+                latestIndex = iterationResult.Index;
+                latestWalkForward = iterationResult.WalkForward;
+                latestDiscovery = iterationResult.Discovery;
+                latestSimulationReports = iterationResult.SimulationReports;
+                downloadResults.AddRange(iterationResult.Downloads);
+                warnings.AddRange(iterationResult.Warnings);
+
+                if (iterationResult.WorkPerformed)
+                {
+                    idleIterations = 0;
+                    totalWorkPerformed += iterationResult.WorkUnits;
+                }
+                else
+                {
+                    idleIterations++;
+                }
+
+                nextAction = iterationResult.NextAction;
+                var checkpoint = memoryService.WriteCheckpoint(
+                    job,
+                    iteration,
+                    iterationResult.Status,
+                    $"work_performed={iterationResult.WorkUnits}; idle_iterations={idleIterations}; next_action={nextAction}",
+                    latestIndex,
+                    betaRunId: iterationResult.BetaReport?.RunId);
+
+                WriteSubHeader($"Iteration {iteration}");
+                WriteField("elapsed_minutes", $"{(DateTimeOffset.UtcNow - startedAtUtc).TotalMinutes:0.##}");
+                WriteField("work_performed", iterationResult.WorkUnits.ToString());
+                WriteField("idle_iterations", idleIterations.ToString());
+                WriteField("next_action", nextAction);
+                WriteField("Checkpoint", DisplayPath(checkpoint));
+                Console.WriteLine();
+
+                if (iterationResult.Status == "stopped_storage_critical")
+                {
+                    status = "stopped_storage_critical";
+                    nextAction = "fix_storage_before_retry";
+                    break;
+                }
+
+                if (idleIterations >= maxIdleIterations)
+                {
+                    status = "stopped_max_idle_iterations";
+                    nextAction = "wait_for_new_data_or_expand_strategy_space";
+                    break;
+                }
+
+                var remaining = deadlineUtc - DateTimeOffset.UtcNow;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    status = "completed_deadline_reached";
+                    nextAction = "deadline_reached";
+                    break;
+                }
+
+                if (sleepSeconds > 0)
+                {
+                    var sleepFor = TimeSpan.FromSeconds(Math.Min(sleepSeconds, Math.Max(0, remaining.TotalSeconds)));
+                    Thread.Sleep(sleepFor);
+                }
+            }
+        }
+
+        if (DateTimeOffset.UtcNow >= deadlineUtc && status == "completed")
+        {
+            status = "completed_deadline_reached";
+            nextAction = "deadline_reached";
+        }
+
+        if (iterationsCompleted == 0)
+        {
+            latestIndex = memoryService.UpdateIndex();
+            latestStrategyResearch = RunStrategyResearchAndInsights(storagePaths);
+            latestWalkForward = new WalkForwardValidationService(storagePaths).Run();
+            latestDiscovery = new StrategyDiscoveryService(storagePaths).Run();
+            latestSimulationReports = new RealisticSimulationService(storagePaths).Run().Count;
+            iterationsCompleted = 1;
+            status = "completed_minimum_iteration";
+            nextAction = "deadline_reached";
+        }
+
+        latestStrategyResearch ??= RunStrategyResearchAndInsights(storagePaths);
+        latestIndex ??= memoryService.UpdateIndex();
+        latestWalkForward ??= new WalkForwardValidationService(storagePaths).Run();
+        latestDiscovery ??= new StrategyDiscoveryService(storagePaths).Run();
+
+        var elapsedMinutes = (DateTimeOffset.UtcNow - startedAtUtc).TotalMinutes;
+        var report = WriteResearchAutopilotReport(
+            storagePaths,
+            job.JobId,
+            startedAtUtc,
+            hours,
+            targetFromUtc,
+            targetToUtc,
+            totalDownloadPlans,
+            totalDownloadsAttempted,
+            downloadResults,
+            totalStrategyVariantsTested,
+            latestStrategyResearch.Memory.ResearchEntries?.Count ?? 0,
+            catalog.CatalogPath,
+            latestStrategyResearch.InsightsPath,
+            status,
+            elapsedMinutes,
+            iterationsCompleted,
+            totalWorkPerformed,
+            idleIterations,
+            nextAction,
+            warnings);
+
+        var finalCheckpoint = memoryService.WriteCheckpoint(
+            job,
+            iteration: iterationsCompleted + 1,
+            status: report.Status,
+            message: $"Research Autopilot stopped with {report.Status}. Iterations: {iterationsCompleted}. Work performed: {totalWorkPerformed}.",
+            latestIndex,
+            betaRunId: null);
+
+        WriteField("Autopilot Report", DisplayPath(Path.Combine(storagePaths.Root, "strategy_research", "autopilot", $"{report.ReportId}.autopilot_report.json")));
+        WriteField("Checkpoint", DisplayPath(finalCheckpoint));
+        WriteField("requested_hours", $"{hours:0.##}");
+        WriteField("elapsed_minutes", $"{elapsedMinutes:0.##}");
+        WriteField("iterations_completed", iterationsCompleted.ToString());
+        WriteField("work_performed", totalWorkPerformed.ToString());
+        WriteField("idle_iterations", idleIterations.ToString());
+        WriteField("next_action", nextAction);
+        WriteField("Target Range", $"{targetFromUtc:yyyy-MM-dd} -> {targetToUtc:yyyy-MM-dd}");
+        WriteField("Pattern Catalog", DisplayPath(catalog.CatalogPath));
+        WriteField("Patterns", patterns.Count.ToString());
+        WriteField("Download Plans", report.DownloadPlans.ToString());
+        WriteField("Downloads Attempted", report.DownloadsAttempted.ToString());
+        WriteField("Candles Downloaded", report.CandlesDownloaded.ToString());
+        WriteField("Download Requests", report.DownloadRequests.ToString());
+        WriteField("Strategy Variants Tested", report.StrategyVariantsTested.ToString());
+        WriteField("Strategy Memory Entries", report.StrategyResearchEntries.ToString());
+        WriteField("Simulation Reports", latestSimulationReports.ToString());
+        WriteField("Walk-Forward Robust", latestWalkForward.RobustStrategies.ToString());
+        WriteField("Overfit Suspects", latestWalkForward.OverfitSuspectedStrategies.ToString());
+        WriteField("Discovery Strategies Analyzed", latestDiscovery.StrategiesAnalyzed.ToString());
+        WriteField("Discovery Risk Flags", latestDiscovery.RiskFlagsDetected.ToString());
+        WriteField("Insights", DisplayPath(latestStrategyResearch.InsightsPath));
+        WriteField("Status", report.Status);
+        WriteResearchMemoryIndex(latestIndex);
+        WriteStrategyResearchMemory(latestStrategyResearch.Memory, limit: 3);
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private AutopilotIterationResult RunResearchAutopilotIteration(
+        StoragePaths storagePaths,
+        ResearchMemoryIndexService memoryService,
+        CTraderOpenApiConfigLoadResult configLoad,
+        (CTraderOAuthUrlResult OAuthUrl, CTraderAuthStatus AuthStatus, CTraderAuthTokenState TokenState) authContext,
+        EventBus eventBus,
+        LongRunResearchJob job,
+        int iteration,
+        DateTimeOffset targetFromUtc,
+        DateTimeOffset targetToUtc,
+        int maxDownloads,
+        int maxRequests,
+        IReadOnlyList<string> inheritedWarnings)
+    {
+        var warnings = new List<string>();
+        var disk = new DiskSpaceGuard().Check(storagePaths, minimumFreeDiskMb: 512);
+        if (!disk.IsOk)
+        {
+            warnings.Add($"Storage critical: {disk.Warning}");
+            var index = memoryService.UpdateIndex();
+            var strategy = RunStrategyResearchAndInsights(storagePaths);
+            var storageStopWalkForward = new WalkForwardValidationService(storagePaths).Run();
+            var storageStopDiscovery = new StrategyDiscoveryService(storagePaths).Run();
+            return new AutopilotIterationResult(
+                Iteration: iteration,
+                DownloadPlans: 0,
+                DownloadsAttempted: 0,
+                Downloads: [],
+                BetaReport: null,
+                Index: index,
+                StrategyResearch: strategy,
+                SimulationReports: 0,
+                WalkForward: storageStopWalkForward,
+                Discovery: storageStopDiscovery,
+                Warnings: warnings,
+                WorkPerformed: false,
+                WorkUnits: 0,
+                Status: "stopped_storage_critical",
+                NextAction: "fix_storage_before_retry");
+        }
+
+        var beforeRanges = memoryService.GetCurrentMarketDataRanges();
+        var beforeFingerprint = memoryService.BuildMarketDataFingerprint(beforeRanges);
+        var plans = BuildAutopilotDownloadPlans(beforeRanges, targetFromUtc, targetToUtc);
+        var selectedPlans = plans.Take(maxDownloads).ToList();
+        var downloads = new List<AutopilotDownloadResult>();
 
         foreach (var plan in selectedPlans)
         {
@@ -706,7 +1252,7 @@ internal sealed class HermesCli
                     eventBus,
                     plan.Request,
                     maxRequests);
-                downloadResults.Add(download);
+                downloads.Add(download);
                 warnings.AddRange(download.Warnings);
             }
             catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException or IOException)
@@ -715,10 +1261,15 @@ internal sealed class HermesCli
             }
         }
 
-        eventStore.Flush();
-
+        var afterRanges = memoryService.GetCurrentMarketDataRanges();
+        var afterFingerprint = memoryService.BuildMarketDataFingerprint(afterRanges);
+        var candlesAvailable = afterRanges.Sum(range => range.CandleCount) > 0;
+        var newCandles = downloads.Sum(download => download.ImportResult.CandleCount);
+        var marketDataChanged = !string.Equals(beforeFingerprint, afterFingerprint, StringComparison.Ordinal);
+        var shouldRunBeta = candlesAvailable
+            && (iteration == 1 || marketDataChanged || !HasFeatureExports(storagePaths));
         TradingLearningBetaReport? betaReport = null;
-        if (memoryService.GetCurrentMarketDataRanges().Sum(range => range.CandleCount) > 0)
+        if (shouldRunBeta)
         {
             using var betaEventStore = new EventStore(storagePaths);
             var betaBus = new EventBus();
@@ -727,7 +1278,7 @@ internal sealed class HermesCli
             betaReport = pipeline.Run();
             betaEventStore.Flush();
         }
-        else
+        else if (!candlesAvailable)
         {
             warnings.Add("No candle data available after Autopilot data expansion; beta pipeline skipped.");
         }
@@ -738,60 +1289,34 @@ internal sealed class HermesCli
         var walkForward = new WalkForwardValidationService(storagePaths).Run();
         var discovery = new StrategyDiscoveryService(storagePaths).Run();
         new ResearchInsightsGenerator(storagePaths).Generate();
-        var report = WriteResearchAutopilotReport(
-            storagePaths,
-            startedAtUtc,
-            hours,
-            targetFromUtc,
-            targetToUtc,
-            plans.Count,
-            selectedPlans.Count,
-            downloadResults,
-            strategyResearch,
-            catalog.CatalogPath,
-            warnings);
 
-        var job = new LongRunResearchJob(
-            JobId: report.ReportId,
-            StartedAtUtc: startedAtUtc,
-            DeadlineUtc: startedAtUtc.AddHours(hours),
-            RequestedHours: hours,
-            RequestedBy: "hermes_research_autopilot",
-            NoAutoTrading: true,
-            HumanReviewRequired: true);
-        var checkpoint = memoryService.WriteCheckpoint(
-            job,
-            iteration: 1,
-            status: report.Status,
-            message: $"Research Autopilot completed. Downloads attempted: {report.DownloadsAttempted}. Strategy variants tested: {report.StrategyVariantsTested}.",
-            updatedIndex,
-            betaRunId: betaReport?.RunId);
+        var workUnits = newCandles
+            + strategyResearch.TestedNow
+            + (betaReport is { CandlesProcessed: > 0 } ? 1 : 0);
+        var nextAction = workUnits > 0
+            ? "continue_until_deadline"
+            : "sleep_then_mutate_or_stop_after_idle_limit";
 
-        WriteField("Autopilot Report", DisplayPath(Path.Combine(storagePaths.Root, "strategy_research", "autopilot", $"{report.ReportId}.autopilot_report.json")));
-        WriteField("Checkpoint", DisplayPath(checkpoint));
-        WriteField("Requested Hours", $"{hours:0.##}");
-        WriteField("Target Range", $"{targetFromUtc:yyyy-MM-dd} -> {targetToUtc:yyyy-MM-dd}");
-        WriteField("Pattern Catalog", DisplayPath(catalog.CatalogPath));
-        WriteField("Patterns", patterns.Count.ToString());
-        WriteField("Download Plans", plans.Count.ToString());
-        WriteField("Downloads Attempted", report.DownloadsAttempted.ToString());
-        WriteField("Candles Downloaded", report.CandlesDownloaded.ToString());
-        WriteField("Download Requests", report.DownloadRequests.ToString());
-        WriteField("Strategy Variants Tested", report.StrategyVariantsTested.ToString());
-        WriteField("Strategy Memory Entries", report.StrategyResearchEntries.ToString());
-        WriteField("Simulation Reports", simulationReports.Count.ToString());
-        WriteField("Walk-Forward Robust", walkForward.RobustStrategies.ToString());
-        WriteField("Overfit Suspects", walkForward.OverfitSuspectedStrategies.ToString());
-        WriteField("Discovery Strategies Analyzed", discovery.StrategiesAnalyzed.ToString());
-        WriteField("Discovery Risk Flags", discovery.RiskFlagsDetected.ToString());
-        WriteField("Insights", DisplayPath(strategyResearch.InsightsPath));
-        WriteField("Status", report.Status);
-        WriteResearchMemoryIndex(updatedIndex);
-        WriteStrategyResearchMemory(strategyResearch.Memory, limit: 3);
-        WriteMessages("Warnings", report.Warnings);
-        Console.WriteLine();
-        WriteSafety();
-        return 0;
+        return new AutopilotIterationResult(
+            Iteration: iteration,
+            DownloadPlans: plans.Count,
+            DownloadsAttempted: selectedPlans.Count,
+            Downloads: downloads,
+            BetaReport: betaReport,
+            Index: updatedIndex,
+            StrategyResearch: strategyResearch,
+            SimulationReports: simulationReports.Count,
+            WalkForward: walkForward,
+            Discovery: discovery,
+            Warnings: warnings
+                .Concat(inheritedWarnings)
+                .Distinct(StringComparer.Ordinal)
+                .Take(80)
+                .ToList(),
+            WorkPerformed: workUnits > 0,
+            WorkUnits: workUnits,
+            Status: workUnits > 0 ? "iteration_completed" : "idle_iteration",
+            NextAction: nextAction);
     }
 
     private int RunWalkForwardValidation()
@@ -1307,6 +1832,57 @@ internal sealed class HermesCli
         WriteField("High Risk Strategies", report.HighRiskStrategies.ToString());
         WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteNightlyState(NightlyResearchState state)
+    {
+        WriteField("Status", state.Status);
+        WriteField("Run ID", string.IsNullOrWhiteSpace(state.RunId) ? "-" : state.RunId);
+        WriteField("Started UTC", state.StartedAtUtc?.ToString("O") ?? "-");
+        WriteField("Deadline UTC", state.DeadlineUtc?.ToString("O") ?? "-");
+        WriteField("Iterations", state.IterationsCompleted.ToString());
+        WriteField("Idle Iterations", state.IdleIterations.ToString());
+        WriteField("Work Performed", state.WorkPerformed.ToString());
+        WriteField("Next Action", state.NextAction);
+        WriteField("Last Checkpoint", DisplayOptionalPath(state.LastCheckpointPath));
+        WriteField("Last Error", state.LastError ?? "-");
+        WriteField("no_auto_trading", state.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", state.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteResourceSnapshot(ResourceSnapshot snapshot)
+    {
+        WriteField("Timestamp UTC", snapshot.TimestampUtc.ToString("O"));
+        WriteField("CPU", $"{snapshot.CpuUsagePercent:0.##}%");
+        WriteField("RAM", $"{snapshot.MemoryUsagePercent:0.##}% ({snapshot.UsedMemoryMb}/{snapshot.TotalMemoryMb} MB)");
+        WriteField("Free Disk", $"{snapshot.FreeDiskMb / 1024.0:0.##} GB ({snapshot.FreeDiskPercent:0.##}%)");
+        WriteField("Storage Root", DisplayPath(snapshot.StorageRoot));
+        WriteField("Action", snapshot.Action);
+        WriteField("Should Pause", snapshot.ShouldPause.ToString().ToLowerInvariant());
+        WriteField("Should Stop", snapshot.ShouldStop.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", snapshot.Warnings);
+        WriteField("no_auto_trading", snapshot.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", snapshot.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteCleanupPlan(CleanupPlan plan, int limit)
+    {
+        WriteField("Plan ID", plan.PlanId);
+        WriteField("Created UTC", plan.CreatedAtUtc.ToString("O"));
+        WriteField("Candidates", plan.Candidates.Count.ToString());
+        WriteField("Estimated Free", $"{plan.EstimatedBytesToFree / 1024.0 / 1024.0:0.##} MB");
+        WriteField("Safe To Apply", plan.SafeToApply.ToString().ToLowerInvariant());
+        foreach (var candidate in plan.Candidates.Take(limit))
+        {
+            WriteSubHeader(candidate.Reason);
+            WriteField("Path", DisplayPath(candidate.Path));
+            WriteField("Bytes", candidate.EstimatedBytes.ToString());
+            WriteField("Safe", candidate.SafeToDelete.ToString().ToLowerInvariant());
+        }
+
+        WriteField("Protected Paths", plan.ProtectedPaths.Count.ToString());
+        WriteField("no_auto_trading", plan.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", plan.HumanReviewRequired.ToString().ToLowerInvariant());
     }
 
     private void WriteStrategyCluster(StrategyCluster cluster)
@@ -1949,6 +2525,7 @@ internal sealed class HermesCli
 
     private ResearchAutopilotReport WriteResearchAutopilotReport(
         StoragePaths storagePaths,
+        string reportId,
         DateTimeOffset startedAtUtc,
         double requestedHours,
         DateTimeOffset targetFromUtc,
@@ -1956,13 +2533,21 @@ internal sealed class HermesCli
         int downloadPlans,
         int downloadsAttempted,
         IReadOnlyList<AutopilotDownloadResult> downloads,
-        StrategyResearchStepResult strategyResearch,
+        int strategyVariantsTested,
+        int strategyResearchEntries,
         string patternCatalogPath,
+        string insightsPath,
+        string status,
+        double elapsedMinutes,
+        int iterationsCompleted,
+        int workPerformed,
+        int idleIterations,
+        string nextAction,
         IReadOnlyList<string> warnings)
     {
         var completedAtUtc = DateTimeOffset.UtcNow;
         var report = new ResearchAutopilotReport(
-            ReportId: $"research_autopilot_{startedAtUtc:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
+            ReportId: reportId,
             StartedAtUtc: startedAtUtc,
             CompletedAtUtc: completedAtUtc,
             RequestedHours: requestedHours,
@@ -1974,14 +2559,19 @@ internal sealed class HermesCli
             DownloadsAttempted: downloadsAttempted,
             CandlesDownloaded: downloads.Sum(download => download.ImportResult.CandleCount),
             DownloadRequests: downloads.Sum(download => download.Requests),
-            StrategyVariantsTested: strategyResearch.TestedNow,
-            StrategyResearchEntries: strategyResearch.Memory.ResearchEntries?.Count ?? 0,
+            StrategyVariantsTested: strategyVariantsTested,
+            StrategyResearchEntries: strategyResearchEntries,
             PatternCatalogPath: patternCatalogPath,
-            InsightsPath: strategyResearch.InsightsPath,
-            Status: warnings.Count == 0 ? "completed" : "completed_with_warnings",
+            InsightsPath: insightsPath,
+            Status: warnings.Count == 0 ? status : $"{status}_with_warnings",
             Warnings: warnings.Distinct(StringComparer.Ordinal).Take(80).ToList(),
             NoAutoTrading: true,
-            HumanReviewRequired: true);
+            HumanReviewRequired: true,
+            ElapsedMinutes: Math.Round(elapsedMinutes, 2),
+            IterationsCompleted: iterationsCompleted,
+            WorkPerformed: workPerformed,
+            IdleIterations: idleIterations,
+            NextAction: nextAction);
 
         var directory = Path.Combine(storagePaths.Root, "strategy_research", "autopilot");
         Directory.CreateDirectory(directory);
@@ -1989,6 +2579,13 @@ internal sealed class HermesCli
         File.WriteAllText(path, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
         File.WriteAllText(Path.Combine(directory, "latest_autopilot_report.json"), JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
         return report;
+    }
+
+    private static bool HasFeatureExports(StoragePaths storagePaths)
+    {
+        var featuresRoot = Path.Combine(storagePaths.Root, "exports", "features");
+        return Directory.Exists(featuresRoot)
+            && Directory.EnumerateFiles(featuresRoot, "*.jsonl", SearchOption.AllDirectories).Any();
     }
 
     private int ImportCsv()
@@ -2517,6 +3114,20 @@ internal sealed class HermesCli
         return fallback;
     }
 
+    private static double ReadDoubleOption(string[] args, string name, double fallback, double min, double max)
+    {
+        for (var index = 0; index < args.Length - 1; index++)
+        {
+            if (args[index].Equals(name, StringComparison.OrdinalIgnoreCase)
+                && double.TryParse(args[index + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+            {
+                return Math.Clamp(value, min, max);
+            }
+        }
+
+        return fallback;
+    }
+
     private static int ReadIntOption(string[] args, string name, int fallback, int min, int max)
     {
         for (var index = 0; index < args.Length - 1; index++)
@@ -2722,7 +3333,7 @@ internal sealed class HermesCli
         for (var index = 0; index < args.Length; index++)
         {
             var arg = args[index];
-            if (arg is "--root" or "--limit" or "--hours" or "--max-requests")
+            if (arg is "--root" or "--limit" or "--hours" or "--max-runtime-hours" or "--max-requests" or "--max-downloads" or "--sleep-seconds" or "--max-idle-iterations" or "--from" or "--to")
             {
                 index++;
                 continue;
@@ -2755,6 +3366,23 @@ internal sealed class HermesCli
         int DuplicatesSkipped,
         bool Truncated,
         IReadOnlyList<string> Warnings);
+
+    private sealed record AutopilotIterationResult(
+        int Iteration,
+        int DownloadPlans,
+        int DownloadsAttempted,
+        IReadOnlyList<AutopilotDownloadResult> Downloads,
+        TradingLearningBetaReport? BetaReport,
+        ResearchMemoryIndex Index,
+        StrategyResearchStepResult StrategyResearch,
+        int SimulationReports,
+        WalkForwardValidationReport WalkForward,
+        StrategyDiscoveryReport Discovery,
+        IReadOnlyList<string> Warnings,
+        bool WorkPerformed,
+        int WorkUnits,
+        string Status,
+        string NextAction);
 
     private sealed record StrategyResearchStepResult(
         StrategyResearchMemory Memory,

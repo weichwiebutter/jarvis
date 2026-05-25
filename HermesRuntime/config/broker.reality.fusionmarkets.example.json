@@ -1,0 +1,27 @@
+{
+  "profile_id": "fusion_markets_manual_default_v1",
+  "broker_name": "Fusion Markets",
+  "source": "manual_default",
+  "account_type": "conservative_research_default",
+  "commission_r": 0.025,
+  "base_slippage_r": 0.015,
+  "max_concurrent_trades": 2,
+  "typical_spread_points": {
+    "EURUSD": 0.2,
+    "XAUUSD": 1.2,
+    "GER40": 1.4,
+    "US500": 0.6
+  },
+  "tick_size": {
+    "EURUSD": 0.00001,
+    "XAUUSD": 0.01,
+    "GER40": 0.1,
+    "US500": 0.1
+  },
+  "pip_size": {
+    "EURUSD": 0.0001,
+    "XAUUSD": 0.1,
+    "GER40": 1,
+    "US500": 1
+  }
+}

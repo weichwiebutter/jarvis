@@ -17,6 +17,10 @@ public sealed class WalkForwardValidationService
 
     public string OverfitReportPath => Path.Combine(SimulationRoot, "overfit_report.json");
 
+    public string StrategyResearchOverfitReportPath => Path.Combine(_storagePaths.Root, "strategy_research", "overfit_report.json");
+
+    public string RobustStrategiesPath => Path.Combine(_storagePaths.Root, "strategy_research", "robust_strategies.json");
+
     public WalkForwardValidationReport Run()
     {
         Directory.CreateDirectory(SimulationRoot);
@@ -61,6 +65,18 @@ public sealed class WalkForwardValidationService
             humanReviewRequired = true
         };
         File.WriteAllText(OverfitReportPath, JsonSerializer.Serialize(overfit, JsonDefaults.WriteOptions));
+        Directory.CreateDirectory(Path.Combine(_storagePaths.Root, "strategy_research"));
+        File.WriteAllText(StrategyResearchOverfitReportPath, JsonSerializer.Serialize(overfit, JsonDefaults.WriteOptions));
+        var robust = new
+        {
+            report.ReportId,
+            report.CreatedAtUtc,
+            robustStrategies = assessments.Where(item => item.Robust).Take(100).ToList(),
+            promisingStrategies = assessments.Where(item => item.StrategyConfidence == "promising").Take(100).ToList(),
+            noAutoTrading = true,
+            humanReviewRequired = true
+        };
+        File.WriteAllText(RobustStrategiesPath, JsonSerializer.Serialize(robust, JsonDefaults.WriteOptions));
         return report;
     }
 
@@ -90,38 +106,9 @@ public sealed class WalkForwardValidationService
         var validationPenalty = metrics.Winrate > 0.97 ? 0.22 : 0.05;
         var validationScore = Math.Clamp(trainScore - validationPenalty - Math.Max(0, metrics.ConsecutiveLosses - 4) * 0.03, 0, 1);
         var outOfSampleScore = Math.Clamp(validationScore - (metrics.MaxDrawdown >= 0 ? 0.18 : 0.04), 0, 1);
-        var flags = new List<string>();
-
-        if (metrics.Winrate >= 0.98 && metrics.TradeCount >= 50)
-        {
-            flags.Add("suspicious_winrate");
-        }
-
-        if (metrics.MaxDrawdown >= 0 && metrics.ProfitFactor > 10)
-        {
-            flags.Add("unrealistic_equity_curve");
-        }
-
-        if (metrics.StabilityScore < 0.45)
-        {
-            flags.Add("low_robustness_penalty");
-        }
-
-        if (metrics.Winrate >= 0.995 && metrics.ConsecutiveLosses <= 1)
-        {
-            flags.Add("too_perfect_pattern_penalty");
-        }
-
         var highRisk = metrics.MaxDrawdown < -12 || metrics.ConsecutiveLosses >= 6 || metrics.ProfitFactor < 1.05;
-        var confidence = flags.Count > 0
-            ? "overfit_suspected"
-            : highRisk
-                ? "unstable"
-                : validationScore >= 0.75 && outOfSampleScore >= 0.62 && metrics.StabilityScore >= 0.65
-                    ? "robust"
-                    : validationScore >= 0.55
-                        ? "promising"
-                        : "experimental";
+        var flags = OverfitDetector.Detect(metrics, validationScore, outOfSampleScore);
+        var confidence = RobustStrategyClassifier.Classify(metrics, validationScore, outOfSampleScore, flags, highRisk);
 
         return new WalkForwardStrategyAssessment(
             StrategyVariantId: report.StrategyVariantId,

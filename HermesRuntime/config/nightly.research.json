@@ -1,0 +1,18 @@
+{
+  "enabled": true,
+  "start_hour": 23,
+  "end_hour": 5,
+  "max_runtime_hours": 6,
+  "sleep_seconds_between_iterations": 60,
+  "max_idle_iterations": 10,
+  "allowed_symbols": [
+    "XAUUSD",
+    "EURUSD",
+    "GER40"
+  ],
+  "allowed_timeframes": [
+    "M5",
+    "M15",
+    "H1"
+  ]
+}

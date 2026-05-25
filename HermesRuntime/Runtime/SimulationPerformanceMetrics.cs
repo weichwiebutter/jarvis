@@ -9,4 +9,7 @@ public sealed record SimulationPerformanceMetrics(
     int ConsecutiveLosses,
     double StabilityScore,
     double Winrate,
-    int TradeCount);
+    int TradeCount,
+    double GrossProfitR = 0,
+    double EstimatedCostR = 0,
+    double RobustnessScore = 0);

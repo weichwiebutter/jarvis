@@ -42,7 +42,8 @@ public sealed class RealisticSimulationService
             strategiesSimulated = reports.Count,
             noAutoTrading = true,
             humanReviewRequired = true,
-            brokerReality = BrokerReality().BrokerProfile
+            brokerReality = BrokerReality().BrokerProfile,
+            brokerProfileSource = BrokerRealityProfile().Source
         };
         File.WriteAllText(LatestStatusPath, JsonSerializer.Serialize(status, JsonDefaults.WriteOptions));
         return reports;
@@ -68,6 +69,7 @@ public sealed class RealisticSimulationService
         IReadOnlyDictionary<string, StrategyPatternDefinition> patterns)
     {
         var broker = BrokerReality();
+        var profile = BrokerRealityProfile();
         var symbol = result.SymbolsProcessed.FirstOrDefault() ?? "XAUUSD";
         var timeframe = result.Variant.Timeframe ?? result.TimeframesProcessed.FirstOrDefault() ?? "M5";
         var sampleCount = Math.Clamp(result.TradeCount <= 0 ? 20 : result.TradeCount / 250, 20, 500);
@@ -87,7 +89,8 @@ public sealed class RealisticSimulationService
         {
             var volatileStep = index % 11 == 0;
             var sessionPenalty = result.Variant.SessionFilter is "london" or "new_york" ? 0.005 : 0.015;
-            var spreadCost = SpreadCostR(broker, symbol, timeframe, volatileStep) + sessionPenalty;
+            var spreadCost = SpreadCostR(broker, symbol, timeframe, volatileStep);
+            var spreadWideningPenalty = volatileStep ? spreadCost * 0.35 : 0;
             var slippage = broker.BaseSlippageR + (volatileStep ? 0.035 : 0.008);
             var gross = index < winsTarget ? winR : lossR;
             if (index % 17 == 0)
@@ -95,7 +98,7 @@ public sealed class RealisticSimulationService
                 gross *= 0.5;
             }
 
-            var net = Math.Round(gross - spreadCost - broker.CommissionR - slippage, 4);
+            var net = Math.Round(gross - spreadCost - spreadWideningPenalty - sessionPenalty - broker.CommissionR - slippage, 4);
             trades.Add(new SimulationTrade(
                 TradeId: $"sim_trade_{result.Variant.VariantId}_{index:0000}",
                 StrategyVariantId: result.Variant.VariantId,
@@ -104,7 +107,7 @@ public sealed class RealisticSimulationService
                 OpenedAtUtc: start.Add(interval * index),
                 ClosedAtUtc: start.Add(interval * (index + 1)),
                 GrossR: Math.Round(gross, 4),
-                SpreadCostR: Math.Round(spreadCost, 4),
+                SpreadCostR: Math.Round(spreadCost + spreadWideningPenalty + sessionPenalty, 4),
                 CommissionR: broker.CommissionR,
                 SlippageR: Math.Round(slippage, 4),
                 NetR: net,
@@ -137,7 +140,30 @@ public sealed class RealisticSimulationService
                 $"max_concurrent_trades={broker.MaxConcurrentTrades}"
             ],
             NoAutoTrading: true,
-            HumanReviewRequired: true);
+            HumanReviewRequired: true,
+            BrokerRealityProfile: profile,
+            CostModel: new SimulationCostModel(
+                ModelVersion: "simulation_cost_model_v1",
+                SpreadCostR: Math.Round(trades.Sum(trade => trade.SpreadCostR), 4),
+                CommissionR: Math.Round(trades.Sum(trade => trade.CommissionR), 4),
+                SlippageR: Math.Round(trades.Sum(trade => trade.SlippageR), 4),
+                SessionLiquidityPenaltyR: Math.Round(trades.Count(trade => trade.ExitReason.Contains("cost", StringComparison.OrdinalIgnoreCase)) * 0.005, 4),
+                SpreadWideningPenaltyR: Math.Round(trades.Count(trade => trade.PartialFillSimulated) * 0.01, 4),
+                EstimatedCostR: Math.Round(trades.Sum(trade => trade.SpreadCostR + trade.CommissionR + trade.SlippageR), 4)),
+            TradeSimulation: new RealisticTradeSimulation(
+                SimulationVersion: "realistic_trade_simulation_v1",
+                ExecutionModel: "candle_by_candle_cost_adjusted_stub",
+                CandleByCandle: true,
+                PartialFillsStubbed: true,
+                MaxConcurrentTrades: broker.MaxConcurrentTrades,
+                Assumptions:
+                [
+                    "entry_execution_on_candle_close",
+                    "sl_tp_execution_from_candle_path_stub",
+                    "variable_spread_costs",
+                    "commission_and_slippage_subtracted",
+                    "no_broker_orders"
+                ]));
     }
 
     private IEnumerable<StrategyResearchResult> LoadStrategyResults()
@@ -204,6 +230,37 @@ public sealed class RealisticSimulationService
                 ["US500"] = 2.8
             });
 
+    private static BrokerRealityProfile BrokerRealityProfile() =>
+        new(
+            ProfileId: "fusion_markets_manual_default_v1",
+            BrokerName: "Fusion Markets",
+            Source: "manual_default",
+            AccountType: "conservative_research_default",
+            TypicalSpreadPoints: new Dictionary<string, double>
+            {
+                ["EURUSD"] = 0.2,
+                ["XAUUSD"] = 1.2,
+                ["GER40"] = 1.4,
+                ["US500"] = 0.6
+            },
+            TickSize: new Dictionary<string, double>
+            {
+                ["EURUSD"] = 0.00001,
+                ["XAUUSD"] = 0.01,
+                ["GER40"] = 0.1,
+                ["US500"] = 0.1
+            },
+            PipSize: new Dictionary<string, double>
+            {
+                ["EURUSD"] = 0.0001,
+                ["XAUUSD"] = 0.1,
+                ["GER40"] = 1,
+                ["US500"] = 1
+            },
+            CommissionR: 0.025,
+            BaseSlippageR: 0.015,
+            MaxConcurrentTrades: 2);
+
     private static double SpreadCostR(
         BrokerRealitySettings broker,
         string symbol,
@@ -234,6 +291,10 @@ public sealed class RealisticSimulationService
         var sharpe = std == 0 ? 0 : average / std * Math.Sqrt(Math.Min(252, returns.Count));
         var stability = Math.Clamp((profitFactor / 3.0) + Math.Max(0, 1 - Math.Abs(maxDrawdown) / 25.0) - (consecutiveLosses * 0.03), 0, 1);
 
+        var grossProfit = trades.Where(trade => trade.GrossR > 0).Sum(trade => trade.GrossR);
+        var estimatedCost = trades.Sum(trade => trade.SpreadCostR + trade.CommissionR + trade.SlippageR);
+        var robustness = Math.Clamp(stability - (estimatedCost / Math.Max(1, grossProfit) * 0.15), 0, 1);
+
         return new SimulationPerformanceMetrics(
             NetR: Math.Round(returns.Sum(), 4),
             SharpeRatio: Math.Round(sharpe, 4),
@@ -243,7 +304,10 @@ public sealed class RealisticSimulationService
             ConsecutiveLosses: consecutiveLosses,
             StabilityScore: Math.Round(stability, 4),
             Winrate: Math.Round(returns.Count(value => value > 0) / (double)returns.Count, 4),
-            TradeCount: trades.Count);
+            TradeCount: trades.Count,
+            GrossProfitR: Math.Round(grossProfit, 4),
+            EstimatedCostR: Math.Round(estimatedCost, 4),
+            RobustnessScore: Math.Round(robustness, 4));
     }
 
     private static double MaxDrawdown(IReadOnlyList<double> returns)
