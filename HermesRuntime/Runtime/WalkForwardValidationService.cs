@@ -21,6 +21,8 @@ public sealed class WalkForwardValidationService
 
     public string RobustStrategiesPath => Path.Combine(_storagePaths.Root, "strategy_research", "robust_strategies.json");
 
+    public string WalkForwardSummaryPath => Path.Combine(_storagePaths.Root, "reports", "simulation", "walkforward_summary.json");
+
     public WalkForwardValidationReport Run()
     {
         Directory.CreateDirectory(SimulationRoot);
@@ -53,18 +55,21 @@ public sealed class WalkForwardValidationService
             HumanReviewRequired: true);
 
         File.WriteAllText(WalkForwardPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
+        Directory.CreateDirectory(Path.Combine(_storagePaths.Root, "reports", "simulation"));
         var overfit = new
         {
             report.ReportId,
             report.CreatedAtUtc,
             report.OverfitSuspectedStrategies,
             report.HighRiskStrategies,
+            reportPath = OverfitReportPath,
             overfitSuspects = assessments.Where(item => item.StrategyConfidence == "overfit_suspected").Take(50).ToList(),
             highRisk = assessments.Where(item => item.HighRisk).Take(50).ToList(),
             noAutoTrading = true,
             humanReviewRequired = true
         };
         File.WriteAllText(OverfitReportPath, JsonSerializer.Serialize(overfit, JsonDefaults.WriteOptions));
+        File.WriteAllText(Path.Combine(_storagePaths.Root, "reports", "simulation", "overfit_report.json"), JsonSerializer.Serialize(overfit, JsonDefaults.WriteOptions));
         Directory.CreateDirectory(Path.Combine(_storagePaths.Root, "strategy_research"));
         File.WriteAllText(StrategyResearchOverfitReportPath, JsonSerializer.Serialize(overfit, JsonDefaults.WriteOptions));
         var robust = new
@@ -77,6 +82,28 @@ public sealed class WalkForwardValidationService
             humanReviewRequired = true
         };
         File.WriteAllText(RobustStrategiesPath, JsonSerializer.Serialize(robust, JsonDefaults.WriteOptions));
+        var summary = new
+        {
+            report.ReportId,
+            report.CreatedAtUtc,
+            report.TrainFromUtc,
+            report.TrainToUtc,
+            report.ValidationFromUtc,
+            report.ValidationToUtc,
+            report.StrategiesEvaluated,
+            report.RobustStrategies,
+            report.OverfitSuspectedStrategies,
+            report.HighRiskStrategies,
+            averageDegradation = Math.Round(assessments.Count == 0 ? 0 : assessments.Average(item => item.DegradationScore), 4),
+            averageRobustnessGap = Math.Round(assessments.Count == 0 ? 0 : assessments.Average(item => item.RobustnessGap), 4),
+            averageRealismPenalty = Math.Round(assessments.Count == 0 ? 0 : assessments.Average(item => item.RealismPenalty), 4),
+            averageOverfitRisk = Math.Round(assessments.Count == 0 ? 0 : assessments.Average(item => item.OverfitRisk), 4),
+            topRobust = assessments.Where(item => item.Robust).Take(25).ToList(),
+            rejected = assessments.Where(item => item.StrategyConfidence == "rejected").Take(25).ToList(),
+            noAutoTrading = true,
+            humanReviewRequired = true
+        };
+        File.WriteAllText(WalkForwardSummaryPath, JsonSerializer.Serialize(summary, JsonDefaults.WriteOptions));
         return report;
     }
 
@@ -102,12 +129,30 @@ public sealed class WalkForwardValidationService
     private static WalkForwardStrategyAssessment Assess(StrategySimulationReport report)
     {
         var metrics = report.Metrics;
-        var trainScore = Score(metrics.ProfitFactor, metrics.Expectancy, metrics.StabilityScore, metrics.MaxDrawdown);
-        var validationPenalty = metrics.Winrate > 0.97 ? 0.22 : 0.05;
+        var trainScore = Score(metrics.ProfitFactor, metrics.Expectancy, metrics.StabilityScore, metrics.MaxDrawdown, metrics.RobustnessConfidence);
+        var validationPenalty = metrics.Winrate > 0.90 ? Math.Min(0.42, (metrics.Winrate - 0.90) * 1.8 + 0.08) : 0.05;
+        validationPenalty += metrics.RealismPenalty * 0.28;
+        validationPenalty += (1 - metrics.SampleQuality) * 0.12;
         var validationScore = Math.Clamp(trainScore - validationPenalty - Math.Max(0, metrics.ConsecutiveLosses - 4) * 0.03, 0, 1);
-        var outOfSampleScore = Math.Clamp(validationScore - (metrics.MaxDrawdown >= 0 ? 0.18 : 0.04), 0, 1);
-        var highRisk = metrics.MaxDrawdown < -12 || metrics.ConsecutiveLosses >= 6 || metrics.ProfitFactor < 1.05;
+        var outOfSampleScore = Math.Clamp(validationScore - (metrics.MaxDrawdown >= 0 ? 0.22 : 0.06) - metrics.OverfitRisk * 0.18, 0, 1);
+        var degradation = Math.Clamp(trainScore - validationScore, 0, 1);
+        var robustnessGap = Math.Clamp(validationScore - outOfSampleScore, 0, 1);
+        var highRisk = metrics.MaxDrawdown < -12
+            || metrics.ConsecutiveLosses >= 6
+            || metrics.ProfitFactor < 1.05
+            || metrics.RealismPenalty >= 0.65
+            || metrics.OverfitRisk >= 0.8;
         var flags = OverfitDetector.Detect(metrics, validationScore, outOfSampleScore);
+        if (degradation >= 0.28)
+        {
+            flags = flags.Concat(["validation_degradation"]).Distinct(StringComparer.Ordinal).ToList();
+        }
+
+        if (robustnessGap >= 0.22)
+        {
+            flags = flags.Concat(["oos_robustness_gap"]).Distinct(StringComparer.Ordinal).ToList();
+        }
+
         var confidence = RobustStrategyClassifier.Classify(metrics, validationScore, outOfSampleScore, flags, highRisk);
 
         return new WalkForwardStrategyAssessment(
@@ -120,15 +165,25 @@ public sealed class WalkForwardValidationService
             StrategyConfidence: confidence,
             OverfitFlags: flags,
             Robust: confidence == "robust",
-            HighRisk: highRisk);
+            HighRisk: highRisk,
+            TrainPerformance: Math.Round(trainScore, 4),
+            ValidationPerformance: Math.Round(validationScore, 4),
+            DegradationScore: Math.Round(degradation, 4),
+            RobustnessGap: Math.Round(robustnessGap, 4),
+            RealismPenalty: metrics.RealismPenalty,
+            RobustnessConfidence: metrics.RobustnessConfidence,
+            ParameterStability: metrics.ParameterStability,
+            SampleQuality: metrics.SampleQuality,
+            OverfitRisk: metrics.OverfitRisk);
     }
 
-    private static double Score(double profitFactor, double expectancy, double stability, double maxDrawdown)
+    private static double Score(double profitFactor, double expectancy, double stability, double maxDrawdown, double robustness)
     {
         return Math.Clamp(
-            (Math.Min(3, profitFactor) / 3 * 0.35)
-            + (Math.Clamp(expectancy, -1, 2) + 1) / 3 * 0.25
-            + stability * 0.3
+            (Math.Min(3, profitFactor) / 3 * 0.25)
+            + (Math.Clamp(expectancy, -1, 2) + 1) / 3 * 0.2
+            + stability * 0.25
+            + robustness * 0.2
             + Math.Max(0, 1 - Math.Abs(maxDrawdown) / 20) * 0.1,
             0,
             1);

@@ -16,4 +16,6 @@ public sealed record StrategySimulationReport(
     bool HumanReviewRequired,
     BrokerRealityProfile? BrokerRealityProfile = null,
     SimulationCostModel? CostModel = null,
-    RealisticTradeSimulation? TradeSimulation = null);
+    RealisticTradeSimulation? TradeSimulation = null,
+    IReadOnlyList<PositionLifecycle>? PositionLifecycles = null,
+    IReadOnlyList<double>? EquityCurve = null);

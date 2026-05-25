@@ -14,6 +14,11 @@ public static class OverfitDetector
             flags.Add("suspicious_winrate");
         }
 
+        if (metrics.Winrate >= 0.90 && metrics.TradeCount >= 100 && metrics.MaxDrawdown > -1.0)
+        {
+            flags.Add("too_smooth_equity_curve");
+        }
+
         if (metrics.TradeCount >= 50 && metrics.Winrate >= 0.995 && metrics.ConsecutiveLosses <= 1)
         {
             flags.Add("too_few_losses");
@@ -38,6 +43,26 @@ public static class OverfitDetector
         if (metrics.TradeCount < 30)
         {
             flags.Add("too_few_trades");
+        }
+
+        if (metrics.SampleQuality < 0.45)
+        {
+            flags.Add("small_sample_quality_penalty");
+        }
+
+        if (metrics.ParameterStability < 0.55)
+        {
+            flags.Add("parameter_instability");
+        }
+
+        if (metrics.OverfitRisk >= 0.65)
+        {
+            flags.Add("high_model_overfit_risk");
+        }
+
+        if (metrics.RealismPenalty >= 0.45)
+        {
+            flags.Add("high_realism_penalty");
         }
 
         if (metrics.EstimatedCostR > Math.Max(1, metrics.GrossProfitR) * 0.35)

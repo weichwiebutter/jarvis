@@ -59,6 +59,8 @@ internal sealed class HermesCli
             "run-research-autopilot" => RunResearchAutopilot(),
             "run-strategy-research" => RunStrategyResearch(),
             "run-walkforward-validation" => RunWalkForwardValidation(),
+            "realism-report" => ShowRealismReport(),
+            "walkforward-summary" => ShowWalkForwardSummary(),
             "simulation-status" => ShowSimulationStatus(),
             "strategy-discovery-status" => ShowStrategyDiscoveryStatus(),
             "overfit-report" => ShowOverfitReport(),
@@ -117,6 +119,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes run-research-autopilot kombinierte Data-/Pattern-/Strategy-Research-Pipeline starten");
         Console.WriteLine("  hermes run-strategy-research adaptive Strategy-Research-Varianten bewerten");
         Console.WriteLine("  hermes run-walkforward-validation Walk-Forward-/Overfit-Validation ausfuehren");
+        Console.WriteLine("  hermes realism-report    Realism-/Kosten-/Overfit-Qualitaetsreport anzeigen");
+        Console.WriteLine("  hermes walkforward-summary Walk-Forward Summary anzeigen");
         Console.WriteLine("  hermes simulation-status Realistic Simulation Status anzeigen");
         Console.WriteLine("  hermes strategy-discovery-status Trusted Strategy Discovery anzeigen");
         Console.WriteLine("  hermes overfit-report     Overfit-/Risk-Report anzeigen");
@@ -1431,8 +1435,71 @@ internal sealed class HermesCli
         WriteField("Latest UTC", reports.Max(report => report.CreatedAtUtc).ToString("O"));
         WriteField("Average Stability", $"{reports.Average(report => report.Metrics.StabilityScore):0.####}");
         WriteField("Average Profit Factor", $"{reports.Average(report => report.Metrics.ProfitFactor):0.####}");
+        WriteField("Average Realism Penalty", $"{reports.Average(report => report.Metrics.RealismPenalty):0.####}");
+        WriteField("Average Overfit Risk", $"{reports.Average(report => report.Metrics.OverfitRisk):0.####}");
+        WriteField("Average Robustness", $"{reports.Average(report => report.Metrics.RobustnessConfidence):0.####}");
         WriteField("no_auto_trading", "true");
         WriteField("human_review_required", "true");
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowRealismReport()
+    {
+        WriteHeader("Hermes Realism Report");
+        var service = new RealisticSimulationService(BuildStoragePaths());
+        var report = service.LoadRealismReport();
+        if (report is null)
+        {
+            service.Run();
+            report = service.LoadRealismReport();
+        }
+
+        if (report is null)
+        {
+            WriteWarning("Kein Realism Report erzeugbar.");
+            WriteSafety();
+            return 0;
+        }
+
+        WriteField("Realism Report", DisplayPath(service.RealismReportPath));
+        WriteField("Report ID", report.ReportId);
+        WriteField("Created UTC", report.CreatedAtUtc.ToString("O"));
+        WriteField("Strategies Evaluated", report.StrategiesEvaluated.ToString());
+        WriteField("Realistic Strategies", report.RealisticStrategies.ToString());
+        WriteField("Suspicious Strategies", report.SuspiciousStrategies.ToString());
+        WriteField("Average Realism Penalty", $"{report.AverageRealismPenalty:0.####}");
+        WriteField("Average Overfit Risk", $"{report.AverageOverfitRisk:0.####}");
+        WriteMessages("Most Realistic", report.MostRealisticStrategies.Take(10).ToList());
+        WriteMessages("Suspicious", report.SuspiciousStrategiesList.Take(10).ToList());
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowWalkForwardSummary()
+    {
+        WriteHeader("Hermes Walk-Forward Summary");
+        var storagePaths = BuildStoragePaths();
+        var service = new WalkForwardValidationService(storagePaths);
+        var report = service.LoadReport() ?? service.Run();
+
+        WriteField("Walk-Forward Report", DisplayPath(service.WalkForwardPath));
+        WriteField("Walk-Forward Summary", DisplayPath(service.WalkForwardSummaryPath));
+        WriteWalkForwardSummary(report);
+        foreach (var item in report.Assessments.Take(8))
+        {
+            WriteSubHeader($"{item.StrategyFamily} / {item.PatternId ?? "-"} / {item.StrategyVariantId}");
+            WriteField("Confidence", item.StrategyConfidence);
+            WriteField("Degradation", $"{item.DegradationScore:0.####}");
+            WriteField("Robustness Gap", $"{item.RobustnessGap:0.####}");
+            WriteField("Realism Penalty", $"{item.RealismPenalty:0.####}");
+            WriteField("Overfit Risk", $"{item.OverfitRisk:0.####}");
+        }
+
         Console.WriteLine();
         WriteSafety();
         return 0;

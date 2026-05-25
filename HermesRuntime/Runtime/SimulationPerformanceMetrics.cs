@@ -12,4 +12,12 @@ public sealed record SimulationPerformanceMetrics(
     int TradeCount,
     double GrossProfitR = 0,
     double EstimatedCostR = 0,
-    double RobustnessScore = 0);
+    double RobustnessScore = 0,
+    double GrossR = 0,
+    double FeesR = 0,
+    double SlippageR = 0,
+    double RealismPenalty = 0,
+    double RobustnessConfidence = 0,
+    double ParameterStability = 0,
+    double SampleQuality = 0,
+    double OverfitRisk = 0);

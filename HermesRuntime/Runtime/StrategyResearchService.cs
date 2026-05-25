@@ -158,12 +158,7 @@ public sealed class StrategyResearchService
         IReadOnlyList<StrategyPatternDefinition> patterns)
     {
         var tested = memory.TestedVariantIds.ToHashSet(StringComparer.Ordinal);
-        var topSeeds = memory.TopVariants
-            .OrderByDescending(result => result.Fitness.Score)
-            .ThenByDescending(result => result.TradeCount)
-            .Take(8)
-            .Select(result => result.Variant)
-            .ToList();
+        var topSeeds = StrategyVariantGenerator.PrioritizeSeeds(memory).ToList();
 
         if (topSeeds.Count == 0)
         {
@@ -178,10 +173,10 @@ public sealed class StrategyResearchService
 
         foreach (var seed in topSeeds)
         {
-            foreach (var fast in NeighborInts(seed.FastEma, [6, 8, 9, 10, 12, 14, 16, 18]))
-            foreach (var slow in NeighborInts(seed.SlowEma, [18, 21, 24, 30, 34, 40, 55, 72]))
-            foreach (var rr in NeighborDoubles(seed.RiskRewardRatio, [1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.5]))
-            foreach (var sl in NeighborDoubles(seed.StopLossAtrMultiplier, [0.8, 1.0, 1.2, 1.5, 1.8, 2.0]))
+            foreach (var fast in StrategyMutationEngine.FastEmaCandidates(seed.FastEma))
+            foreach (var slow in StrategyMutationEngine.SlowEmaCandidates(seed.SlowEma))
+            foreach (var rr in StrategyMutationEngine.RiskRewardCandidates(seed.RiskRewardRatio))
+            foreach (var sl in StrategyMutationEngine.StopLossAtrCandidates(seed.StopLossAtrMultiplier))
             foreach (var confirmation in new[] { seed.RequireConfirmationCandle, !seed.RequireConfirmationCandle })
             foreach (var volatilityFilter in new[] { seed.UseVolatilityFilter, !seed.UseVolatilityFilter })
             {

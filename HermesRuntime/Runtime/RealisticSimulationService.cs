@@ -15,11 +15,16 @@ public sealed class RealisticSimulationService
 
     public string ReportsDirectory => Path.Combine(SimulationRoot, "reports");
 
+    public string SimulationReportsDirectory => Path.Combine(_storagePaths.Root, "reports", "simulation");
+
     public string LatestStatusPath => Path.Combine(SimulationRoot, "simulation_status.json");
+
+    public string RealismReportPath => Path.Combine(SimulationReportsDirectory, "realism_report.json");
 
     public IReadOnlyList<StrategySimulationReport> Run()
     {
         Directory.CreateDirectory(ReportsDirectory);
+        Directory.CreateDirectory(SimulationReportsDirectory);
         var patterns = new StrategyPatternCatalog(_storagePaths).LoadOrCreateCatalog()
             .ToDictionary(pattern => pattern.Id, pattern => pattern, StringComparer.OrdinalIgnoreCase);
         var results = LoadStrategyResults()
@@ -35,11 +40,16 @@ public sealed class RealisticSimulationService
             File.WriteAllText(path, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
         }
 
+        var realism = BuildRealismReport(reports);
+        File.WriteAllText(RealismReportPath, JsonSerializer.Serialize(realism, JsonDefaults.WriteOptions));
+        File.WriteAllText(Path.Combine(SimulationRoot, "realism_report.json"), JsonSerializer.Serialize(realism, JsonDefaults.WriteOptions));
         var status = new
         {
             generatedAtUtc = DateTimeOffset.UtcNow,
             simulationRoot = SimulationRoot,
+            simulationReportsRoot = SimulationReportsDirectory,
             strategiesSimulated = reports.Count,
+            realismReport = RealismReportPath,
             noAutoTrading = true,
             humanReviewRequired = true,
             brokerReality = BrokerReality().BrokerProfile,
@@ -64,6 +74,25 @@ public sealed class RealisticSimulationService
             .ToList();
     }
 
+    public RealismReport? LoadRealismReport()
+    {
+        if (!File.Exists(RealismReportPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<RealismReport>(
+                File.ReadAllText(RealismReportPath),
+                JsonDefaults.SnapshotReadOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
     private StrategySimulationReport Simulate(
         StrategyResearchResult result,
         IReadOnlyDictionary<string, StrategyPatternDefinition> patterns)
@@ -72,51 +101,32 @@ public sealed class RealisticSimulationService
         var profile = BrokerRealityProfile();
         var symbol = result.SymbolsProcessed.FirstOrDefault() ?? "XAUUSD";
         var timeframe = result.Variant.Timeframe ?? result.TimeframesProcessed.FirstOrDefault() ?? "M5";
-        var sampleCount = Math.Clamp(result.TradeCount <= 0 ? 20 : result.TradeCount / 250, 20, 500);
-        var trades = new List<SimulationTrade>();
-        var winsTarget = (int)Math.Round(sampleCount * result.Fitness.Winrate);
-        var interval = timeframe switch
+        var candles = LoadCandles(symbol, timeframe);
+        var lifecycles = new CandleTradeSimulator(BrokerCostModel.FusionMarketsManualDefault)
+            .Simulate(result.Variant, candles)
+            .ToList();
+        var trades = lifecycles.Select(ToSimulationTrade).ToList();
+        var metrics = CalculateMetrics(lifecycles, result);
+        patterns.TryGetValue(result.Variant.PatternId ?? string.Empty, out var pattern);
+        var equityCurve = lifecycles.SelectMany(position => position.EquityCurve).ToList();
+        var assumptions = new List<string>
         {
-            "H1" => TimeSpan.FromHours(1),
-            "M15" => TimeSpan.FromMinutes(15),
-            _ => TimeSpan.FromMinutes(5)
+            "variable_spreads",
+            "fusion_markets_manual_default",
+            "commission_cost",
+            "slippage_model",
+            "session_liquidity_model",
+            "volatile_spread_widening",
+            "partial_fill_stub",
+            "candle_by_candle_lifecycle",
+            "intra_candle_path_conservative_when_ambiguous",
+            $"max_concurrent_trades={broker.MaxConcurrentTrades}"
         };
-        var start = result.FromUtc ?? result.StartedAtUtc.AddDays(-sampleCount);
-        var winR = Math.Max(0.2, result.Variant.RiskRewardRatio * 0.82);
-        var lossR = -1.0;
-
-        for (var index = 0; index < sampleCount; index++)
+        if (candles.Count == 0)
         {
-            var volatileStep = index % 11 == 0;
-            var sessionPenalty = result.Variant.SessionFilter is "london" or "new_york" ? 0.005 : 0.015;
-            var spreadCost = SpreadCostR(broker, symbol, timeframe, volatileStep);
-            var spreadWideningPenalty = volatileStep ? spreadCost * 0.35 : 0;
-            var slippage = broker.BaseSlippageR + (volatileStep ? 0.035 : 0.008);
-            var gross = index < winsTarget ? winR : lossR;
-            if (index % 17 == 0)
-            {
-                gross *= 0.5;
-            }
-
-            var net = Math.Round(gross - spreadCost - spreadWideningPenalty - sessionPenalty - broker.CommissionR - slippage, 4);
-            trades.Add(new SimulationTrade(
-                TradeId: $"sim_trade_{result.Variant.VariantId}_{index:0000}",
-                StrategyVariantId: result.Variant.VariantId,
-                Symbol: symbol,
-                Timeframe: timeframe,
-                OpenedAtUtc: start.Add(interval * index),
-                ClosedAtUtc: start.Add(interval * (index + 1)),
-                GrossR: Math.Round(gross, 4),
-                SpreadCostR: Math.Round(spreadCost + spreadWideningPenalty + sessionPenalty, 4),
-                CommissionR: broker.CommissionR,
-                SlippageR: Math.Round(slippage, 4),
-                NetR: net,
-                ExitReason: net > 0 ? "tp_or_partial_tp" : "sl_or_cost_adjusted_loss",
-                PartialFillSimulated: volatileStep));
+            assumptions.Add("no_local_candles_found_zero_trade_report");
         }
 
-        var metrics = CalculateMetrics(trades);
-        patterns.TryGetValue(result.Variant.PatternId ?? string.Empty, out var pattern);
         return new StrategySimulationReport(
             SimulationId: $"simulation_{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}_{result.Variant.VariantId}",
             CreatedAtUtc: DateTimeOffset.UtcNow,
@@ -128,17 +138,7 @@ public sealed class RealisticSimulationService
             BrokerReality: broker,
             Metrics: metrics,
             SampleTrades: trades.Take(40).ToList(),
-            RealityAdjustments:
-            [
-                "variable_spreads",
-                "fusion_markets_profile_stub",
-                "commission_cost",
-                "slippage_model",
-                "session_liquidity_model",
-                "volatile_spread_widening",
-                "partial_fill_stub",
-                $"max_concurrent_trades={broker.MaxConcurrentTrades}"
-            ],
+            RealityAdjustments: assumptions,
             NoAutoTrading: true,
             HumanReviewRequired: true,
             BrokerRealityProfile: profile,
@@ -147,12 +147,12 @@ public sealed class RealisticSimulationService
                 SpreadCostR: Math.Round(trades.Sum(trade => trade.SpreadCostR), 4),
                 CommissionR: Math.Round(trades.Sum(trade => trade.CommissionR), 4),
                 SlippageR: Math.Round(trades.Sum(trade => trade.SlippageR), 4),
-                SessionLiquidityPenaltyR: Math.Round(trades.Count(trade => trade.ExitReason.Contains("cost", StringComparison.OrdinalIgnoreCase)) * 0.005, 4),
-                SpreadWideningPenaltyR: Math.Round(trades.Count(trade => trade.PartialFillSimulated) * 0.01, 4),
+                SessionLiquidityPenaltyR: Math.Round(lifecycles.Count(position => position.ExecutionModel.Session == "off_session") * 0.012, 4),
+                SpreadWideningPenaltyR: Math.Round(lifecycles.Count(position => position.ExitReason.Contains("ambiguous", StringComparison.OrdinalIgnoreCase)) * 0.02, 4),
                 EstimatedCostR: Math.Round(trades.Sum(trade => trade.SpreadCostR + trade.CommissionR + trade.SlippageR), 4)),
             TradeSimulation: new RealisticTradeSimulation(
                 SimulationVersion: "realistic_trade_simulation_v1",
-                ExecutionModel: "candle_by_candle_cost_adjusted_stub",
+                ExecutionModel: "candle_by_candle_sl_tp_cost_model",
                 CandleByCandle: true,
                 PartialFillsStubbed: true,
                 MaxConcurrentTrades: broker.MaxConcurrentTrades,
@@ -163,7 +163,9 @@ public sealed class RealisticSimulationService
                     "variable_spread_costs",
                     "commission_and_slippage_subtracted",
                     "no_broker_orders"
-                ]));
+                ]),
+            PositionLifecycles: lifecycles.Take(40).ToList(),
+            EquityCurve: equityCurve.TakeLast(200).ToList());
     }
 
     private IEnumerable<StrategyResearchResult> LoadStrategyResults()
@@ -271,6 +273,193 @@ public sealed class RealisticSimulationService
         var multiplier = volatileStep && broker.VolatileSpreadMultiplier.TryGetValue(symbol, out var value) ? value : 1.0;
         var timeframeFactor = timeframe == "M5" ? 0.018 : timeframe == "M15" ? 0.012 : 0.007;
         return spread * multiplier * timeframeFactor;
+    }
+
+    private IReadOnlyList<MarketDataCandle> LoadCandles(string symbol, string timeframe)
+    {
+        var directory = Path.Combine(_storagePaths.Root, "market_data", "candles", symbol, timeframe);
+        if (!Directory.Exists(directory))
+        {
+            return [];
+        }
+
+        var files = Directory.EnumerateFiles(directory, "*.jsonl", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .Take(3)
+            .ToList();
+        var candles = new Dictionary<DateTimeOffset, MarketDataCandle>();
+        foreach (var file in files)
+        {
+            foreach (var line in File.ReadLines(file))
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var candle = JsonSerializer.Deserialize<MarketDataCandle>(line, JsonDefaults.SnapshotReadOptions);
+                    if (candle is not null)
+                    {
+                        candles[candle.TimestampUtc] = candle;
+                    }
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+            }
+        }
+
+        return candles.Values
+            .OrderBy(candle => candle.TimestampUtc)
+            .TakeLast(2400)
+            .ToList();
+    }
+
+    private static SimulationTrade ToSimulationTrade(PositionLifecycle position)
+    {
+        var commission = BrokerCostModel.FusionMarketsManualDefault.CommissionR;
+        return new SimulationTrade(
+            TradeId: $"sim_trade_{position.PositionId}",
+            StrategyVariantId: position.StrategyVariantId,
+            Symbol: position.Symbol,
+            Timeframe: position.Timeframe,
+            OpenedAtUtc: position.OpenedAtUtc,
+            ClosedAtUtc: position.ClosedAtUtc,
+            GrossR: position.GrossR,
+            SpreadCostR: Math.Max(0, position.FeesR - commission),
+            CommissionR: commission,
+            SlippageR: position.SlippageR,
+            NetR: position.NetR,
+            ExitReason: position.ExitReason,
+            PartialFillSimulated: position.ExecutionModel.IntraCandlePathApproximated);
+    }
+
+    private RealismReport BuildRealismReport(IReadOnlyList<StrategySimulationReport> reports)
+    {
+        var orderedRealistic = reports
+            .OrderBy(report => report.Metrics.RealismPenalty)
+            .ThenByDescending(report => report.Metrics.RobustnessConfidence)
+            .Take(25)
+            .Select(report => $"{report.StrategyFamily}/{report.PatternId ?? "-"}:{report.StrategyVariantId}:realism_penalty={report.Metrics.RealismPenalty:0.####},robustness={report.Metrics.RobustnessConfidence:0.####},trades={report.Metrics.TradeCount}")
+            .ToList();
+        var suspicious = reports
+            .Where(report => report.Metrics.OverfitRisk >= 0.65 || report.Metrics.RealismPenalty >= 0.45)
+            .OrderByDescending(report => report.Metrics.OverfitRisk)
+            .ThenByDescending(report => report.Metrics.RealismPenalty)
+            .Take(50)
+            .Select(report => $"{report.StrategyFamily}/{report.PatternId ?? "-"}:{report.StrategyVariantId}:overfit_risk={report.Metrics.OverfitRisk:0.####},realism_penalty={report.Metrics.RealismPenalty:0.####},winrate={report.Metrics.Winrate:P1}")
+            .ToList();
+
+        return new RealismReport(
+            ReportId: $"realism_{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
+            CreatedAtUtc: DateTimeOffset.UtcNow,
+            StrategiesEvaluated: reports.Count,
+            RealisticStrategies: reports.Count(report => report.Metrics.RealismPenalty < 0.28 && report.Metrics.SampleQuality >= 0.45),
+            SuspiciousStrategies: suspicious.Count,
+            MostRealisticStrategies: orderedRealistic,
+            SuspiciousStrategiesList: suspicious,
+            AverageRealismPenalty: Math.Round(reports.Count == 0 ? 0 : reports.Average(report => report.Metrics.RealismPenalty), 4),
+            AverageOverfitRisk: Math.Round(reports.Count == 0 ? 0 : reports.Average(report => report.Metrics.OverfitRisk), 4),
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+    }
+
+    private static SimulationPerformanceMetrics CalculateMetrics(
+        IReadOnlyList<PositionLifecycle> positions,
+        StrategyResearchResult sourceResult)
+    {
+        if (positions.Count == 0)
+        {
+            return new SimulationPerformanceMetrics(
+                NetR: 0,
+                SharpeRatio: 0,
+                ProfitFactor: 0,
+                MaxDrawdown: 0,
+                Expectancy: 0,
+                ConsecutiveLosses: 0,
+                StabilityScore: 0,
+                Winrate: 0,
+                TradeCount: 0,
+                RealismPenalty: 0.85,
+                RobustnessConfidence: 0,
+                ParameterStability: ParameterStability(sourceResult.Variant),
+                SampleQuality: 0,
+                OverfitRisk: 0.85);
+        }
+
+        var returns = positions.Select(position => position.NetR).ToList();
+        var grossReturns = positions.Select(position => position.GrossR).ToList();
+        var wins = returns.Where(value => value > 0).Sum();
+        var losses = Math.Abs(returns.Where(value => value <= 0).Sum());
+        var average = returns.Average();
+        var std = StandardDeviation(returns);
+        var maxDrawdown = MaxDrawdown(returns);
+        var consecutiveLosses = ConsecutiveLosses(returns);
+        var profitFactor = losses == 0 ? wins : wins / losses;
+        var sharpe = std == 0 ? 0 : average / std * Math.Sqrt(Math.Min(252, returns.Count));
+        var winrate = returns.Count(value => value > 0) / (double)returns.Count;
+        var grossProfit = grossReturns.Where(value => value > 0).Sum();
+        var gross = grossReturns.Sum();
+        var fees = positions.Sum(position => position.FeesR);
+        var slippage = positions.Sum(position => position.SlippageR);
+        var estimatedCost = fees + slippage;
+        var sampleQuality = Math.Clamp(Math.Log10(positions.Count + 1) / Math.Log10(300), 0, 1);
+        var parameterStability = ParameterStability(sourceResult.Variant);
+        var smoothnessPenalty = maxDrawdown >= -0.01 && profitFactor > 8 ? 0.28 : 0;
+        var winratePenalty = winrate > 0.92 ? (winrate - 0.92) * 2.2 : 0;
+        var samplePenalty = sampleQuality < 0.5 ? (0.5 - sampleQuality) * 0.75 : 0;
+        var costPenalty = estimatedCost / Math.Max(1, Math.Abs(grossProfit)) * 0.35;
+        var parameterPenalty = (1 - parameterStability) * 0.2;
+        var realismPenalty = Math.Clamp(winratePenalty + smoothnessPenalty + samplePenalty + costPenalty + parameterPenalty, 0, 1);
+        var stability = Math.Clamp((Math.Min(3, profitFactor) / 3.0 * 0.35)
+            + Math.Max(0, 1 - Math.Abs(maxDrawdown) / 15.0) * 0.28
+            + sampleQuality * 0.2
+            + parameterStability * 0.17
+            - consecutiveLosses * 0.025,
+            0,
+            1);
+        var overfitRisk = Math.Clamp(realismPenalty
+            + (consecutiveLosses <= 1 && positions.Count >= 50 ? 0.18 : 0)
+            + (winrate >= 0.98 ? 0.25 : 0)
+            + (Math.Abs(sourceResult.Fitness.Score - stability) > 0.45 ? 0.16 : 0),
+            0,
+            1);
+        var robustness = Math.Clamp(stability - realismPenalty * 0.55 - overfitRisk * 0.25, 0, 1);
+
+        return new SimulationPerformanceMetrics(
+            NetR: Math.Round(returns.Sum(), 4),
+            SharpeRatio: Math.Round(sharpe, 4),
+            ProfitFactor: Math.Round(profitFactor, 4),
+            MaxDrawdown: Math.Round(maxDrawdown, 4),
+            Expectancy: Math.Round(average, 4),
+            ConsecutiveLosses: consecutiveLosses,
+            StabilityScore: Math.Round(stability, 4),
+            Winrate: Math.Round(winrate, 4),
+            TradeCount: positions.Count,
+            GrossProfitR: Math.Round(grossProfit, 4),
+            EstimatedCostR: Math.Round(estimatedCost, 4),
+            RobustnessScore: Math.Round(robustness, 4),
+            GrossR: Math.Round(gross, 4),
+            FeesR: Math.Round(fees, 4),
+            SlippageR: Math.Round(slippage, 4),
+            RealismPenalty: Math.Round(realismPenalty, 4),
+            RobustnessConfidence: Math.Round(robustness, 4),
+            ParameterStability: Math.Round(parameterStability, 4),
+            SampleQuality: Math.Round(sampleQuality, 4),
+            OverfitRisk: Math.Round(overfitRisk, 4));
+    }
+
+    private static double ParameterStability(StrategyVariant variant)
+    {
+        var rrPenalty = Math.Abs(variant.RiskRewardRatio - 1.6) * 0.16;
+        var slPenalty = Math.Abs(variant.StopLossAtrMultiplier - 1.2) * 0.18;
+        var emaSpread = variant.SlowEma - variant.FastEma;
+        var emaPenalty = emaSpread is < 8 or > 48 ? 0.2 : 0;
+        var filterBonus = variant.RequireConfirmationCandle ? 0.06 : 0;
+        return Math.Clamp(1 - rrPenalty - slPenalty - emaPenalty + filterBonus, 0, 1);
     }
 
     private static SimulationPerformanceMetrics CalculateMetrics(IReadOnlyList<SimulationTrade> trades)
