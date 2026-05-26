@@ -823,8 +823,15 @@ internal sealed class HermesCli
         WriteHeader("Hermes Nightly Beta 3 Status");
         var storagePaths = BuildStoragePaths();
         var service = new NightlyResearchService(storagePaths, Path.Combine(_runtimeRoot, "config", "nightly.research.json"));
+        var config = service.LoadConfig();
+        var state = service.LoadState();
+        var displayState = state with
+        {
+            NextScheduledStartUtc = NightlyResearchService.CalculateNextScheduledStart(config, DateTimeOffset.Now).ToUniversalTime()
+        };
+
         WriteField("State", DisplayPath(service.StatePath));
-        WriteNightlyState(service.LoadState());
+        WriteNightlyState(displayState);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -4211,7 +4218,7 @@ internal sealed class HermesCli
 
     private static void WriteSafety()
     {
-        Console.WriteLine("Safety: keine Runtime-Steuerung, keine Trading-Ausfuehrung, no_auto_trading sichtbar, human_review_required sichtbar.");
+        Console.WriteLine("Safety: keine Trading-Ausfuehrung, keine Broker-Orders, Supervisor nur per kontrolliertem Start/Stop-Request, no_auto_trading sichtbar, human_review_required sichtbar.");
     }
 
     private static void WriteWarning(string message) => WriteColored($"WARN: {message}", ConsoleColor.Yellow);
