@@ -25,4 +25,10 @@ public sealed record StrategyEvolutionSummary(
     IReadOnlyList<string>? RobustStrategies = null,
     IReadOnlyList<string>? OverfitSuspectedStrategies = null,
     IReadOnlyList<string>? HighRiskStrategies = null,
-    IReadOnlyList<string>? StableSymbolTimeframeCombinations = null);
+    IReadOnlyList<string>? StableSymbolTimeframeCombinations = null,
+    IReadOnlyList<string>? BestRegimes = null,
+    IReadOnlyList<string>? WeakRegimes = null,
+    IReadOnlyList<string>? PreferredSessions = null,
+    IReadOnlyList<string>? AvoidSessions = null,
+    IReadOnlyList<string>? VolatilityPreference = null,
+    double? RegimeConsistencyScore = null);

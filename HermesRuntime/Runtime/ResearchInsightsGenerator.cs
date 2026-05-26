@@ -39,6 +39,7 @@ public sealed class ResearchInsightsGenerator
             .ToList();
         var clusters = BuildClusters(completed);
         var walkForward = new WalkForwardValidationService(_storagePaths).LoadReport();
+        var regimeAnalysis = new MarketRegimeClassifier(_storagePaths).Run();
 
         var summary = new StrategyEvolutionSummary(
             SummaryVersion: SummaryVersion,
@@ -65,7 +66,13 @@ public sealed class ResearchInsightsGenerator
             RobustStrategies: BuildRobustStrategies(walkForward, completed),
             OverfitSuspectedStrategies: BuildOverfitStrategies(walkForward, completed),
             HighRiskStrategies: BuildHighRiskStrategies(walkForward),
-            StableSymbolTimeframeCombinations: BuildStableSymbolTimeframeCombinations(completed));
+            StableSymbolTimeframeCombinations: BuildStableSymbolTimeframeCombinations(completed),
+            BestRegimes: regimeAnalysis.StrategyPerformance.StrongRegimeMatches,
+            WeakRegimes: regimeAnalysis.StrategyPerformance.WeakRegimeMatches,
+            PreferredSessions: regimeAnalysis.StrategyPerformance.PreferredSessions,
+            AvoidSessions: regimeAnalysis.StrategyPerformance.AvoidSessions,
+            VolatilityPreference: regimeAnalysis.StrategyPerformance.VolatilityPreference,
+            RegimeConsistencyScore: regimeAnalysis.StrategyPerformance.RegimeConsistencyScore);
 
         File.WriteAllText(InsightsPath, JsonSerializer.Serialize(summary, JsonDefaults.WriteOptions));
         File.WriteAllText(ClustersPath, JsonSerializer.Serialize(clusters, JsonDefaults.WriteOptions));

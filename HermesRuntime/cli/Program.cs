@@ -76,6 +76,9 @@ internal sealed class HermesCli
             "knowledge-sources" => ShowKnowledgeSources(),
             "research-insights" => ShowResearchInsights(),
             "strategy-clusters" => ShowStrategyClusters(),
+            "regime-summary" => ShowRegimeSummary(),
+            "strategy-regime-performance" => ShowStrategyRegimePerformance(),
+            "regime-distribution" => ShowRegimeDistribution(),
             "pattern-catalog" => ShowPatternCatalog(),
             "pattern-performance" => ShowPatternPerformance(),
             "features" => ShowFeatures(),
@@ -141,6 +144,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-sources  kuratierte Strategy-Discovery-Quellen anzeigen");
         Console.WriteLine("  hermes research-insights  Strategy-Research-Insights anzeigen");
         Console.WriteLine("  hermes strategy-clusters  Strategy-Cluster anzeigen");
+        Console.WriteLine("  hermes regime-summary     Market-Regime-Zusammenfassung erzeugen/anzeigen");
+        Console.WriteLine("  hermes strategy-regime-performance Strategy-Performance nach Regime anzeigen");
+        Console.WriteLine("  hermes regime-distribution Regime-Verteilung nach Symbol/Timeframe anzeigen");
         Console.WriteLine("  hermes pattern-catalog    Strategy/Pattern Knowledge Base anzeigen");
         Console.WriteLine("  hermes pattern-performance Pattern-Fitness aggregiert anzeigen");
         Console.WriteLine("  hermes features           letzte Feature-JSONL-Zeilen anzeigen");
@@ -1978,7 +1984,14 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Research Insights");
         var generator = new ResearchInsightsGenerator(BuildStoragePaths());
-        var insights = generator.LoadInsights() ?? generator.Generate();
+        var insights = generator.LoadInsights();
+        if (insights is null
+            || insights.BestRegimes is null
+            || insights.BestRegimes.Count == 0
+            || insights.PreferredSessions is null)
+        {
+            insights = generator.Generate();
+        }
 
         WriteField("Insights", DisplayPath(generator.InsightsPath));
         WriteResearchInsights(insights);
@@ -2032,6 +2045,69 @@ internal sealed class HermesCli
             WriteStrategyCluster(cluster);
         }
 
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowRegimeSummary()
+    {
+        WriteHeader("Hermes Market Regime Summary");
+        var classifier = new MarketRegimeClassifier(BuildStoragePaths());
+        var analysis = classifier.Run();
+
+        WriteField("Summary", DisplayPath(analysis.SummaryPath));
+        WriteField("Distribution", DisplayPath(analysis.DistributionPath));
+        WriteField("Strategy Performance", DisplayPath(analysis.StrategyPerformancePath));
+        WriteField("Snapshot Memory", DisplayPath(analysis.SnapshotMemoryPath));
+        WriteRegimeSummary(analysis.Summary);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyRegimePerformance()
+    {
+        WriteHeader("Hermes Strategy Regime Performance");
+        var classifier = new MarketRegimeClassifier(BuildStoragePaths());
+        var report = classifier.LoadStrategyPerformance() ?? classifier.Run().StrategyPerformance;
+
+        WriteField("Report", DisplayPath(classifier.StrategyPerformancePath));
+        WriteField("Strategies Analyzed", report.StrategiesAnalyzed.ToString());
+        WriteField("Regime Snapshots", report.RegimeSnapshotsAnalyzed.ToString());
+        WriteField("Regime Consistency", $"{report.RegimeConsistencyScore:0.####}");
+        WriteMessages("Strong Regime Matches", report.StrongRegimeMatches.Take(12).ToList());
+        WriteMessages("Weak Regime Matches", report.WeakRegimeMatches.Take(12).ToList());
+        WriteMessages("Preferred Sessions", report.PreferredSessions);
+        WriteMessages("Avoid Sessions", report.AvoidSessions);
+        WriteMessages("Volatility Preference", report.VolatilityPreference);
+        foreach (var entry in report.Entries.Take(10))
+        {
+            WriteStrategyRegimeEntry(entry);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowRegimeDistribution()
+    {
+        WriteHeader("Hermes Regime Distribution");
+        var classifier = new MarketRegimeClassifier(BuildStoragePaths());
+        var report = classifier.LoadDistribution() ?? classifier.Run().Distribution;
+
+        WriteField("Report", DisplayPath(classifier.DistributionPath));
+        WriteField("Total Candles", report.TotalCandles.ToString());
+        foreach (var entry in report.Entries.Take(20))
+        {
+            WriteSubHeader($"{entry.Symbol} {entry.Timeframe} / {entry.RegimeType} / {entry.Session}");
+            WriteField("Candles", entry.CandleCount.ToString());
+            WriteField("Share", $"{entry.Percentage:P2}");
+            WriteField("Confidence", $"{entry.AverageConfidence:0.####}");
+        }
+
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
         WriteSafety();
         return 0;
     }
@@ -2331,12 +2407,57 @@ internal sealed class HermesCli
         WriteMessages("Overfit Suspected", insights.OverfitSuspectedStrategies ?? Array.Empty<string>());
         WriteMessages("High Risk Strategies", insights.HighRiskStrategies ?? Array.Empty<string>());
         WriteMessages("Stable Symbol/Timeframe", insights.StableSymbolTimeframeCombinations ?? Array.Empty<string>());
+        WriteMessages("Best Regimes", insights.BestRegimes ?? Array.Empty<string>());
+        WriteMessages("Weak Regimes", insights.WeakRegimes ?? Array.Empty<string>());
+        WriteMessages("Preferred Sessions", insights.PreferredSessions ?? Array.Empty<string>());
+        WriteMessages("Avoid Sessions", insights.AvoidSessions ?? Array.Empty<string>());
+        WriteMessages("Volatility Preference", insights.VolatilityPreference ?? Array.Empty<string>());
+        WriteField("Regime Consistency", insights.RegimeConsistencyScore is null ? "-" : $"{insights.RegimeConsistencyScore:0.####}");
         WriteMessages("Avoid Combinations", insights.AvoidCombinations ?? Array.Empty<string>());
         WriteMessages("Next Recommended Tests", insights.NextRecommendedTests ?? Array.Empty<string>());
         WriteMessages("Parameter Statistics", insights.ParameterStatistics);
         WriteMessages("Timeframe Comparisons", insights.TimeframeComparisons);
         WriteField("no_auto_trading", insights.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", insights.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteRegimeSummary(RegimeSummaryReport report)
+    {
+        WriteField("Generated UTC", report.GeneratedAtUtc.ToString("O"));
+        WriteField("Source Features", DisplayPath(report.SourceFeatureFile));
+        WriteField("Features Analyzed", report.FeaturesAnalyzed.ToString());
+        WriteField("Snapshots", report.SnapshotCount.ToString());
+        WriteMessages("Symbols", report.Symbols);
+        WriteMessages("Timeframes", report.Timeframes);
+        WriteMessages("Dominant Regimes", report.DominantRegimes);
+        WriteMessages("Dominant Sessions", report.DominantSessions);
+        foreach (var snapshot in report.TopSnapshots.Take(8))
+        {
+            WriteSubHeader($"{snapshot.Symbol} {snapshot.Timeframe} / {snapshot.RegimeType} / {snapshot.Session}");
+            WriteField("Candles", snapshot.CandleCount.ToString());
+            WriteField("Range Ratio", $"{snapshot.AverageRangeRatio:0.########}");
+            WriteField("Body Ratio", $"{snapshot.AverageBodyRatio:0.####}");
+            WriteField("Trend Slope", $"{snapshot.TrendSlope:0.########}");
+            WriteField("Breakout Frequency", $"{snapshot.BreakoutFrequency:0.####}");
+            WriteField("Confidence", $"{snapshot.Confidence:0.####}");
+        }
+
+        WriteMessages("Warnings", report.Warnings);
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteStrategyRegimeEntry(StrategyRegimePerformanceEntry entry)
+    {
+        WriteSubHeader($"{entry.StrategyFamily} / {entry.PatternName} / {entry.RegimeType} / {entry.Session}");
+        WriteField("Pattern ID", entry.PatternId);
+        WriteField("Variants", entry.VariantCount.ToString());
+        WriteField("Trades", entry.TotalTrades.ToString());
+        WriteField("Avg Fitness", $"{entry.AverageFitness:0.####}");
+        WriteField("Avg Winrate", $"{entry.AverageWinrate:P2}");
+        WriteField("Regime Confidence", $"{entry.AverageRegimeConfidence:0.####}");
+        WriteField("Regime Fit", $"{entry.RegimeFitScore:0.####}");
+        WriteField("Status", entry.Status);
     }
 
     private void WriteWalkForwardSummary(WalkForwardValidationReport report)
