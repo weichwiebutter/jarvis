@@ -1,89 +1,116 @@
 # Jarvis Runtime Read-only Bridge
 
-Status: architecture note, not implemented.
+Status: implemented foundation in `HermesRuntime`.
 
 ## Ziel
 
-Das React Jarvis Control Center soll spaeter echte HermesRuntime-JSON-Dateien anzeigen koennen, ohne HermesRuntime zu steuern oder Runtime-Daten zu veraendern. Die Bridge ist nur als read-only Verbindung zwischen UI und lokalen Runtime-Artefakten gedacht.
+Das React Jarvis Control Center liest Hermes Runtime Reports ueber eine kleine
+localhost Bridge. Die UI greift nicht direkt auf `/mnt/d/HermesData` zu und
+erhaelt keine Schreib-, Runtime- oder Trading-Kommandos.
 
-## Warum Browser-Dateizugriff nicht reicht
+## Architektur
 
-React laeuft im Browser-Kontext. Lokale Runtime-Dateien sind dort nicht verlaesslich direkt lesbar, weil:
+```text
+Hermes Runtime Reports
+-> HermesReadOnlyBridge
+-> definierte localhost GET-Endpunkte
+-> React Runtime Data Adapter
+-> Jarvis Control Center Panels
+```
 
-- statische Builds keinen `/@fs` Zugriff haben,
-- Browser lokale Dateizugriffe sandboxen,
-- CORS- und Server-Regeln lokale Pfade blockieren koennen,
-- absolute Dateipfade nicht portabel sind,
-- fehlende Dateien oder wechselnde Runtime-Pfade das UI sonst hart brechen wuerden.
+CLI-Start:
 
-Der aktuelle React-Prototyp nutzt deshalb Fixtures und Fallbacks. Das ist korrekt fuer die jetzige Phase: Die UI bleibt stabil, laeuft ohne Runtime-Start, erzeugt keine Schreibzugriffe und kann trotzdem das spaetere Layout testen.
+```bash
+cd HermesRuntime
+dotnet run --project ./cli/Hermes.Cli.csproj -- readonly-bridge
+```
 
-## Bridge-Zielbild
+Default URL:
 
-Die Runtime Bridge soll:
+```text
+http://127.0.0.1:8787
+```
 
-- nur lesen,
-- keine Commands anbieten,
-- keine Schreibzugriffe ausfuehren,
-- keine Runtime starten oder stoppen,
-- keine Runtime-Konfiguration veraendern,
-- keine Trading-Aktionen ausloesen,
-- keine Broker- oder cTrader-Verbindung herstellen.
+## Response-Modell
 
-Sie ist ein Anzeige-Adapter, keine Kontroll-API.
+Alle Bridge-Antworten verwenden `BridgeResponseModel`:
 
-## Moegliche Endpunkte v1
+```json
+{
+  "status": "available",
+  "data_source": "readonly_bridge",
+  "timestamp_utc": "2026-05-26T00:00:00Z",
+  "no_auto_trading": true,
+  "human_review_required": true,
+  "data": {},
+  "warnings": []
+}
+```
+
+## Endpunkte v1
 
 Alle Endpunkte sind `GET` und read-only:
 
+- `GET /bridge/health`
+- `GET /reports`
+- `GET /operator/dashboard`
 - `GET /runtime/health`
 - `GET /runtime/setup-watch`
-- `GET /runtime/events/recent`
-- `GET /runtime/jobs`
+- `GET /runtime/supervisor`
+- `GET /runtime/scheduler`
+- `GET /runtime/resource`
 - `GET /runtime/storage`
-- `GET /runtime/replays`
+- `GET /runtime/cleanup-plan`
+- `GET /runtime/nightly`
+- `GET /reports/research-insights`
+- `GET /reports/robust-strategies`
+- `GET /reports/overfit-report`
+- `GET /reports/regime-summary`
+- `GET /reports/strategy-regime-performance`
+- `GET /reports/regime-distribution`
 
-Die Antworten sollen normalisierte JSON-Strukturen liefern, die zum bestehenden React Runtime Data Adapter passen:
+## Whitelist Reports
 
-- `runtimeHealth`
-- `setupWatches`
-- `dataSource`
-- `warnings`
+Die Bridge liest nur fest verdrahtete, bekannte Reportpfade unter dem
+konfigurierten Hermes Data Root:
+
+- `reports/runtime_health.json`
+- `setup_watch/setup_watch.json`
+- `reports/supervisor/supervisor_state.json`
+- `reports/supervisor/scheduler_state.json`
+- `reports/resource/resource_status.json`
+- `reports/storage/storage_status.json`
+- `reports/storage/cleanup_plan.json`
+- `reports/nightly_beta3/nightly_state.json`
+- `strategy_research/research_insights.json`
+- `strategy_research/robust_strategies.json`
+- `strategy_research/overfit_report.json`
+- `reports/regimes/regime_summary.json`
+- `reports/regimes/strategy_regime_performance.json`
+- `reports/regimes/regime_distribution.json`
+
+Fehlende Reports liefern `status: unavailable` mit Warning, nicht eine
+schreibende Recovery-Aktion.
 
 ## Sicherheitsprinzipien
 
-- Read-only first.
-- Nur `localhost`.
-- Kein Remote-Zugriff in v1.
-- `no_auto_trading` bleibt sichtbar.
-- `human_review_required` bleibt sichtbar.
-- Keine Secrets ausgeben.
-- Keine API Keys, Tokens oder Provider-Konfigurationen anzeigen.
-- Keine internen Pfade unnoetig leaken.
-- Keine Schreib-, Delete-, Start-, Stop- oder Reload-Endpunkte in v1.
-- Keine Order-, Broker-, cTrader- oder Trading-Aktions-Endpunkte.
-- Fehler defensiv als `unavailable` oder `fixture` melden, nicht als UI-Crash.
+- Nur localhost.
+- Nur `GET` und `OPTIONS`.
+- Keine POST/PUT/PATCH/DELETE-Endpunkte.
+- Keine freien Shell-Kommandos.
+- Keine Runtime-Start-/Stop-Kommandos.
+- Keine Trading-, Broker- oder cTrader-Aktions-Endpunkte.
+- Keine arbitrary file reads.
+- Pfade werden gegen den konfigurierten Data Root normalisiert und begrenzt.
+- JSON-Schluessel mit Secret-/Token-/Passwort-Bezug werden vor Ausgabe redacted.
+- `no_auto_trading` und `human_review_required` bleiben in jeder Antwort sichtbar.
 
-## Spaetere Implementierungsoptionen
+## UI-Integration
 
-Optionen fuer eine spaetere Umsetzung:
+`ui/jarvis-control-center/vite.config.js` zeigt nicht mehr direkt auf
+Vite-`/@fs`-Dateipfade. Der React Runtime Data Adapter nutzt die Bridge-URLs und
+faellt bei fehlender Bridge oder fehlenden Reports auf Fixtures zurueck.
 
-- Kleine FastAPI Bridge fuer lokale Entwicklung.
-- Kleine .NET Minimal API nahe an HermesRuntime.
-- Tauri File Access fuer die spaetere Desktop-App.
-- Statischer JSON Export fuer Dev Mode.
-
-## Empfehlung
-
-Fuer v1 sollte zuerst eine kleine read-only localhost Bridge entstehen. Sie kann die bestehenden HermesRuntime JSON-Dateien normalisieren und dem React Control Center stabil bereitstellen, ohne Schreibrechte oder Steuerfunktionen einzufuehren.
-
-Tauri File Access bleibt eine spaetere Option fuer die finale lokale Desktop-App.
-
-## Nicht-Ziele
-
-- Keine Bridge-Implementierung in dieser Spezifikation.
-- Keine API- oder Service-Starts.
-- Keine HermesRuntime-Aenderungen.
-- Keine React-Funktionalitaets-Aenderungen.
-- Kein Auto-Trading.
-- Keine menschliche Freigabe umgehen.
+Die Bridge bleibt Monitoring-/Research-Infrastruktur. Zukuenftige
+Command-/Trading-Kontrollen muessen als getrennte, approval-aware Schicht geplant
+werden.

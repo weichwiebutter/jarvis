@@ -1,175 +1,115 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const projectDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(projectDir, '../..');
 const hermesDataRoot = process.env.HERMES_DATA_ROOT || '/mnt/d/HermesData';
-const displayDataRoot = process.env.HERMES_DATA_ROOT || '/mnt/d/HermesData';
-const runtimeHealthPath = resolve(hermesDataRoot, 'reports/runtime_health.json');
-const runtimeEventsPath = resolve(hermesDataRoot, 'events/runtime');
-const runtimeJobsPath = resolve(hermesDataRoot, 'jobs/jobs.index.json');
-const replayManifestPath = resolve(hermesDataRoot, 'replays/manifests');
-const setupWatchPath = resolve(hermesDataRoot, 'setup_watch/setup_watch.json');
-const featureExportsPath = resolve(hermesDataRoot, 'exports/features');
-const signalExportsPath = resolve(hermesDataRoot, 'exports/signals');
-const backtestReportsPath = resolve(hermesDataRoot, 'reports/backtests');
-const outcomeReportsPath = resolve(hermesDataRoot, 'reports/outcomes');
-const betaReportPath = resolve(hermesDataRoot, 'reports/beta/latest_beta_learning.json');
+const bridgeBaseUrl =
+  process.env.HERMES_READONLY_BRIDGE_URL ||
+  process.env.VITE_HERMES_READONLY_BRIDGE_URL ||
+  'http://127.0.0.1:8787';
+const normalizedBridgeBaseUrl = bridgeBaseUrl.replace(/\/+$/, '');
+
+function bridgeUrl(endpoint) {
+  return `${normalizedBridgeBaseUrl}${endpoint}`;
+}
 
 const operatorReports = {
   researchInsights: {
     label: 'Research Insights',
-    url: `/@fs/${resolve(hermesDataRoot, 'strategy_research/research_insights.json')}`,
-    path: `${displayDataRoot}/strategy_research/research_insights.json`,
+    url: bridgeUrl('/reports/research-insights'),
+    path: 'read-only bridge:/reports/research-insights',
   },
   robustStrategies: {
     label: 'Robuste Strategien',
-    url: `/@fs/${resolve(hermesDataRoot, 'strategy_research/robust_strategies.json')}`,
-    path: `${displayDataRoot}/strategy_research/robust_strategies.json`,
+    url: bridgeUrl('/reports/robust-strategies'),
+    path: 'read-only bridge:/reports/robust-strategies',
   },
   overfitReport: {
     label: 'Overfit Report',
-    url: `/@fs/${resolve(hermesDataRoot, 'strategy_research/overfit_report.json')}`,
-    path: `${displayDataRoot}/strategy_research/overfit_report.json`,
+    url: bridgeUrl('/reports/overfit-report'),
+    path: 'read-only bridge:/reports/overfit-report',
   },
   regimeSummary: {
     label: 'Regime Summary',
-    url: `/@fs/${resolve(hermesDataRoot, 'reports/regimes/regime_summary.json')}`,
-    path: `${displayDataRoot}/reports/regimes/regime_summary.json`,
+    url: bridgeUrl('/reports/regime-summary'),
+    path: 'read-only bridge:/reports/regime-summary',
   },
   strategyRegimePerformance: {
     label: 'Strategy Regime Performance',
-    url: `/@fs/${resolve(hermesDataRoot, 'reports/regimes/strategy_regime_performance.json')}`,
-    path: `${displayDataRoot}/reports/regimes/strategy_regime_performance.json`,
+    url: bridgeUrl('/reports/strategy-regime-performance'),
+    path: 'read-only bridge:/reports/strategy-regime-performance',
   },
   regimeDistribution: {
     label: 'Regime Distribution',
-    url: `/@fs/${resolve(hermesDataRoot, 'reports/regimes/regime_distribution.json')}`,
-    path: `${displayDataRoot}/reports/regimes/regime_distribution.json`,
+    url: bridgeUrl('/reports/regime-distribution'),
+    path: 'read-only bridge:/reports/regime-distribution',
   },
   supervisorState: {
     label: 'Supervisor State',
-    url: `/@fs/${resolve(hermesDataRoot, 'reports/supervisor/supervisor_state.json')}`,
-    path: `${displayDataRoot}/reports/supervisor/supervisor_state.json`,
+    url: bridgeUrl('/runtime/supervisor'),
+    path: 'read-only bridge:/runtime/supervisor',
   },
   schedulerState: {
     label: 'Scheduler State',
-    url: `/@fs/${resolve(hermesDataRoot, 'reports/supervisor/scheduler_state.json')}`,
-    path: `${displayDataRoot}/reports/supervisor/scheduler_state.json`,
+    url: bridgeUrl('/runtime/scheduler'),
+    path: 'read-only bridge:/runtime/scheduler',
   },
   resourceStatus: {
     label: 'Resource Status',
-    url: `/@fs/${resolve(hermesDataRoot, 'reports/resource/resource_status.json')}`,
-    path: `${displayDataRoot}/reports/resource/resource_status.json`,
+    url: bridgeUrl('/runtime/resource'),
+    path: 'read-only bridge:/runtime/resource',
+  },
+  storageStatus: {
+    label: 'Storage Status',
+    url: bridgeUrl('/runtime/storage'),
+    path: 'read-only bridge:/runtime/storage',
   },
   cleanupPlan: {
     label: 'Cleanup Plan',
-    url: `/@fs/${resolve(hermesDataRoot, 'reports/storage/cleanup_plan.json')}`,
-    path: `${displayDataRoot}/reports/storage/cleanup_plan.json`,
+    url: bridgeUrl('/runtime/cleanup-plan'),
+    path: 'read-only bridge:/runtime/cleanup-plan',
   },
   nightlyState: {
     label: 'Nightly State',
-    url: `/@fs/${resolve(hermesDataRoot, 'reports/nightly_beta3/nightly_state.json')}`,
-    path: `${displayDataRoot}/reports/nightly_beta3/nightly_state.json`,
+    url: bridgeUrl('/runtime/nightly'),
+    path: 'read-only bridge:/runtime/nightly',
   },
 };
-
-const supervisorLogPath = resolve(hermesDataRoot, 'logs/supervisor.log');
-
-function findLatestReplayManifest() {
-  try {
-    const manifest = readdirSync(replayManifestPath)
-      .filter((fileName) => fileName.endsWith('.manifest.json'))
-      .sort()
-      .at(-1);
-
-    return manifest ? resolve(replayManifestPath, manifest) : '';
-  } catch {
-    return '';
-  }
-}
-
-function findLatestExportFile(directory, suffix) {
-  try {
-    const fileName = readdirSync(directory)
-      .filter((file) => file.endsWith(suffix))
-      .sort()
-      .at(-1);
-
-    return fileName ? resolve(directory, fileName) : '';
-  } catch {
-    return '';
-  }
-}
-
-const latestReplayManifestPath = findLatestReplayManifest();
-const latestFeatureExportPath = findLatestExportFile(featureExportsPath, '.features.jsonl');
-const latestSignalExportPath = findLatestExportFile(signalExportsPath, '.signals.jsonl');
-const latestBacktestReportPath = findLatestExportFile(backtestReportsPath, '.backtest.json');
-const latestOutcomeReportPath = findLatestExportFile(outcomeReportsPath, '.outcomes.json');
 
 export default defineConfig({
   plugins: [react()],
   define: {
-    __HERMES_RUNTIME_HEALTH_URL__: JSON.stringify(`/@fs/${runtimeHealthPath}`),
-    __HERMES_RUNTIME_EVENTS_BASE_URL__: JSON.stringify(`/@fs/${runtimeEventsPath}`),
-    __HERMES_RUNTIME_JOBS_URL__: JSON.stringify(`/@fs/${runtimeJobsPath}`),
-    __HERMES_REPLAY_MANIFEST_URL__: JSON.stringify(
-      latestReplayManifestPath ? `/@fs/${latestReplayManifestPath}` : '',
-    ),
-    __HERMES_FEATURE_EXPORT_URL__: JSON.stringify(
-      latestFeatureExportPath ? `/@fs/${latestFeatureExportPath}` : '',
-    ),
-    __HERMES_SIGNAL_EXPORT_URL__: JSON.stringify(
-      latestSignalExportPath ? `/@fs/${latestSignalExportPath}` : '',
-    ),
-    __HERMES_BACKTEST_REPORT_URL__: JSON.stringify(
-      latestBacktestReportPath ? `/@fs/${latestBacktestReportPath}` : '',
-    ),
-    __HERMES_OUTCOME_REPORT_URL__: JSON.stringify(
-      latestOutcomeReportPath ? `/@fs/${latestOutcomeReportPath}` : '',
-    ),
-    __HERMES_BETA_REPORT_URL__: JSON.stringify(`/@fs/${betaReportPath}`),
-    __HERMES_SETUP_WATCH_URL__: JSON.stringify(`/@fs/${setupWatchPath}`),
-    __HERMES_RUNTIME_HEALTH_PATH__: JSON.stringify(
-      `${displayDataRoot}/reports/runtime_health.json`,
-    ),
-    __HERMES_RUNTIME_JOBS_PATH__: JSON.stringify(`${displayDataRoot}/jobs/jobs.index.json`),
-    __HERMES_FEATURE_EXPORT_PATH__: JSON.stringify(
-      latestFeatureExportPath
-        ? `${displayDataRoot}/exports/features/${latestFeatureExportPath.split('/').at(-1)}`
-        : '',
-    ),
-    __HERMES_SIGNAL_EXPORT_PATH__: JSON.stringify(
-      latestSignalExportPath
-        ? `${displayDataRoot}/exports/signals/${latestSignalExportPath.split('/').at(-1)}`
-        : '',
-    ),
-    __HERMES_BACKTEST_REPORT_PATH__: JSON.stringify(
-      latestBacktestReportPath
-        ? `${displayDataRoot}/reports/backtests/${latestBacktestReportPath.split('/').at(-1)}`
-        : '',
-    ),
-    __HERMES_OUTCOME_REPORT_PATH__: JSON.stringify(
-      latestOutcomeReportPath
-        ? `${displayDataRoot}/reports/outcomes/${latestOutcomeReportPath.split('/').at(-1)}`
-        : '',
-    ),
-    __HERMES_BETA_REPORT_PATH__: JSON.stringify(
-      `${displayDataRoot}/reports/beta/latest_beta_learning.json`,
-    ),
-    __HERMES_SETUP_WATCH_PATH__: JSON.stringify(`${displayDataRoot}/setup_watch/setup_watch.json`),
-    __HERMES_DATA_ROOT__: JSON.stringify(displayDataRoot),
+    __HERMES_READONLY_BRIDGE_URL__: JSON.stringify(normalizedBridgeBaseUrl),
+    __HERMES_OPERATOR_DASHBOARD_URL__: JSON.stringify(bridgeUrl('/operator/dashboard')),
+    __HERMES_RUNTIME_HEALTH_URL__: JSON.stringify(bridgeUrl('/runtime/health')),
+    __HERMES_RUNTIME_EVENTS_BASE_URL__: JSON.stringify(''),
+    __HERMES_RUNTIME_JOBS_URL__: JSON.stringify(''),
+    __HERMES_REPLAY_MANIFEST_URL__: JSON.stringify(''),
+    __HERMES_FEATURE_EXPORT_URL__: JSON.stringify(''),
+    __HERMES_SIGNAL_EXPORT_URL__: JSON.stringify(''),
+    __HERMES_BACKTEST_REPORT_URL__: JSON.stringify(''),
+    __HERMES_OUTCOME_REPORT_URL__: JSON.stringify(''),
+    __HERMES_BETA_REPORT_URL__: JSON.stringify(''),
+    __HERMES_SETUP_WATCH_URL__: JSON.stringify(bridgeUrl('/runtime/setup-watch')),
+    __HERMES_RUNTIME_HEALTH_PATH__: JSON.stringify('read-only bridge:/runtime/health'),
+    __HERMES_RUNTIME_JOBS_PATH__: JSON.stringify('read-only bridge:/runtime/jobs'),
+    __HERMES_FEATURE_EXPORT_PATH__: JSON.stringify(''),
+    __HERMES_SIGNAL_EXPORT_PATH__: JSON.stringify(''),
+    __HERMES_BACKTEST_REPORT_PATH__: JSON.stringify(''),
+    __HERMES_OUTCOME_REPORT_PATH__: JSON.stringify(''),
+    __HERMES_BETA_REPORT_PATH__: JSON.stringify(''),
+    __HERMES_SETUP_WATCH_PATH__: JSON.stringify('read-only bridge:/runtime/setup-watch'),
+    __HERMES_DATA_ROOT__: JSON.stringify(hermesDataRoot),
     __HERMES_OPERATOR_REPORTS__: JSON.stringify(operatorReports),
-    __HERMES_SUPERVISOR_LOG_URL__: JSON.stringify(`/@fs/${supervisorLogPath}`),
-    __HERMES_SUPERVISOR_LOG_PATH__: JSON.stringify(`${displayDataRoot}/logs/supervisor.log`),
+    __HERMES_SUPERVISOR_LOG_URL__: JSON.stringify(''),
+    __HERMES_SUPERVISOR_LOG_PATH__: JSON.stringify('read-only bridge:logs unavailable in v1'),
   },
   server: {
     fs: {
-      allow: [projectDir, repoRoot, hermesDataRoot],
+      allow: [projectDir, repoRoot],
     },
   },
 });

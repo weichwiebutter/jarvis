@@ -28,7 +28,7 @@ export const learningCandidates = [
     type: 'Fehlerpattern',
     title: 'Browser blockiert lokale Runtime-Dateien',
     description:
-      'Vite /@fs-Zugriff kann im statischen Build blockiert sein; Fixture-Fallback muss sichtbar bleiben.',
+      'Read-only Bridge oder lokale Runtime-Reports koennen fehlen; Fixture-Fallback muss sichtbar bleiben.',
     source: 'Laufzeitstatus-Loader',
     risk: 'low',
     status: 'approved',

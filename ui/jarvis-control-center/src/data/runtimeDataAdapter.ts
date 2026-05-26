@@ -36,6 +36,7 @@ const betaReportPath = __HERMES_BETA_REPORT_PATH__;
 const setupWatchPath = __HERMES_SETUP_WATCH_PATH__;
 const hermesDataRoot = __HERMES_DATA_ROOT__;
 const operatorReportsConfig = __HERMES_OPERATOR_REPORTS__;
+const operatorDashboardUrl = __HERMES_OPERATOR_DASHBOARD_URL__;
 const supervisorLogUrl = __HERMES_SUPERVISOR_LOG_URL__;
 const supervisorLogPath = __HERMES_SUPERVISOR_LOG_PATH__;
 
@@ -111,6 +112,29 @@ async function readJsonReadOnly(url) {
   }
 
   return response.json();
+}
+
+function isBridgeResponse(raw) {
+  return Boolean(
+    raw &&
+      typeof raw === 'object' &&
+      Object.prototype.hasOwnProperty.call(raw, 'data') &&
+      (Object.prototype.hasOwnProperty.call(raw, 'status') ||
+        Object.prototype.hasOwnProperty.call(raw, 'data_source') ||
+        Object.prototype.hasOwnProperty.call(raw, 'dataSource')),
+  );
+}
+
+function unwrapBridgeResponse(raw) {
+  return isBridgeResponse(raw) ? raw.data : raw;
+}
+
+function bridgeResponseWarnings(raw) {
+  if (!isBridgeResponse(raw)) {
+    return [];
+  }
+
+  return Array.isArray(raw.warnings) ? raw.warnings.map(String) : [];
 }
 
 async function readTextReadOnly(url) {
@@ -884,8 +908,13 @@ async function loadRuntimeHealthEntry() {
   }
 
   try {
-    const raw = await readJsonReadOnly(runtimeHealthDevUrl);
-    const source = buildSource(DATA_SOURCE.LIVE_FILE, runtimeHealthPath);
+    const response = await readJsonReadOnly(runtimeHealthDevUrl);
+    const raw = unwrapBridgeResponse(response);
+    const source = buildSource(
+      DATA_SOURCE.LIVE_FILE,
+      runtimeHealthPath,
+      bridgeResponseWarnings(response)[0] || '',
+    );
     const runtimeHealth = normalizeRuntimeHealth(raw, {
       label: de.common.jsonSource,
       url: runtimeHealthDevUrl,
@@ -909,12 +938,17 @@ async function loadSetupWatchesEntry() {
   }
 
   try {
-    const raw = await readJsonReadOnly(setupWatchUrl);
+    const response = await readJsonReadOnly(setupWatchUrl);
+    const raw = unwrapBridgeResponse(response);
     const items = Array.isArray(raw) ? raw : raw?.candidates || raw?.setup_watches || [];
 
     return {
       setupWatches: items.map(normalizeSetupWatch),
-      source: buildSource(DATA_SOURCE.LIVE_FILE, setupWatchPath),
+      source: buildSource(
+        DATA_SOURCE.LIVE_FILE,
+        setupWatchPath,
+        bridgeResponseWarnings(response)[0] || '',
+      ),
     };
   } catch (error) {
     return createFixtureSetupWatches(
@@ -1052,12 +1086,13 @@ export async function loadRuntimeJobs() {
   }
 
   try {
-    const raw = await readJsonReadOnly(runtimeJobsUrl);
+    const response = await readJsonReadOnly(runtimeJobsUrl);
+    const raw = unwrapBridgeResponse(response);
 
     return {
       jobs: normalizeRuntimeJobs(raw),
       dataSource: DATA_SOURCE.LIVE_FILE,
-      warnings: [],
+      warnings: bridgeResponseWarnings(response),
       sourcePath: runtimeJobsPath,
     };
   } catch (error) {
@@ -1120,7 +1155,8 @@ export async function loadBacktestReports() {
   }
 
   try {
-    const raw = await readJsonReadOnly(backtestReportUrl);
+    const response = await readJsonReadOnly(backtestReportUrl);
+    const raw = unwrapBridgeResponse(response);
     const reports = Array.isArray(raw) ? raw : raw?.reports || [raw];
     const normalizedReports = reports.map(normalizeBacktestReport);
 
@@ -1148,7 +1184,8 @@ export async function loadOutcomeReports() {
   }
 
   try {
-    const raw = await readJsonReadOnly(outcomeReportUrl);
+    const response = await readJsonReadOnly(outcomeReportUrl);
+    const raw = unwrapBridgeResponse(response);
     const outcomes = Array.isArray(raw) ? raw : raw?.outcomes || [raw];
     const normalizedOutcomes = outcomes.map(normalizeOutcomeReport);
 
@@ -1176,7 +1213,8 @@ export async function loadBetaReport() {
   }
 
   try {
-    const raw = await readJsonReadOnly(betaReportUrl);
+    const response = await readJsonReadOnly(betaReportUrl);
+    const raw = unwrapBridgeResponse(response);
     const normalizedReport = normalizeBetaReport(raw);
 
     if (!normalizedReport.run_id || normalizedReport.status === 'unknown') {
@@ -1583,8 +1621,16 @@ export function createOperatorDashboardFallback(loadError = '') {
 
 async function loadOperatorReport(key, config) {
   try {
-    const raw = await readJsonReadOnly(config?.url);
-    return normalizeReportEntry(key, config, raw, DATA_SOURCE.LIVE_FILE);
+    const response = await readJsonReadOnly(config?.url);
+    const raw = unwrapBridgeResponse(response);
+    const warnings = bridgeResponseWarnings(response);
+    return normalizeReportEntry(
+      key,
+      config,
+      raw || reportFixtureRaw(key),
+      raw ? DATA_SOURCE.LIVE_FILE : DATA_SOURCE.FIXTURE,
+      warnings[0] || '',
+    );
   } catch (error) {
     const warning = warningFromError(`${config?.label || key} nicht erreichbar`, error);
     return normalizeReportEntry(key, config, reportFixtureRaw(key), DATA_SOURCE.FIXTURE, warning);
@@ -1592,6 +1638,58 @@ async function loadOperatorReport(key, config) {
 }
 
 export async function loadOperatorDashboard() {
+  if (operatorDashboardUrl) {
+    try {
+      const response = await readJsonReadOnly(operatorDashboardUrl);
+      const dashboard = unwrapBridgeResponse(response) || {};
+      const warnings = bridgeResponseWarnings(response);
+      const rawReports = {
+        supervisorState: dashboard.supervisorState,
+        schedulerState: dashboard.schedulerState,
+        resourceStatus: dashboard.resourceStatus,
+        storageStatus: dashboard.storageStatus,
+        cleanupPlan: dashboard.cleanupPlan,
+        nightlyState: dashboard.nightlyState,
+        researchInsights: dashboard.researchInsights,
+        robustStrategies: dashboard.robustStrategies,
+        overfitReport: dashboard.overfitReport,
+        regimeSummary: dashboard.regimeSummary,
+        strategyRegimePerformance: dashboard.strategyRegimePerformance,
+        regimeDistribution: dashboard.regimeDistribution,
+      };
+      const reportIndex = dashboard.reportIndex?.reports || [];
+      const reports = Object.entries(operatorReportsConfig || {}).map(([key, config]) => {
+        const indexEntry = reportIndex.find((entry) => entry.key === key);
+        const raw = rawReports[key] || reportFixtureRaw(key);
+        const available = Boolean(indexEntry?.available && rawReports[key]);
+        return normalizeReportEntry(
+          key,
+          {
+            ...config,
+            path: indexEntry?.endpoint || config?.path,
+          },
+          raw,
+          available ? DATA_SOURCE.LIVE_FILE : DATA_SOURCE.FIXTURE,
+          available ? '' : `${config?.label || key} nicht in der Read-only Bridge verfuegbar.`,
+        );
+      });
+
+      const dataSource = reports.some((report) => report.dataSource === DATA_SOURCE.LIVE_FILE)
+        ? DATA_SOURCE.LIVE_FILE
+        : DATA_SOURCE.FIXTURE;
+
+      return buildOperatorDashboard(
+        rawReports,
+        reports,
+        [...operatorDashboardMock.logLines],
+        dataSource,
+        warnings,
+      );
+    } catch (error) {
+      // Fall through to per-report bridge reads and fixtures.
+    }
+  }
+
   const configs = operatorReportsConfig || {};
   const reportEntries = await Promise.all(
     Object.entries(configs).map(([key, config]) => loadOperatorReport(key, config)),

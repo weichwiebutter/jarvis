@@ -1,6 +1,7 @@
 using Hermes.Runtime;
 using System.Diagnostics;
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using System.Xml.Linq;
 
@@ -48,6 +49,7 @@ internal sealed class HermesCli
             "nightly-stop-request" => RequestNightlyStop(),
             "scheduler-status" => ShowSchedulerStatus(),
             "scheduler-jobs" => ShowSchedulerJobs(),
+            "readonly-bridge" or "bridge-start" => StartReadOnlyBridge(),
             "supervisor-start" => StartSupervisor(),
             "supervisor-status" => ShowSupervisorStatus(),
             "supervisor-stop-request" => RequestSupervisorStop(),
@@ -116,6 +118,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes nightly-stop-request sicheren Stop-Request fuer Nightly Beta 3 setzen");
         Console.WriteLine("  hermes scheduler-status  internen Hermes Scheduler Status anzeigen");
         Console.WriteLine("  hermes scheduler-jobs    geplante Hermes Jobs anzeigen");
+        Console.WriteLine("  hermes readonly-bridge   localhost Read-only Bridge fuer Jarvis Control Center starten");
         Console.WriteLine("  hermes supervisor-start  langlebigen Hermes Supervisor starten");
         Console.WriteLine("  hermes supervisor-status Supervisor Heartbeat/State anzeigen");
         Console.WriteLine("  hermes supervisor-stop-request sicheren Supervisor Stop Request setzen");
@@ -159,6 +162,41 @@ internal sealed class HermesCli
         Console.WriteLine("Start ohne Installation:");
         Console.WriteLine("  dotnet run --project ./cli/Hermes.Cli.csproj -- health");
         Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int StartReadOnlyBridge()
+    {
+        var url = ReadOption(_args, "--url") ?? "http://127.0.0.1:8787/";
+        if (!url.EndsWith("/", StringComparison.Ordinal))
+        {
+            url += "/";
+        }
+
+        var storagePaths = BuildReadOnlyStoragePaths();
+        var bridge = new HermesReadOnlyBridge(storagePaths);
+        using var cancellation = new CancellationTokenSource();
+
+        Console.CancelKeyPress += (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cancellation.Cancel();
+        };
+
+        try
+        {
+            bridge.RunAsync(url, cancellation.Token).GetAwaiter().GetResult();
+        }
+        catch (HttpListenerException ex)
+        {
+            WriteError($"Read-only Bridge konnte nicht starten: {ex.Message}");
+            Console.WriteLine("Hinweis: Nutze einen freien localhost-Port, z. B. --url http://127.0.0.1:8788/");
+            WriteSafety();
+            return 1;
+        }
+
+        Console.WriteLine("Read-only Bridge wurde beendet.");
         WriteSafety();
         return 0;
     }
@@ -4056,7 +4094,7 @@ internal sealed class HermesCli
         for (var index = 0; index < args.Length; index++)
         {
             var arg = args[index];
-            if (arg is "--root" or "--limit" or "--hours" or "--max-runtime-hours" or "--max-requests" or "--max-downloads" or "--sleep-seconds" or "--max-idle-iterations" or "--from" or "--to")
+            if (arg is "--root" or "--limit" or "--hours" or "--max-runtime-hours" or "--max-requests" or "--max-downloads" or "--sleep-seconds" or "--max-idle-iterations" or "--from" or "--to" or "--url")
             {
                 index++;
                 continue;
@@ -4161,6 +4199,17 @@ internal sealed class HermesCli
         var fallbackPaths = BuildFallbackStoragePaths(_dataRoot);
         EnsureStorageDirectories(fallbackPaths);
         return fallbackPaths;
+    }
+
+    private StoragePaths BuildReadOnlyStoragePaths()
+    {
+        var profilePath = Path.Combine(_runtimeRoot, "config", "storage.profile.json");
+        if (File.Exists(profilePath))
+        {
+            return StorageProfile.Load(profilePath).ToPaths(Path.GetDirectoryName(profilePath) ?? _runtimeRoot);
+        }
+
+        return BuildFallbackStoragePaths(_dataRoot);
     }
 
     private static string ResolveDataRoot(string runtimeRoot)
