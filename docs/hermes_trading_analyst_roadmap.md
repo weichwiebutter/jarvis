@@ -321,6 +321,52 @@ Wichtige UI-Regel:
 Das Panel darf Analyse, Alert-Status und Trefferquoten anzeigen. Es soll keine
 Buttons fuer automatische Buy-/Sell-Orders enthalten.
 
+## Beta-3 Trading Research Regeln
+
+Hermes ist zuerst Research-/Learning-Plattform. Trading ist ein wichtiger
+Schwerpunkt, aber nicht das einzige Ziel. Trading-Funktionen duerfen nicht als
+isolierte Hacks entstehen, sondern muessen in Research Memory, Runtime Events,
+Safety Gates, Approval und Dauerbetrieb passen.
+
+Bewertung:
+
+- robuste Netto-Performance ist wichtiger als reine Winrate
+- Zielwerte fuer spaetere Scalping-Bot-Kandidaten: ca. 60-70 % Winrate,
+  Profit Factor > 1.4, niedriger Drawdown
+- Walk-Forward- und Out-of-Sample-Stabilitaet sind Pflicht
+- Broker-Realitaet muss beruecksichtigt werden: Spread, Commission, Slippage,
+  Session-Liquiditaet und Fusion-Markets-Parameter
+
+## Future Trading Control Layer
+
+Vor Paper-/Demo-/Live-Bot-Phasen braucht Jarvis/Hermes eine sichtbare
+Kontrollschicht:
+
+- Auto-Trading Toggle
+- Paper/Demo Mode
+- Risk Limits
+- Volume- / Lot-Limits
+- Strategy Whitelist
+- Symbol Whitelist
+- Emergency Stop
+
+## Dedicated Scalping Bot Roadmap
+
+Ein spaeterer dedizierter Scalping Bot darf nur aus robustem Hermes Research
+Memory abgeleitet werden. Er bleibt eine getrennte Ausfuehrungsschicht und darf
+nicht direkt aus Research-Ergebnissen live handeln.
+
+Bot Candidate Pipeline:
+
+```text
+research_candidate
+-> promising
+-> robust
+-> demo_bot_candidate
+-> demo_validation
+-> approved_for_small_live_test
+```
+
 ## Implementierungsphasen
 
 Phase 1: Dokumentation und Datenmodell

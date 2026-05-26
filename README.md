@@ -27,6 +27,22 @@
   Audiozugriff.
 - Trading Panel Status: beschreibt den geplanten Hermes Trading Analyst als
   Analyse-Panel ohne Trading-Automation.
+- Hermes Beta 3 ist eine Research-/Learning-Plattform fuer dauerhafte lokale
+  Auswertung. Trading ist ein wichtiger Use Case, aber nicht das einzige Ziel.
+- Supervisor/Scheduler ist die zentrale Dauerbetriebsarchitektur. Windows soll
+  langfristig nur den Hermes Supervisor starten; interne Zeitplaene liegen in
+  `HermesRuntime/config/schedules.json`.
+
+## Beta-3-Architekturregeln
+
+- Keine isolierten Trading-Hacks. Neue Trading-Ideen muessen in Research,
+  Learning, Runtime Events, Safety Gates und Review-Prozesse passen.
+- Neue zeitgesteuerte Jobs brauchen keinen neuen Windows Task. Sie werden als
+  bekannte interne Hermes-Jobtypen in `config/schedules.json` geplant.
+- Jede neue Funktion muss Dauerbetrieb, Recovery, `ResourceGuard`,
+  `StorageHygiene`, Logging, Checkpoints und technische Schuld beruecksichtigen.
+- Bestehende CLI-Kommandos, Configs und Reports bleiben kompatibel.
+- Keine Parallel-Systeme fuer Scheduler, Supervisor, Storage oder Reporting.
 
 ## Schnellstart
 
@@ -68,7 +84,9 @@ dotnet run --project ./Hermes.Runtime.csproj
 Rolle: Hermes CLI ist eine lokale Dev Console fuer Runtime-Status und sichere
 Datenvorbereitung. Statusbefehle lesen lokale Runtime-Dateien; Import- und
 Download-Stub-Befehle schreiben nur lokale Analyseartefakte. Die CLI
-startet/stoppt die Runtime nicht und fuehrt keine Trading-Aktionen aus.
+fuehrt keine Trading-Aktionen aus. Supervisor-Kommandos sind lokale
+Betriebssteuerung fuer den Hermes-Dauerbetrieb und nutzen Stop-Requests statt
+hartem Kill.
 
 ```bash
 cd ~/jarvis/HermesRuntime
@@ -80,6 +98,8 @@ dotnet run --project ./cli/Hermes.Cli.csproj -- storage
 dotnet run --project ./cli/Hermes.Cli.csproj -- ctrader-health
 dotnet run --project ./cli/Hermes.Cli.csproj -- ctrader-symbols
 dotnet run --project ./cli/Hermes.Cli.csproj -- download-history --symbol XAUUSD --timeframe M5 --from 2025-01-01 --to 2025-01-02
+dotnet run --project ./cli/Hermes.Cli.csproj -- scheduler-status
+dotnet run --project ./cli/Hermes.Cli.csproj -- supervisor-status
 dotnet run --project ./cli/Hermes.Cli.csproj -- version
 ```
 
@@ -117,13 +137,17 @@ Falls Port `5173` belegt ist, zeigt Vite die tatsaechliche URL im Terminal.
 - `no_auto_trading` bleibt aktiv.
 - `human_review_required` bleibt aktiv.
 - React UI ist read-only und sendet keine Runtime-Kommandos.
-- Hermes CLI ist read-only und bietet keine Start-/Stop-/Delete-Kommandos.
+- Hermes CLI ist read-only fuer Status/Analyse und bietet nur kontrollierte
+  Supervisor-Start-/Stop-Request-Kommandos fuer den lokalen Dauerbetrieb.
 - Keine Brokerverbindung und keine cTrader-Anbindung in der aktuellen Phase.
 - Trading bleibt Analyse/Alerts only; Orders und Broker-Anbindungen sind nicht
   implementiert.
 - Hermes CLI Foundation bietet read-only Statusbefehle und lokale
   Datenvorbereitungsbefehle. Sie enthaelt keine Runtime-Steuerung, keine
   Delete-Kommandos und keine Trading-Kommandos.
+- Future Trading Control Layer braucht vor jeder Live-Phase: Auto-Trading
+  Toggle, Paper/Demo Mode, Risk Limits, Volume-/Lot-Limits, Strategy Whitelist,
+  Symbol Whitelist und Emergency Stop.
 
 ## Hermes CLI Foundation
 

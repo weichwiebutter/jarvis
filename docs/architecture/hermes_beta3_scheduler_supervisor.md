@@ -20,9 +20,34 @@ Windows Autostart / ein Windows Task
 
 - `HermesSupervisor`: langlebiger Prozess, schreibt Heartbeat und State, prueft Stop-Requests.
 - `HermesInternalScheduler`: liest `config/schedules.json`, berechnet naechste Starts und fuehrt nur erlaubte interne Jobtypen.
+- `SupervisorProcessManager`: verwaltet Background-PID, Stale-PID-Erkennung und Logrotation.
 - `SupervisorHeartbeat`: aktueller Lebenszeichen-Status fuer Control Center/CLI.
 - `HermesSupervisorState`: persistenter Supervisor-State unter `/mnt/d/HermesData/reports/supervisor/supervisor_state.json`.
 - `ScheduledJobState`: persistenter Scheduler-State unter `/mnt/d/HermesData/reports/supervisor/scheduler_state.json`.
+
+## Background Mode
+
+Der bevorzugte Dauerbetriebsmodus ist:
+
+```bash
+dotnet run --project ./cli/Hermes.Cli.csproj -- supervisor-start --background
+```
+
+Der Background-Start:
+
+- startet denselben Supervisor detached/nohup-artig.
+- kehrt sofort zurueck.
+- schreibt die PID nach `/mnt/d/HermesData/reports/supervisor/supervisor.pid`.
+- schreibt Logs nach `/mnt/d/HermesData/logs/supervisor.log`.
+- rotiert `supervisor.log`, wenn die Datei groesser als 50 MB ist.
+- startet keinen zweiten Supervisor, wenn ein aktiver PID/Heartbeat erkannt wird.
+- erkennt stale PID-Dateien nach Crash/Reboot und ueberschreibt sie beim naechsten Start.
+
+Der Foreground-Modus bleibt fuer Debugging erhalten:
+
+```bash
+dotnet run --project ./cli/Hermes.Cli.csproj -- supervisor-start --max-runtime-minutes 5
+```
 
 ## Erlaubte Jobtypen
 
@@ -75,6 +100,28 @@ Vor jedem Job:
 - `no_auto_trading=true`.
 - `human_review_required=true`.
 
+Beta-3-Architekturregeln:
+
+- Masterplan/TODO zuerst beachten.
+- Bestehende Supervisor-/Scheduler-Architektur erweitern, nicht ersetzen.
+- Keine unnoetigen Refactors.
+- Keine Parallel-Systeme fuer Scheduler, Supervisor, Storage oder Reporting.
+- Bestehende CLI-Kommandos, Configs und Reports kompatibel halten.
+- Jede neue Funktion muss Dauerbetrieb, Recovery, ResourceGuard,
+  StorageHygiene, Logging und technische Schuld beruecksichtigen.
+- Keine isolierten Trading-Hacks; Trading bleibt in Research, Learning,
+  Safety und Review eingebettet.
+
+Future Trading Control Layer:
+
+- Auto-Trading Toggle
+- Paper/Demo Mode
+- Risk Limits
+- Volume- / Lot-Limits
+- Strategy Whitelist
+- Symbol Whitelist
+- Emergency Stop
+
 ## Windows/WSL
 
 Neuer bevorzugter Launcher:
@@ -98,6 +145,7 @@ dotnet run --project ./cli/Hermes.Cli.csproj -- scheduler-status
 dotnet run --project ./cli/Hermes.Cli.csproj -- scheduler-jobs
 dotnet run --project ./cli/Hermes.Cli.csproj -- supervisor-status
 dotnet run --project ./cli/Hermes.Cli.csproj -- supervisor-start --max-runtime-minutes 5
+dotnet run --project ./cli/Hermes.Cli.csproj -- supervisor-start --background
 dotnet run --project ./cli/Hermes.Cli.csproj -- supervisor-stop-request
 ```
 

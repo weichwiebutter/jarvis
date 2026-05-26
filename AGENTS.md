@@ -28,6 +28,20 @@ Codex should:
 - show suggested git commands but not push
 - preserve human-in-the-loop approval
 
+## Architecture rules for future Codex tasks
+
+Before changing code, Codex should check the current Masterplan/TODO and extend
+the existing architecture instead of replacing it.
+
+Rules:
+- respect the existing Hermes Supervisor/Scheduler architecture
+- do not create parallel scheduler, supervisor, storage, reporting, or trading systems
+- avoid unnecessary refactors
+- keep existing CLI commands, configs, reports, and data formats compatible
+- consider long-running operation, recovery, ResourceGuard, StorageHygiene, logging, and technical debt
+- no isolated trading hacks; trading changes must stay inside the research/learning/safety architecture
+- no Broker orders, no live trading, and no auto-trading unless a future approved control layer explicitly allows it
+
 ## Current architecture
 
 Important files:

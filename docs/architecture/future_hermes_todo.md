@@ -193,8 +193,19 @@ Wichtig:
 
 ## F) Runtime Supervisor / Scheduler
 
-Ziel: Hermes braucht spaeter eine kontrollierte Supervisor- und Scheduler-Ebene,
-die periodische Aufgaben, Agentenlaufzeiten und Ressourcen begrenzt.
+Ziel: Hermes braucht eine kontrollierte Supervisor- und Scheduler-Ebene,
+die periodische Aufgaben, Agentenlaufzeiten und Ressourcen begrenzt. In Beta 3
+ist Supervisor/Scheduler die zentrale Dauerbetriebsarchitektur.
+
+Aktuelle Beta-3-Regeln:
+
+- Windows startet langfristig nur noch den Hermes Supervisor.
+- Hermes liest interne Zeitplaene aus `HermesRuntime/config/schedules.json`.
+- Neue zeitgesteuerte Jobs brauchen keinen neuen Windows Task.
+- Jobs starten nur ueber bekannte interne Hermes-Jobtypen, keine freien
+  Shell-Kommandos aus Config.
+- Background-Betrieb schreibt PID, Heartbeat, State und Log.
+- Stale PID, Recovery und Stop Request muessen beruecksichtigt werden.
 
 Konzepte:
 
@@ -220,6 +231,10 @@ Safety:
 - Jeder Job hat Zweck, Owner, Limit, Retry Budget und Audit Trail.
 - Schreibende oder riskante Jobs brauchen Approval.
 - Research Jobs bleiben read-only.
+- Jede neue Funktion muss Dauerbetrieb, Recovery, ResourceGuard,
+  StorageHygiene, Logging, Checkpoints und technische Schuld beruecksichtigen.
+- Keine doppelten Scheduler-, Supervisor-, Storage- oder Reporting-Systeme.
+- Bestehende CLI-Kommandos, Configs und Reports bleiben kompatibel.
 
 ## G) Hermes Skills System
 
@@ -422,6 +437,19 @@ Regeln:
 
 Ziel: Trading Intelligence bleibt Analyse-, Setup-Watch-, Backtesting- und
 Lernschicht. Automatischer Handel ist in der aktuellen Phase ausgeschlossen.
+Hermes ist dabei eine Research- und Learning-Plattform; Trading ist wichtig,
+aber nicht das einzige Ziel.
+
+Beta-3-Architekturregeln:
+
+- keine isolierten Trading-Hacks
+- Trading-Funktionen muessen Research Memory, Runtime Events, Safety Gates,
+  Approval und Dauerbetrieb beruecksichtigen
+- robuste Netto-Performance ist wichtiger als reine Winrate
+- Broker-Realitaet muss in Simulation und Bewertung einfliessen: Spread,
+  Commission, Slippage, Session-Liquiditaet und Fusion-Markets-Parameter
+- Zielwerte fuer spaetere Scalping-Bot-Kandidaten: ca. 60-70 % Winrate,
+  Profit Factor > 1.4, niedriger Drawdown, Walk-Forward/Out-of-Sample stabil
 
 Grundsaetze:
 
@@ -526,6 +554,9 @@ Aktive und spaetere Safety Gates:
 - keine Risikoerhoehung nach Verlust
 - keine ungetesteten Regeln live einsetzen
 - Audit Log spaeter verpflichtend
+- Future Trading Control Layer: Auto-Trading Toggle, Paper/Demo Mode,
+  Risk Limits, Volume-/Lot-Limits, Strategy Whitelist, Symbol Whitelist und
+  Emergency Stop
 
 ### N.5 Trading Agent Modularisierung
 
@@ -620,6 +651,34 @@ Spaeterer Analysemodus:
 - morgens Report erzeugen
 - Lernkandidaten zur Freigabe vorbereiten
 - Frank entscheidet, was dauerhaft gelernt wird
+
+### N.11 Dedicated Scalping Bot Roadmap
+
+Ein spaeterer dedizierter Scalping Bot darf nur aus robustem Hermes Research
+Memory entstehen. Er ist keine direkte Erweiterung der Research-Pipeline,
+sondern eine spaeter getrennte Ausfuehrungsschicht mit expliziter Freigabe.
+
+Bot Candidate Pipeline:
+
+```text
+research_candidate
+-> promising
+-> robust
+-> demo_bot_candidate
+-> demo_validation
+-> approved_for_small_live_test
+```
+
+Voraussetzungen:
+
+- robuste Netto-Performance statt nur hoher Winrate
+- Profit Factor > 1.4 als spaeterer Mindestzielwert
+- niedriger Drawdown
+- Walk-Forward- und Out-of-Sample-Stabilitaet
+- Fusion-Markets-Realitaet mit Spread, Commission, Slippage und
+  Session-Liquiditaet eingerechnet
+- Strategy Whitelist und Symbol Whitelist
+- Emergency Stop und Human Approval
 
 ## O) Reflective Learning Phase
 
@@ -914,6 +973,9 @@ Fuer die Uebernahme braucht jeder Kandidat:
 - Runtime Event Standardisierung
 - `no_auto_trading` / `human_review_required`
 - Multi-Agent Workflow Architecture
+- Supervisor/Scheduler als zentrale Dauerbetriebsarchitektur
+- `config/schedules.json` als Quelle fuer interne Zeitplaene
+- ResourceGuard / StorageHygiene / Logging / Recovery fuer neue Jobs
 
 ### SHOULD
 
@@ -925,6 +987,8 @@ Fuer die Uebernahme braucht jeder Kandidat:
 - Unsloth Evaluation
 - Anthropic Plugin Pattern Review
 - Skill / Connector / Sub-Agent Pattern
+- Future Trading Control Layer
+- Bot Candidate Pipeline mit robusten Research-Kandidaten
 
 ### LATER
 
@@ -932,6 +996,7 @@ Fuer die Uebernahme braucht jeder Kandidat:
 - Demo Trading
 - Micro Live Trading mit Approval
 - Optional Autotrading
+- Dedicated Scalping Bot aus Hermes Research Memory
 - Local Fine-Tuning
 - Voice Personality Layer
 - Full MCP Connector Marketplace

@@ -242,6 +242,11 @@ nur Zielbild und Sicherheitsanforderungen fest.
 Der Runtime Supervisor wird die Kontrollinstanz fuer geplante Hintergrund- und
 Agentenaufgaben.
 
+Beta-3-Regel: Supervisor/Scheduler ist die zentrale Dauerbetriebsarchitektur.
+Windows startet langfristig nur den Hermes Supervisor. Interne Zeitplaene liegen
+in `HermesRuntime/config/schedules.json`; neue zeitgesteuerte Jobs duerfen keine
+neuen Windows Tasks erfordern.
+
 Geplante Funktionen:
 
 - Heartbeat
@@ -267,6 +272,10 @@ Grundregeln:
 - Schreibende Jobs brauchen Review.
 - Research Jobs bleiben read-only.
 - Runtime-Aktionen werden in der finalen UI sichtbar und bestaetigungspflichtig.
+- Jede neue Funktion muss Dauerbetrieb, Recovery, ResourceGuard,
+  StorageHygiene, Logging, Checkpoints und technische Schuld beruecksichtigen.
+- Keine doppelten Scheduler-, Supervisor-, Storage- oder Reporting-Systeme.
+- Bestehende CLI-Kommandos, Configs und Reports bleiben kompatibel.
 
 Geplante Jobs:
 
@@ -322,6 +331,11 @@ Reflection erzeugt Vorschlaege, keine direkten Code- oder Runtime-Aenderungen.
 
 Trading Intelligence ist Analyse-, Setup-Watch-, Backtesting- und Lernschicht,
 keine Order-Schicht.
+
+Beta-3-Einordnung: Hermes ist eine Research-/Learning-Plattform. Trading ist
+ein wichtiger Schwerpunkt, aber nicht das einzige Ziel. Trading-Komponenten
+muessen in Memory, Research, Runtime, Safety und Review passen; isolierte
+Trading-Hacks sind nicht Teil der Architektur.
 
 Unterstuetzte Ziel-Symbole:
 
@@ -383,6 +397,13 @@ Continuous Backtesting:
 - Modellvergleich XGBoost / LightGBM.
 - schlechte Strategien deaktivieren oder zurueckstufen.
 - Risiko reduzieren, wenn Performance schwach ist.
+- Broker-Realitaet ist Pflicht fuer spaetere Bewertung: Spread, Commission,
+  Slippage, Session-Liquiditaet und Fusion-Markets-Parameter muessen in
+  Simulation und Validierung beruecksichtigt werden.
+- Robuste Netto-Performance ist wichtiger als reine Winrate.
+- Zielkorridor fuer spaetere Scalping-Bot-Kandidaten: ca. 60-70 % Winrate,
+  Profit Factor > 1.4, niedriger Drawdown sowie stabile Walk-Forward- und
+  Out-of-Sample-Ergebnisse.
 
 Setup Watch / Signal Alerts:
 
@@ -464,6 +485,31 @@ Trading Agent Modularisierung:
 - Research Agent
 - Hermes bleibt Orchestrator.
 
+Future Trading Control Layer:
+
+- Auto-Trading Toggle
+- Paper/Demo Mode
+- Risk Limits
+- Volume- / Lot-Limits
+- Strategy Whitelist
+- Symbol Whitelist
+- Emergency Stop
+
+Bot Candidate Pipeline:
+
+```text
+research_candidate
+-> promising
+-> robust
+-> demo_bot_candidate
+-> demo_validation
+-> approved_for_small_live_test
+```
+
+Ein dedizierter Scalping Bot darf spaeter nur aus robustem Hermes Research
+Memory abgeleitet werden. Er bleibt eine getrennte Ausfuehrungsschicht und darf
+nicht direkt aus Research-Ergebnissen live handeln.
+
 Safety:
 
 - `no_auto_trading: true`
@@ -480,6 +526,9 @@ Safety:
 - Kill Switch, Drawdown Limits, Tagesverlustlimit, Wochenverlustlimit und
   Audit Log sind spaetere Pflicht-Gates vor jeder Live-Phase.
 - Risiko pro Trade 0,25-1 % nur als spaetere Richtlinie.
+- Der Future Trading Control Layer muss vor Paper/Demo/Live-Bot-Phasen
+  Auto-Trading Toggle, Risk Limits, Lot-/Volume-Limits, Strategy Whitelist,
+  Symbol Whitelist und Emergency Stop sichtbar machen.
 
 UI-Bezug:
 
@@ -815,6 +864,9 @@ Trading-Safety:
 - keine Risikoerhoehung nach Verlust
 - Kill Switch, Drawdown Limits, Tagesverlustlimit, Wochenverlustlimit und
   Audit Log vor Live-Phasen verpflichtend planen
+- Future Trading Control Layer mit Auto-Trading Toggle, Paper/Demo Mode,
+  Risk Limits, Volume-/Lot-Limits, Strategy Whitelist, Symbol Whitelist und
+  Emergency Stop verpflichtend vor jeder Bot- oder Live-Test-Phase
 
 Research-Safety:
 
@@ -923,6 +975,11 @@ Grundregeln:
 - Gradio bleibt Dev/Test UI.
 - Finale UI ist ein futuristisches lokales AI Control Center.
 - Statusmodule sind read-only-first.
+- Masterplan/TODO zuerst beachten.
+- Bestehende Architektur erweitern, nicht ersetzen.
+- Keine unnoetigen Refactors.
+- Keine Parallel-Systeme.
+- Bestehende CLI/Configs/Reports kompatibel halten.
 - Keine Runtime-Dateien ohne expliziten Auftrag aendern.
 - Keine Secrets lesen oder speichern.
 - Keine Services starten, ausser explizit verlangt.
@@ -956,7 +1013,7 @@ Dieser Masterplan erzeugt nicht:
 - PDF
 - React / Tauri / FastAPI-Code
 - neue Services
-- Scheduler oder Background-Loops
+- neue unkontrollierte Scheduler oder Parallel-Background-Loops
 - Brokerverbindungen
 - Orders
 - echte Web-, Reddit-, GitHub- oder arXiv-Abfragen
