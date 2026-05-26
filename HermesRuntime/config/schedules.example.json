@@ -1,0 +1,50 @@
+{
+  "schedule_version": "schedules_v1",
+  "check_interval_seconds": 60,
+  "jobs": [
+    {
+      "job_id": "nightly_beta3_research",
+      "job_type": "nightly_beta3_research",
+      "enabled": true,
+      "schedule_type": "window",
+      "command": "run-nightly-beta3",
+      "window_start": "23:00",
+      "window_end": "05:00",
+      "max_runtime_minutes": 360,
+      "sleep_seconds": 60,
+      "max_idle_iterations": 10
+    },
+    {
+      "job_id": "storage_hygiene",
+      "job_type": "storage_hygiene",
+      "enabled": true,
+      "schedule_type": "daily",
+      "command": "cleanup-plan",
+      "daily_at": "05:15"
+    },
+    {
+      "job_id": "research_insights",
+      "job_type": "research_insights",
+      "enabled": true,
+      "schedule_type": "daily",
+      "command": "research-insights",
+      "daily_at": "05:30"
+    },
+    {
+      "job_id": "health_snapshot",
+      "job_type": "health_snapshot",
+      "enabled": true,
+      "schedule_type": "interval",
+      "command": "resource-status",
+      "every_minutes": 60
+    },
+    {
+      "job_id": "market_data_refresh",
+      "job_type": "market_data_refresh",
+      "enabled": false,
+      "schedule_type": "daily",
+      "command": "download-history",
+      "daily_at": "22:30"
+    }
+  ]
+}

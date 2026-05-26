@@ -45,6 +45,11 @@ internal sealed class HermesCli
             "run-nightly-beta3" => RunNightlyBeta3(),
             "nightly-status" => ShowNightlyStatus(),
             "nightly-stop-request" => RequestNightlyStop(),
+            "scheduler-status" => ShowSchedulerStatus(),
+            "scheduler-jobs" => ShowSchedulerJobs(),
+            "supervisor-start" => StartSupervisor(),
+            "supervisor-status" => ShowSupervisorStatus(),
+            "supervisor-stop-request" => RequestSupervisorStop(),
             "resource-status" => ShowResourceStatus(),
             "storage-status" => ShowStorageStatus(),
             "cleanup-plan" => ShowCleanupPlan(),
@@ -105,6 +110,11 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes run-nightly-beta3 Nightly Beta 3 Research-Orchestrierung starten");
         Console.WriteLine("  hermes nightly-status    Nightly Beta 3 Status anzeigen");
         Console.WriteLine("  hermes nightly-stop-request sicheren Stop-Request fuer Nightly Beta 3 setzen");
+        Console.WriteLine("  hermes scheduler-status  internen Hermes Scheduler Status anzeigen");
+        Console.WriteLine("  hermes scheduler-jobs    geplante Hermes Jobs anzeigen");
+        Console.WriteLine("  hermes supervisor-start  langlebigen Hermes Supervisor starten");
+        Console.WriteLine("  hermes supervisor-status Supervisor Heartbeat/State anzeigen");
+        Console.WriteLine("  hermes supervisor-stop-request sicheren Supervisor Stop Request setzen");
         Console.WriteLine("  hermes resource-status   CPU/RAM/Disk ResourceGuard anzeigen");
         Console.WriteLine("  hermes storage-status    Storage-/Retention-Status anzeigen");
         Console.WriteLine("  hermes cleanup-plan      sicheren Storage Cleanup-Plan erzeugen");
@@ -831,6 +841,258 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private int ShowSchedulerStatus()
+    {
+        WriteHeader("Hermes Internal Scheduler Status");
+        var storagePaths = BuildStoragePaths();
+        var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var status = scheduler.GetStatus();
+
+        WriteField("Config", DisplayPath(status.ConfigPath));
+        WriteField("State", DisplayPath(status.StatePath));
+        WriteField("Check Interval", $"{status.CheckIntervalSeconds} s");
+        WriteField("Enabled Jobs", status.Jobs.Count(job => job.Enabled).ToString());
+        WriteField("Next Action", status.Jobs.Count == 0 ? "no_jobs_configured" : $"next_job={status.Jobs.FirstOrDefault(job => job.NextRunUtc is not null)?.JobId ?? "-"}");
+        WriteMessages("Warnings", status.Warnings);
+        foreach (var job in status.Jobs.Take(8))
+        {
+            WriteSchedulerJob(job);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowSchedulerJobs()
+    {
+        WriteHeader("Hermes Scheduled Jobs");
+        var storagePaths = BuildStoragePaths();
+        var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var status = scheduler.GetStatus();
+
+        WriteField("Config", DisplayPath(status.ConfigPath));
+        WriteField("State", DisplayPath(status.StatePath));
+        foreach (var job in status.Jobs)
+        {
+            WriteSchedulerJob(job);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int StartSupervisor()
+    {
+        WriteHeader("Hermes Supervisor");
+        var storagePaths = BuildStoragePaths();
+        var scheduleConfigPath = Path.Combine(_runtimeRoot, "config", "schedules.json");
+        var scheduler = new HermesInternalScheduler(storagePaths, scheduleConfigPath);
+        var schedulerStatus = scheduler.GetStatus();
+        var maxRuntimeMinutes = ReadIntOption(_args, "--max-runtime-minutes", fallback: 1440, min: 1, max: 10080);
+        var checkIntervalSeconds = ReadIntOption(
+            _args,
+            "--check-interval-seconds",
+            fallback: schedulerStatus.CheckIntervalSeconds,
+            min: 5,
+            max: 3600);
+        var maxJobsPerLoop = ReadIntOption(_args, "--max-jobs-per-loop", fallback: 2, min: 1, max: 8);
+        var supervisor = new HermesSupervisor(storagePaths, scheduleConfigPath);
+
+        WriteField("Config", DisplayPath(scheduleConfigPath));
+        WriteField("State", DisplayPath(supervisor.StatePath));
+        WriteField("Heartbeat", DisplayPath(supervisor.HeartbeatPath));
+        WriteField("Max Runtime", $"{maxRuntimeMinutes} min");
+        WriteField("Check Interval", $"{checkIntervalSeconds} s");
+        Console.WriteLine();
+
+        var result = supervisor.Run(
+            new SupervisorRunOptions(maxRuntimeMinutes, checkIntervalSeconds, maxJobsPerLoop),
+            ExecuteScheduledJob);
+
+        WriteSupervisorState(result.State);
+        Console.WriteLine();
+        WriteField("Scheduler State", DisplayPath(result.SchedulerStatus.StatePath));
+        foreach (var job in result.SchedulerStatus.Jobs.Take(8))
+        {
+            WriteSchedulerJob(job);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowSupervisorStatus()
+    {
+        WriteHeader("Hermes Supervisor Status");
+        var storagePaths = BuildStoragePaths();
+        var supervisor = new HermesSupervisor(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var state = supervisor.LoadState();
+        var heartbeat = supervisor.LoadHeartbeat();
+
+        WriteField("State", DisplayPath(supervisor.StatePath));
+        WriteField("Heartbeat", DisplayPath(supervisor.HeartbeatPath));
+        WriteSupervisorState(state);
+        if (heartbeat is not null)
+        {
+            WriteSubHeader("Heartbeat");
+            WriteField("Heartbeat UTC", heartbeat.TimestampUtc.ToString("O"));
+            WriteField("Status", heartbeat.Status);
+            WriteField("Current Job", heartbeat.CurrentJobId ?? "-");
+            WriteField("Resource Action", heartbeat.ResourceAction);
+            WriteField("Storage Action", heartbeat.StorageAction);
+            WriteField("Next Action", heartbeat.NextAction);
+        }
+
+        var schedulerStatus = scheduler.GetStatus();
+        WriteSubHeader("Scheduler");
+        WriteField("Config", DisplayPath(schedulerStatus.ConfigPath));
+        WriteField("Jobs", schedulerStatus.Jobs.Count.ToString());
+        foreach (var job in schedulerStatus.Jobs.Take(5))
+        {
+            WriteSchedulerJob(job);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RequestSupervisorStop()
+    {
+        WriteHeader("Hermes Supervisor Stop Request");
+        var storagePaths = BuildStoragePaths();
+        var supervisor = new HermesSupervisor(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var state = supervisor.RequestStop();
+
+        // If the supervisor is currently inside the existing Nightly Beta3 loop,
+        // reuse its safe-stop flag instead of killing the process.
+        var nightly = new NightlyResearchService(storagePaths, Path.Combine(_runtimeRoot, "config", "nightly.research.json"));
+        nightly.RequestStop();
+
+        WriteField("Stop Request", DisplayPath(supervisor.StopRequestPath));
+        WriteField("Nightly Stop Request", DisplayPath(nightly.StopRequestPath));
+        WriteField("State", DisplayPath(supervisor.StatePath));
+        WriteSupervisorState(state);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private ScheduledJobExecutionResult ExecuteScheduledJob(ScheduledJobDefinition job, SupervisorJobContext context)
+    {
+        var storagePaths = BuildStoragePaths();
+        return job.JobType.ToLowerInvariant() switch
+        {
+            "nightly_beta3_research" => ExecuteNightlyBeta3ScheduledJob(job, context),
+            "storage_hygiene" => ExecuteStorageHygieneJob(storagePaths),
+            "research_insights" => ExecuteResearchInsightsJob(storagePaths),
+            "health_snapshot" => ExecuteHealthSnapshotJob(storagePaths),
+            "strategy_discovery" => ExecuteStrategyDiscoveryJob(storagePaths),
+            "walkforward_validation" => ExecuteWalkForwardValidationJob(storagePaths),
+            "market_data_refresh" => new ScheduledJobExecutionResult(
+                Status: "skipped",
+                WorkPerformed: false,
+                Action: "market_data_refresh_disabled_until_explicit_config",
+                ReportPath: null,
+                Warnings: ["market_data_refresh is intentionally disabled by default; no broker/order action was attempted."]),
+            _ => new ScheduledJobExecutionResult(
+                Status: "skipped",
+                WorkPerformed: false,
+                Action: "unsupported_internal_job_type",
+                ReportPath: null,
+                Warnings: [$"Unsupported internal job type: {job.JobType}"])
+        };
+    }
+
+    private ScheduledJobExecutionResult ExecuteNightlyBeta3ScheduledJob(ScheduledJobDefinition job, SupervisorJobContext context)
+    {
+        var remainingMinutes = Math.Max(1, (int)Math.Floor(context.RemainingRuntime.TotalMinutes));
+        var maxRuntimeMinutes = Math.Clamp(job.MaxRuntimeMinutes ?? 360, 1, remainingMinutes);
+        var args = new List<string>
+        {
+            "run-nightly-beta3",
+            "--max-runtime-hours",
+            (maxRuntimeMinutes / 60.0).ToString("0.####", CultureInfo.InvariantCulture),
+            "--sleep-seconds",
+            (job.SleepSeconds ?? 60).ToString(CultureInfo.InvariantCulture),
+            "--max-idle-iterations",
+            (job.MaxIdleIterations ?? 10).ToString(CultureInfo.InvariantCulture)
+        };
+
+        var exitCode = new HermesCli(args.ToArray()).Run();
+        return new ScheduledJobExecutionResult(
+            Status: exitCode == 0 ? "completed" : "failed",
+            WorkPerformed: true,
+            Action: "run-nightly-beta3",
+            ReportPath: Path.Combine(_dataRoot, "reports", "nightly_beta3", "nightly_state.json"),
+            Warnings: exitCode == 0 ? [] : [$"run-nightly-beta3 exited with code {exitCode}"]);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteStorageHygieneJob(StoragePaths storagePaths)
+    {
+        var hygiene = new StorageHygieneService(storagePaths);
+        var plan = hygiene.BuildPlan();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: plan.Candidates.Count > 0,
+            Action: $"cleanup_plan candidates={plan.Candidates.Count}",
+            ReportPath: hygiene.CleanupPlanPath,
+            Warnings: []);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteResearchInsightsJob(StoragePaths storagePaths)
+    {
+        var generator = new ResearchInsightsGenerator(storagePaths);
+        var insights = generator.Generate();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: true,
+            Action: $"research_insights clusters={insights.Clusters.Count}",
+            ReportPath: generator.InsightsPath,
+            Warnings: []);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteHealthSnapshotJob(StoragePaths storagePaths)
+    {
+        var guard = new ResourceGuard(storagePaths);
+        var snapshot = guard.Check();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: true,
+            Action: $"health_snapshot resource_action={snapshot.Action}",
+            ReportPath: guard.StatusPath,
+            Warnings: snapshot.Warnings);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteStrategyDiscoveryJob(StoragePaths storagePaths)
+    {
+        var discovery = new StrategyDiscoveryService(storagePaths);
+        var report = discovery.Run();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: true,
+            Action: $"strategy_discovery analyzed={report.StrategiesAnalyzed}",
+            ReportPath: discovery.DiscoveryStatusPath,
+            Warnings: report.Warnings);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteWalkForwardValidationJob(StoragePaths storagePaths)
+    {
+        var simulations = new RealisticSimulationService(storagePaths).Run();
+        var walkForward = new WalkForwardValidationService(storagePaths);
+        var report = walkForward.Run();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: true,
+            Action: $"walkforward strategies={report.StrategiesEvaluated}; simulations={simulations.Count}",
+            ReportPath: walkForward.WalkForwardSummaryPath,
+            Warnings: []);
     }
 
     private int ShowResourceStatus()
@@ -2005,6 +2267,55 @@ internal sealed class HermesCli
         WriteField("Last Error", state.LastError ?? "-");
         WriteField("no_auto_trading", state.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", state.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteSupervisorState(HermesSupervisorState state)
+    {
+        var currentlyRunning = state.CurrentlyRunning && IsProcessAlive(state.ProcessId);
+        var duration = currentlyRunning && state.StartedAtUtc is not null
+            ? Math.Round((DateTimeOffset.UtcNow - state.StartedAtUtc.Value).TotalMinutes, 2)
+            : state.StartedAtUtc is not null && state.StoppedAtUtc is not null
+                ? Math.Round((state.StoppedAtUtc.Value - state.StartedAtUtc.Value).TotalMinutes, 2)
+                : 0;
+
+        WriteField("Status", state.Status);
+        WriteField("Supervisor ID", string.IsNullOrWhiteSpace(state.SupervisorId) ? "-" : state.SupervisorId);
+        WriteField("Currently Running", currentlyRunning.ToString().ToLowerInvariant());
+        WriteField("Process ID", state.ProcessId?.ToString() ?? "-");
+        WriteField("Started UTC", state.StartedAtUtc?.ToString("O") ?? "-");
+        WriteField("Deadline UTC", state.DeadlineUtc?.ToString("O") ?? "-");
+        WriteField("Stopped UTC", state.StoppedAtUtc?.ToString("O") ?? "-");
+        WriteField("Runtime Duration", $"{duration:0.##} min");
+        WriteField("Heartbeat UTC", state.HeartbeatUtc?.ToString("O") ?? "-");
+        WriteField("Iterations", state.IterationsCompleted.ToString());
+        WriteField("Jobs Started", state.JobsStarted.ToString());
+        WriteField("Jobs Completed", state.JobsCompleted.ToString());
+        WriteField("Jobs Skipped", state.JobsSkipped.ToString());
+        WriteField("Current Job", state.CurrentJobId ?? "-");
+        WriteField("Last Job", state.LastJobId ?? "-");
+        WriteField("Next Action", state.NextAction);
+        WriteField("Stop Requested UTC", state.StopRequestedAtUtc?.ToString("O") ?? "-");
+        WriteField("Last Error", state.LastError ?? "-");
+        WriteField("no_auto_trading", state.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", state.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteSchedulerJob(ScheduledJobState job)
+    {
+        WriteSubHeader($"{job.JobId} / {job.JobType}");
+        WriteField("Enabled", job.Enabled.ToString().ToLowerInvariant());
+        WriteField("Status", job.Status);
+        WriteField("Next Run", job.NextRunUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "-");
+        WriteField("Last Run", job.LastRunUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "-");
+        WriteField("Last Completed", job.LastCompletedUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "-");
+        WriteField("Currently Running", job.CurrentlyRunning.ToString().ToLowerInvariant());
+        WriteField("Run Count", job.RunCount.ToString());
+        WriteField("Failures", job.FailureCount.ToString());
+        WriteField("Last Action", job.LastAction ?? "-");
+        WriteField("Last Report", DisplayOptionalPath(job.LastReportPath));
+        WriteField("Skipped Reason", job.LastSkippedReason ?? "-");
+        WriteField("Last Error", job.LastError ?? "-");
+        WriteMessages("Warnings", job.Warnings);
     }
 
     private static bool IsProcessAlive(int? processId)
