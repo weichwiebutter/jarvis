@@ -12,6 +12,7 @@ export const de = {
     fixtureFallback: 'Fixture-Fallback',
     jsonSource: 'HermesRuntime JSON',
     liveFileSource: 'Live-Datei',
+    liveBridgeSource: 'Live Bridge',
     unavailable: 'nicht verfuegbar',
     demoFixtureActive: 'Demo-/Fixture-Daten aktiv',
     yes: 'ja',
@@ -21,7 +22,7 @@ export const de = {
     eyebrow: 'Prototyp v0.1 / lokale Demo-Daten',
     title: 'Jarvis Control Center',
     copy:
-      'Separater React/Vite-Prototyp fuer das kuenftige Jarvis Cockpit. Gradio bleibt die Entwicklungs- und Testoberflaeche; diese Ansicht sendet keine API-Aufrufe, schreibt keine Runtime-Dateien und streamt keine Live-Marktdaten.',
+      'Separater React/Vite-Prototyp fuer das kuenftige Jarvis Cockpit. Gradio bleibt die Entwicklungs- und Testoberflaeche; diese Ansicht liest nur ueber die lokale Read-only Bridge, schreibt keine Runtime-Dateien und streamt keine Live-Marktdaten.',
     hermesOnline: 'Hermes Grundlage online',
     noAutoTrading: 'Auto-Trading deaktiviert',
     approvalRequired: 'Menschliche Freigabe erforderlich',
@@ -48,7 +49,7 @@ export const de = {
     storageObserved: 'Speicherstatus gelesen',
     snapshotObserved: 'Snapshot-Referenz gelesen',
     sourceNote:
-      'Der Loader versucht einen nur lesenden Browser-Zugriff auf die HermesRuntime-JSON. Falls der Browser diesen Pfad blockiert, nutzt das Panel die lokale Fixture.',
+      'Der Loader versucht einen nur lesenden Zugriff ueber die Hermes Read-only Bridge. Falls die Bridge oder ein Report fehlt, nutzt das Panel die lokale Fixture.',
   },
   eventTimeline: {
     eyebrow: 'Runtime / Events',

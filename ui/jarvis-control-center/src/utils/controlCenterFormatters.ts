@@ -14,7 +14,7 @@ export const formatOptionalBool = (value) => {
 
 export const sourceModeLabel = (source) => {
   if (source === 'live_file' || source === 'json') {
-    return t.common.liveFileSource;
+    return t.common.liveBridgeSource;
   }
 
   if (source === 'unavailable') {

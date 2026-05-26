@@ -2367,6 +2367,12 @@ h2 {
   gap: 10px;
 }
 
+.operator-refresh-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .operator-top-grid,
 .operator-middle-grid,
 .operator-bottom-grid,

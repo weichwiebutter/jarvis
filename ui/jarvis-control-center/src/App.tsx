@@ -75,7 +75,7 @@ export default function App() {
         <StatusSummaryCard
           title="Laufzeitstatus"
           value="Hermes Runtime v1"
-          detail="Lokale Health-JSON nur lesend, keine Runtime-Steuerung aus der UI."
+          detail="Read-only Bridge fuer Monitoring, keine Runtime-Steuerung aus der UI."
           tone="good"
           badges={[
             { label: 'nur lesend', tone: 'good' },

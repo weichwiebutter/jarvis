@@ -6,6 +6,8 @@ import {
 } from '../data/runtimeDataAdapter';
 import { Panel, StatusPill, toneClass } from './StatusCard';
 
+const OPERATOR_REFRESH_SECONDS = 45;
+
 function formatNumber(value) {
   return new Intl.NumberFormat('de-DE').format(Number(value || 0));
 }
@@ -48,6 +50,24 @@ function shortDateTime(value) {
     month: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+  }).format(parsed);
+}
+
+function shortTime(value) {
+  if (!value) {
+    return '-';
+  }
+
+  const parsed = Date.parse(value);
+
+  if (!Number.isFinite(parsed)) {
+    return String(value);
+  }
+
+  return new Intl.DateTimeFormat('de-DE', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
   }).format(parsed);
 }
 
@@ -112,7 +132,7 @@ function ReportViewer({ reports }) {
           >
             <span>{report.label}</span>
             <StatusPill tone={report.available ? 'good' : 'warn'}>
-              {report.available ? 'Datei' : 'Fixture'}
+              {report.available ? 'Bridge' : 'Fixture'}
             </StatusPill>
           </button>
         ))}
@@ -141,18 +161,33 @@ function SafetyPlaceholder({ title, value, tone = 'warn' }) {
 
 export function OperatorDashboardPanel() {
   const [operatorState, setOperatorState] = useState(() => createOperatorDashboardFallback());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
+    let refreshTimer;
 
-    loadOperatorDashboard().then((nextState) => {
-      if (isMounted) {
-        setOperatorState(nextState);
-      }
-    });
+    const refreshOperatorState = () => {
+      setIsRefreshing(true);
+      loadOperatorDashboard()
+        .then((nextState) => {
+          if (isMounted) {
+            setOperatorState(nextState);
+          }
+        })
+        .finally(() => {
+          if (isMounted) {
+            setIsRefreshing(false);
+          }
+        });
+    };
+
+    refreshOperatorState();
+    refreshTimer = window.setInterval(refreshOperatorState, OPERATOR_REFRESH_SECONDS * 1000);
 
     return () => {
       isMounted = false;
+      window.clearInterval(refreshTimer);
     };
   }, []);
 
@@ -173,16 +208,20 @@ export function OperatorDashboardPanel() {
     ...operatorState.storage.warnings,
     ...operatorState.storage.errors,
   ].filter(Boolean);
+  const bridgeLive = operatorState.dataSource === DATA_SOURCE.LIVE_FILE;
 
   return (
     <Panel
       action={
         <div className="operator-panel-actions">
-          <StatusPill tone={operatorState.dataSource === DATA_SOURCE.LIVE_FILE ? 'good' : 'warn'}>
-            {operatorState.dataSource === DATA_SOURCE.LIVE_FILE
-              ? 'Live-Dateien'
-              : 'Fixture-Fallback'}
+          <StatusPill tone={bridgeLive ? 'good' : 'warn'}>
+            {bridgeLive ? 'Live Bridge' : 'Fixture-Fallback'}
           </StatusPill>
+          <span className="operator-refresh-meta">
+            Zuletzt: {shortTime(operatorState.lastUpdatedAt)} · Refresh {operatorState.pollIntervalSeconds || OPERATOR_REFRESH_SECONDS}s
+            · {formatNumber(operatorState.liveReportCount)} Bridge / {formatNumber(operatorState.fixtureReportCount)} Fixture
+            {isRefreshing ? ' · liest' : ''}
+          </span>
           <StatusPill tone="warn">UI-only Controls</StatusPill>
         </div>
       }
@@ -294,6 +333,7 @@ export function OperatorDashboardPanel() {
         <OperatorCard title="Storage / Logs" tone={operatorState.storage.errors.length ? 'danger' : 'good'}>
           <div className="operator-storage-card">
             <MiniMetric label="Root" value={operatorState.storage.root} tone="info" />
+            <MiniMetric label="Status" value={operatorState.storage.status} tone="good" />
             <MiniMetric label="Frei" value={formatGb(operatorState.storage.free_disk_gb)} tone="good" />
             <MiniMetric label="Cleanup Candidates" value={formatNumber(operatorState.storage.cleanup_candidate_count)} tone="warn" />
             <MiniMetric label="Potenzial" value={formatBytes(operatorState.storage.estimated_bytes_to_free)} tone="info" />

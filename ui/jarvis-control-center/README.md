@@ -57,6 +57,10 @@ The adapter talks to the Hermes Read-only Bridge instead of using Vite `/@fs`
 access to Runtime folders. The UI receives wrapped Bridge responses and unwraps
 the `data` field before normalizing it for panels.
 
+The Operator Dashboard polls the Bridge lightly every 45 seconds. The UI labels
+the current source as `Live Bridge` or `Fixture-Fallback` and shows the last
+successful refresh time.
+
 Primary Bridge endpoints used by the prototype:
 
 - `GET /runtime/health`

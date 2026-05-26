@@ -1546,6 +1546,7 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
   const supervisorRaw = rawReports.supervisorState || operatorDashboardMock.supervisorState;
   const schedulerRaw = rawReports.schedulerState || operatorDashboardMock.schedulerState;
   const resourceRaw = rawReports.resourceStatus || operatorDashboardMock.resourceStatus;
+  const storageRaw = rawReports.storageStatus || {};
   const nightlyRaw = rawReports.nightlyState || operatorDashboardMock.nightlyState;
   const insightsRaw = rawReports.researchInsights || operatorDashboardMock.researchInsights;
   const robustRaw = rawReports.robustStrategies || {};
@@ -1557,6 +1558,24 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
 
   const resource = normalizeResourceStatus(resourceRaw);
   const cleanup = normalizeCleanupPlan(cleanupRaw);
+  const storageRoot = asString(
+    firstDefined(
+      storageRaw.storage_root,
+      storageRaw.storageRoot,
+      storageRaw.root,
+      resource.storage_root,
+      cleanupRaw.storage_root,
+      cleanupRaw.storageRoot,
+    ),
+    hermesDataRoot,
+  );
+  const storageFreeDiskGb = asNumber(
+    firstDefined(storageRaw.free_disk_gb, storageRaw.freeDiskGb, resource.free_disk_gb),
+    resource.free_disk_gb,
+  );
+  const liveReportCount = reports.filter((report) => report.dataSource === DATA_SOURCE.LIVE_FILE)
+    .length;
+  const fixtureReportCount = reports.length - liveReportCount;
 
   return {
     supervisor: normalizeSupervisorState(supervisorRaw),
@@ -1571,11 +1590,16 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
       overfitRaw,
     ),
     storage: {
-      root: resource.storage_root,
-      free_disk_gb: resource.free_disk_gb,
+      root: storageRoot,
+      status: asString(firstDefined(storageRaw.status, storageRaw.state), resource.action),
+      free_disk_gb: storageFreeDiskGb,
       cleanup_candidate_count: cleanup.candidate_count,
       estimated_bytes_to_free: cleanup.estimated_bytes_to_free,
-      warnings: [...resource.warnings, ...cleanup.warnings],
+      warnings: [
+        ...resource.warnings,
+        ...cleanup.warnings,
+        ...asArray(firstDefined(storageRaw.warnings, storageRaw.Warnings)).map(String),
+      ],
       errors: resource.errors,
       cleanup_safe_to_apply: cleanup.safe_to_apply,
     },
@@ -1583,6 +1607,12 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
     reports,
     logLines,
     dataSource,
+    bridgeAvailable: dataSource === DATA_SOURCE.LIVE_FILE,
+    bridgeUrl: operatorDashboardUrl || '',
+    lastUpdatedAt: new Date().toISOString(),
+    pollIntervalSeconds: 45,
+    liveReportCount,
+    fixtureReportCount,
     warnings,
     no_auto_trading: true,
     human_review_required: true,
@@ -1638,6 +1668,8 @@ async function loadOperatorReport(key, config) {
 }
 
 export async function loadOperatorDashboard() {
+  let bridgeDashboardWarning = '';
+
   if (operatorDashboardUrl) {
     try {
       const response = await readJsonReadOnly(operatorDashboardUrl);
@@ -1686,7 +1718,7 @@ export async function loadOperatorDashboard() {
         warnings,
       );
     } catch (error) {
-      // Fall through to per-report bridge reads and fixtures.
+      bridgeDashboardWarning = warningFromError('Read-only Bridge nicht erreichbar', error);
     }
   }
 
@@ -1699,17 +1731,22 @@ export async function loadOperatorDashboard() {
     return next;
   }, {});
   let logLines = [...operatorDashboardMock.logLines];
-  const warnings = reportEntries.flatMap((report) => (report.warning ? [report.warning] : []));
+  const warnings = [
+    bridgeDashboardWarning,
+    ...reportEntries.flatMap((report) => (report.warning ? [report.warning] : [])),
+  ].filter(Boolean);
 
-  try {
-    const logText = await readTextReadOnly(supervisorLogUrl);
-    logLines = logText
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .slice(-10);
-  } catch (error) {
-    warnings.push(warningFromError('Supervisor-Log nicht erreichbar', error));
+  if (supervisorLogUrl) {
+    try {
+      const logText = await readTextReadOnly(supervisorLogUrl);
+      logLines = logText
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(-10);
+    } catch (error) {
+      warnings.push(warningFromError('Supervisor-Log nicht erreichbar', error));
+    }
   }
 
   const dataSource = reportEntries.some((report) => report.dataSource === DATA_SOURCE.LIVE_FILE)
