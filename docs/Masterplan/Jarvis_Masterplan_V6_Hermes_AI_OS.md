@@ -82,6 +82,56 @@ Modusregeln:
   verlaessliche Basis fuer komplexe Agenten-Workflows behandelt.
 - Zwei Codex-Fenster duerfen nicht gleichzeitig dieselben Dateien bearbeiten.
 
+### 2.3a Future: Jarvis Coding Assistant Module
+
+OpenCode kann spaeter als moeglicher lokaler Coding-Agent fuer Jarvis/Hermes
+evaluiert werden. Dieses Modul ist ein Coding-Modul, kein Trading-Modul.
+Jarvis/Hermes bleibt Orchestrator; OpenCode oder ein anderer lokaler
+Coding-Agent fuehrt nur klar begrenzte Programmieraufgaben aus, wenn Hermes
+eine Coding-Aufgabe erkennt und Frank/Jarvis den Arbeitsrahmen freigibt.
+
+Zielarchitektur:
+
+```text
+Jarvis/Hermes Orchestrator
+-> Coding Task erkannt
+-> OpenCode / local coding agent
+-> Tests
+-> Diff Review
+-> Human Approval
+-> Commit / Push
+```
+
+Geplante Funktionen:
+
+- Tasks aus Masterplan/TODO oder aus allgemeinen Coding-Aufgaben ableiten.
+- Codebasis analysieren und bestehende Architektur pruefen.
+- Aenderungsvorschlag machen.
+- Tests ausfuehren, soweit lokal sinnvoll.
+- Diff zusammenfassen.
+- Commit-Vorschlag erzeugen.
+- Review durch Frank/Jarvis vor Commit.
+- Spaeter lokale/offline Coding-Unterstuetzung ermoeglichen.
+
+Safety-Regeln:
+
+- Der Coding-Agent muss kontext- und sicherheitsbewusst arbeiten.
+- Bei Aenderungen an Kernsystemen, Architektur, Trading, Scheduler, Storage,
+  UI, Agentenlogik oder Safety muss der Masterplan/TODO zwingend
+  beruecksichtigt werden.
+- Bei allgemeinen Coding-Aufgaben darf der Agent auch neue Aufgaben bearbeiten,
+  sofern sie nicht gegen Architektur-, Safety- oder Projektregeln verstossen.
+- Der Agent muss vor Aenderungen pruefen, ob bestehende Komponenten erweitert
+  werden koennen, statt Parallel-Systeme zu bauen.
+- Bestehende Architektur erweitern, nicht ersetzen.
+- Keine grossen Refactors ohne explizite Freigabe.
+- Keine automatischen Commits, Pushes oder Merges.
+- Keine Secrets lesen, loggen oder committen.
+- Keine Abweichung vom Masterplan.
+- Keine Trading-, Broker- oder Order-Funktionen ohne dedizierte
+  Masterplan-Freigabe implementieren.
+- Tests und Diff muessen vor Review sichtbar sein.
+
 ### 2.4 Safety First
 
 - `human_review_required` bleibt Grundregel fuer riskante Aktionen.
@@ -936,6 +986,7 @@ Research-Safety:
 - Trading ML Training Pipeline.
 - Event Store / SQLite fuer Audit und Live-Telemetry pruefen.
 - Messaging Gateway optional: Telegram, Discord, Slack, Email.
+- Jarvis Coding Assistant Module mit OpenCode / lokalem Coding-Agent.
 
 ## 15. Abnahmeliste
 

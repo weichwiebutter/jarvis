@@ -945,6 +945,57 @@ Strategie:
 - `gpt-oss:20b` und `qwen2.5-coder` weiter evaluieren.
 - Beide Codex-Fenster nie gleichzeitig dieselben Dateien aendern lassen.
 
+## AA) Future: Jarvis Coding Assistant Module
+
+Ziel: Jarvis/Hermes kann spaeter ein eigenes Coding Assistant Module erhalten.
+OpenCode ist ein moeglicher lokaler Coding-Agent fuer diese Rolle. Das Modul
+ist fuer Programmieraufgaben vorgesehen, nicht fuer Trading-Ausfuehrung.
+Jarvis/Hermes bleibt Orchestrator; OpenCode oder ein anderer lokaler
+Coding-Agent ist nur ein ausfuehrender Worker.
+
+Geplanter Ablauf:
+
+```text
+Jarvis/Hermes Orchestrator
+-> Coding Task erkannt
+-> OpenCode / local coding agent
+-> Tests
+-> Diff Review
+-> Human Approval
+-> Commit / Push
+```
+
+Geplante Funktionen:
+
+- Coding-Tasks aus Masterplan/TODO oder allgemeinen Coding-Aufgaben ableiten.
+- Codebasis analysieren.
+- Bestehende Architektur pruefen.
+- Aenderungsvorschlag machen.
+- Tests ausfuehren.
+- Diff zusammenfassen.
+- Commit-Vorschlag erzeugen.
+- Review durch Frank/Jarvis vor Commit.
+- Spaeter lokale/offline Coding-Unterstuetzung ermoeglichen.
+
+Arbeitsregeln:
+
+- Der Coding-Agent muss kontext- und sicherheitsbewusst arbeiten.
+- Bei Aenderungen an Kernsystemen, Architektur, Trading, Scheduler, Storage,
+  UI, Agentenlogik oder Safety muss der Masterplan/TODO zwingend
+  beruecksichtigt werden.
+- Bei allgemeinen Coding-Aufgaben darf der Agent auch neue Aufgaben bearbeiten,
+  sofern sie nicht gegen Architektur-, Safety- oder Projektregeln verstossen.
+- Der Agent muss vor Aenderungen pruefen, ob bestehende Komponenten erweitert
+  werden koennen, statt Parallel-Systeme zu bauen.
+- Keine grossen Refactors ohne Freigabe.
+- Tests ausfuehren, soweit lokal sinnvoll.
+- Diff anzeigen und zusammenfassen.
+- Keine automatischen Commits, Pushes oder Merges ohne Freigabe.
+- Keine Secrets lesen, loggen oder committen.
+- Keine Abweichung vom Masterplan bei kritischen Systembereichen.
+- Keine Trading-, Broker- oder Order-Funktionen ohne dedizierte
+  Masterplan-Freigabe implementieren.
+
 ---
 
 ## Uebergabe an Masterplan 6
@@ -997,6 +1048,7 @@ Fuer die Uebernahme braucht jeder Kandidat:
 - Micro Live Trading mit Approval
 - Optional Autotrading
 - Dedicated Scalping Bot aus Hermes Research Memory
+- Jarvis Coding Assistant Module mit OpenCode / lokalem Coding-Agent
 - Local Fine-Tuning
 - Voice Personality Layer
 - Full MCP Connector Marketplace
