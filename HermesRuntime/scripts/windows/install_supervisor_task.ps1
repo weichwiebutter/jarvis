@@ -47,6 +47,7 @@ try {
 Write-Host "Installed Windows Scheduled Task:"
 Write-Host " - $TaskName => at startup and daily $DailyStartTime, WSL start_supervisor.sh"
 Write-Host ""
+Write-Host "The WSL launcher starts 'hermes supervisor-start --background' and returns immediately."
 Write-Host "Hermes schedules are now configured in config/schedules.json."
 Write-Host "No new Windows task is required for normal Hermes job schedule changes."
 Write-Host ""

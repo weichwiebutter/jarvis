@@ -26,9 +26,10 @@ mkdir -p "${LOG_DIR}"
     source "${RUNTIME_DIR}/../.venv/bin/activate"
   fi
 
-  echo "[$(date -Is)] Starting Hermes Supervisor in WSL."
-  dotnet run --project ./cli/Hermes.Cli.csproj -- supervisor-start --max-runtime-minutes 1440
+  echo "[$(date -Is)] Starting Hermes Supervisor in WSL background mode."
+  dotnet run --project ./cli/Hermes.Cli.csproj -- supervisor-start --background --max-runtime-minutes 1440
   exit_code=$?
-  echo "[$(date -Is)] Hermes Supervisor exited with code ${exit_code}."
+  echo "[$(date -Is)] Hermes Supervisor background launcher exited with code ${exit_code}."
+  dotnet run --project ./cli/Hermes.Cli.csproj -- supervisor-status
   exit "${exit_code}"
 } >> "${LOG_FILE}" 2>&1

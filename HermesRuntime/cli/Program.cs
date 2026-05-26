@@ -1,4 +1,5 @@
 using Hermes.Runtime;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Xml.Linq;
@@ -892,6 +893,8 @@ internal sealed class HermesCli
         var scheduleConfigPath = Path.Combine(_runtimeRoot, "config", "schedules.json");
         var scheduler = new HermesInternalScheduler(storagePaths, scheduleConfigPath);
         var schedulerStatus = scheduler.GetStatus();
+        var supervisor = new HermesSupervisor(storagePaths, scheduleConfigPath);
+        var processManager = new SupervisorProcessManager(storagePaths);
         var maxRuntimeMinutes = ReadIntOption(_args, "--max-runtime-minutes", fallback: 1440, min: 1, max: 10080);
         var checkIntervalSeconds = ReadIntOption(
             _args,
@@ -900,11 +903,27 @@ internal sealed class HermesCli
             min: 5,
             max: 3600);
         var maxJobsPerLoop = ReadIntOption(_args, "--max-jobs-per-loop", fallback: 2, min: 1, max: 8);
-        var supervisor = new HermesSupervisor(storagePaths, scheduleConfigPath);
+
+        if (_args.Any(arg => arg.Equals("--background", StringComparison.OrdinalIgnoreCase)))
+        {
+            return StartSupervisorBackground(supervisor, processManager, maxRuntimeMinutes, checkIntervalSeconds, maxJobsPerLoop);
+        }
+
+        var processStatus = processManager.GetStatus(supervisor.LoadState(), supervisor.LoadHeartbeat());
+        if (processStatus.Running && processStatus.Pid != Environment.ProcessId)
+        {
+            WriteWarning("Hermes Supervisor laeuft bereits. Es wird kein zweiter Supervisor gestartet.");
+            WriteSupervisorProcessStatus(processStatus);
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
 
         WriteField("Config", DisplayPath(scheduleConfigPath));
         WriteField("State", DisplayPath(supervisor.StatePath));
         WriteField("Heartbeat", DisplayPath(supervisor.HeartbeatPath));
+        WriteField("PID", DisplayPath(supervisor.PidPath));
+        WriteField("Log", DisplayPath(supervisor.LogPath));
         WriteField("Max Runtime", $"{maxRuntimeMinutes} min");
         WriteField("Check Interval", $"{checkIntervalSeconds} s");
         Console.WriteLine();
@@ -926,33 +945,117 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int StartSupervisorBackground(
+        HermesSupervisor supervisor,
+        SupervisorProcessManager processManager,
+        int maxRuntimeMinutes,
+        int checkIntervalSeconds,
+        int maxJobsPerLoop)
+    {
+        processManager.ClearStalePid();
+        var processStatus = processManager.GetStatus(supervisor.LoadState(), supervisor.LoadHeartbeat());
+        if (processStatus.Running)
+        {
+            WriteField("Status", "already_running");
+            WriteSupervisorProcessStatus(processStatus);
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+
+        processManager.RotateLogIfNeeded();
+        processManager.AppendLogLine("Hermes Supervisor background launcher invoked.");
+
+        var command = string.Join(
+            " ",
+            [
+                "cd",
+                ShellQuote(_runtimeRoot),
+                "&&",
+                "nohup",
+                "setsid",
+                "-f",
+                "dotnet",
+                "run",
+                "--project",
+                "./cli/Hermes.Cli.csproj",
+                "--",
+                "supervisor-start",
+                "--max-runtime-minutes",
+                maxRuntimeMinutes.ToString(CultureInfo.InvariantCulture),
+                "--check-interval-seconds",
+                checkIntervalSeconds.ToString(CultureInfo.InvariantCulture),
+                "--max-jobs-per-loop",
+                maxJobsPerLoop.ToString(CultureInfo.InvariantCulture),
+                ">>",
+                ShellQuote(processManager.LogPath),
+                "2>&1",
+                "<",
+                "/dev/null"
+            ]);
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "bash",
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            WorkingDirectory = _runtimeRoot
+        };
+        startInfo.ArgumentList.Add("-lc");
+        startInfo.ArgumentList.Add(command);
+
+        using var process = Process.Start(startInfo);
+        process?.WaitForExit(5000);
+
+        SupervisorProcessStatus latestStatus = processManager.GetStatus(supervisor.LoadState(), supervisor.LoadHeartbeat());
+        for (var attempt = 0; attempt < 20 && !latestStatus.Running; attempt++)
+        {
+            Thread.Sleep(500);
+            latestStatus = processManager.GetStatus(supervisor.LoadState(), supervisor.LoadHeartbeat());
+        }
+
+        WriteField("Status", latestStatus.Running ? "background_started" : "background_starting");
+        WriteSupervisorProcessStatus(latestStatus);
+        WriteField("State", DisplayPath(supervisor.StatePath));
+        WriteField("Heartbeat", DisplayPath(supervisor.HeartbeatPath));
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowSupervisorStatus()
     {
         WriteHeader("Hermes Supervisor Status");
         var storagePaths = BuildStoragePaths();
         var supervisor = new HermesSupervisor(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
         var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var processManager = new SupervisorProcessManager(storagePaths);
         var state = supervisor.LoadState();
         var heartbeat = supervisor.LoadHeartbeat();
+        var activeHeartbeat = heartbeat?.SupervisorId == state.SupervisorId ? heartbeat : null;
+        var processStatus = processManager.GetStatus(state, activeHeartbeat);
 
         WriteField("State", DisplayPath(supervisor.StatePath));
         WriteField("Heartbeat", DisplayPath(supervisor.HeartbeatPath));
+        WriteSupervisorProcessStatus(processStatus);
         WriteSupervisorState(state);
-        if (heartbeat is not null)
+        if (activeHeartbeat is not null)
         {
             WriteSubHeader("Heartbeat");
-            WriteField("Heartbeat UTC", heartbeat.TimestampUtc.ToString("O"));
-            WriteField("Status", heartbeat.Status);
-            WriteField("Current Job", heartbeat.CurrentJobId ?? "-");
-            WriteField("Resource Action", heartbeat.ResourceAction);
-            WriteField("Storage Action", heartbeat.StorageAction);
-            WriteField("Next Action", heartbeat.NextAction);
+            WriteField("Heartbeat UTC", activeHeartbeat.TimestampUtc.ToString("O"));
+            WriteField("Status", activeHeartbeat.Status);
+            WriteField("Current Job", activeHeartbeat.CurrentJobId ?? "-");
+            WriteField("Resource Action", activeHeartbeat.ResourceAction);
+            WriteField("Storage Action", activeHeartbeat.StorageAction);
+            WriteField("Next Action", activeHeartbeat.NextAction);
         }
 
         var schedulerStatus = scheduler.GetStatus();
+        var nextJob = schedulerStatus.Jobs.FirstOrDefault(job => job.NextRunUtc is not null);
         WriteSubHeader("Scheduler");
         WriteField("Config", DisplayPath(schedulerStatus.ConfigPath));
         WriteField("Jobs", schedulerStatus.Jobs.Count.ToString());
+        WriteField("Next Scheduled Job", nextJob is null ? "-" : $"{nextJob.JobId} @ {nextJob.NextRunUtc?.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}");
         foreach (var job in schedulerStatus.Jobs.Take(5))
         {
             WriteSchedulerJob(job);
@@ -968,6 +1071,7 @@ internal sealed class HermesCli
         WriteHeader("Hermes Supervisor Stop Request");
         var storagePaths = BuildStoragePaths();
         var supervisor = new HermesSupervisor(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var processManager = new SupervisorProcessManager(storagePaths);
         var state = supervisor.RequestStop();
 
         // If the supervisor is currently inside the existing Nightly Beta3 loop,
@@ -978,6 +1082,7 @@ internal sealed class HermesCli
         WriteField("Stop Request", DisplayPath(supervisor.StopRequestPath));
         WriteField("Nightly Stop Request", DisplayPath(nightly.StopRequestPath));
         WriteField("State", DisplayPath(supervisor.StatePath));
+        WriteSupervisorProcessStatus(processManager.GetStatus(state, supervisor.LoadHeartbeat()));
         WriteSupervisorState(state);
         Console.WriteLine();
         WriteSafety();
@@ -2300,6 +2405,18 @@ internal sealed class HermesCli
         WriteField("human_review_required", state.HumanReviewRequired.ToString().ToLowerInvariant());
     }
 
+    private void WriteSupervisorProcessStatus(SupervisorProcessStatus status)
+    {
+        WriteField("Running", status.Running.ToString().ToLowerInvariant());
+        WriteField("PID", status.Pid?.ToString() ?? "-");
+        WriteField("PID File", DisplayPath(status.PidPath));
+        WriteField("Stale PID", status.StalePid.ToString().ToLowerInvariant());
+        WriteField("Started At", status.StartedAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "-");
+        WriteField("Heartbeat Age", status.HeartbeatAgeSeconds is null ? "-" : $"{status.HeartbeatAgeSeconds:0.#} s");
+        WriteField("Log", DisplayPath(status.LogPath));
+        WriteField("Process Warning", status.Warning ?? "-");
+    }
+
     private void WriteSchedulerJob(ScheduledJobState job)
     {
         WriteSubHeader($"{job.JobId} / {job.JobType}");
@@ -2320,25 +2437,7 @@ internal sealed class HermesCli
 
     private static bool IsProcessAlive(int? processId)
     {
-        if (processId is null)
-        {
-            return false;
-        }
-
-        if (Directory.Exists($"/proc/{processId.Value}"))
-        {
-            return true;
-        }
-
-        try
-        {
-            using var process = System.Diagnostics.Process.GetProcessById(processId.Value);
-            return !process.HasExited;
-        }
-        catch
-        {
-            return false;
-        }
+        return SupervisorProcessManager.IsProcessAlive(processId);
     }
 
     private void WriteResourceSnapshot(ResourceSnapshot snapshot)
@@ -3644,6 +3743,11 @@ internal sealed class HermesCli
         }
 
         return null;
+    }
+
+    private static string ShellQuote(string value)
+    {
+        return "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
     }
 
     private static bool TryParseCliDate(string value, out DateTimeOffset timestampUtc)

@@ -46,6 +46,10 @@ public sealed class HermesSupervisor
 
     public string StopRequestPath => Path.Combine(StateDirectory, "supervisor_stop_requested.flag");
 
+    public string PidPath => new SupervisorProcessManager(_storagePaths).PidPath;
+
+    public string LogPath => new SupervisorProcessManager(_storagePaths).LogPath;
+
     public HermesSupervisorState LoadState()
     {
         if (!File.Exists(StatePath))
@@ -120,6 +124,8 @@ public sealed class HermesSupervisor
         Func<ScheduledJobDefinition, SupervisorJobContext, ScheduledJobExecutionResult> executor)
     {
         Directory.CreateDirectory(StateDirectory);
+        var processManager = new SupervisorProcessManager(_storagePaths);
+        processManager.WritePid(Environment.ProcessId);
         var startedAtUtc = DateTimeOffset.UtcNow;
         var deadlineUtc = startedAtUtc.AddMinutes(Math.Clamp(options.MaxRuntimeMinutes, 1, 10080));
         var supervisorId = $"hermes_supervisor_{startedAtUtc:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}";
@@ -146,6 +152,7 @@ public sealed class HermesSupervisor
             CurrentlyRunning: true,
             NoAutoTrading: true,
             HumanReviewRequired: true));
+        WriteHeartbeat(supervisorId, state, "starting", "storage_not_checked", "check_scheduler");
 
         ClearStopRequest();
         var status = "completed_deadline_reached";
@@ -338,23 +345,30 @@ public sealed class HermesSupervisor
             nextAction = "safe_stop_requested";
         }
 
-        var final = WriteState(state with
+        try
         {
-            UpdatedAtUtc = DateTimeOffset.UtcNow,
-            Status = status,
-            StoppedAtUtc = DateTimeOffset.UtcNow,
-            ProcessId = null,
-            HeartbeatUtc = DateTimeOffset.UtcNow,
-            CurrentJobId = null,
-            LastError = lastError,
-            NextAction = nextAction,
-            StopRequestedAtUtc = IsStopRequested() ? DateTimeOffset.UtcNow : state.StopRequestedAtUtc,
-            CurrentlyRunning = false
-        });
-        WriteHeartbeat(supervisorId, final, "stopped", "storage_not_checked", nextAction);
-        ClearStopRequest();
+            var final = WriteState(state with
+            {
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+                Status = status,
+                StoppedAtUtc = DateTimeOffset.UtcNow,
+                ProcessId = null,
+                HeartbeatUtc = DateTimeOffset.UtcNow,
+                CurrentJobId = null,
+                LastError = lastError,
+                NextAction = nextAction,
+                StopRequestedAtUtc = IsStopRequested() ? DateTimeOffset.UtcNow : state.StopRequestedAtUtc,
+                CurrentlyRunning = false
+            });
+            WriteHeartbeat(supervisorId, final, "stopped", "storage_not_checked", nextAction);
+            ClearStopRequest();
 
-        return new HermesSupervisorRunResult(final, scheduler.GetStatus());
+            return new HermesSupervisorRunResult(final, scheduler.GetStatus());
+        }
+        finally
+        {
+            processManager.ClearPidIfCurrent(Environment.ProcessId);
+        }
     }
 
     private HermesSupervisorState EmptyState(string status) =>
