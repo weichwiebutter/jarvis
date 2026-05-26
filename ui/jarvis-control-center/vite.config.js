@@ -6,16 +6,78 @@ import { fileURLToPath } from 'node:url';
 
 const projectDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(projectDir, '../..');
-const runtimeHealthPath = resolve(repoRoot, 'HermesRuntime/data/reports/runtime_health.json');
-const runtimeEventsPath = resolve(repoRoot, 'HermesRuntime/data/events/runtime');
-const runtimeJobsPath = resolve(repoRoot, 'HermesRuntime/data/jobs/jobs.index.json');
-const replayManifestPath = resolve(repoRoot, 'HermesRuntime/data/replays/manifests');
-const setupWatchPath = resolve(repoRoot, 'HermesRuntime/data/setup_watch/setup_watch.json');
-const featureExportsPath = resolve(repoRoot, 'HermesRuntime/data/exports/features');
-const signalExportsPath = resolve(repoRoot, 'HermesRuntime/data/exports/signals');
-const backtestReportsPath = resolve(repoRoot, 'HermesRuntime/data/reports/backtests');
-const outcomeReportsPath = resolve(repoRoot, 'HermesRuntime/data/reports/outcomes');
-const betaReportPath = resolve(repoRoot, 'HermesRuntime/data/reports/beta/latest_beta_learning.json');
+const hermesDataRoot = process.env.HERMES_DATA_ROOT || '/mnt/d/HermesData';
+const displayDataRoot = process.env.HERMES_DATA_ROOT || '/mnt/d/HermesData';
+const runtimeHealthPath = resolve(hermesDataRoot, 'reports/runtime_health.json');
+const runtimeEventsPath = resolve(hermesDataRoot, 'events/runtime');
+const runtimeJobsPath = resolve(hermesDataRoot, 'jobs/jobs.index.json');
+const replayManifestPath = resolve(hermesDataRoot, 'replays/manifests');
+const setupWatchPath = resolve(hermesDataRoot, 'setup_watch/setup_watch.json');
+const featureExportsPath = resolve(hermesDataRoot, 'exports/features');
+const signalExportsPath = resolve(hermesDataRoot, 'exports/signals');
+const backtestReportsPath = resolve(hermesDataRoot, 'reports/backtests');
+const outcomeReportsPath = resolve(hermesDataRoot, 'reports/outcomes');
+const betaReportPath = resolve(hermesDataRoot, 'reports/beta/latest_beta_learning.json');
+
+const operatorReports = {
+  researchInsights: {
+    label: 'Research Insights',
+    url: `/@fs/${resolve(hermesDataRoot, 'strategy_research/research_insights.json')}`,
+    path: `${displayDataRoot}/strategy_research/research_insights.json`,
+  },
+  robustStrategies: {
+    label: 'Robuste Strategien',
+    url: `/@fs/${resolve(hermesDataRoot, 'strategy_research/robust_strategies.json')}`,
+    path: `${displayDataRoot}/strategy_research/robust_strategies.json`,
+  },
+  overfitReport: {
+    label: 'Overfit Report',
+    url: `/@fs/${resolve(hermesDataRoot, 'strategy_research/overfit_report.json')}`,
+    path: `${displayDataRoot}/strategy_research/overfit_report.json`,
+  },
+  regimeSummary: {
+    label: 'Regime Summary',
+    url: `/@fs/${resolve(hermesDataRoot, 'reports/regimes/regime_summary.json')}`,
+    path: `${displayDataRoot}/reports/regimes/regime_summary.json`,
+  },
+  strategyRegimePerformance: {
+    label: 'Strategy Regime Performance',
+    url: `/@fs/${resolve(hermesDataRoot, 'reports/regimes/strategy_regime_performance.json')}`,
+    path: `${displayDataRoot}/reports/regimes/strategy_regime_performance.json`,
+  },
+  regimeDistribution: {
+    label: 'Regime Distribution',
+    url: `/@fs/${resolve(hermesDataRoot, 'reports/regimes/regime_distribution.json')}`,
+    path: `${displayDataRoot}/reports/regimes/regime_distribution.json`,
+  },
+  supervisorState: {
+    label: 'Supervisor State',
+    url: `/@fs/${resolve(hermesDataRoot, 'reports/supervisor/supervisor_state.json')}`,
+    path: `${displayDataRoot}/reports/supervisor/supervisor_state.json`,
+  },
+  schedulerState: {
+    label: 'Scheduler State',
+    url: `/@fs/${resolve(hermesDataRoot, 'reports/supervisor/scheduler_state.json')}`,
+    path: `${displayDataRoot}/reports/supervisor/scheduler_state.json`,
+  },
+  resourceStatus: {
+    label: 'Resource Status',
+    url: `/@fs/${resolve(hermesDataRoot, 'reports/resource/resource_status.json')}`,
+    path: `${displayDataRoot}/reports/resource/resource_status.json`,
+  },
+  cleanupPlan: {
+    label: 'Cleanup Plan',
+    url: `/@fs/${resolve(hermesDataRoot, 'reports/storage/cleanup_plan.json')}`,
+    path: `${displayDataRoot}/reports/storage/cleanup_plan.json`,
+  },
+  nightlyState: {
+    label: 'Nightly State',
+    url: `/@fs/${resolve(hermesDataRoot, 'reports/nightly_beta3/nightly_state.json')}`,
+    path: `${displayDataRoot}/reports/nightly_beta3/nightly_state.json`,
+  },
+};
+
+const supervisorLogPath = resolve(hermesDataRoot, 'logs/supervisor.log');
 
 function findLatestReplayManifest() {
   try {
@@ -73,37 +135,41 @@ export default defineConfig({
     __HERMES_BETA_REPORT_URL__: JSON.stringify(`/@fs/${betaReportPath}`),
     __HERMES_SETUP_WATCH_URL__: JSON.stringify(`/@fs/${setupWatchPath}`),
     __HERMES_RUNTIME_HEALTH_PATH__: JSON.stringify(
-      'HermesRuntime/data/reports/runtime_health.json',
+      `${displayDataRoot}/reports/runtime_health.json`,
     ),
-    __HERMES_RUNTIME_JOBS_PATH__: JSON.stringify('HermesRuntime/data/jobs/jobs.index.json'),
+    __HERMES_RUNTIME_JOBS_PATH__: JSON.stringify(`${displayDataRoot}/jobs/jobs.index.json`),
     __HERMES_FEATURE_EXPORT_PATH__: JSON.stringify(
       latestFeatureExportPath
-        ? `HermesRuntime/data/exports/features/${latestFeatureExportPath.split('/').at(-1)}`
+        ? `${displayDataRoot}/exports/features/${latestFeatureExportPath.split('/').at(-1)}`
         : '',
     ),
     __HERMES_SIGNAL_EXPORT_PATH__: JSON.stringify(
       latestSignalExportPath
-        ? `HermesRuntime/data/exports/signals/${latestSignalExportPath.split('/').at(-1)}`
+        ? `${displayDataRoot}/exports/signals/${latestSignalExportPath.split('/').at(-1)}`
         : '',
     ),
     __HERMES_BACKTEST_REPORT_PATH__: JSON.stringify(
       latestBacktestReportPath
-        ? `HermesRuntime/data/reports/backtests/${latestBacktestReportPath.split('/').at(-1)}`
+        ? `${displayDataRoot}/reports/backtests/${latestBacktestReportPath.split('/').at(-1)}`
         : '',
     ),
     __HERMES_OUTCOME_REPORT_PATH__: JSON.stringify(
       latestOutcomeReportPath
-        ? `HermesRuntime/data/reports/outcomes/${latestOutcomeReportPath.split('/').at(-1)}`
+        ? `${displayDataRoot}/reports/outcomes/${latestOutcomeReportPath.split('/').at(-1)}`
         : '',
     ),
     __HERMES_BETA_REPORT_PATH__: JSON.stringify(
-      'HermesRuntime/data/reports/beta/latest_beta_learning.json',
+      `${displayDataRoot}/reports/beta/latest_beta_learning.json`,
     ),
-    __HERMES_SETUP_WATCH_PATH__: JSON.stringify('HermesRuntime/data/setup_watch/setup_watch.json'),
+    __HERMES_SETUP_WATCH_PATH__: JSON.stringify(`${displayDataRoot}/setup_watch/setup_watch.json`),
+    __HERMES_DATA_ROOT__: JSON.stringify(displayDataRoot),
+    __HERMES_OPERATOR_REPORTS__: JSON.stringify(operatorReports),
+    __HERMES_SUPERVISOR_LOG_URL__: JSON.stringify(`/@fs/${supervisorLogPath}`),
+    __HERMES_SUPERVISOR_LOG_PATH__: JSON.stringify(`${displayDataRoot}/logs/supervisor.log`),
   },
   server: {
     fs: {
-      allow: [projectDir, repoRoot],
+      allow: [projectDir, repoRoot, hermesDataRoot],
     },
   },
 });

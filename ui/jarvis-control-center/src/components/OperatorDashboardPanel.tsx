@@ -1,0 +1,315 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  createOperatorDashboardFallback,
+  loadOperatorDashboard,
+  DATA_SOURCE,
+} from '../data/runtimeDataAdapter';
+import { Panel, StatusPill, toneClass } from './StatusCard';
+
+function formatNumber(value) {
+  return new Intl.NumberFormat('de-DE').format(Number(value || 0));
+}
+
+function formatGb(value) {
+  return `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(Number(value || 0))} GB`;
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+
+  if (bytes >= 1024 ** 3) {
+    return `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(bytes / 1024 ** 3)} GB`;
+  }
+
+  if (bytes >= 1024 ** 2) {
+    return `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(bytes / 1024 ** 2)} MB`;
+  }
+
+  return `${formatNumber(bytes)} B`;
+}
+
+function formatPercent(value) {
+  return `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(Number(value || 0))}%`;
+}
+
+function shortDateTime(value) {
+  if (!value) {
+    return '-';
+  }
+
+  const parsed = Date.parse(value);
+
+  if (!Number.isFinite(parsed)) {
+    return String(value);
+  }
+
+  return new Intl.DateTimeFormat('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed);
+}
+
+function statusTone(status) {
+  const value = String(status || '').toLowerCase();
+
+  if (value.includes('running') || value.includes('active') || value.includes('completed')) {
+    return 'good';
+  }
+
+  if (value.includes('stop') || value.includes('fail') || value.includes('critical')) {
+    return 'danger';
+  }
+
+  if (value.includes('skip') || value.includes('pending') || value.includes('outside')) {
+    return 'warn';
+  }
+
+  return 'info';
+}
+
+function MiniMetric({ label, value, tone = 'info' }) {
+  return (
+    <div className="operator-mini-metric">
+      <span>{label}</span>
+      <strong className={toneClass(tone)}>{value}</strong>
+    </div>
+  );
+}
+
+function OperatorCard({ title, badge, tone = 'info', children }) {
+  return (
+    <article className={`operator-card ${toneClass(tone)}`}>
+      <div className="operator-card-head">
+        <h3>{title}</h3>
+        {badge && <StatusPill tone={tone}>{badge}</StatusPill>}
+      </div>
+      {children}
+    </article>
+  );
+}
+
+function ReportViewer({ reports }) {
+  const [selectedKey, setSelectedKey] = useState(reports[0]?.key || '');
+  const selectedReport = reports.find((report) => report.key === selectedKey) || reports[0];
+
+  useEffect(() => {
+    if (!reports.some((report) => report.key === selectedKey)) {
+      setSelectedKey(reports[0]?.key || '');
+    }
+  }, [reports, selectedKey]);
+
+  return (
+    <div className="operator-report-viewer">
+      <div className="operator-report-list" role="list">
+        {reports.map((report) => (
+          <button
+            className={report.key === selectedReport?.key ? 'is-active' : ''}
+            key={report.key}
+            onClick={() => setSelectedKey(report.key)}
+            type="button"
+          >
+            <span>{report.label}</span>
+            <StatusPill tone={report.available ? 'good' : 'warn'}>
+              {report.available ? 'Datei' : 'Fixture'}
+            </StatusPill>
+          </button>
+        ))}
+      </div>
+      <div className="operator-report-json">
+        <div>
+          <span>{selectedReport?.path || '-'}</span>
+          {selectedReport?.warning && <b>{selectedReport.warning}</b>}
+        </div>
+        <pre>{JSON.stringify(selectedReport?.raw || {}, null, 2)}</pre>
+      </div>
+    </div>
+  );
+}
+
+function SafetyPlaceholder({ title, value, tone = 'warn' }) {
+  return (
+    <div className={`operator-placeholder-control ${toneClass(tone)}`}>
+      <span>{title}</span>
+      <button disabled type="button">
+        {value}
+      </button>
+    </div>
+  );
+}
+
+export function OperatorDashboardPanel() {
+  const [operatorState, setOperatorState] = useState(() => createOperatorDashboardFallback());
+
+  useEffect(() => {
+    let isMounted = true;
+
+    loadOperatorDashboard().then((nextState) => {
+      if (isMounted) {
+        setOperatorState(nextState);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const activeJobs = useMemo(
+    () => operatorState.schedulerJobs.filter((job) => job.enabled),
+    [operatorState.schedulerJobs],
+  );
+  const nextJobs = useMemo(
+    () =>
+      activeJobs
+        .filter((job) => job.next_run_utc)
+        .sort((left, right) => Date.parse(left.next_run_utc) - Date.parse(right.next_run_utc))
+        .slice(0, 5),
+    [activeJobs],
+  );
+  const warningLines = [
+    ...operatorState.warnings,
+    ...operatorState.storage.warnings,
+    ...operatorState.storage.errors,
+  ].filter(Boolean);
+
+  return (
+    <Panel
+      action={
+        <div className="operator-panel-actions">
+          <StatusPill tone={operatorState.dataSource === DATA_SOURCE.LIVE_FILE ? 'good' : 'warn'}>
+            {operatorState.dataSource === DATA_SOURCE.LIVE_FILE
+              ? 'Live-Dateien'
+              : 'Fixture-Fallback'}
+          </StatusPill>
+          <StatusPill tone="warn">UI-only Controls</StatusPill>
+        </div>
+      }
+      className="operator-panel"
+      eyebrow="Beta 3 Operator"
+      title="Operator Dashboard"
+    >
+      <div className="operator-top-grid">
+        <OperatorCard
+          badge={operatorState.supervisor.running ? 'running' : 'stopped'}
+          title="Supervisor Status"
+          tone={operatorState.supervisor.running ? 'good' : statusTone(operatorState.supervisor.status)}
+        >
+          <div className="operator-metric-grid">
+            <MiniMetric label="Heartbeat" value={shortDateTime(operatorState.supervisor.heartbeat_utc)} />
+            <MiniMetric label="Alter" value={`${formatNumber(operatorState.supervisor.heartbeat_age_seconds)} s`} />
+            <MiniMetric label="Uptime" value={`${formatNumber(operatorState.supervisor.uptime_minutes)} min`} />
+            <MiniMetric label="Aktueller Job" value={operatorState.supervisor.current_job} />
+          </div>
+          <p>{operatorState.supervisor.next_action}</p>
+        </OperatorCard>
+
+        <OperatorCard badge={`${activeJobs.length} aktiv`} title="Scheduler Status" tone="info">
+          <div className="operator-job-list">
+            {nextJobs.map((job) => (
+              <div className="operator-job-row" key={job.job_id}>
+                <div>
+                  <strong>{job.job_type}</strong>
+                  <span>{shortDateTime(job.next_run_utc)}</span>
+                </div>
+                <StatusPill tone={statusTone(job.status)}>{job.status}</StatusPill>
+              </div>
+            ))}
+          </div>
+        </OperatorCard>
+
+        <OperatorCard
+          badge={operatorState.resource.should_stop ? 'stop' : operatorState.resource.action}
+          title="Resource Status"
+          tone={operatorState.resource.should_stop ? 'danger' : operatorState.resource.should_pause ? 'warn' : 'good'}
+        >
+          <div className="operator-meter-stack">
+            <div>
+              <span>CPU</span>
+              <b>{formatPercent(operatorState.resource.cpu_usage_percent)}</b>
+              <i style={{ width: `${operatorState.resource.cpu_usage_percent}%` }} />
+            </div>
+            <div>
+              <span>RAM</span>
+              <b>{formatPercent(operatorState.resource.memory_usage_percent)}</b>
+              <i style={{ width: `${operatorState.resource.memory_usage_percent}%` }} />
+            </div>
+            <div>
+              <span>Freier Speicher</span>
+              <b>{formatGb(operatorState.resource.free_disk_gb)}</b>
+              <i style={{ width: `${operatorState.resource.free_disk_percent}%` }} />
+            </div>
+          </div>
+        </OperatorCard>
+
+        <OperatorCard badge={operatorState.nightly.current_state} title="Nightly Status" tone={statusTone(operatorState.nightly.current_state)}>
+          <div className="operator-metric-grid">
+            <MiniMetric label="Fenster" value={operatorState.nightly.next_nightly_window} />
+            <MiniMetric label="Naechster Start" value={shortDateTime(operatorState.nightly.next_scheduled_start_utc)} />
+            <MiniMetric label="Iterationen" value={formatNumber(operatorState.nightly.iterations_completed)} />
+            <MiniMetric label="Arbeit" value={formatNumber(operatorState.nightly.work_performed)} />
+          </div>
+          <p>{operatorState.nightly.next_action}</p>
+        </OperatorCard>
+      </div>
+
+      <div className="operator-middle-grid">
+        <OperatorCard title="Research Summary" tone="info">
+          <div className="operator-research-grid">
+            <MiniMetric label="Strategien getestet" value={formatNumber(operatorState.research.strategies_tested)} tone="info" />
+            <MiniMetric label="Robust" value={formatNumber(operatorState.research.robust_strategies)} tone="good" />
+            <MiniMetric label="Overfit-Verdacht" value={formatNumber(operatorState.research.overfit_suspected)} tone="warn" />
+            <MiniMetric label="Regime-Konsistenz" value={formatPercent(operatorState.research.regime_consistency_score * 100)} tone="good" />
+          </div>
+          <div className="operator-token-list">
+            {operatorState.research.regime_distribution.slice(0, 6).map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
+        </OperatorCard>
+
+        <OperatorCard title="Safety Control Layer" tone="warn">
+          <div className="operator-safety-grid">
+            <SafetyPlaceholder title="Auto-Trading" value="deaktiviert" />
+            <SafetyPlaceholder title="Demo/Paper Mode" value="Platzhalter" tone="info" />
+            <SafetyPlaceholder title="Emergency Stop" value="nicht verdrahtet" tone="danger" />
+            <SafetyPlaceholder title="Risk Limits" value="geplant" />
+            <SafetyPlaceholder title="Strategy Whitelist" value="geplant" tone="info" />
+            <SafetyPlaceholder title="Symbol Whitelist" value="geplant" tone="info" />
+          </div>
+          <div className="operator-safety-flags">
+            <StatusPill tone="warn">no_auto_trading=true</StatusPill>
+            <StatusPill tone="warn">human_review_required=true</StatusPill>
+            <StatusPill tone="danger">keine Orderbuttons</StatusPill>
+          </div>
+        </OperatorCard>
+      </div>
+
+      <div className="operator-bottom-grid">
+        <OperatorCard title="Report Viewer" tone="info">
+          <ReportViewer reports={operatorState.reports} />
+        </OperatorCard>
+
+        <OperatorCard title="Storage / Logs" tone={operatorState.storage.errors.length ? 'danger' : 'good'}>
+          <div className="operator-storage-card">
+            <MiniMetric label="Root" value={operatorState.storage.root} tone="info" />
+            <MiniMetric label="Frei" value={formatGb(operatorState.storage.free_disk_gb)} tone="good" />
+            <MiniMetric label="Cleanup Candidates" value={formatNumber(operatorState.storage.cleanup_candidate_count)} tone="warn" />
+            <MiniMetric label="Potenzial" value={formatBytes(operatorState.storage.estimated_bytes_to_free)} tone="info" />
+          </div>
+          <div className="operator-warning-list">
+            {(warningLines.length ? warningLines : ['Keine kritischen Warnungen im Dashboard-Zustand.']).slice(0, 5).map((warning) => (
+              <span key={warning}>{warning}</span>
+            ))}
+          </div>
+          <div className="operator-log-list">
+            {operatorState.logLines.slice(-8).map((line) => (
+              <code key={line}>{line}</code>
+            ))}
+          </div>
+        </OperatorCard>
+      </div>
+    </Panel>
+  );
+}

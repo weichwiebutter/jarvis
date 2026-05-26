@@ -8,10 +8,12 @@ import { StorageRetentionPanel } from './components/StorageRetentionPanel';
 import { HermesCliPanel } from './components/HermesCliPanel';
 import { JobsQueuePanel } from './components/JobsQueuePanel';
 import { EventTimelinePanel } from './components/EventTimelinePanel';
+import { OperatorDashboardPanel } from './components/OperatorDashboardPanel';
 import { CostProviderPanel, SafetyPanel } from './components/SafetyPanel';
 import { StatusPill } from './components/StatusCard';
 
 const bottomTabs = [
+  { id: 'operator', label: 'Operator Dashboard' },
   { id: 'research', label: 'Forschung / Backtests / Outcomes' },
   { id: 'storage', label: 'Speicher & Datenhaltung' },
   { id: 'cli', label: 'CLI / Dev-Konsole' },
@@ -38,10 +40,12 @@ function StatusSummaryCard({ title, value, detail, tone = 'info', badges = [] })
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('research');
+  const [activeTab, setActiveTab] = useState('operator');
 
   const renderActiveTab = () => {
     switch (activeTab) {
+      case 'operator':
+        return <OperatorDashboardPanel />;
       case 'storage':
         return <StorageRetentionPanel />;
       case 'cli':

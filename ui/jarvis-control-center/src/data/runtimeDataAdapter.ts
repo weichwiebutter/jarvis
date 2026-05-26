@@ -6,6 +6,7 @@ import { runtimeJobsMock } from '../fixtures/runtimeJobsMock';
 import { runtimeOutcomeReportsMock } from '../fixtures/runtimeOutcomeReportsMock';
 import { runtimeStorageMock } from '../fixtures/runtimeStorageMock';
 import { setupWatchMock } from '../fixtures/setupWatchMock';
+import { operatorDashboardMock } from '../fixtures/operatorDashboardMock';
 import { runtimeEvents } from '../fixtures/controlCenterMockData';
 import { de } from '../i18n/de';
 
@@ -33,6 +34,10 @@ const backtestReportPath = __HERMES_BACKTEST_REPORT_PATH__;
 const outcomeReportPath = __HERMES_OUTCOME_REPORT_PATH__;
 const betaReportPath = __HERMES_BETA_REPORT_PATH__;
 const setupWatchPath = __HERMES_SETUP_WATCH_PATH__;
+const hermesDataRoot = __HERMES_DATA_ROOT__;
+const operatorReportsConfig = __HERMES_OPERATOR_REPORTS__;
+const supervisorLogUrl = __HERMES_SUPERVISOR_LOG_URL__;
+const supervisorLogPath = __HERMES_SUPERVISOR_LOG_PATH__;
 
 const SUPPORTED_RUNTIME_EVENT_TYPES = new Set([
   'RuntimeStarted',
@@ -417,7 +422,7 @@ export function normalizeRuntimeStorage(raw, runtimeHealth) {
 
   return {
     summary: {
-      root: asString(raw?.root, 'HermesRuntime/data'),
+      root: asString(raw?.root, hermesDataRoot),
       freeDiskGb,
       totalDiskGb,
       usedPercent,
@@ -1191,6 +1196,433 @@ export async function loadBetaReport() {
   }
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function firstDefined(...values) {
+  return values.find((value) => value !== undefined && value !== null);
+}
+
+function formatHeartbeatAgeSeconds(timestampUtc) {
+  if (!timestampUtc) {
+    return null;
+  }
+
+  const parsed = Date.parse(timestampUtc);
+
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return Math.max(0, Math.round((Date.now() - parsed) / 1000));
+}
+
+function formatUptimeMinutes(startedAtUtc, stoppedAtUtc = null) {
+  if (!startedAtUtc) {
+    return 0;
+  }
+
+  const started = Date.parse(startedAtUtc);
+  const stopped = stoppedAtUtc ? Date.parse(stoppedAtUtc) : Date.now();
+
+  if (!Number.isFinite(started) || !Number.isFinite(stopped) || stopped < started) {
+    return 0;
+  }
+
+  return Math.round((stopped - started) / 60000);
+}
+
+function normalizeReportEntry(key, config, raw, dataSource, warning = '') {
+  return {
+    key,
+    label: asString(config?.label, key),
+    path: asString(config?.path, config?.url || ''),
+    dataSource,
+    available: dataSource === DATA_SOURCE.LIVE_FILE,
+    warning,
+    raw,
+  };
+}
+
+function reportFixtureRaw(key) {
+  switch (key) {
+    case 'researchInsights':
+      return operatorDashboardMock.researchInsights;
+    case 'regimeSummary':
+      return operatorDashboardMock.regimeSummary;
+    case 'strategyRegimePerformance':
+      return operatorDashboardMock.strategyRegimePerformance;
+    case 'supervisorState':
+      return operatorDashboardMock.supervisorState;
+    case 'schedulerState':
+      return operatorDashboardMock.schedulerState;
+    case 'resourceStatus':
+      return operatorDashboardMock.resourceStatus;
+    case 'cleanupPlan':
+      return operatorDashboardMock.cleanupPlan;
+    case 'nightlyState':
+      return operatorDashboardMock.nightlyState;
+    case 'robustStrategies':
+      return {
+        strategies: operatorDashboardMock.researchInsights.robust_strategies,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'overfitReport':
+      return {
+        overfit_suspected_strategies:
+          operatorDashboardMock.researchInsights.overfit_suspected_strategies,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'regimeDistribution':
+      return {
+        dominant_regimes: operatorDashboardMock.regimeSummary.dominant_regimes,
+        dominant_sessions: operatorDashboardMock.regimeSummary.dominant_sessions,
+      };
+    default:
+      return {};
+  }
+}
+
+export function normalizeSupervisorState(raw = {}) {
+  const startedAtUtc = firstDefined(raw.started_at_utc, raw.startedAtUtc, raw.StartedAtUtc);
+  const stoppedAtUtc = firstDefined(raw.stopped_at_utc, raw.stoppedAtUtc, raw.StoppedAtUtc);
+  const heartbeatUtc = firstDefined(
+    raw.heartbeat_utc,
+    raw.heartbeatUtc,
+    raw.last_heartbeat_utc,
+    raw.lastHeartbeatUtc,
+    raw.UpdatedUtc,
+  );
+  const running = asBoolean(
+    firstDefined(raw.running, raw.currently_running, raw.currentlyRunning),
+    false,
+  );
+
+  return {
+    status: asString(raw.status ?? raw.Status, running ? 'running' : 'stopped'),
+    running,
+    pid: firstDefined(raw.pid, raw.process_id, raw.processId, raw.ProcessId, null),
+    started_at_utc: startedAtUtc || null,
+    stopped_at_utc: stoppedAtUtc || null,
+    heartbeat_utc: heartbeatUtc || null,
+    heartbeat_age_seconds: asNumber(
+      firstDefined(
+        raw.heartbeat_age_seconds,
+        raw.heartbeatAgeSeconds,
+        formatHeartbeatAgeSeconds(heartbeatUtc),
+      ),
+      0,
+    ),
+    uptime_minutes: asNumber(
+      firstDefined(
+        raw.uptime_minutes,
+        raw.uptimeMinutes,
+        formatUptimeMinutes(startedAtUtc, stoppedAtUtc),
+      ),
+      0,
+    ),
+    current_job: asString(
+      firstDefined(raw.current_job, raw.currentJob, raw.current_job_id, raw.currentJobId),
+      '-',
+    ),
+    next_action: asString(firstDefined(raw.next_action, raw.nextAction), '-'),
+    jobs_started: asNumber(firstDefined(raw.jobs_started, raw.jobsStarted), 0),
+    jobs_completed: asNumber(firstDefined(raw.jobs_completed, raw.jobsCompleted), 0),
+    jobs_skipped: asNumber(firstDefined(raw.jobs_skipped, raw.jobsSkipped), 0),
+    last_error: firstDefined(raw.last_error, raw.lastError, null),
+    log_path: asString(firstDefined(raw.log_path, raw.logPath), supervisorLogPath),
+    no_auto_trading: asBoolean(
+      firstDefined(raw.no_auto_trading, raw.noAutoTrading),
+      true,
+    ),
+    human_review_required: asBoolean(
+      firstDefined(raw.human_review_required, raw.humanReviewRequired),
+      true,
+    ),
+  };
+}
+
+export function normalizeSchedulerJobs(raw = []) {
+  const source = Array.isArray(raw) ? raw : raw.jobs || raw.scheduled_jobs || raw.ScheduledJobs || [];
+
+  return asArray(source).map((job, index) => ({
+    job_id: asString(firstDefined(job.job_id, job.jobId, job.id), `scheduled_job_${index}`),
+    job_type: asString(firstDefined(job.job_type, job.jobType, job.type), 'unknown'),
+    enabled: asBoolean(job.enabled, true),
+    status: asString(job.status, job.enabled === false ? 'disabled' : 'pending'),
+    next_run_utc: firstDefined(job.next_run_utc, job.nextRunUtc, job.next_run, job.nextRun, null),
+    last_run_utc: firstDefined(job.last_run_utc, job.lastRunUtc, job.last_run, job.lastRun, null),
+    run_count: asNumber(firstDefined(job.run_count, job.runCount), 0),
+    failure_count: asNumber(firstDefined(job.failure_count, job.failureCount), 0),
+    skipped_count: asNumber(firstDefined(job.skipped_count, job.skippedCount), 0),
+    currently_running: asBoolean(
+      firstDefined(job.currently_running, job.currentlyRunning, job.running),
+      false,
+    ),
+    last_action: firstDefined(job.last_action, job.lastAction, null),
+    last_skipped_reason: firstDefined(job.last_skipped_reason, job.lastSkippedReason, null),
+  }));
+}
+
+export function normalizeResourceStatus(raw = {}) {
+  const freeDiskGb = asNumber(
+    firstDefined(
+      raw.free_disk_gb,
+      raw.freeDiskGb,
+      raw.free_disk_mb !== undefined ? asNumber(raw.free_disk_mb) / 1024 : undefined,
+      raw.freeDiskMb !== undefined ? asNumber(raw.freeDiskMb) / 1024 : undefined,
+    ),
+    0,
+  );
+
+  return {
+    cpu_usage_percent: clampNumber(firstDefined(raw.cpu_usage_percent, raw.cpuUsagePercent), 0),
+    memory_usage_percent: clampNumber(
+      firstDefined(raw.memory_usage_percent, raw.memoryUsagePercent, raw.ram_usage_percent),
+      0,
+    ),
+    free_disk_gb: freeDiskGb,
+    free_disk_percent: clampNumber(firstDefined(raw.free_disk_percent, raw.freeDiskPercent), 0),
+    storage_root: asString(firstDefined(raw.storage_root, raw.storageRoot), hermesDataRoot),
+    action: asString(firstDefined(raw.action, raw.recommended_action, raw.recommendedAction), '-'),
+    warnings: asArray(firstDefined(raw.warnings, raw.Warnings)).map(String),
+    errors: asArray(firstDefined(raw.errors, raw.Errors)).map(String),
+    should_pause: asBoolean(firstDefined(raw.should_pause, raw.shouldPause), false),
+    should_stop: asBoolean(firstDefined(raw.should_stop, raw.shouldStop), false),
+    no_auto_trading: asBoolean(firstDefined(raw.no_auto_trading, raw.noAutoTrading), true),
+    human_review_required: asBoolean(
+      firstDefined(raw.human_review_required, raw.humanReviewRequired),
+      true,
+    ),
+  };
+}
+
+export function normalizeNightlyState(raw = {}) {
+  return {
+    status: asString(raw.status, 'unknown'),
+    current_state: asString(firstDefined(raw.current_state, raw.currentState, raw.status), 'unknown'),
+    next_nightly_window: asString(
+      firstDefined(raw.next_nightly_window, raw.nextNightlyWindow),
+      '23:00-05:00',
+    ),
+    next_scheduled_start_utc:
+      firstDefined(raw.next_scheduled_start_utc, raw.nextScheduledStartUtc, null),
+    iterations_completed: asNumber(
+      firstDefined(raw.iterations_completed, raw.iterationsCompleted),
+      0,
+    ),
+    work_performed: asNumber(firstDefined(raw.work_performed, raw.workPerformed), 0),
+    idle_iterations: asNumber(firstDefined(raw.idle_iterations, raw.idleIterations), 0),
+    currently_running: asBoolean(firstDefined(raw.currently_running, raw.currentlyRunning), false),
+    last_checkpoint_path:
+      firstDefined(raw.last_checkpoint_path, raw.lastCheckpointPath, raw.checkpoint_path, null),
+    next_action: asString(firstDefined(raw.next_action, raw.nextAction), '-'),
+    no_auto_trading: asBoolean(firstDefined(raw.no_auto_trading, raw.noAutoTrading), true),
+    human_review_required: asBoolean(
+      firstDefined(raw.human_review_required, raw.humanReviewRequired),
+      true,
+    ),
+  };
+}
+
+export function normalizeResearchSummary(
+  researchInsights = {},
+  regimeSummary = {},
+  regimePerformance = {},
+  robustReport = {},
+  overfitReport = {},
+) {
+  const topStrategies = asArray(firstDefined(researchInsights.top_strategies, researchInsights.topStrategies));
+  const robustStrategies = asArray(
+    firstDefined(
+      researchInsights.robust_strategies,
+      researchInsights.robustStrategies,
+      robustReport.strategies,
+      robustReport.robust_strategies,
+      robustReport.robustStrategies,
+      Array.isArray(robustReport) ? robustReport : undefined,
+    ),
+  );
+  const overfitStrategies = asArray(
+    firstDefined(
+      researchInsights.overfit_suspected_strategies,
+      researchInsights.overfitSuspectedStrategies,
+      researchInsights.overfit_suspected,
+      overfitReport.overfit_suspected_strategies,
+      overfitReport.overfitSuspectedStrategies,
+      overfitReport.strategies,
+      Array.isArray(overfitReport) ? overfitReport : undefined,
+    ),
+  );
+
+  return {
+    strategies_tested: asNumber(
+      firstDefined(regimePerformance.strategies_analyzed, regimePerformance.strategiesAnalyzed),
+      topStrategies.length,
+    ),
+    robust_strategies: robustStrategies.length,
+    overfit_suspected: overfitStrategies.length,
+    regime_distribution: asArray(
+      firstDefined(regimeSummary.dominant_regimes, regimeSummary.dominantRegimes),
+    ).map(String),
+    best_regimes: asArray(firstDefined(researchInsights.best_regimes, researchInsights.bestRegimes)).map(String),
+    weak_regimes: asArray(firstDefined(researchInsights.weak_regimes, researchInsights.weakRegimes)).map(String),
+    preferred_sessions: asArray(
+      firstDefined(researchInsights.preferred_sessions, researchInsights.preferredSessions),
+    ).map(String),
+    latest_insights: [
+      ...asArray(firstDefined(researchInsights.best_regimes, researchInsights.bestRegimes)).slice(0, 2),
+      ...asArray(firstDefined(researchInsights.weak_regimes, researchInsights.weakRegimes)).slice(0, 2),
+      ...asArray(firstDefined(researchInsights.volatility_preference, researchInsights.volatilityPreference)).slice(0, 2),
+    ].map(String),
+    regime_consistency_score: asNumber(
+      firstDefined(
+        researchInsights.regime_consistency_score,
+        researchInsights.regimeConsistencyScore,
+        regimePerformance.regime_consistency_score,
+      ),
+      0,
+    ),
+  };
+}
+
+export function normalizeCleanupPlan(raw = {}) {
+  const candidates = asArray(firstDefined(raw.candidates, raw.cleanup_candidates, raw.cleanupCandidates));
+
+  return {
+    candidates,
+    candidate_count: asNumber(firstDefined(raw.candidate_count, raw.candidateCount), candidates.length),
+    estimated_bytes_to_free: asNumber(
+      firstDefined(raw.estimated_bytes_to_free, raw.estimatedBytesToFree),
+      0,
+    ),
+    safe_to_apply: asBoolean(firstDefined(raw.safe_to_apply, raw.safeToApply), false),
+    warnings: asArray(firstDefined(raw.warnings, raw.Warnings)).map(String),
+  };
+}
+
+function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warnings = []) {
+  const supervisorRaw = rawReports.supervisorState || operatorDashboardMock.supervisorState;
+  const schedulerRaw = rawReports.schedulerState || operatorDashboardMock.schedulerState;
+  const resourceRaw = rawReports.resourceStatus || operatorDashboardMock.resourceStatus;
+  const nightlyRaw = rawReports.nightlyState || operatorDashboardMock.nightlyState;
+  const insightsRaw = rawReports.researchInsights || operatorDashboardMock.researchInsights;
+  const robustRaw = rawReports.robustStrategies || {};
+  const overfitRaw = rawReports.overfitReport || {};
+  const regimeSummaryRaw = rawReports.regimeSummary || operatorDashboardMock.regimeSummary;
+  const regimePerformanceRaw =
+    rawReports.strategyRegimePerformance || operatorDashboardMock.strategyRegimePerformance;
+  const cleanupRaw = rawReports.cleanupPlan || operatorDashboardMock.cleanupPlan;
+
+  const resource = normalizeResourceStatus(resourceRaw);
+  const cleanup = normalizeCleanupPlan(cleanupRaw);
+
+  return {
+    supervisor: normalizeSupervisorState(supervisorRaw),
+    schedulerJobs: normalizeSchedulerJobs(schedulerRaw),
+    resource,
+    nightly: normalizeNightlyState(nightlyRaw),
+    research: normalizeResearchSummary(
+      insightsRaw,
+      regimeSummaryRaw,
+      regimePerformanceRaw,
+      robustRaw,
+      overfitRaw,
+    ),
+    storage: {
+      root: resource.storage_root,
+      free_disk_gb: resource.free_disk_gb,
+      cleanup_candidate_count: cleanup.candidate_count,
+      estimated_bytes_to_free: cleanup.estimated_bytes_to_free,
+      warnings: [...resource.warnings, ...cleanup.warnings],
+      errors: resource.errors,
+      cleanup_safe_to_apply: cleanup.safe_to_apply,
+    },
+    cleanup,
+    reports,
+    logLines,
+    dataSource,
+    warnings,
+    no_auto_trading: true,
+    human_review_required: true,
+  };
+}
+
+export function createOperatorDashboardFallback(loadError = '') {
+  const configs = operatorReportsConfig || {};
+  const reports = Object.entries(configs).map(([key, config]) =>
+    normalizeReportEntry(
+      key,
+      config,
+      reportFixtureRaw(key),
+      DATA_SOURCE.FIXTURE,
+      loadError,
+    ),
+  );
+
+  return buildOperatorDashboard(
+    {
+      supervisorState: operatorDashboardMock.supervisorState,
+      schedulerState: operatorDashboardMock.schedulerState,
+      resourceStatus: operatorDashboardMock.resourceStatus,
+      nightlyState: operatorDashboardMock.nightlyState,
+      researchInsights: operatorDashboardMock.researchInsights,
+      regimeSummary: operatorDashboardMock.regimeSummary,
+      strategyRegimePerformance: operatorDashboardMock.strategyRegimePerformance,
+      cleanupPlan: operatorDashboardMock.cleanupPlan,
+    },
+    reports,
+    [...operatorDashboardMock.logLines],
+    DATA_SOURCE.FIXTURE,
+    loadError ? [loadError] : [],
+  );
+}
+
+async function loadOperatorReport(key, config) {
+  try {
+    const raw = await readJsonReadOnly(config?.url);
+    return normalizeReportEntry(key, config, raw, DATA_SOURCE.LIVE_FILE);
+  } catch (error) {
+    const warning = warningFromError(`${config?.label || key} nicht erreichbar`, error);
+    return normalizeReportEntry(key, config, reportFixtureRaw(key), DATA_SOURCE.FIXTURE, warning);
+  }
+}
+
+export async function loadOperatorDashboard() {
+  const configs = operatorReportsConfig || {};
+  const reportEntries = await Promise.all(
+    Object.entries(configs).map(([key, config]) => loadOperatorReport(key, config)),
+  );
+  const rawReports = reportEntries.reduce((next, report) => {
+    next[report.key] = report.raw;
+    return next;
+  }, {});
+  let logLines = [...operatorDashboardMock.logLines];
+  const warnings = reportEntries.flatMap((report) => (report.warning ? [report.warning] : []));
+
+  try {
+    const logText = await readTextReadOnly(supervisorLogUrl);
+    logLines = logText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-10);
+  } catch (error) {
+    warnings.push(warningFromError('Supervisor-Log nicht erreichbar', error));
+  }
+
+  const dataSource = reportEntries.some((report) => report.dataSource === DATA_SOURCE.LIVE_FILE)
+    ? reportEntries.every((report) => report.dataSource === DATA_SOURCE.LIVE_FILE)
+      ? DATA_SOURCE.LIVE_FILE
+      : DATA_SOURCE.FIXTURE
+    : DATA_SOURCE.FIXTURE;
+
+  return buildOperatorDashboard(rawReports, reportEntries, logLines, dataSource, warnings);
+}
+
 export const runtimeDataAdapter = {
   loadRuntimeData,
   loadRuntimeHealth,
@@ -1203,6 +1635,7 @@ export const runtimeDataAdapter = {
   loadBacktestReports,
   loadOutcomeReports,
   loadBetaReport,
+  loadOperatorDashboard,
   createRuntimeDataFallback,
   createRuntimeHealthFallback,
   createSetupWatchFallback,
@@ -1213,4 +1646,5 @@ export const runtimeDataAdapter = {
   createBacktestReportsFallback,
   createOutcomeReportsFallback,
   createBetaReportFallback,
+  createOperatorDashboardFallback,
 };

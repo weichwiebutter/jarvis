@@ -1,7 +1,7 @@
 import { de as t } from '../i18n/de';
 
 export const runtimeStorageMock = {
-  root: 'HermesRuntime/data',
+  root: '/mnt/d/HermesData',
   total_disk_gb: 1200,
   warning_threshold_percent: 75,
   critical_threshold_percent: 90,
@@ -9,7 +9,7 @@ export const runtimeStorageMock = {
     {
       id: 'cache',
       label: t.storageRetention.cache,
-      path: 'HermesRuntime/data/cache',
+      path: '/mnt/d/HermesData/cache',
       used: '18 GB',
       percent: 8,
       tone: 'good',
@@ -18,7 +18,7 @@ export const runtimeStorageMock = {
     {
       id: 'events',
       label: t.storageRetention.events,
-      path: 'HermesRuntime/data/events',
+      path: '/mnt/d/HermesData/events',
       used: '42 GB',
       percent: 19,
       tone: 'info',
@@ -27,7 +27,7 @@ export const runtimeStorageMock = {
     {
       id: 'snapshots',
       label: t.storageRetention.snapshots,
-      path: 'HermesRuntime/data/snapshots',
+      path: '/mnt/d/HermesData/snapshots',
       used: '64 GB',
       percent: 29,
       tone: 'info',
@@ -36,7 +36,7 @@ export const runtimeStorageMock = {
     {
       id: 'replays',
       label: t.storageRetention.replays,
-      path: 'HermesRuntime/data/replays',
+      path: '/mnt/d/HermesData/replays',
       used: '180 GB',
       percent: 54,
       tone: 'warn',
@@ -45,7 +45,7 @@ export const runtimeStorageMock = {
     {
       id: 'exports',
       label: t.storageRetention.exports,
-      path: 'HermesRuntime/data/exports',
+      path: '/mnt/d/HermesData/exports',
       used: '96 GB',
       percent: 40,
       tone: 'info',
@@ -54,7 +54,7 @@ export const runtimeStorageMock = {
     {
       id: 'archive',
       label: t.storageRetention.archive,
-      path: 'HermesRuntime/data/archive',
+      path: '/mnt/d/HermesData/archive',
       used: '310 GB',
       percent: 68,
       tone: 'muted',

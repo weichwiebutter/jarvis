@@ -4,6 +4,7 @@ First separated React/Vite prototype for the future Jarvis Control Center.
 
 This prototype is intentionally isolated from the existing Gradio test UI and from
 `HermesRuntime`. It never sends commands to the runtime and does not write files.
+Future trading controls are represented only as disabled UI placeholders.
 
 ## Start
 
@@ -20,7 +21,8 @@ npm run dev
 - No cTrader connection
 - No live quotes
 - No runtime writes
-- Read-only browser fetch for `HermesRuntime/data/reports/runtime_health.json`
+- Read-only browser fetch for Hermes Runtime JSON reports
+- Beta 3 Operator Dashboard for Supervisor, Scheduler, ResourceGuard, Nightly and Research monitoring
 
 ## Runtime Health JSON
 
@@ -28,7 +30,7 @@ In Vite dev mode, the Runtime Health panel tries to load the real file through a
 read-only `/@fs/...` URL configured in `vite.config.js`:
 
 ```text
-HermesRuntime/data/reports/runtime_health.json
+/mnt/d/HermesData/reports/runtime_health.json
 ```
 
 This is a browser fetch of an existing JSON file. It does not start
@@ -51,11 +53,60 @@ src/data/runtimeDataAdapter.ts
 
 The adapter is browser-only and read-only. It prepares access to:
 
-- `HermesRuntime/data/reports/runtime_health.json`
-- `HermesRuntime/data/setup_watch/setup_watch.json`
-- runtime JSONL event files under `HermesRuntime/data/events/runtime/`
-- future queue/job snapshots under `HermesRuntime/data/jobs/`
-- latest demo backtest report under `HermesRuntime/data/reports/backtests/`
+- `/mnt/d/HermesData/reports/runtime_health.json`
+- `/mnt/d/HermesData/setup_watch/setup_watch.json`
+- runtime JSONL event files under `/mnt/d/HermesData/events/runtime/`
+- future queue/job snapshots under `/mnt/d/HermesData/jobs/`
+- latest demo backtest report under `/mnt/d/HermesData/reports/backtests/`
+
+The data root defaults to:
+
+```text
+/mnt/d/HermesData
+```
+
+For another local data lake path, start Vite with:
+
+```bash
+HERMES_DATA_ROOT=/mnt/d/HermesData npm run dev
+```
+
+## Beta 3 Operator Dashboard
+
+The Operator Dashboard is a monitoring-first foundation for the Beta 3
+Supervisor/Scheduler architecture. It reads existing reports when reachable and
+falls back to fixtures without blocking the UI.
+
+Integrated read-only reports:
+
+- `strategy_research/research_insights.json`
+- `strategy_research/robust_strategies.json`
+- `strategy_research/overfit_report.json`
+- `reports/regimes/regime_summary.json`
+- `reports/regimes/strategy_regime_performance.json`
+- `reports/regimes/regime_distribution.json`
+- `reports/supervisor/supervisor_state.json`
+- `reports/supervisor/scheduler_state.json`
+- `reports/resource/resource_status.json`
+- `reports/storage/cleanup_plan.json`
+- `reports/nightly_beta3/nightly_state.json`
+- `logs/supervisor.log`
+
+Displayed areas:
+
+- Supervisor Status
+- Scheduler Status
+- Resource Status
+- Nightly Status
+- Research Summary
+- Report Viewer
+- Storage / Logs
+- disabled Safety Control placeholders for Auto-Trading, Demo/Paper Mode,
+  Emergency Stop, Risk Limits, Strategy Whitelist and Symbol Whitelist
+
+The placeholders do not send commands, do not start or stop Hermes, do not
+connect to brokers, and do not expose order actions. Later production wiring
+must go through an approval-aware read-only/command-separated bridge.
 
 `RuntimeHealthPanel` and `SetupWatchPanel` both load through
 `loadRuntimeData()` from the adapter. `EventTimelinePanel` uses
@@ -94,7 +145,7 @@ The event loader currently derives the JSONL file name from the Runtime Health
 timestamp and attempts to read:
 
 ```text
-HermesRuntime/data/events/runtime/yyyy-MM-dd.runtime.jsonl
+/mnt/d/HermesData/events/runtime/yyyy-MM-dd.runtime.jsonl
 ```
 
 Supported timeline event types include `RuntimeStarted`, `StorageInitialized`,
@@ -121,7 +172,7 @@ result/error fields, and parameters. The current Vite prototype points at a
 future read-only snapshot path:
 
 ```text
-HermesRuntime/data/jobs/jobs.index.json
+/mnt/d/HermesData/jobs/jobs.index.json
 ```
 
 The real HermesRuntime queue stores manifests across `pending/`, `running/`,
@@ -156,7 +207,7 @@ storage snapshot or bridge.
 Backtest reports are loaded in dev mode from the latest matching file:
 
 ```text
-HermesRuntime/data/reports/backtests/*.backtest.json
+/mnt/d/HermesData/reports/backtests/*.backtest.json
 ```
 
 The adapter normalizes `run_id`, `symbol`, `timeframe`, `strategy_name`,
