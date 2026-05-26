@@ -142,17 +142,19 @@ Falls Port `5173` belegt ist, zeigt Vite die tatsaechliche URL im Terminal.
 - Keine Brokerverbindung und keine cTrader-Anbindung in der aktuellen Phase.
 - Trading bleibt Analyse/Alerts only; Orders und Broker-Anbindungen sind nicht
   implementiert.
-- Hermes CLI Foundation bietet read-only Statusbefehle und lokale
-  Datenvorbereitungsbefehle. Sie enthaelt keine Runtime-Steuerung, keine
-  Delete-Kommandos und keine Trading-Kommandos.
+- Hermes CLI Foundation bietet read-only Statusbefehle, lokale
+  Datenvorbereitungsbefehle und kontrollierte Supervisor-Start-/Stop-Requests.
+  Sie enthaelt keine freien Runtime-Kommandos, keine Delete-Kommandos ohne
+  explizites `--safe` und keine Trading-Kommandos.
 - Future Trading Control Layer braucht vor jeder Live-Phase: Auto-Trading
   Toggle, Paper/Demo Mode, Risk Limits, Volume-/Lot-Limits, Strategy Whitelist,
   Symbol Whitelist und Emergency Stop.
 
 ## Hermes CLI Foundation
 
-Die erste lokale CLI liegt unter `HermesRuntime/cli/` und liest nur bestehende
-Runtime-Dateien.
+Die lokale CLI liegt unter `HermesRuntime/cli/`. Statusbefehle lesen bestehende
+Runtime-Dateien; Supervisor-Befehle steuern nur den lokalen Dauerbetrieb ueber
+PID, Heartbeat und Stop-Request.
 
 Beispiele:
 
@@ -166,9 +168,9 @@ dotnet run --project ./cli/Hermes.Cli.csproj -- storage
 dotnet run --project ./cli/Hermes.Cli.csproj -- version
 ```
 
-Die CLI startet HermesRuntime nicht. Sie liest `runtime_health.json`,
+Die Statuspfade starten HermesRuntime nicht. Sie lesen `runtime_health.json`,
 `setup_watch.json`, Event-JSONL, Job-Manifeste und Storage-Metadaten lokal und
-zeigt Safety-Flags wie `no_auto_trading` und `human_review_required` sichtbar an.
+zeigen Safety-Flags wie `no_auto_trading` und `human_review_required` sichtbar an.
 
 ## Relevante Testbefehle
 
