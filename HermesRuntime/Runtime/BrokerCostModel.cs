@@ -15,19 +15,19 @@ public sealed record BrokerCostModel(
             Source: "manual_default",
             SpreadDefaults: new Dictionary<string, double>
             {
-                ["EURUSD"] = 0.2,
-                ["XAUUSD"] = 1.2,
-                ["GER40"] = 1.4,
-                ["US500"] = 0.6
+                ["EURUSD"] = 0.3,
+                ["XAUUSD"] = 1.8,
+                ["GER40"] = 2.0,
+                ["US500"] = 0.8
             },
-            CommissionR: 0.025,
-            BaseSlippageR: 0.015,
+            CommissionR: 0.035,
+            BaseSlippageR: 0.025,
             SessionVolatilityMultipliers: new Dictionary<string, double>
             {
                 ["london"] = 1.0,
-                ["new_york"] = 1.1,
-                ["london_new_york_overlap"] = 1.25,
-                ["off_session"] = 1.75
+                ["new_york"] = 1.2,
+                ["london_new_york_overlap"] = 1.35,
+                ["off_session"] = 2.1
             },
             SymbolContractHints: new Dictionary<string, string>
             {

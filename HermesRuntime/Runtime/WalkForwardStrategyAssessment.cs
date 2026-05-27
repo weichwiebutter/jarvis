@@ -19,4 +19,15 @@ public sealed record WalkForwardStrategyAssessment(
     double RobustnessConfidence = 0,
     double ParameterStability = 0,
     double SampleQuality = 0,
-    double OverfitRisk = 0);
+    double OverfitRisk = 0,
+    double RealismScore = 0,
+    string RealismPenaltyReason = "",
+    bool TooGoodToBeTrue = false,
+    double CostSensitivity = 0,
+    double LossDistributionQuality = 0,
+    bool OosAvailable = false,
+    double WalkForwardConfidence = 0,
+    double RegimeConsistencyScore = 0,
+    IReadOnlyList<string>? PreferredRegimes = null,
+    IReadOnlyList<string>? AvoidedRegimes = null,
+    double RegimeSampleQuality = 0);

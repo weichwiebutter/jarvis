@@ -411,6 +411,9 @@ public sealed class MarketRegimeClassifier
             AvoidSessions: SessionStrength(entries, descending: false),
             VolatilityPreference: VolatilityPreference(entries),
             RegimeConsistencyScore: RegimeConsistency(entries),
+            PreferredRegimes: RegimeStrength(entries, descending: true),
+            AvoidedRegimes: RegimeStrength(entries, descending: false),
+            RegimeSampleQuality: RegimeSampleQuality(entries),
             Warnings: warnings.Distinct(StringComparer.Ordinal).Take(30).ToList(),
             NoAutoTrading: true,
             HumanReviewRequired: true);
@@ -600,6 +603,40 @@ public sealed class MarketRegimeClassifier
             .Select(group => $"{group.Key}:avg_fit={group.Average(entry => entry.RegimeFitScore):0.####},variants={group.Sum(entry => entry.VariantCount)}")
             .OrderByDescending(line => line)
             .ToList();
+    }
+
+    private static IReadOnlyList<string> RegimeStrength(
+        IReadOnlyList<StrategyRegimePerformanceEntry> entries,
+        bool descending)
+    {
+        var query = entries
+            .GroupBy(entry => entry.RegimeType, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new
+            {
+                Regime = group.Key,
+                Score = group.Average(entry => entry.RegimeFitScore),
+                Count = group.Sum(entry => entry.VariantCount)
+            });
+        query = descending
+            ? query.OrderByDescending(item => item.Score).ThenByDescending(item => item.Count)
+            : query.OrderBy(item => item.Score).ThenByDescending(item => item.Count);
+
+        return query
+            .Take(8)
+            .Select(item => $"{item.Regime}:avg_fit={item.Score:0.####},variants={item.Count}")
+            .ToList();
+    }
+
+    private static double RegimeSampleQuality(IReadOnlyList<StrategyRegimePerformanceEntry> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return 0;
+        }
+
+        var regimeCount = entries.Select(entry => entry.RegimeType).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        var sessionCount = entries.Select(entry => entry.Session).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        return Math.Round(Math.Clamp((regimeCount / 5.0 * 0.65) + (sessionCount / 4.0 * 0.35), 0, 1), 4);
     }
 
     private static double RegimeConsistency(IReadOnlyList<StrategyRegimePerformanceEntry> entries)

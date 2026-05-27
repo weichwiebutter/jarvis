@@ -1,22 +1,22 @@
 {
-  "profile_id": "fusion_markets_manual_default_v1",
+  "profile_id": "fusion_markets_conservative_research_v2",
   "broker_name": "Fusion Markets",
   "source": "manual_default",
   "account_type": "conservative_research_default",
-  "commission_r": 0.025,
-  "base_slippage_r": 0.015,
+  "commission_r": 0.035,
+  "base_slippage_r": 0.025,
   "max_concurrent_trades": 2,
   "spread_defaults": {
-    "EURUSD": 0.2,
-    "XAUUSD": 1.2,
-    "GER40": 1.4,
-    "US500": 0.6
+    "EURUSD": 0.3,
+    "XAUUSD": 1.8,
+    "GER40": 2.0,
+    "US500": 0.8
   },
   "session_volatility_multipliers": {
     "london": 1.0,
-    "new_york": 1.1,
-    "london_new_york_overlap": 1.25,
-    "off_session": 1.75
+    "new_york": 1.2,
+    "london_new_york_overlap": 1.35,
+    "off_session": 2.1
   },
   "symbol_contract_hints": {
     "EURUSD": "forex_major",

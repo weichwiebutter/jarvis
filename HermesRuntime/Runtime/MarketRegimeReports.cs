@@ -59,6 +59,9 @@ public sealed record StrategyRegimePerformanceReport(
     IReadOnlyList<string> AvoidSessions,
     IReadOnlyList<string> VolatilityPreference,
     double RegimeConsistencyScore,
+    IReadOnlyList<string>? PreferredRegimes,
+    IReadOnlyList<string>? AvoidedRegimes,
+    double RegimeSampleQuality,
     IReadOnlyList<string> Warnings,
     bool NoAutoTrading,
     bool HumanReviewRequired);

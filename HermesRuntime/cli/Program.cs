@@ -69,6 +69,7 @@ internal sealed class HermesCli
             "run-walkforward-validation" => RunWalkForwardValidation(),
             "realism-report" => ShowRealismReport(),
             "walkforward-summary" => ShowWalkForwardSummary(),
+            "cost-sensitivity-report" => ShowCostSensitivityReport(),
             "simulation-status" => ShowSimulationStatus(),
             "strategy-discovery-status" => ShowStrategyDiscoveryStatus(),
             "overfit-report" => ShowOverfitReport(),
@@ -138,6 +139,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes run-walkforward-validation Walk-Forward-/Overfit-Validation ausfuehren");
         Console.WriteLine("  hermes realism-report    Realism-/Kosten-/Overfit-Qualitaetsreport anzeigen");
         Console.WriteLine("  hermes walkforward-summary Walk-Forward Summary anzeigen");
+        Console.WriteLine("  hermes cost-sensitivity-report Brokerkosten-Sensitivitaetsreport anzeigen");
         Console.WriteLine("  hermes simulation-status Realistic Simulation Status anzeigen");
         Console.WriteLine("  hermes strategy-discovery-status Trusted Strategy Discovery anzeigen");
         Console.WriteLine("  hermes overfit-report     Overfit-/Risk-Report anzeigen");
@@ -1854,8 +1856,11 @@ internal sealed class HermesCli
         WriteField("Average Stability", $"{reports.Average(report => report.Metrics.StabilityScore):0.####}");
         WriteField("Average Profit Factor", $"{reports.Average(report => report.Metrics.ProfitFactor):0.####}");
         WriteField("Average Realism Penalty", $"{reports.Average(report => report.Metrics.RealismPenalty):0.####}");
+        WriteField("Average Realism Score", $"{reports.Average(report => report.Metrics.RealismScore):0.####}");
         WriteField("Average Overfit Risk", $"{reports.Average(report => report.Metrics.OverfitRisk):0.####}");
         WriteField("Average Robustness", $"{reports.Average(report => report.Metrics.RobustnessConfidence):0.####}");
+        WriteField("Average Cost Sensitivity", $"{reports.Average(report => report.Metrics.CostSensitivity):0.####}");
+        WriteField("Too Good To Be True", reports.Count(report => report.Metrics.TooGoodToBeTrue).ToString());
         WriteField("no_auto_trading", "true");
         WriteField("human_review_required", "true");
         Console.WriteLine();
@@ -1867,10 +1872,10 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Realism Report");
         var service = new RealisticSimulationService(BuildStoragePaths());
+        service.Run();
         var report = service.LoadRealismReport();
         if (report is null)
         {
-            service.Run();
             report = service.LoadRealismReport();
         }
 
@@ -1888,9 +1893,60 @@ internal sealed class HermesCli
         WriteField("Realistic Strategies", report.RealisticStrategies.ToString());
         WriteField("Suspicious Strategies", report.SuspiciousStrategies.ToString());
         WriteField("Average Realism Penalty", $"{report.AverageRealismPenalty:0.####}");
+        WriteField("Average Realism Score", $"{report.AverageRealismScore:0.####}");
         WriteField("Average Overfit Risk", $"{report.AverageOverfitRisk:0.####}");
+        WriteField("Average Cost Sensitivity", $"{report.AverageCostSensitivity:0.####}");
+        WriteField("Average Loss Distribution", $"{report.AverageLossDistributionQuality:0.####}");
+        WriteField("too_good_to_be_true", report.TooGoodToBeTrueStrategies.ToString());
         WriteMessages("Most Realistic", report.MostRealisticStrategies.Take(10).ToList());
         WriteMessages("Suspicious", report.SuspiciousStrategiesList.Take(10).ToList());
+        WriteMessages("Too Good To Be True", report.TooGoodToBeTrueStrategiesList?.Take(10).ToList() ?? []);
+        WriteMessages("Cost Sensitive", report.CostSensitiveStrategies?.Take(10).ToList() ?? []);
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCostSensitivityReport()
+    {
+        WriteHeader("Hermes Cost Sensitivity Report");
+        var service = new RealisticSimulationService(BuildStoragePaths());
+        service.Run();
+        var report = service.LoadCostSensitivityReport();
+        if (report is null)
+        {
+            report = service.LoadCostSensitivityReport();
+        }
+
+        if (report is null)
+        {
+            WriteWarning("Kein Cost Sensitivity Report erzeugbar.");
+            WriteSafety();
+            return 0;
+        }
+
+        WriteField("Cost Report", DisplayPath(service.CostSensitivityReportPath));
+        WriteField("Report ID", report.ReportId);
+        WriteField("Created UTC", report.CreatedAtUtc.ToString("O"));
+        WriteField("Strategies Evaluated", report.StrategiesEvaluated.ToString());
+        WriteField("Cost Sensitive", report.CostSensitiveStrategies.ToString());
+        WriteField("Stress Cost Failures", report.StressCostFailures.ToString());
+        WriteField("Average Cost Sensitivity", $"{report.AverageCostSensitivity:0.####}");
+        foreach (var entry in report.Entries.Take(12))
+        {
+            WriteSubHeader($"{entry.StrategyFamily} / {entry.PatternId ?? "-"} / {entry.StrategyVariantId}");
+            WriteField("Status", entry.Status);
+            WriteField("Trades", entry.TradeCount.ToString());
+            WriteField("Normal Cost Score", $"{entry.NormalCostScore:0.####}");
+            WriteField("High Cost Score", $"{entry.HighCostScore:0.####}");
+            WriteField("Stress Cost Score", $"{entry.StressCostScore:0.####}");
+            WriteField("Cost Sensitivity", $"{entry.CostSensitivity:0.####}");
+            WriteField("Works Only Without Costs", entry.WorksOnlyWithoutCosts.ToString().ToLowerInvariant());
+            WriteField("too_good_to_be_true", entry.TooGoodToBeTrue.ToString().ToLowerInvariant());
+        }
+
         WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
         Console.WriteLine();
@@ -1912,9 +1968,17 @@ internal sealed class HermesCli
         {
             WriteSubHeader($"{item.StrategyFamily} / {item.PatternId ?? "-"} / {item.StrategyVariantId}");
             WriteField("Confidence", item.StrategyConfidence);
+            WriteField("Train", $"{item.TrainScore:0.####}");
+            WriteField("Validation", $"{item.ValidationScore:0.####}");
+            WriteField("Out-of-Sample", $"{item.OutOfSampleScore:0.####}");
+            WriteField("OOS Available", item.OosAvailable.ToString().ToLowerInvariant());
+            WriteField("WalkForward Confidence", $"{item.WalkForwardConfidence:0.####}");
             WriteField("Degradation", $"{item.DegradationScore:0.####}");
             WriteField("Robustness Gap", $"{item.RobustnessGap:0.####}");
+            WriteField("Realism Score", $"{item.RealismScore:0.####}");
             WriteField("Realism Penalty", $"{item.RealismPenalty:0.####}");
+            WriteField("Cost Sensitivity", $"{item.CostSensitivity:0.####}");
+            WriteField("Regime Consistency", $"{item.RegimeConsistencyScore:0.####}");
             WriteField("Overfit Risk", $"{item.OverfitRisk:0.####}");
         }
 
@@ -1957,6 +2021,10 @@ internal sealed class HermesCli
             WriteField("Confidence", item.StrategyConfidence);
             WriteField("Validation", $"{item.ValidationScore:0.####}");
             WriteField("Out-of-Sample", $"{item.OutOfSampleScore:0.####}");
+            WriteField("OOS Available", item.OosAvailable.ToString().ToLowerInvariant());
+            WriteField("Realism Score", $"{item.RealismScore:0.####}");
+            WriteField("Cost Sensitivity", $"{item.CostSensitivity:0.####}");
+            WriteField("Regime Consistency", $"{item.RegimeConsistencyScore:0.####}");
             WriteMessages("Flags", item.OverfitFlags);
         }
 
@@ -1981,6 +2049,10 @@ internal sealed class HermesCli
             WriteField("Train", $"{item.TrainScore:0.####}");
             WriteField("Validation", $"{item.ValidationScore:0.####}");
             WriteField("Out-of-Sample", $"{item.OutOfSampleScore:0.####}");
+            WriteField("WalkForward Confidence", $"{item.WalkForwardConfidence:0.####}");
+            WriteField("Realism Score", $"{item.RealismScore:0.####}");
+            WriteField("Cost Sensitivity", $"{item.CostSensitivity:0.####}");
+            WriteField("Regime Consistency", $"{item.RegimeConsistencyScore:0.####}");
         }
 
         Console.WriteLine();
@@ -2022,14 +2094,7 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Research Insights");
         var generator = new ResearchInsightsGenerator(BuildStoragePaths());
-        var insights = generator.LoadInsights();
-        if (insights is null
-            || insights.BestRegimes is null
-            || insights.BestRegimes.Count == 0
-            || insights.PreferredSessions is null)
-        {
-            insights = generator.Generate();
-        }
+        var insights = generator.Generate();
 
         WriteField("Insights", DisplayPath(generator.InsightsPath));
         WriteResearchInsights(insights);
@@ -2113,8 +2178,11 @@ internal sealed class HermesCli
         WriteField("Strategies Analyzed", report.StrategiesAnalyzed.ToString());
         WriteField("Regime Snapshots", report.RegimeSnapshotsAnalyzed.ToString());
         WriteField("Regime Consistency", $"{report.RegimeConsistencyScore:0.####}");
+        WriteField("Regime Sample Quality", $"{report.RegimeSampleQuality:0.####}");
         WriteMessages("Strong Regime Matches", report.StrongRegimeMatches.Take(12).ToList());
         WriteMessages("Weak Regime Matches", report.WeakRegimeMatches.Take(12).ToList());
+        WriteMessages("Preferred Regimes", report.PreferredRegimes?.Take(12).ToList() ?? []);
+        WriteMessages("Avoided Regimes", report.AvoidedRegimes?.Take(12).ToList() ?? []);
         WriteMessages("Preferred Sessions", report.PreferredSessions);
         WriteMessages("Avoid Sessions", report.AvoidSessions);
         WriteMessages("Volatility Preference", report.VolatilityPreference);
@@ -2451,6 +2519,12 @@ internal sealed class HermesCli
         WriteMessages("Avoid Sessions", insights.AvoidSessions ?? Array.Empty<string>());
         WriteMessages("Volatility Preference", insights.VolatilityPreference ?? Array.Empty<string>());
         WriteField("Regime Consistency", insights.RegimeConsistencyScore is null ? "-" : $"{insights.RegimeConsistencyScore:0.####}");
+        WriteMessages("Preferred Regimes", insights.PreferredRegimes ?? Array.Empty<string>());
+        WriteMessages("Avoided Regimes", insights.AvoidedRegimes ?? Array.Empty<string>());
+        WriteMessages("Too Good To Be True", insights.TooGoodToBeTrueStrategies ?? Array.Empty<string>());
+        WriteMessages("Cost Sensitive", insights.CostSensitiveStrategies ?? Array.Empty<string>());
+        WriteMessages("Cost Sensitivity Summary", insights.CostSensitivitySummary ?? Array.Empty<string>());
+        WriteMessages("Robust Gate Summary", insights.RobustGateSummary ?? Array.Empty<string>());
         WriteMessages("Avoid Combinations", insights.AvoidCombinations ?? Array.Empty<string>());
         WriteMessages("Next Recommended Tests", insights.NextRecommendedTests ?? Array.Empty<string>());
         WriteMessages("Parameter Statistics", insights.ParameterStatistics);
@@ -2508,6 +2582,11 @@ internal sealed class HermesCli
         WriteField("Robust Strategies", report.RobustStrategies.ToString());
         WriteField("Overfit Suspected", report.OverfitSuspectedStrategies.ToString());
         WriteField("High Risk Strategies", report.HighRiskStrategies.ToString());
+        WriteField("OOS Available", report.Assessments.Count(item => item.OosAvailable).ToString());
+        WriteField("Too Good To Be True", report.Assessments.Count(item => item.TooGoodToBeTrue).ToString());
+        WriteField("Avg WalkForward Confidence", $"{(report.Assessments.Count == 0 ? 0 : report.Assessments.Average(item => item.WalkForwardConfidence)):0.####}");
+        WriteField("Avg Cost Sensitivity", $"{(report.Assessments.Count == 0 ? 0 : report.Assessments.Average(item => item.CostSensitivity)):0.####}");
+        WriteField("Avg Regime Consistency", $"{(report.Assessments.Count == 0 ? 0 : report.Assessments.Average(item => item.RegimeConsistencyScore)):0.####}");
         WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
     }

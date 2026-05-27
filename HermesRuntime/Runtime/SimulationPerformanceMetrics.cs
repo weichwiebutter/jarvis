@@ -20,4 +20,9 @@ public sealed record SimulationPerformanceMetrics(
     double RobustnessConfidence = 0,
     double ParameterStability = 0,
     double SampleQuality = 0,
-    double OverfitRisk = 0);
+    double OverfitRisk = 0,
+    double RealismScore = 0,
+    string RealismPenaltyReason = "",
+    bool TooGoodToBeTrue = false,
+    double CostSensitivity = 0,
+    double LossDistributionQuality = 0);

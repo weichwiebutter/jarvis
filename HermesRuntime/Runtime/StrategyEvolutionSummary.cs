@@ -31,4 +31,10 @@ public sealed record StrategyEvolutionSummary(
     IReadOnlyList<string>? PreferredSessions = null,
     IReadOnlyList<string>? AvoidSessions = null,
     IReadOnlyList<string>? VolatilityPreference = null,
-    double? RegimeConsistencyScore = null);
+    double? RegimeConsistencyScore = null,
+    IReadOnlyList<string>? PreferredRegimes = null,
+    IReadOnlyList<string>? AvoidedRegimes = null,
+    IReadOnlyList<string>? TooGoodToBeTrueStrategies = null,
+    IReadOnlyList<string>? CostSensitiveStrategies = null,
+    IReadOnlyList<string>? CostSensitivitySummary = null,
+    IReadOnlyList<string>? RobustGateSummary = null);

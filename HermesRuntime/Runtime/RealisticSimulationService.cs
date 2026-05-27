@@ -21,6 +21,8 @@ public sealed class RealisticSimulationService
 
     public string RealismReportPath => Path.Combine(SimulationReportsDirectory, "realism_report.json");
 
+    public string CostSensitivityReportPath => Path.Combine(SimulationReportsDirectory, "cost_sensitivity_report.json");
+
     public IReadOnlyList<StrategySimulationReport> Run()
     {
         Directory.CreateDirectory(ReportsDirectory);
@@ -41,8 +43,11 @@ public sealed class RealisticSimulationService
         }
 
         var realism = BuildRealismReport(reports);
+        var costSensitivity = BuildCostSensitivityReport(reports);
         File.WriteAllText(RealismReportPath, JsonSerializer.Serialize(realism, JsonDefaults.WriteOptions));
         File.WriteAllText(Path.Combine(SimulationRoot, "realism_report.json"), JsonSerializer.Serialize(realism, JsonDefaults.WriteOptions));
+        File.WriteAllText(CostSensitivityReportPath, JsonSerializer.Serialize(costSensitivity, JsonDefaults.WriteOptions));
+        File.WriteAllText(Path.Combine(SimulationRoot, "cost_sensitivity_report.json"), JsonSerializer.Serialize(costSensitivity, JsonDefaults.WriteOptions));
         var status = new
         {
             generatedAtUtc = DateTimeOffset.UtcNow,
@@ -50,6 +55,7 @@ public sealed class RealisticSimulationService
             simulationReportsRoot = SimulationReportsDirectory,
             strategiesSimulated = reports.Count,
             realismReport = RealismReportPath,
+            costSensitivityReport = CostSensitivityReportPath,
             noAutoTrading = true,
             humanReviewRequired = true,
             brokerReality = BrokerReality().BrokerProfile,
@@ -85,6 +91,25 @@ public sealed class RealisticSimulationService
         {
             return JsonSerializer.Deserialize<RealismReport>(
                 File.ReadAllText(RealismReportPath),
+                JsonDefaults.SnapshotReadOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    public CostSensitivityReport? LoadCostSensitivityReport()
+    {
+        if (!File.Exists(CostSensitivityReportPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<CostSensitivityReport>(
+                File.ReadAllText(CostSensitivityReportPath),
                 JsonDefaults.SnapshotReadOptions);
         }
         catch (Exception ex) when (ex is IOException or JsonException)
@@ -213,37 +238,37 @@ public sealed class RealisticSimulationService
 
     private static BrokerRealitySettings BrokerReality() =>
         new(
-            BrokerProfile: "fusion_markets_reality_stub_v1",
-            CommissionR: 0.025,
-            BaseSlippageR: 0.015,
+            BrokerProfile: "fusion_markets_conservative_research_v2",
+            CommissionR: 0.035,
+            BaseSlippageR: 0.025,
             MaxConcurrentTrades: 2,
             TypicalSpreadPoints: new Dictionary<string, double>
             {
-                ["EURUSD"] = 0.2,
-                ["XAUUSD"] = 1.2,
-                ["GER40"] = 1.4,
-                ["US500"] = 0.6
+                ["EURUSD"] = 0.3,
+                ["XAUUSD"] = 1.8,
+                ["GER40"] = 2.0,
+                ["US500"] = 0.8
             },
             VolatileSpreadMultiplier: new Dictionary<string, double>
             {
-                ["EURUSD"] = 2.5,
-                ["XAUUSD"] = 3.2,
-                ["GER40"] = 3.0,
-                ["US500"] = 2.8
+                ["EURUSD"] = 3.0,
+                ["XAUUSD"] = 3.8,
+                ["GER40"] = 3.6,
+                ["US500"] = 3.2
             });
 
     private static BrokerRealityProfile BrokerRealityProfile() =>
         new(
-            ProfileId: "fusion_markets_manual_default_v1",
+            ProfileId: "fusion_markets_conservative_research_v2",
             BrokerName: "Fusion Markets",
             Source: "manual_default",
             AccountType: "conservative_research_default",
             TypicalSpreadPoints: new Dictionary<string, double>
             {
-                ["EURUSD"] = 0.2,
-                ["XAUUSD"] = 1.2,
-                ["GER40"] = 1.4,
-                ["US500"] = 0.6
+                ["EURUSD"] = 0.3,
+                ["XAUUSD"] = 1.8,
+                ["GER40"] = 2.0,
+                ["US500"] = 0.8
             },
             TickSize: new Dictionary<string, double>
             {
@@ -259,8 +284,8 @@ public sealed class RealisticSimulationService
                 ["GER40"] = 1,
                 ["US500"] = 1
             },
-            CommissionR: 0.025,
-            BaseSlippageR: 0.015,
+            CommissionR: 0.035,
+            BaseSlippageR: 0.025,
             MaxConcurrentTrades: 2);
 
     private static double SpreadCostR(
@@ -340,29 +365,103 @@ public sealed class RealisticSimulationService
     private RealismReport BuildRealismReport(IReadOnlyList<StrategySimulationReport> reports)
     {
         var orderedRealistic = reports
-            .OrderBy(report => report.Metrics.RealismPenalty)
+            .Where(report => report.Metrics.TradeCount > 0 && !report.Metrics.TooGoodToBeTrue)
+            .OrderByDescending(report => report.Metrics.RealismScore)
             .ThenByDescending(report => report.Metrics.RobustnessConfidence)
             .Take(25)
-            .Select(report => $"{report.StrategyFamily}/{report.PatternId ?? "-"}:{report.StrategyVariantId}:realism_penalty={report.Metrics.RealismPenalty:0.####},robustness={report.Metrics.RobustnessConfidence:0.####},trades={report.Metrics.TradeCount}")
+            .Select(report => $"{report.StrategyFamily}/{report.PatternId ?? "-"}:{report.StrategyVariantId}:realism_score={report.Metrics.RealismScore:0.####},cost_sensitivity={report.Metrics.CostSensitivity:0.####},loss_quality={report.Metrics.LossDistributionQuality:0.####},trades={report.Metrics.TradeCount}")
             .ToList();
         var suspicious = reports
-            .Where(report => report.Metrics.OverfitRisk >= 0.65 || report.Metrics.RealismPenalty >= 0.45)
+            .Where(report => report.Metrics.TooGoodToBeTrue
+                || report.Metrics.OverfitRisk >= 0.55
+                || report.Metrics.RealismPenalty >= 0.38)
             .OrderByDescending(report => report.Metrics.OverfitRisk)
             .ThenByDescending(report => report.Metrics.RealismPenalty)
             .Take(50)
-            .Select(report => $"{report.StrategyFamily}/{report.PatternId ?? "-"}:{report.StrategyVariantId}:overfit_risk={report.Metrics.OverfitRisk:0.####},realism_penalty={report.Metrics.RealismPenalty:0.####},winrate={report.Metrics.Winrate:P1}")
+            .Select(report => $"{report.StrategyFamily}/{report.PatternId ?? "-"}:{report.StrategyVariantId}:too_good={report.Metrics.TooGoodToBeTrue.ToString().ToLowerInvariant()},overfit_risk={report.Metrics.OverfitRisk:0.####},realism_score={report.Metrics.RealismScore:0.####},reason={report.Metrics.RealismPenaltyReason}")
+            .ToList();
+        var tooGood = reports
+            .Where(report => report.Metrics.TooGoodToBeTrue)
+            .OrderByDescending(report => report.Metrics.Winrate)
+            .ThenByDescending(report => report.Metrics.TradeCount)
+            .Take(50)
+            .Select(report => $"{report.StrategyFamily}/{report.PatternId ?? "-"}:{report.StrategyVariantId}:winrate={report.Metrics.Winrate:P1},trades={report.Metrics.TradeCount},drawdown={report.Metrics.MaxDrawdown:0.####},reason={report.Metrics.RealismPenaltyReason}")
+            .ToList();
+        var costSensitive = reports
+            .Where(report => report.Metrics.TradeCount > 0 && report.Metrics.CostSensitivity >= 0.45)
+            .OrderByDescending(report => report.Metrics.CostSensitivity)
+            .Take(50)
+            .Select(report => $"{report.StrategyFamily}/{report.PatternId ?? "-"}:{report.StrategyVariantId}:cost_sensitivity={report.Metrics.CostSensitivity:0.####},estimated_cost_r={report.Metrics.EstimatedCostR:0.####}")
             .ToList();
 
         return new RealismReport(
             ReportId: $"realism_{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
             CreatedAtUtc: DateTimeOffset.UtcNow,
             StrategiesEvaluated: reports.Count,
-            RealisticStrategies: reports.Count(report => report.Metrics.RealismPenalty < 0.28 && report.Metrics.SampleQuality >= 0.45),
+            RealisticStrategies: reports.Count(report => report.Metrics.RealismScore >= 0.68
+                && report.Metrics.SampleQuality >= 0.55
+                && !report.Metrics.TooGoodToBeTrue
+                && report.Metrics.CostSensitivity < 0.55),
             SuspiciousStrategies: suspicious.Count,
             MostRealisticStrategies: orderedRealistic,
             SuspiciousStrategiesList: suspicious,
             AverageRealismPenalty: Math.Round(reports.Count == 0 ? 0 : reports.Average(report => report.Metrics.RealismPenalty), 4),
             AverageOverfitRisk: Math.Round(reports.Count == 0 ? 0 : reports.Average(report => report.Metrics.OverfitRisk), 4),
+            NoAutoTrading: true,
+            HumanReviewRequired: true,
+            TooGoodToBeTrueStrategies: reports.Count(report => report.Metrics.TooGoodToBeTrue),
+            TooGoodToBeTrueStrategiesList: tooGood,
+            CostSensitiveStrategies: costSensitive,
+            AverageRealismScore: Math.Round(reports.Count == 0 ? 0 : reports.Average(report => report.Metrics.RealismScore), 4),
+            AverageCostSensitivity: Math.Round(reports.Count == 0 ? 0 : reports.Average(report => report.Metrics.CostSensitivity), 4),
+            AverageLossDistributionQuality: Math.Round(reports.Count == 0 ? 0 : reports.Average(report => report.Metrics.LossDistributionQuality), 4));
+    }
+
+    private static CostSensitivityReport BuildCostSensitivityReport(IReadOnlyList<StrategySimulationReport> reports)
+    {
+        var entries = reports
+            .Select(report =>
+            {
+                var metrics = report.Metrics;
+                var normal = Math.Clamp(metrics.RobustnessConfidence, 0, 1);
+                var high = Math.Clamp(normal - metrics.CostSensitivity * 0.42 - metrics.RealismPenalty * 0.12, 0, 1);
+                var stress = Math.Clamp(high - metrics.CostSensitivity * 0.38 - (metrics.TooGoodToBeTrue ? 0.18 : 0), 0, 1);
+                var worksOnlyWithoutCosts = metrics.TradeCount > 0 && normal >= 0.55 && stress < 0.35;
+                var status = metrics.TradeCount == 0
+                    ? "no_trades"
+                    : worksOnlyWithoutCosts || stress < 0.25
+                    ? "fails_under_stress_cost"
+                    : metrics.CostSensitivity >= 0.55
+                        ? "cost_sensitive"
+                        : high < 0.45
+                            ? "watch_high_cost"
+                            : "acceptable";
+
+                return new CostSensitivityEntry(
+                    StrategyVariantId: report.StrategyVariantId,
+                    StrategyFamily: report.StrategyFamily,
+                    PatternId: report.PatternId,
+                    NormalCostScore: Math.Round(normal, 4),
+                    HighCostScore: Math.Round(high, 4),
+                    StressCostScore: Math.Round(stress, 4),
+                    CostSensitivity: metrics.CostSensitivity,
+                    Status: status,
+                    WorksOnlyWithoutCosts: worksOnlyWithoutCosts,
+                    TooGoodToBeTrue: metrics.TooGoodToBeTrue,
+                    TradeCount: metrics.TradeCount);
+            })
+            .OrderByDescending(entry => entry.CostSensitivity)
+            .ThenBy(entry => entry.StressCostScore)
+            .ToList();
+
+        return new CostSensitivityReport(
+            ReportId: $"cost_sensitivity_{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
+            CreatedAtUtc: DateTimeOffset.UtcNow,
+            StrategiesEvaluated: entries.Count,
+            CostSensitiveStrategies: entries.Count(entry => entry.TradeCount > 0 && (entry.Status is "cost_sensitive" or "fails_under_stress_cost")),
+            StressCostFailures: entries.Count(entry => entry.TradeCount > 0 && (entry.WorksOnlyWithoutCosts || entry.StressCostScore < 0.25)),
+            AverageCostSensitivity: Math.Round(entries.Count == 0 ? 0 : entries.Average(entry => entry.CostSensitivity), 4),
+            Entries: entries.Take(200).ToList(),
             NoAutoTrading: true,
             HumanReviewRequired: true);
     }
@@ -387,7 +486,12 @@ public sealed class RealisticSimulationService
                 RobustnessConfidence: 0,
                 ParameterStability: ParameterStability(sourceResult.Variant),
                 SampleQuality: 0,
-                OverfitRisk: 0.85);
+                OverfitRisk: 0.85,
+                RealismScore: 0,
+                RealismPenaltyReason: "no_trades",
+                TooGoodToBeTrue: false,
+                CostSensitivity: 1,
+                LossDistributionQuality: 0);
         }
 
         var returns = positions.Select(position => position.NetR).ToList();
@@ -401,6 +505,8 @@ public sealed class RealisticSimulationService
         var profitFactor = losses == 0 ? wins : wins / losses;
         var sharpe = std == 0 ? 0 : average / std * Math.Sqrt(Math.Min(252, returns.Count));
         var winrate = returns.Count(value => value > 0) / (double)returns.Count;
+        var lossCount = returns.Count(value => value <= 0);
+        var lossRate = lossCount / (double)returns.Count;
         var grossProfit = grossReturns.Where(value => value > 0).Sum();
         var gross = grossReturns.Sum();
         var fees = positions.Sum(position => position.FeesR);
@@ -408,12 +514,38 @@ public sealed class RealisticSimulationService
         var estimatedCost = fees + slippage;
         var sampleQuality = Math.Clamp(Math.Log10(positions.Count + 1) / Math.Log10(300), 0, 1);
         var parameterStability = ParameterStability(sourceResult.Variant);
-        var smoothnessPenalty = maxDrawdown >= -0.01 && profitFactor > 8 ? 0.28 : 0;
-        var winratePenalty = winrate > 0.92 ? (winrate - 0.92) * 2.2 : 0;
+        var costImpactRatio = estimatedCost / Math.Max(1, Math.Abs(grossProfit));
+        var costSensitivity = Math.Clamp(costImpactRatio * 2.65
+            + (winrate > 0.92 && costImpactRatio < 0.03 ? 0.2 : 0)
+            + (positions.Count >= 150 && costImpactRatio < 0.015 ? 0.16 : 0),
+            0,
+            1);
+        var lossDistributionQuality = Math.Clamp(lossRate * 5.0, 0, 1);
+        var tooGoodToBeTrue = (winrate >= 0.975 && positions.Count >= 50)
+            || (lossCount <= 1 && positions.Count >= 80)
+            || (positions.Count >= 200 && maxDrawdown > -0.5 && profitFactor > 8)
+            || (positions.Count >= 200 && winrate > 0.90 && costImpactRatio < 0.015);
+        var smoothnessPenalty = maxDrawdown >= -0.25 && profitFactor > 6 ? 0.34 : 0;
+        var winratePenalty = winrate > 0.88 ? Math.Min(0.38, (winrate - 0.88) * 2.9 + 0.05) : 0;
+        var lossPenalty = lossDistributionQuality < 0.35 && positions.Count >= 80 ? (0.35 - lossDistributionQuality) * 0.95 : 0;
+        var highTradeLowDrawdownPenalty = positions.Count >= 250 && maxDrawdown > -1.0 ? 0.18 : 0;
+        var lowCostImpactPenalty = positions.Count >= 150 && costImpactRatio < 0.015 ? 0.18 : 0;
         var samplePenalty = sampleQuality < 0.5 ? (0.5 - sampleQuality) * 0.75 : 0;
-        var costPenalty = estimatedCost / Math.Max(1, Math.Abs(grossProfit)) * 0.35;
+        var costPenalty = costSensitivity * 0.22;
         var parameterPenalty = (1 - parameterStability) * 0.2;
-        var realismPenalty = Math.Clamp(winratePenalty + smoothnessPenalty + samplePenalty + costPenalty + parameterPenalty, 0, 1);
+        var realismPenalty = Math.Clamp(
+            winratePenalty
+            + smoothnessPenalty
+            + lossPenalty
+            + highTradeLowDrawdownPenalty
+            + lowCostImpactPenalty
+            + samplePenalty
+            + costPenalty
+            + parameterPenalty
+            + (tooGoodToBeTrue ? 0.22 : 0),
+            0,
+            1);
+        var realismScore = Math.Clamp(1 - realismPenalty, 0, 1);
         var stability = Math.Clamp((Math.Min(3, profitFactor) / 3.0 * 0.35)
             + Math.Max(0, 1 - Math.Abs(maxDrawdown) / 15.0) * 0.28
             + sampleQuality * 0.2
@@ -424,10 +556,25 @@ public sealed class RealisticSimulationService
         var overfitRisk = Math.Clamp(realismPenalty
             + (consecutiveLosses <= 1 && positions.Count >= 50 ? 0.18 : 0)
             + (winrate >= 0.98 ? 0.25 : 0)
+            + (tooGoodToBeTrue ? 0.22 : 0)
+            + (lossDistributionQuality < 0.3 && positions.Count >= 80 ? 0.16 : 0)
+            + (costSensitivity >= 0.65 ? 0.12 : 0)
             + (Math.Abs(sourceResult.Fitness.Score - stability) > 0.45 ? 0.16 : 0),
             0,
             1);
-        var robustness = Math.Clamp(stability - realismPenalty * 0.55 - overfitRisk * 0.25, 0, 1);
+        var robustness = Math.Clamp(stability - realismPenalty * 0.6 - overfitRisk * 0.28 - costSensitivity * 0.08, 0, 1);
+        var penaltyReason = RealismPenaltyReason(
+            winrate,
+            positions.Count,
+            lossCount,
+            maxDrawdown,
+            profitFactor,
+            costImpactRatio,
+            costSensitivity,
+            lossDistributionQuality,
+            sampleQuality,
+            parameterStability,
+            tooGoodToBeTrue);
 
         return new SimulationPerformanceMetrics(
             NetR: Math.Round(returns.Sum(), 4),
@@ -449,7 +596,79 @@ public sealed class RealisticSimulationService
             RobustnessConfidence: Math.Round(robustness, 4),
             ParameterStability: Math.Round(parameterStability, 4),
             SampleQuality: Math.Round(sampleQuality, 4),
-            OverfitRisk: Math.Round(overfitRisk, 4));
+            OverfitRisk: Math.Round(overfitRisk, 4),
+            RealismScore: Math.Round(realismScore, 4),
+            RealismPenaltyReason: penaltyReason,
+            TooGoodToBeTrue: tooGoodToBeTrue,
+            CostSensitivity: Math.Round(costSensitivity, 4),
+            LossDistributionQuality: Math.Round(lossDistributionQuality, 4));
+    }
+
+    private static string RealismPenaltyReason(
+        double winrate,
+        int tradeCount,
+        int lossCount,
+        double maxDrawdown,
+        double profitFactor,
+        double costImpactRatio,
+        double costSensitivity,
+        double lossDistributionQuality,
+        double sampleQuality,
+        double parameterStability,
+        bool tooGoodToBeTrue)
+    {
+        var reasons = new List<string>();
+        if (tooGoodToBeTrue)
+        {
+            reasons.Add("too_good_to_be_true");
+        }
+
+        if (winrate > 0.88)
+        {
+            reasons.Add("unrealistic_winrate");
+        }
+
+        if (tradeCount >= 80 && lossCount <= 1)
+        {
+            reasons.Add("too_few_losses");
+        }
+
+        if (tradeCount >= 200 && maxDrawdown > -0.5 && profitFactor > 6)
+        {
+            reasons.Add("too_smooth_equity_curve");
+        }
+
+        if (tradeCount >= 250 && maxDrawdown > -1.0)
+        {
+            reasons.Add("high_trade_count_low_drawdown");
+        }
+
+        if (tradeCount >= 150 && costImpactRatio < 0.015)
+        {
+            reasons.Add("too_low_cost_impact");
+        }
+
+        if (costSensitivity >= 0.55)
+        {
+            reasons.Add("high_cost_sensitivity");
+        }
+
+        if (lossDistributionQuality < 0.35 && tradeCount >= 80)
+        {
+            reasons.Add("poor_loss_distribution");
+        }
+
+        if (sampleQuality < 0.5)
+        {
+            reasons.Add("small_sample");
+        }
+
+        if (parameterStability < 0.55)
+        {
+            reasons.Add("parameter_instability");
+        }
+
+        return reasons.Count == 0 ? "balanced_research_profile" : string.Join(",", reasons.Distinct(StringComparer.Ordinal));
     }
 
     private static double ParameterStability(StrategyVariant variant)

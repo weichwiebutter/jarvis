@@ -27,7 +27,15 @@ public sealed class ResearchInsightsGenerator
         var completed = results
             .Where(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase))
             .ToList();
+        var walkForward = new WalkForwardValidationService(_storagePaths).LoadReport();
+        var costReport = new RealisticSimulationService(_storagePaths).LoadCostSensitivityReport();
+        var acceptableVariantIds = walkForward?.Assessments
+            .Where(item => item.StrategyConfidence is not "overfit_suspected" and not "rejected" and not "unstable")
+            .Select(item => item.StrategyVariantId)
+            .ToHashSet(StringComparer.Ordinal)
+            ?? [];
         var top = completed
+            .Where(result => acceptableVariantIds.Count == 0 || acceptableVariantIds.Contains(result.Variant.VariantId))
             .OrderByDescending(result => result.Fitness.Score)
             .ThenByDescending(result => result.TradeCount)
             .Take(12)
@@ -38,7 +46,6 @@ public sealed class ResearchInsightsGenerator
             .Take(12)
             .ToList();
         var clusters = BuildClusters(completed);
-        var walkForward = new WalkForwardValidationService(_storagePaths).LoadReport();
         var regimeAnalysis = new MarketRegimeClassifier(_storagePaths).Run();
 
         var summary = new StrategyEvolutionSummary(
@@ -72,7 +79,13 @@ public sealed class ResearchInsightsGenerator
             PreferredSessions: regimeAnalysis.StrategyPerformance.PreferredSessions,
             AvoidSessions: regimeAnalysis.StrategyPerformance.AvoidSessions,
             VolatilityPreference: regimeAnalysis.StrategyPerformance.VolatilityPreference,
-            RegimeConsistencyScore: regimeAnalysis.StrategyPerformance.RegimeConsistencyScore);
+            RegimeConsistencyScore: regimeAnalysis.StrategyPerformance.RegimeConsistencyScore,
+            PreferredRegimes: regimeAnalysis.StrategyPerformance.PreferredRegimes,
+            AvoidedRegimes: regimeAnalysis.StrategyPerformance.AvoidedRegimes,
+            TooGoodToBeTrueStrategies: BuildTooGoodToBeTrueStrategies(walkForward),
+            CostSensitiveStrategies: BuildCostSensitiveStrategies(costReport),
+            CostSensitivitySummary: BuildCostSensitivitySummary(costReport),
+            RobustGateSummary: BuildRobustGateSummary(walkForward, costReport, regimeAnalysis.StrategyPerformance));
 
         File.WriteAllText(InsightsPath, JsonSerializer.Serialize(summary, JsonDefaults.WriteOptions));
         File.WriteAllText(ClustersPath, JsonSerializer.Serialize(clusters, JsonDefaults.WriteOptions));
@@ -549,6 +562,67 @@ public sealed class ResearchInsightsGenerator
             .Take(16)
             .Select(item => $"{item.StrategyFamily}/{item.PatternId ?? "-"}:{item.StrategyVariantId}:confidence={item.StrategyConfidence}")
             .ToList() ?? [];
+    }
+
+    private static IReadOnlyList<string> BuildTooGoodToBeTrueStrategies(WalkForwardValidationReport? walkForward)
+    {
+        return walkForward?.Assessments
+            .Where(item => item.TooGoodToBeTrue || item.OverfitFlags.Contains("too_good_to_be_true", StringComparer.Ordinal))
+            .Take(16)
+            .Select(item =>
+            {
+                var reason = string.IsNullOrWhiteSpace(item.RealismPenaltyReason)
+                    ? string.Join("+", item.OverfitFlags.Take(5))
+                    : item.RealismPenaltyReason;
+                return $"{item.StrategyFamily}/{item.PatternId ?? "-"}:{item.StrategyVariantId}:realism={item.RealismScore:0.####},reason={reason}";
+            })
+            .ToList() ?? [];
+    }
+
+    private static IReadOnlyList<string> BuildCostSensitiveStrategies(CostSensitivityReport? costReport)
+    {
+        return costReport?.Entries
+            .Where(entry => entry.Status is "cost_sensitive" or "fails_under_stress_cost" || entry.WorksOnlyWithoutCosts)
+            .Take(16)
+            .Select(entry => $"{entry.StrategyFamily}/{entry.PatternId ?? "-"}:{entry.StrategyVariantId}:normal={entry.NormalCostScore:0.####},stress={entry.StressCostScore:0.####},status={entry.Status}")
+            .ToList() ?? [];
+    }
+
+    private static IReadOnlyList<string> BuildCostSensitivitySummary(CostSensitivityReport? costReport)
+    {
+        if (costReport is null)
+        {
+            return ["cost_sensitivity_report_missing"];
+        }
+
+        return
+        [
+            $"strategies_evaluated:{costReport.StrategiesEvaluated}",
+            $"cost_sensitive:{costReport.CostSensitiveStrategies}",
+            $"stress_failures:{costReport.StressCostFailures}",
+            $"avg_cost_sensitivity:{costReport.AverageCostSensitivity:0.####}"
+        ];
+    }
+
+    private static IReadOnlyList<string> BuildRobustGateSummary(
+        WalkForwardValidationReport? walkForward,
+        CostSensitivityReport? costReport,
+        StrategyRegimePerformanceReport regimeReport)
+    {
+        var assessments = walkForward?.Assessments ?? [];
+        return
+        [
+            $"robust:{assessments.Count(item => item.Robust)}",
+            $"promising:{assessments.Count(item => item.StrategyConfidence == "promising")}",
+            $"experimental:{assessments.Count(item => item.StrategyConfidence == "experimental")}",
+            $"overfit_suspected:{assessments.Count(item => item.StrategyConfidence == "overfit_suspected")}",
+            $"rejected:{assessments.Count(item => item.StrategyConfidence == "rejected")}",
+            $"too_good_to_be_true:{assessments.Count(item => item.TooGoodToBeTrue)}",
+            $"oos_available:{assessments.Count(item => item.OosAvailable)}",
+            $"cost_sensitive:{costReport?.CostSensitiveStrategies ?? 0}",
+            $"regime_consistency:{regimeReport.RegimeConsistencyScore:0.####}",
+            $"regime_sample_quality:{regimeReport.RegimeSampleQuality:0.####}"
+        ];
     }
 
     private static IReadOnlyList<string> BuildStableSymbolTimeframeCombinations(IReadOnlyList<StrategyResearchResult> results)
