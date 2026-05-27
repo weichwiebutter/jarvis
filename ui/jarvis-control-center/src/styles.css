@@ -206,7 +206,7 @@ h2 {
 
 .control-center-shell {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1.08fr) minmax(0, 0.92fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   width: min(1600px, calc(100vw - 24px));
   height: 100vh;
@@ -439,6 +439,385 @@ h2 {
 .details-grid .storage-retention-panel,
 .details-grid .event-timeline-panel {
   grid-column: auto;
+}
+
+.cockpit-shell {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(71, 215, 255, 0.13), transparent 34%),
+    linear-gradient(135deg, rgba(71, 215, 255, 0.08), rgba(4, 10, 18, 0.9) 48%),
+    rgba(4, 10, 18, 0.92);
+  box-shadow: inset 0 0 48px rgba(71, 215, 255, 0.06), 0 20px 70px rgba(0, 0, 0, 0.42);
+}
+
+.cockpit-meta-strip,
+.cockpit-command-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid rgba(132, 204, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.62);
+}
+
+.cockpit-meta-strip span,
+.cockpit-command-strip span,
+.orbit-panel span,
+.orbit-panel small,
+.voice-status-strip span,
+.chat-fallback span,
+.cockpit-detail-metric span,
+.cockpit-report-head span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cockpit-warning {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(248, 193, 74, 0.26);
+  border-radius: 8px;
+  color: var(--amber);
+  background: rgba(248, 193, 74, 0.08);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.cockpit-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.82fr) minmax(380px, 1.34fr) minmax(220px, 0.82fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 0;
+}
+
+.orbit-column {
+  display: grid;
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+  gap: 9px;
+  min-height: 0;
+}
+
+.orbit-panel {
+  display: grid;
+  gap: 6px;
+  min-height: 0;
+  padding: 11px 12px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  color: var(--cyan);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 62%),
+    rgba(4, 10, 18, 0.72);
+  cursor: pointer;
+  text-align: left;
+  box-shadow: inset 4px 0 0 currentColor;
+}
+
+.orbit-panel:hover,
+.orbit-panel:focus-visible {
+  border-color: currentColor;
+  background:
+    linear-gradient(135deg, rgba(71, 215, 255, 0.12), transparent 62%),
+    rgba(6, 14, 24, 0.9);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.orbit-panel div:first-child {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.orbit-panel strong {
+  color: var(--text);
+  font-size: 0.96rem;
+}
+
+.orbit-panel p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--soft);
+  font-size: 0.82rem;
+  line-height: 1.32;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.orbit-panel small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.voice-core {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 13px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.voice-sphere {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(430px, 42vh);
+  min-width: 290px;
+  aspect-ratio: 1;
+  border: 1px solid rgba(71, 215, 255, 0.34);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(71, 215, 255, 0.22) 0 7%, rgba(71, 215, 255, 0.08) 8% 34%, rgba(6, 12, 20, 0.82) 62%),
+    linear-gradient(145deg, rgba(132, 204, 255, 0.18), rgba(74, 222, 128, 0.04));
+  box-shadow:
+    0 0 52px rgba(71, 215, 255, 0.18),
+    inset 0 0 44px rgba(71, 215, 255, 0.12),
+    inset 0 0 0 12px rgba(255, 255, 255, 0.02);
+}
+
+.voice-sphere-ring {
+  position: absolute;
+  inset: 18px;
+  border: 1px solid rgba(74, 222, 128, 0.42);
+  border-radius: 50%;
+  box-shadow: 0 0 22px rgba(74, 222, 128, 0.16), inset 0 0 28px rgba(74, 222, 128, 0.1);
+  animation: voicePulse 4s ease-in-out infinite;
+}
+
+.voice-sphere-content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 11px;
+  width: min(76%, 330px);
+  text-align: center;
+}
+
+.voice-sphere-content strong {
+  margin: 0;
+  font-size: clamp(1.6rem, 3.4vh, 2.7rem);
+  line-height: 1;
+}
+
+.voice-sphere-content span {
+  color: var(--cyan);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.voice-sphere-content p {
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.9rem;
+  line-height: 1.42;
+}
+
+.voice-status-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(620px, 100%);
+}
+
+.voice-status-strip div,
+.chat-fallback {
+  border: 1px solid rgba(132, 204, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.66);
+}
+
+.voice-status-strip div {
+  display: grid;
+  gap: 5px;
+  min-height: 64px;
+  padding: 10px 12px;
+}
+
+.voice-status-strip strong {
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+
+.chat-fallback {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  width: min(680px, 100%);
+  padding: 10px;
+}
+
+.chat-fallback label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.chat-fallback input {
+  width: 100%;
+  min-height: 38px;
+  padding: 9px 11px;
+  border: 1px solid rgba(132, 204, 255, 0.18);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.chat-fallback button,
+.cockpit-close-button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid rgba(71, 215, 255, 0.34);
+  border-radius: 8px;
+  color: var(--cyan);
+  background: rgba(71, 215, 255, 0.08);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.chat-fallback button:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+}
+
+.cockpit-command-strip {
+  justify-content: flex-start;
+}
+
+.cockpit-command-strip code {
+  padding: 5px 8px;
+  border: 1px solid rgba(132, 204, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cockpit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.cockpit-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.68);
+  cursor: pointer;
+}
+
+.cockpit-detail-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 14px;
+  width: min(980px, calc(100vw - 34px));
+  max-height: min(720px, calc(100vh - 48px));
+  padding: 18px;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(71, 215, 255, 0.1), rgba(4, 10, 18, 0.96) 46%),
+    rgba(5, 10, 18, 0.98);
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.62);
+}
+
+.cockpit-detail-head,
+.cockpit-report-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cockpit-detail-head h2 {
+  margin: 4px 0 7px;
+  font-size: 1.55rem;
+}
+
+.cockpit-detail-head p {
+  margin: 0;
+  color: var(--soft);
+  line-height: 1.45;
+}
+
+.cockpit-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cockpit-detail-metric {
+  display: grid;
+  gap: 7px;
+  min-height: 82px;
+  padding: 12px;
+  border: 1px solid rgba(132, 204, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.62);
+}
+
+.cockpit-detail-metric strong {
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+}
+
+.cockpit-report-preview {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(132, 204, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.62);
+}
+
+.cockpit-report-preview pre {
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  color: var(--soft);
+  font-size: 0.78rem;
+  line-height: 1.42;
+  white-space: pre-wrap;
+}
+
+@keyframes voicePulse {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(0.985);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.015);
+  }
 }
 
 .panel-header {
@@ -2738,6 +3117,33 @@ h2 {
   .learning-candidate-list {
     grid-template-columns: 1fr;
   }
+
+  .cockpit-shell {
+    min-height: 0;
+    height: auto;
+    overflow: visible;
+  }
+
+  .cockpit-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .voice-core {
+    order: -1;
+  }
+
+  .orbit-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+  }
+
+  .voice-sphere {
+    width: min(380px, 78vw);
+  }
+
+  .cockpit-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -2844,7 +3250,25 @@ h2 {
   .setup-levels,
   .setup-lifecycle-steps,
   .learning-card-head,
-  .learning-card-meta {
+  .learning-card-meta,
+  .orbit-column,
+  .voice-status-strip,
+  .chat-fallback,
+  .cockpit-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cockpit-shell {
+    padding: 10px;
+  }
+
+  .voice-sphere {
+    min-width: 240px;
+  }
+
+  .cockpit-meta-strip,
+  .cockpit-command-strip {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

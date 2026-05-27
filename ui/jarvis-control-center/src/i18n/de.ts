@@ -19,7 +19,7 @@ export const de = {
     no: 'nein',
   },
   header: {
-    eyebrow: 'Prototyp v0.1 / lokale Demo-Daten',
+    eyebrow: 'Cockpit Prototype / Read-only Bridge',
     title: 'Jarvis Control Center',
     copy:
       'Separater React/Vite-Prototyp fuer das kuenftige Jarvis Cockpit. Gradio bleibt die Entwicklungs- und Testoberflaeche; diese Ansicht liest nur ueber die lokale Read-only Bridge, schreibt keine Runtime-Dateien und streamt keine Live-Marktdaten.',
