@@ -79,6 +79,9 @@ internal sealed class HermesCli
             "robust-strategies" => ShowRobustStrategies(),
             "bot-candidates" => ShowBotCandidates(),
             "bot-candidate-report" => ShowBotCandidateReport(),
+            "candidate-rejection-analysis" => ShowCandidateRejectionAnalysis(),
+            "near-miss-strategies" => ShowNearMissStrategies(),
+            "improvement-experiments" => ShowImprovementExperiments(),
             "strategy-research-status" => ShowStrategyResearchStatus(),
             "top-strategies" => ShowTopStrategies(),
             "knowledge-sources" => ShowKnowledgeSources(),
@@ -154,6 +157,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes robust-strategies  robuste Strategy-Kandidaten anzeigen");
         Console.WriteLine("  hermes bot-candidates     strenge Demo-Bot-Kandidatenbewertung anzeigen");
         Console.WriteLine("  hermes bot-candidate-report Bot-Candidate-Report mit Ablehnungsgruenden anzeigen");
+        Console.WriteLine("  hermes candidate-rejection-analysis Ablehnungsdiagnose fuer Bot-Kandidaten anzeigen");
+        Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
+        Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes strategy-research-status Strategy-Research-Memory anzeigen");
         Console.WriteLine("  hermes top-strategies     beste Strategy-Research-Varianten anzeigen");
         Console.WriteLine("  hermes knowledge-sources  kuratierte Strategy-Discovery-Quellen anzeigen");
@@ -2262,6 +2268,87 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowCandidateRejectionAnalysis()
+    {
+        WriteHeader("Hermes Candidate Rejection Analysis");
+        var analyzer = new BotCandidateRejectionAnalyzer(BuildStoragePaths());
+        var report = analyzer.Run();
+
+        WriteField("Analysis", DisplayPath(analyzer.AnalysisPath));
+        WriteField("Near Miss", DisplayPath(analyzer.NearMissPath));
+        WriteField("Experiments", DisplayPath(analyzer.ImprovementExperimentsPath));
+        WriteField("Candidates Analyzed", report.CandidatesAnalyzed.ToString());
+        WriteField("Rejected", report.RejectedCandidates.ToString());
+        WriteField("Near Miss Count", report.NearMissCount.ToString());
+        WriteMessages("Why No Candidates", report.WhyNoCandidates);
+        WriteMessages(
+            "Top Blockers",
+            report.ReasonSummaries
+                .Take(12)
+                .Select(summary => $"{summary.Reason}: count={summary.Count}, share={summary.Share:P2}, category={summary.Category}, hint={summary.ImprovementHint}")
+                .ToList());
+        WriteMessages("Potential Clusters", report.PotentialClusters);
+        WriteMessages("Unsuitable Clusters", report.UnsuitableClusters);
+        WriteMessages(
+            "Recommended Experiments",
+            report.RecommendedImprovementExperiments
+                .Take(8)
+                .Select(FormatSuggestion)
+                .ToList());
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowNearMissStrategies()
+    {
+        WriteHeader("Hermes Near-Miss Strategies");
+        var analyzer = new BotCandidateRejectionAnalyzer(BuildStoragePaths());
+        var report = analyzer.LoadAnalysis() ?? analyzer.Run();
+
+        WriteField("Near Miss", DisplayPath(analyzer.NearMissPath));
+        WriteField("Near Miss Count", report.NearMissCount.ToString());
+        if (report.NearMissStrategies.Count == 0)
+        {
+            WriteWarning("Keine echten Near-Miss-Strategien gefunden. Zeige beste verworfene Strategien als Diagnose.");
+            foreach (var item in report.BestRejectedStrategies.Take(12))
+            {
+                WriteCandidateGateDiagnostic(item);
+            }
+        }
+        else
+        {
+            foreach (var item in report.NearMissStrategies.Take(20))
+            {
+                WriteCandidateGateDiagnostic(item);
+            }
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowImprovementExperiments()
+    {
+        WriteHeader("Hermes Improvement Experiments");
+        var analyzer = new BotCandidateRejectionAnalyzer(BuildStoragePaths());
+        var report = analyzer.LoadAnalysis() ?? analyzer.Run();
+
+        WriteField("Experiments", DisplayPath(analyzer.ImprovementExperimentsPath));
+        WriteField("Suggestions", report.RecommendedImprovementExperiments.Count.ToString());
+        foreach (var suggestion in report.RecommendedImprovementExperiments)
+        {
+            WriteStrategyImprovementSuggestion(suggestion);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int RunStrategyResearch()
     {
         WriteHeader("Hermes Strategy Research Beta 2");
@@ -2726,6 +2813,37 @@ internal sealed class HermesCli
         Console.WriteLine();
     }
 
+    private void WriteCandidateGateDiagnostic(CandidateGateDiagnostics item)
+    {
+        WriteSubHeader($"{item.StrategyFamily} / {item.PatternId ?? "-"} / {item.StrategyId}");
+        WriteField("Candidate ID", item.CandidateId);
+        WriteField("Symbol/Timeframe", $"{item.Symbol}/{item.Timeframe}");
+        WriteField("Status", item.Status);
+        WriteField("Primary Reason", item.PrimaryRejectionReason);
+        WriteField("Weakest Metric", item.WeakestMetric);
+        WriteField("Nearest Threshold", item.NearestPassThreshold);
+        WriteField("Near-Miss Score", $"{item.NearMissScore:0.####}");
+        WriteField("Near Miss", item.IsNearMiss.ToString().ToLowerInvariant());
+        WriteField("Unsuitable", item.IsCompletelyUnsuitable.ToString().ToLowerInvariant());
+        WriteField("Improvement Hint", item.ImprovementHint);
+        WriteMessages("Secondary Reasons", item.SecondaryRejectionReasons.Take(6).ToList());
+        Console.WriteLine();
+    }
+
+    private void WriteStrategyImprovementSuggestion(StrategyImprovementSuggestion suggestion)
+    {
+        WriteSubHeader($"{suggestion.Priority} / {suggestion.SuggestionId}");
+        WriteField("Title", suggestion.Title);
+        WriteField("Target Metric", suggestion.TargetMetric);
+        WriteField("Expected Impact", suggestion.ExpectedImpact);
+        WriteField("Description", suggestion.Description);
+        WriteMessages("Related Reasons", suggestion.RelatedRejectionReasons);
+        Console.WriteLine();
+    }
+
+    private static string FormatSuggestion(StrategyImprovementSuggestion suggestion) =>
+        $"{suggestion.Priority}:{suggestion.SuggestionId}:{suggestion.Title} -> {suggestion.TargetMetric}";
+
     private void WriteMonteCarloResult(MonteCarloResult result)
     {
         WriteSubHeader($"{result.StrategyFamily} / {result.PatternId ?? "-"} / {result.StrategyVariantId}");
@@ -2807,6 +2925,10 @@ internal sealed class HermesCli
         WriteField("blocked_by_monte_carlo", insights.CandidatesBlockedByMonteCarlo?.ToString() ?? "-");
         WriteField("blocked_by_cost_stress", insights.CandidatesBlockedByCostStress?.ToString() ?? "-");
         WriteField("blocked_by_risk", insights.CandidatesBlockedByRisk?.ToString() ?? "-");
+        WriteMessages("Why No Candidates", insights.WhyNoCandidates ?? Array.Empty<string>());
+        WriteMessages("Top Blockers", insights.TopBlockers ?? Array.Empty<string>());
+        WriteField("near_miss_count", insights.NearMissCount?.ToString() ?? "-");
+        WriteMessages("Recommended Next Experiments", insights.RecommendedNextExperiments ?? Array.Empty<string>());
         WriteMessages("Avoid Combinations", insights.AvoidCombinations ?? Array.Empty<string>());
         WriteMessages("Next Recommended Tests", insights.NextRecommendedTests ?? Array.Empty<string>());
         WriteMessages("Parameter Statistics", insights.ParameterStatistics);

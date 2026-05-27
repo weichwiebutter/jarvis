@@ -47,4 +47,8 @@ public sealed record StrategyEvolutionSummary(
     IReadOnlyList<string>? RiskOfRuinSummary = null,
     int? CandidatesBlockedByMonteCarlo = null,
     int? CandidatesBlockedByCostStress = null,
-    int? CandidatesBlockedByRisk = null);
+    int? CandidatesBlockedByRisk = null,
+    IReadOnlyList<string>? WhyNoCandidates = null,
+    IReadOnlyList<string>? TopBlockers = null,
+    int? NearMissCount = null,
+    IReadOnlyList<string>? RecommendedNextExperiments = null);

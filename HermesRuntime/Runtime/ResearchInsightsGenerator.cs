@@ -37,6 +37,8 @@ public sealed class ResearchInsightsGenerator
         var riskOfRuinReport = riskOfRuinService.LoadReport() ?? riskOfRuinService.Run();
         var botCandidateService = new BotCandidatePipelineService(_storagePaths);
         var botCandidateReport = botCandidateService.LoadReport() ?? botCandidateService.Evaluate();
+        var rejectionAnalyzer = new BotCandidateRejectionAnalyzer(_storagePaths);
+        var rejectionAnalysis = rejectionAnalyzer.LoadAnalysis() ?? rejectionAnalyzer.Run();
         var acceptableVariantIds = walkForward?.Assessments
             .Where(item => item.StrategyConfidence is not "overfit_suspected" and not "rejected" and not "unstable")
             .Select(item => item.StrategyVariantId)
@@ -103,7 +105,17 @@ public sealed class ResearchInsightsGenerator
             RiskOfRuinSummary: BuildRiskOfRuinSummary(riskOfRuinReport),
             CandidatesBlockedByMonteCarlo: botCandidateReport.CandidatesBlockedByMonteCarlo,
             CandidatesBlockedByCostStress: botCandidateReport.CandidatesBlockedByCostStress,
-            CandidatesBlockedByRisk: botCandidateReport.CandidatesBlockedByRisk);
+            CandidatesBlockedByRisk: botCandidateReport.CandidatesBlockedByRisk,
+            WhyNoCandidates: rejectionAnalysis.WhyNoCandidates,
+            TopBlockers: rejectionAnalysis.ReasonSummaries
+                .Take(8)
+                .Select(summary => $"{summary.Reason}:{summary.Count}:{summary.Category}")
+                .ToList(),
+            NearMissCount: rejectionAnalysis.NearMissCount,
+            RecommendedNextExperiments: rejectionAnalysis.RecommendedImprovementExperiments
+                .Take(8)
+                .Select(suggestion => $"{suggestion.Priority}:{suggestion.SuggestionId}:{suggestion.Title}")
+                .ToList());
 
         File.WriteAllText(InsightsPath, JsonSerializer.Serialize(summary, JsonDefaults.WriteOptions));
         File.WriteAllText(ClustersPath, JsonSerializer.Serialize(clusters, JsonDefaults.WriteOptions));
