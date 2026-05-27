@@ -82,6 +82,11 @@ internal sealed class HermesCli
             "candidate-rejection-analysis" => ShowCandidateRejectionAnalysis(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
+            "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
+            "quality-improvement-report" => ShowQualityImprovementReport(),
+            "cost-resilience-report" => ShowCostResilienceReport(),
+            "oos-stability-report" => ShowOosStabilityReport(),
+            "risk-sensitivity-report" => ShowRiskSensitivityReport(),
             "strategy-research-status" => ShowStrategyResearchStatus(),
             "top-strategies" => ShowTopStrategies(),
             "knowledge-sources" => ShowKnowledgeSources(),
@@ -160,6 +165,11 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes candidate-rejection-analysis Ablehnungsdiagnose fuer Bot-Kandidaten anzeigen");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
+        Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
+        Console.WriteLine("  hermes quality-improvement-report Quality-Improvement-Experimentbericht anzeigen");
+        Console.WriteLine("  hermes cost-resilience-report Cost-Resilience-Experimente anzeigen");
+        Console.WriteLine("  hermes oos-stability-report OOS-/Walk-Forward-Experimente anzeigen");
+        Console.WriteLine("  hermes risk-sensitivity-report Risk-Sensitivity-Experimente anzeigen");
         Console.WriteLine("  hermes strategy-research-status Strategy-Research-Memory anzeigen");
         Console.WriteLine("  hermes top-strategies     beste Strategy-Research-Varianten anzeigen");
         Console.WriteLine("  hermes knowledge-sources  kuratierte Strategy-Discovery-Quellen anzeigen");
@@ -1830,6 +1840,9 @@ internal sealed class HermesCli
             new CostStressTestService(storagePaths).Run(maxQualityCandidates);
             new RiskOfRuinService(storagePaths).Run(maxQualityCandidates);
             new BotCandidatePipelineService(storagePaths).Evaluate();
+            new BotCandidateRejectionAnalyzer(storagePaths).Run();
+            new ResearchQualityImprovementExperimentService(storagePaths)
+                .Run(maxBatchSize: Math.Min(maxQualityCandidates, 64));
         }
 
         new ResearchInsightsGenerator(storagePaths).Generate();
@@ -2349,6 +2362,135 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunQualityImprovementExperiments()
+    {
+        WriteHeader("Hermes Quality Improvement Experiments");
+        var maxBatchSize = ReadIntOption(_args, "--max-batch-size", fallback: 64, min: 1, max: 250);
+        var service = new ResearchQualityImprovementExperimentService(BuildStoragePaths());
+        var report = service.Run(maxBatchSize);
+
+        WriteQualityImprovementReportHeader(service, report);
+        WriteMessages("Blockers Addressed", report.BlockersAddressed);
+        WriteMessages("Expected Blocker Reduction", report.ExpectedBlockerReduction);
+        WriteField("OOS Experiments", report.OosExperiments.Count.ToString());
+        WriteField("Cost Experiments", report.CostResilienceExperiments.Count.ToString());
+        WriteField("Risk Experiments", report.RiskSensitivityExperiments.Count.ToString());
+        WriteField("Regime Experiments", report.RegimeSessionFilterExperiments.Count.ToString());
+        WriteField("Near Miss Changed", report.NearMissCountChanged.ToString().ToLowerInvariant());
+        WriteField("Near Miss Note", report.NearMissImpactNote);
+        WriteField("No Forced Approval", report.NoCandidateApprovalForced.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowQualityImprovementReport()
+    {
+        WriteHeader("Hermes Quality Improvement Report");
+        var service = new ResearchQualityImprovementExperimentService(BuildStoragePaths());
+        var report = service.LoadReport() ?? service.Run();
+
+        WriteQualityImprovementReportHeader(service, report);
+        WriteMessages("Blockers Addressed", report.BlockersAddressed);
+        WriteMessages("Expected Blocker Reduction", report.ExpectedBlockerReduction);
+        WriteSubHeader("Top OOS Experiments");
+        foreach (var experiment in report.OosExperiments.Take(5))
+        {
+            WriteOosExperiment(experiment);
+        }
+
+        WriteSubHeader("Top Cost Experiments");
+        foreach (var experiment in report.CostResilienceExperiments.Take(5))
+        {
+            WriteCostExperiment(experiment);
+        }
+
+        WriteSubHeader("Top Risk Experiments");
+        foreach (var experiment in report.RiskSensitivityExperiments.Take(5))
+        {
+            WriteRiskExperiment(experiment);
+        }
+
+        WriteSubHeader("Top Regime/Session Experiments");
+        foreach (var experiment in report.RegimeSessionFilterExperiments.Take(5))
+        {
+            WriteRegimeExperiment(experiment);
+        }
+
+        WriteField("Near Miss Baseline", report.BaselineNearMissCount.ToString());
+        WriteField("Near Miss Changed", report.NearMissCountChanged.ToString().ToLowerInvariant());
+        WriteField("Near Miss Note", report.NearMissImpactNote);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCostResilienceReport()
+    {
+        WriteHeader("Hermes Cost Resilience Experiments");
+        var service = new ResearchQualityImprovementExperimentService(BuildStoragePaths());
+        var experiments = service.LoadCostResilienceExperiments();
+        if (experiments.Count == 0)
+        {
+            experiments = service.Run().CostResilienceExperiments;
+        }
+
+        WriteField("Report", DisplayPath(service.CostResiliencePath));
+        WriteField("Experiments", experiments.Count.ToString());
+        foreach (var experiment in experiments.Take(12))
+        {
+            WriteCostExperiment(experiment);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowOosStabilityReport()
+    {
+        WriteHeader("Hermes OOS Stability Experiments");
+        var service = new ResearchQualityImprovementExperimentService(BuildStoragePaths());
+        var experiments = service.LoadOosStabilityExperiments();
+        if (experiments.Count == 0)
+        {
+            experiments = service.Run().OosExperiments;
+        }
+
+        WriteField("Report", DisplayPath(service.OosStabilityPath));
+        WriteField("Experiments", experiments.Count.ToString());
+        foreach (var experiment in experiments.Take(12))
+        {
+            WriteOosExperiment(experiment);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowRiskSensitivityReport()
+    {
+        WriteHeader("Hermes Risk Sensitivity Experiments");
+        var service = new ResearchQualityImprovementExperimentService(BuildStoragePaths());
+        var experiments = service.LoadRiskSensitivityExperiments();
+        if (experiments.Count == 0)
+        {
+            experiments = service.Run().RiskSensitivityExperiments;
+        }
+
+        WriteField("Report", DisplayPath(service.RiskSensitivityPath));
+        WriteField("Experiments", experiments.Count.ToString());
+        foreach (var experiment in experiments.Take(12))
+        {
+            WriteRiskExperiment(experiment);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int RunStrategyResearch()
     {
         WriteHeader("Hermes Strategy Research Beta 2");
@@ -2843,6 +2985,78 @@ internal sealed class HermesCli
 
     private static string FormatSuggestion(StrategyImprovementSuggestion suggestion) =>
         $"{suggestion.Priority}:{suggestion.SuggestionId}:{suggestion.Title} -> {suggestion.TargetMetric}";
+
+    private void WriteQualityImprovementReportHeader(
+        ResearchQualityImprovementExperimentService service,
+        QualityImprovementExperimentReport report)
+    {
+        WriteField("Quality Report", DisplayPath(service.QualityImprovementPath));
+        WriteField("OOS Report", DisplayPath(service.OosStabilityPath));
+        WriteField("Cost Report", DisplayPath(service.CostResiliencePath));
+        WriteField("Risk Report", DisplayPath(service.RiskSensitivityPath));
+        WriteField("Candidates Analyzed", report.CandidatesAnalyzed.ToString());
+        WriteField("Batch Size", report.BatchSize.ToString());
+        WriteField("Baseline Near Miss", report.BaselineNearMissCount.ToString());
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteOosExperiment(OosQualityImprovementExperiment experiment)
+    {
+        WriteSubHeader($"{experiment.PriorityRank:00} / {experiment.StrategyFamily} / {experiment.PatternId ?? "-"} / {experiment.TargetStrategyId}");
+        WriteField("Symbol/Timeframe", $"{experiment.Symbol}/{experiment.Timeframe}");
+        WriteField("Source Score", $"{experiment.SourceNearMissScore:0.####}");
+        WriteField("Walk-Forward Plan", experiment.WalkForwardPlan);
+        WriteField("Expected Impact", experiment.ExpectedImpact);
+        WriteMessages("Addressed Blockers", experiment.AddressedBlockers);
+        WriteMessages("Proposed Filters", experiment.ProposedFilters);
+        WriteMessages("Rolling Windows", experiment.RollingValidationWindows);
+        Console.WriteLine();
+    }
+
+    private void WriteCostExperiment(CostResilienceExperiment experiment)
+    {
+        WriteSubHeader($"{experiment.PriorityRank:00} / {experiment.StrategyFamily} / {experiment.PatternId ?? "-"} / {experiment.TargetStrategyId}");
+        WriteField("Symbol/Timeframe", $"{experiment.Symbol}/{experiment.Timeframe}");
+        WriteField("Source Score", $"{experiment.SourceNearMissScore:0.####}");
+        WriteField("Minimum Move/Cost", $"{experiment.MinimumMoveToCostRatio:0.##}x");
+        WriteField("Spread Stress", experiment.SpreadStressScenario);
+        WriteField("Slippage Stress", experiment.SlippageStressScenario);
+        WriteField("Expected Impact", experiment.ExpectedImpact);
+        WriteMessages("Addressed Blockers", experiment.AddressedBlockers);
+        WriteMessages("Proposed Filters", experiment.ProposedFilters);
+        WriteMessages("Avoid Sessions", experiment.AvoidSessions);
+        Console.WriteLine();
+    }
+
+    private void WriteRiskExperiment(RiskSensitivityExperiment experiment)
+    {
+        WriteSubHeader($"{experiment.PriorityRank:00} / {experiment.StrategyFamily} / {experiment.PatternId ?? "-"} / {experiment.TargetStrategyId}");
+        WriteField("Symbol/Timeframe", $"{experiment.Symbol}/{experiment.Timeframe}");
+        WriteField("Source Score", $"{experiment.SourceNearMissScore:0.####}");
+        WriteField("Risk Profiles", string.Join(", ", experiment.RiskProfiles.Select(value => $"{value:P2}")));
+        WriteField("Target Ruin Probability", $"{experiment.TargetRuinProbability:P2}");
+        WriteField("Trade Frequency", experiment.MaxTradeFrequencyHint);
+        WriteField("Drawdown Control", experiment.DrawdownControl);
+        WriteField("Expected Impact", experiment.ExpectedImpact);
+        WriteMessages("Addressed Blockers", experiment.AddressedBlockers);
+        Console.WriteLine();
+    }
+
+    private void WriteRegimeExperiment(RegimeSessionFilterExperiment experiment)
+    {
+        WriteSubHeader($"{experiment.PriorityRank:00} / {experiment.StrategyFamily} / {experiment.PatternId ?? "-"} / {experiment.TargetStrategyId}");
+        WriteField("Symbol/Timeframe", $"{experiment.Symbol}/{experiment.Timeframe}");
+        WriteField("Source Score", $"{experiment.SourceNearMissScore:0.####}");
+        WriteField("Volatility Filter", experiment.VolatilityFilter);
+        WriteField("Expected Impact", experiment.ExpectedImpact);
+        WriteMessages("Addressed Blockers", experiment.AddressedBlockers);
+        WriteMessages("Preferred Regimes", experiment.PreferredRegimes);
+        WriteMessages("Avoided Regimes", experiment.AvoidedRegimes);
+        WriteMessages("Preferred Sessions", experiment.PreferredSessions);
+        WriteMessages("Avoided Sessions", experiment.AvoidedSessions);
+        Console.WriteLine();
+    }
 
     private void WriteMonteCarloResult(MonteCarloResult result)
     {
