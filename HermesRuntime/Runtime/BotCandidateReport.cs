@@ -20,4 +20,10 @@ public sealed record BotCandidateReport(
     bool NoTradingExecution,
     bool NoBrokerAction,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
+    bool HumanReviewRequired,
+    IReadOnlyList<string>? MonteCarloSummary = null,
+    IReadOnlyList<string>? CostStressSummary = null,
+    IReadOnlyList<string>? RiskOfRuinSummary = null,
+    int CandidatesBlockedByMonteCarlo = 0,
+    int CandidatesBlockedByCostStress = 0,
+    int CandidatesBlockedByRisk = 0);

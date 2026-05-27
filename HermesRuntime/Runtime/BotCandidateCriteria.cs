@@ -21,7 +21,17 @@ public sealed record BotCandidateCriteria(
     double SampleQuality,
     bool SampleQualityPassed,
     bool TooGoodToBeTrue,
-    bool TooGoodToBeTruePassed)
+    bool TooGoodToBeTruePassed,
+    bool MonteCarloPassed = false,
+    double PositiveSimulationRatio = 0,
+    bool PositiveSimulationRatioPassed = false,
+    bool SurvivesSpreadX2 = false,
+    bool SurvivesStressCost = false,
+    bool CostStressPassed = false,
+    double RiskOfRuinProbabilityEstimate = 1,
+    bool RiskOfRuinPassed = false,
+    double RecommendedMaxRiskPerTrade = 0,
+    bool RecommendedRiskAvailable = false)
 {
     public bool Passed =>
         ConfidenceRobust
@@ -34,5 +44,11 @@ public sealed record BotCandidateCriteria(
         && MaxDrawdownPassed
         && ProfitFactorPassed
         && SampleQualityPassed
-        && TooGoodToBeTruePassed;
+        && TooGoodToBeTruePassed
+        && MonteCarloPassed
+        && PositiveSimulationRatioPassed
+        && SurvivesSpreadX2
+        && CostStressPassed
+        && RiskOfRuinPassed
+        && RecommendedRiskAvailable;
 }

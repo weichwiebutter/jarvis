@@ -70,6 +70,9 @@ internal sealed class HermesCli
             "realism-report" => ShowRealismReport(),
             "walkforward-summary" => ShowWalkForwardSummary(),
             "cost-sensitivity-report" => ShowCostSensitivityReport(),
+            "monte-carlo-report" => ShowMonteCarloReport(),
+            "cost-stress-report" => ShowCostStressReport(),
+            "risk-of-ruin-report" => ShowRiskOfRuinReport(),
             "simulation-status" => ShowSimulationStatus(),
             "strategy-discovery-status" => ShowStrategyDiscoveryStatus(),
             "overfit-report" => ShowOverfitReport(),
@@ -142,6 +145,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes realism-report    Realism-/Kosten-/Overfit-Qualitaetsreport anzeigen");
         Console.WriteLine("  hermes walkforward-summary Walk-Forward Summary anzeigen");
         Console.WriteLine("  hermes cost-sensitivity-report Brokerkosten-Sensitivitaetsreport anzeigen");
+        Console.WriteLine("  hermes monte-carlo-report Monte-Carlo-Qualitaetsreport erzeugen/anzeigen");
+        Console.WriteLine("  hermes cost-stress-report Spread-/Slippage-Stress-Test anzeigen");
+        Console.WriteLine("  hermes risk-of-ruin-report konservativen Risk-of-Ruin-Report anzeigen");
         Console.WriteLine("  hermes simulation-status Realistic Simulation Status anzeigen");
         Console.WriteLine("  hermes strategy-discovery-status Trusted Strategy Discovery anzeigen");
         Console.WriteLine("  hermes overfit-report     Overfit-/Risk-Report anzeigen");
@@ -612,10 +618,17 @@ internal sealed class HermesCli
             fallback: config.MaxIdleIterations,
             min: 1,
             max: 1000);
+        var maxQualityCandidates = ReadIntOption(
+            _args,
+            "--max-quality-candidates",
+            fallback: 64,
+            min: 1,
+            max: 500);
 
         WriteField("Config", DisplayPath(configPath));
         WriteField("Allowed Window", $"{config.StartHour:00}:00 -> {config.EndHour:00}:00");
         WriteField("Current Local Time", now.ToString("yyyy-MM-dd HH:mm:ss zzz"));
+        WriteField("Max Quality Candidates", maxQualityCandidates.ToString());
 
         if (!config.IsInAllowedWindow(now))
         {
@@ -717,7 +730,9 @@ internal sealed class HermesCli
                     targetToUtc,
                     maxDownloads: Math.Min(9, config.AllowedSymbols.Count * config.AllowedTimeframes.Count),
                     maxRequests: 500,
-                    inheritedWarnings: []);
+                    inheritedWarnings: [],
+                    runQualityGates: true,
+                    maxQualityCandidates: maxQualityCandidates);
                 eventStore.Flush();
 
                 iterations++;
@@ -1176,6 +1191,11 @@ internal sealed class HermesCli
     {
         var remainingMinutes = Math.Max(1, (int)Math.Floor(context.RemainingRuntime.TotalMinutes));
         var maxRuntimeMinutes = Math.Clamp(job.MaxRuntimeMinutes ?? 360, 1, remainingMinutes);
+        var maxQualityCandidates = job.Parameters is not null
+            && job.Parameters.TryGetValue("max_quality_candidates", out var maxQualityCandidatesText)
+            && int.TryParse(maxQualityCandidatesText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMaxQualityCandidates)
+            ? Math.Clamp(parsedMaxQualityCandidates, 1, 500)
+            : 64;
         var args = new List<string>
         {
             "run-nightly-beta3",
@@ -1184,7 +1204,9 @@ internal sealed class HermesCli
             "--sleep-seconds",
             (job.SleepSeconds ?? 60).ToString(CultureInfo.InvariantCulture),
             "--max-idle-iterations",
-            (job.MaxIdleIterations ?? 10).ToString(CultureInfo.InvariantCulture)
+            (job.MaxIdleIterations ?? 10).ToString(CultureInfo.InvariantCulture),
+            "--max-quality-candidates",
+            maxQualityCandidates.ToString(CultureInfo.InvariantCulture)
         };
 
         var exitCode = new HermesCli(args.ToArray()).Run();
@@ -1712,7 +1734,9 @@ internal sealed class HermesCli
         DateTimeOffset targetToUtc,
         int maxDownloads,
         int maxRequests,
-        IReadOnlyList<string> inheritedWarnings)
+        IReadOnlyList<string> inheritedWarnings,
+        bool runQualityGates = false,
+        int maxQualityCandidates = 64)
     {
         var warnings = new List<string>();
         var disk = new DiskSpaceGuard().Check(storagePaths, minimumFreeDiskMb: 512);
@@ -1794,6 +1818,14 @@ internal sealed class HermesCli
         var simulationReports = new RealisticSimulationService(storagePaths).Run();
         var walkForward = new WalkForwardValidationService(storagePaths).Run();
         var discovery = new StrategyDiscoveryService(storagePaths).Run();
+        if (runQualityGates)
+        {
+            new MonteCarloSimulationService(storagePaths).Run(maxCandidates: maxQualityCandidates);
+            new CostStressTestService(storagePaths).Run(maxQualityCandidates);
+            new RiskOfRuinService(storagePaths).Run(maxQualityCandidates);
+            new BotCandidatePipelineService(storagePaths).Evaluate();
+        }
+
         new ResearchInsightsGenerator(storagePaths).Generate();
 
         var workUnits = newCandles
@@ -1958,6 +1990,90 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowMonteCarloReport()
+    {
+        WriteHeader("Hermes Monte-Carlo Report");
+        var simulationRuns = ReadIntOption(_args, "--simulations", fallback: 100, min: 20, max: 2000);
+        var maxCandidates = ReadIntOption(_args, "--max-candidates", fallback: 100, min: 1, max: 500);
+        var service = new MonteCarloSimulationService(BuildStoragePaths());
+        var report = service.Run(simulationRuns, maxCandidates);
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Report ID", report.ReportId);
+        WriteField("Created UTC", report.CreatedAtUtc.ToString("O"));
+        WriteField("Strategies Evaluated", report.StrategiesEvaluated.ToString());
+        WriteField("Simulations/Strategy", report.SimulationsPerStrategy.ToString());
+        WriteField("Passed", report.Passed.ToString());
+        WriteField("Failed", report.Failed.ToString());
+        WriteField("Avg Positive Ratio", $"{report.AveragePositiveSimulationRatio:0.####}");
+        WriteField("Avg Ruin Probability", $"{report.AverageRuinProbabilityEstimate:0.####}");
+        foreach (var result in report.Results.Take(10))
+        {
+            WriteMonteCarloResult(result);
+        }
+
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCostStressReport()
+    {
+        WriteHeader("Hermes Cost Stress Report");
+        var maxCandidates = ReadIntOption(_args, "--max-candidates", fallback: 100, min: 1, max: 500);
+        var service = new CostStressTestService(BuildStoragePaths());
+        var report = service.Run(maxCandidates);
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Report ID", report.ReportId);
+        WriteField("Created UTC", report.CreatedAtUtc.ToString("O"));
+        WriteField("Strategies Evaluated", report.StrategiesEvaluated.ToString());
+        WriteField("Survives Normal", report.SurvivesNormalCost.ToString());
+        WriteField("Survives Spread x2", report.SurvivesSpreadX2.ToString());
+        WriteField("Survives Spread x3", report.SurvivesSpreadX3.ToString());
+        WriteField("Survives Stress", report.SurvivesStressCost.ToString());
+        WriteField("Stress Failures", report.StressCostFailures.ToString());
+        foreach (var result in report.Results.Take(10))
+        {
+            WriteCostStressResult(result);
+        }
+
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowRiskOfRuinReport()
+    {
+        WriteHeader("Hermes Risk-of-Ruin Report");
+        var maxCandidates = ReadIntOption(_args, "--max-candidates", fallback: 100, min: 1, max: 500);
+        var service = new RiskOfRuinService(BuildStoragePaths());
+        var report = service.Run(maxCandidates);
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Report ID", report.ReportId);
+        WriteField("Created UTC", report.CreatedAtUtc.ToString("O"));
+        WriteField("Strategies Evaluated", report.StrategiesEvaluated.ToString());
+        WriteField("Passed", report.Passed.ToString());
+        WriteField("Failed", report.Failed.ToString());
+        WriteField("Avg Ruin Probability", $"{report.AverageRuinProbabilityEstimate:0.####}");
+        WriteField("Avg Recommended Risk", $"{report.AverageRecommendedMaxRiskPerTrade:0.####}%");
+        foreach (var entry in report.Entries.Take(10))
+        {
+            WriteRiskOfRuinEntry(entry);
+        }
+
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowWalkForwardSummary()
     {
         WriteHeader("Hermes Walk-Forward Summary");
@@ -2079,6 +2195,12 @@ internal sealed class HermesCli
         WriteField("Promising", report.PromisingCandidateCount.ToString());
         WriteField("Robust", report.RobustCandidateCount.ToString());
         WriteField("Rejected", report.RejectedCandidateCount.ToString());
+        WriteField("Blocked Monte-Carlo", report.CandidatesBlockedByMonteCarlo.ToString());
+        WriteField("Blocked Cost Stress", report.CandidatesBlockedByCostStress.ToString());
+        WriteField("Blocked Risk", report.CandidatesBlockedByRisk.ToString());
+        WriteMessages("Monte-Carlo Summary", report.MonteCarloSummary ?? Array.Empty<string>());
+        WriteMessages("Cost Stress Summary", report.CostStressSummary ?? Array.Empty<string>());
+        WriteMessages("Risk-of-Ruin Summary", report.RiskOfRuinSummary ?? Array.Empty<string>());
         WriteMessages("Top Demo Bot Candidates", report.TopDemoBotCandidates);
         WriteMessages("Next Validation", report.NextValidationRecommendations);
         foreach (var candidate in report.Candidates.Take(10))
@@ -2100,7 +2222,7 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Bot Candidate Report");
         var service = new BotCandidatePipelineService(BuildStoragePaths());
-        var report = service.LoadReport() ?? service.Evaluate();
+        var report = service.Evaluate();
 
         WriteField("Report", DisplayPath(service.LatestReportPath));
         WriteField("Created UTC", report.CreatedAtUtc.ToString("O"));
@@ -2108,6 +2230,12 @@ internal sealed class HermesCli
         WriteField("Bot Candidates", report.BotCandidateCount.ToString());
         WriteField("Demo Bot Candidates", report.DemoBotCandidateCount.ToString());
         WriteField("Rejected", report.RejectedCandidateCount.ToString());
+        WriteField("Blocked Monte-Carlo", report.CandidatesBlockedByMonteCarlo.ToString());
+        WriteField("Blocked Cost Stress", report.CandidatesBlockedByCostStress.ToString());
+        WriteField("Blocked Risk", report.CandidatesBlockedByRisk.ToString());
+        WriteMessages("Monte-Carlo Summary", report.MonteCarloSummary ?? Array.Empty<string>());
+        WriteMessages("Cost Stress Summary", report.CostStressSummary ?? Array.Empty<string>());
+        WriteMessages("Risk-of-Ruin Summary", report.RiskOfRuinSummary ?? Array.Empty<string>());
         WriteMessages("Top Demo Bot Candidates", report.TopDemoBotCandidates);
         WriteMessages("Next Validation", report.NextValidationRecommendations);
         WriteMessages(
@@ -2583,6 +2711,12 @@ internal sealed class HermesCli
         WriteField("Profit Factor", $"{candidate.Criteria.ProfitFactor:0.####}");
         WriteField("Sample Quality", $"{candidate.Criteria.SampleQuality:0.####}");
         WriteField("too_good_to_be_true", candidate.Criteria.TooGoodToBeTrue.ToString().ToLowerInvariant());
+        WriteField("Monte-Carlo Passed", candidate.Criteria.MonteCarloPassed.ToString().ToLowerInvariant());
+        WriteField("Positive Sim Ratio", $"{candidate.Criteria.PositiveSimulationRatio:0.####}");
+        WriteField("Survives Spread x2", candidate.Criteria.SurvivesSpreadX2.ToString().ToLowerInvariant());
+        WriteField("Survives Stress Cost", candidate.Criteria.SurvivesStressCost.ToString().ToLowerInvariant());
+        WriteField("Risk of Ruin", $"{candidate.Criteria.RiskOfRuinProbabilityEstimate:0.####}");
+        WriteField("Recommended Risk", $"{candidate.Criteria.RecommendedMaxRiskPerTrade:0.####}%");
         WriteField("Next Validation", candidate.NextValidationRecommendation);
         WriteMessages("Rejection Reasons", candidate.RejectionReasons.Take(12).ToList());
         WriteMessages("Overfit Flags", candidate.OverfitFlags.Take(8).ToList());
@@ -2590,6 +2724,45 @@ internal sealed class HermesCli
         WriteField("No Trading Execution", candidate.NoTradingExecution.ToString().ToLowerInvariant());
         WriteField("No Broker Action", candidate.NoBrokerAction.ToString().ToLowerInvariant());
         Console.WriteLine();
+    }
+
+    private void WriteMonteCarloResult(MonteCarloResult result)
+    {
+        WriteSubHeader($"{result.StrategyFamily} / {result.PatternId ?? "-"} / {result.StrategyVariantId}");
+        WriteField("Symbol/Timeframe", $"{result.Symbol}/{result.Timeframe}");
+        WriteField("Simulations", result.SimulationsRun.ToString());
+        WriteField("Positive Ratio", $"{result.PositiveSimulationRatio:0.####}");
+        WriteField("Median Return", $"{result.MedianReturn:0.####}");
+        WriteField("Worst Drawdown", $"{result.WorstCaseDrawdown:0.####}");
+        WriteField("Ruin Probability", $"{result.RuinProbabilityEstimate:0.####}");
+        WriteField("monte_carlo_passed", result.MonteCarloPassed.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", result.Warnings);
+    }
+
+    private void WriteCostStressResult(CostStressResult result)
+    {
+        WriteSubHeader($"{result.StrategyFamily} / {result.PatternId ?? "-"} / {result.StrategyVariantId}");
+        WriteField("Symbol/Timeframe", $"{result.Symbol}/{result.Timeframe}");
+        WriteField("Survives Normal", result.SurvivesNormalCost.ToString().ToLowerInvariant());
+        WriteField("Survives Spread x2", result.SurvivesSpreadX2.ToString().ToLowerInvariant());
+        WriteField("Survives Spread x3", result.SurvivesSpreadX3.ToString().ToLowerInvariant());
+        WriteField("Survives Stress", result.SurvivesStressCost.ToString().ToLowerInvariant());
+        WriteField("Failure Reason", result.CostFailureReason);
+        foreach (var scenario in result.ScenarioResults.Take(3))
+        {
+            WriteField($"Scenario {scenario.Scenario.Name}", $"pf={scenario.AdjustedProfitFactor:0.####},net_r={scenario.AdjustedNetR:0.####},score={scenario.SurvivalScore:0.####},survived={scenario.Survived.ToString().ToLowerInvariant()}");
+        }
+    }
+
+    private void WriteRiskOfRuinEntry(RiskOfRuinEntry entry)
+    {
+        WriteSubHeader($"{entry.StrategyFamily} / {entry.PatternId ?? "-"} / {entry.StrategyVariantId}");
+        WriteField("Symbol/Timeframe", $"{entry.Symbol}/{entry.Timeframe}");
+        WriteField("Expected Drawdown", $"{entry.ExpectedDrawdown:0.####}%");
+        WriteField("Losing Streak Risk", $"{entry.LosingStreakRisk:0.####}");
+        WriteField("Ruin Probability", $"{entry.AccountRuinProbabilityEstimate:0.####}");
+        WriteField("Recommended Risk", $"{entry.RecommendedMaxRiskPerTrade:0.####}%");
+        WriteField("risk_of_ruin_passed", entry.RiskOfRuinPassed.ToString().ToLowerInvariant());
     }
 
     private void WriteResearchInsights(StrategyEvolutionSummary insights)
@@ -2628,6 +2801,12 @@ internal sealed class HermesCli
         WriteField("rejected_candidates", insights.RejectedCandidateCount?.ToString() ?? "-");
         WriteMessages("Top Demo Bot Candidates", insights.TopDemoBotCandidates ?? Array.Empty<string>());
         WriteMessages("Next Validation Recommendations", insights.NextValidationRecommendations ?? Array.Empty<string>());
+        WriteMessages("Monte-Carlo Summary", insights.MonteCarloSummary ?? Array.Empty<string>());
+        WriteMessages("Cost Stress Summary", insights.CostStressSummary ?? Array.Empty<string>());
+        WriteMessages("Risk-of-Ruin Summary", insights.RiskOfRuinSummary ?? Array.Empty<string>());
+        WriteField("blocked_by_monte_carlo", insights.CandidatesBlockedByMonteCarlo?.ToString() ?? "-");
+        WriteField("blocked_by_cost_stress", insights.CandidatesBlockedByCostStress?.ToString() ?? "-");
+        WriteField("blocked_by_risk", insights.CandidatesBlockedByRisk?.ToString() ?? "-");
         WriteMessages("Avoid Combinations", insights.AvoidCombinations ?? Array.Empty<string>());
         WriteMessages("Next Recommended Tests", insights.NextRecommendedTests ?? Array.Empty<string>());
         WriteMessages("Parameter Statistics", insights.ParameterStatistics);

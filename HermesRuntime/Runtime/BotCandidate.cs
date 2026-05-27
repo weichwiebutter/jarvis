@@ -16,4 +16,7 @@ public sealed record BotCandidate(
     bool NoTradingExecution,
     bool NoBrokerAction,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
+    bool HumanReviewRequired,
+    MonteCarloResult? MonteCarlo = null,
+    CostStressResult? CostStress = null,
+    RiskOfRuinEntry? RiskOfRuin = null);

@@ -29,6 +29,12 @@ public sealed class ResearchInsightsGenerator
             .ToList();
         var walkForward = new WalkForwardValidationService(_storagePaths).LoadReport();
         var costReport = new RealisticSimulationService(_storagePaths).LoadCostSensitivityReport();
+        var monteCarloService = new MonteCarloSimulationService(_storagePaths);
+        var monteCarloReport = monteCarloService.LoadReport() ?? monteCarloService.Run();
+        var costStressService = new CostStressTestService(_storagePaths);
+        var costStressReport = costStressService.LoadReport() ?? costStressService.Run();
+        var riskOfRuinService = new RiskOfRuinService(_storagePaths);
+        var riskOfRuinReport = riskOfRuinService.LoadReport() ?? riskOfRuinService.Run();
         var botCandidateService = new BotCandidatePipelineService(_storagePaths);
         var botCandidateReport = botCandidateService.LoadReport() ?? botCandidateService.Evaluate();
         var acceptableVariantIds = walkForward?.Assessments
@@ -91,7 +97,13 @@ public sealed class ResearchInsightsGenerator
             BotCandidateCount: botCandidateReport.BotCandidateCount,
             RejectedCandidateCount: botCandidateReport.RejectedCandidateCount,
             TopDemoBotCandidates: botCandidateReport.TopDemoBotCandidates,
-            NextValidationRecommendations: botCandidateReport.NextValidationRecommendations);
+            NextValidationRecommendations: botCandidateReport.NextValidationRecommendations,
+            MonteCarloSummary: BuildMonteCarloSummary(monteCarloReport),
+            CostStressSummary: BuildCostStressSummary(costStressReport),
+            RiskOfRuinSummary: BuildRiskOfRuinSummary(riskOfRuinReport),
+            CandidatesBlockedByMonteCarlo: botCandidateReport.CandidatesBlockedByMonteCarlo,
+            CandidatesBlockedByCostStress: botCandidateReport.CandidatesBlockedByCostStress,
+            CandidatesBlockedByRisk: botCandidateReport.CandidatesBlockedByRisk);
 
         File.WriteAllText(InsightsPath, JsonSerializer.Serialize(summary, JsonDefaults.WriteOptions));
         File.WriteAllText(ClustersPath, JsonSerializer.Serialize(clusters, JsonDefaults.WriteOptions));
@@ -628,6 +640,43 @@ public sealed class ResearchInsightsGenerator
             $"cost_sensitive:{costReport?.CostSensitiveStrategies ?? 0}",
             $"regime_consistency:{regimeReport.RegimeConsistencyScore:0.####}",
             $"regime_sample_quality:{regimeReport.RegimeSampleQuality:0.####}"
+        ];
+    }
+
+    private static IReadOnlyList<string> BuildMonteCarloSummary(MonteCarloReport report)
+    {
+        return
+        [
+            $"strategies_evaluated:{report.StrategiesEvaluated}",
+            $"simulations_per_strategy:{report.SimulationsPerStrategy}",
+            $"passed:{report.Passed}",
+            $"failed:{report.Failed}",
+            $"avg_positive_ratio:{report.AveragePositiveSimulationRatio:0.####}",
+            $"avg_ruin_probability:{report.AverageRuinProbabilityEstimate:0.####}"
+        ];
+    }
+
+    private static IReadOnlyList<string> BuildCostStressSummary(CostStressReport report)
+    {
+        return
+        [
+            $"strategies_evaluated:{report.StrategiesEvaluated}",
+            $"survives_spread_x2:{report.SurvivesSpreadX2}",
+            $"survives_spread_x3:{report.SurvivesSpreadX3}",
+            $"survives_stress_cost:{report.SurvivesStressCost}",
+            $"stress_failures:{report.StressCostFailures}"
+        ];
+    }
+
+    private static IReadOnlyList<string> BuildRiskOfRuinSummary(RiskOfRuinReport report)
+    {
+        return
+        [
+            $"strategies_evaluated:{report.StrategiesEvaluated}",
+            $"passed:{report.Passed}",
+            $"failed:{report.Failed}",
+            $"avg_ruin_probability:{report.AverageRuinProbabilityEstimate:0.####}",
+            $"avg_recommended_risk:{report.AverageRecommendedMaxRiskPerTrade:0.####}"
         ];
     }
 
