@@ -37,4 +37,8 @@ public sealed record StrategyEvolutionSummary(
     IReadOnlyList<string>? TooGoodToBeTrueStrategies = null,
     IReadOnlyList<string>? CostSensitiveStrategies = null,
     IReadOnlyList<string>? CostSensitivitySummary = null,
-    IReadOnlyList<string>? RobustGateSummary = null);
+    IReadOnlyList<string>? RobustGateSummary = null,
+    int? BotCandidateCount = null,
+    int? RejectedCandidateCount = null,
+    IReadOnlyList<string>? TopDemoBotCandidates = null,
+    IReadOnlyList<string>? NextValidationRecommendations = null);

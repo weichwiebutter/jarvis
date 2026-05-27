@@ -74,6 +74,8 @@ internal sealed class HermesCli
             "strategy-discovery-status" => ShowStrategyDiscoveryStatus(),
             "overfit-report" => ShowOverfitReport(),
             "robust-strategies" => ShowRobustStrategies(),
+            "bot-candidates" => ShowBotCandidates(),
+            "bot-candidate-report" => ShowBotCandidateReport(),
             "strategy-research-status" => ShowStrategyResearchStatus(),
             "top-strategies" => ShowTopStrategies(),
             "knowledge-sources" => ShowKnowledgeSources(),
@@ -144,6 +146,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-discovery-status Trusted Strategy Discovery anzeigen");
         Console.WriteLine("  hermes overfit-report     Overfit-/Risk-Report anzeigen");
         Console.WriteLine("  hermes robust-strategies  robuste Strategy-Kandidaten anzeigen");
+        Console.WriteLine("  hermes bot-candidates     strenge Demo-Bot-Kandidatenbewertung anzeigen");
+        Console.WriteLine("  hermes bot-candidate-report Bot-Candidate-Report mit Ablehnungsgruenden anzeigen");
         Console.WriteLine("  hermes strategy-research-status Strategy-Research-Memory anzeigen");
         Console.WriteLine("  hermes top-strategies     beste Strategy-Research-Varianten anzeigen");
         Console.WriteLine("  hermes knowledge-sources  kuratierte Strategy-Discovery-Quellen anzeigen");
@@ -2060,6 +2064,76 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowBotCandidates()
+    {
+        WriteHeader("Hermes Bot Candidate Pipeline");
+        var service = new BotCandidatePipelineService(BuildStoragePaths());
+        var report = service.Evaluate();
+
+        WriteField("Candidates", DisplayPath(service.BotCandidatesPath));
+        WriteField("Rejected", DisplayPath(service.RejectedCandidatesPath));
+        WriteField("Report", DisplayPath(service.LatestReportPath));
+        WriteField("Strategies Evaluated", report.StrategiesEvaluated.ToString());
+        WriteField("bot_candidate_count", report.BotCandidateCount.ToString());
+        WriteField("demo_bot_candidate", report.DemoBotCandidateCount.ToString());
+        WriteField("Promising", report.PromisingCandidateCount.ToString());
+        WriteField("Robust", report.RobustCandidateCount.ToString());
+        WriteField("Rejected", report.RejectedCandidateCount.ToString());
+        WriteMessages("Top Demo Bot Candidates", report.TopDemoBotCandidates);
+        WriteMessages("Next Validation", report.NextValidationRecommendations);
+        foreach (var candidate in report.Candidates.Take(10))
+        {
+            WriteBotCandidate(candidate);
+        }
+
+        WriteField("No Bot Created", report.NoBotCreated.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowBotCandidateReport()
+    {
+        WriteHeader("Hermes Bot Candidate Report");
+        var service = new BotCandidatePipelineService(BuildStoragePaths());
+        var report = service.LoadReport() ?? service.Evaluate();
+
+        WriteField("Report", DisplayPath(service.LatestReportPath));
+        WriteField("Created UTC", report.CreatedAtUtc.ToString("O"));
+        WriteField("Strategies Evaluated", report.StrategiesEvaluated.ToString());
+        WriteField("Bot Candidates", report.BotCandidateCount.ToString());
+        WriteField("Demo Bot Candidates", report.DemoBotCandidateCount.ToString());
+        WriteField("Rejected", report.RejectedCandidateCount.ToString());
+        WriteMessages("Top Demo Bot Candidates", report.TopDemoBotCandidates);
+        WriteMessages("Next Validation", report.NextValidationRecommendations);
+        WriteMessages(
+            "Top Rejection Reasons",
+            report.RejectionReasonCounts
+                .OrderByDescending(item => item.Value)
+                .ThenBy(item => item.Key, StringComparer.Ordinal)
+                .Take(12)
+                .Select(item => $"{item.Key}: {item.Value}")
+                .ToList());
+
+        foreach (var candidate in report.RejectedCandidates.Take(8))
+        {
+            WriteBotCandidate(candidate);
+        }
+
+        WriteField("No Bot Created", report.NoBotCreated.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int RunStrategyResearch()
     {
         WriteHeader("Hermes Strategy Research Beta 2");
@@ -2493,6 +2567,31 @@ internal sealed class HermesCli
         WriteField("To UTC", result.ToUtc?.ToString("O") ?? "-");
     }
 
+    private void WriteBotCandidate(BotCandidate candidate)
+    {
+        WriteSubHeader($"{candidate.Status} / {candidate.StrategyFamily} / {candidate.PatternId ?? "-"} / {candidate.StrategyId}");
+        WriteField("Candidate ID", candidate.CandidateId);
+        WriteField("Symbol/Timeframe", $"{candidate.Symbol}/{candidate.Timeframe}");
+        WriteField("Confidence", candidate.Criteria.Confidence);
+        WriteField("OOS Available", candidate.Criteria.OosAvailable.ToString().ToLowerInvariant());
+        WriteField("WalkForward Confidence", $"{candidate.Criteria.WalkForwardConfidence:0.####}");
+        WriteField("Realism Score", $"{candidate.Criteria.RealismScore:0.####}");
+        WriteField("Overfit Risk", $"{candidate.Criteria.OverfitRisk:0.####}");
+        WriteField("Cost Sensitivity", $"{candidate.Criteria.CostSensitivity:0.####}");
+        WriteField("Regime Consistency", $"{candidate.Criteria.RegimeConsistencyScore:0.####}");
+        WriteField("Max Drawdown", $"{candidate.Criteria.MaxDrawdown:0.####}");
+        WriteField("Profit Factor", $"{candidate.Criteria.ProfitFactor:0.####}");
+        WriteField("Sample Quality", $"{candidate.Criteria.SampleQuality:0.####}");
+        WriteField("too_good_to_be_true", candidate.Criteria.TooGoodToBeTrue.ToString().ToLowerInvariant());
+        WriteField("Next Validation", candidate.NextValidationRecommendation);
+        WriteMessages("Rejection Reasons", candidate.RejectionReasons.Take(12).ToList());
+        WriteMessages("Overfit Flags", candidate.OverfitFlags.Take(8).ToList());
+        WriteField("No Bot Created", candidate.NoBotCreated.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", candidate.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", candidate.NoBrokerAction.ToString().ToLowerInvariant());
+        Console.WriteLine();
+    }
+
     private void WriteResearchInsights(StrategyEvolutionSummary insights)
     {
         WriteField("Generated UTC", insights.GeneratedAtUtc.ToString("O"));
@@ -2525,6 +2624,10 @@ internal sealed class HermesCli
         WriteMessages("Cost Sensitive", insights.CostSensitiveStrategies ?? Array.Empty<string>());
         WriteMessages("Cost Sensitivity Summary", insights.CostSensitivitySummary ?? Array.Empty<string>());
         WriteMessages("Robust Gate Summary", insights.RobustGateSummary ?? Array.Empty<string>());
+        WriteField("bot_candidates", insights.BotCandidateCount?.ToString() ?? "-");
+        WriteField("rejected_candidates", insights.RejectedCandidateCount?.ToString() ?? "-");
+        WriteMessages("Top Demo Bot Candidates", insights.TopDemoBotCandidates ?? Array.Empty<string>());
+        WriteMessages("Next Validation Recommendations", insights.NextValidationRecommendations ?? Array.Empty<string>());
         WriteMessages("Avoid Combinations", insights.AvoidCombinations ?? Array.Empty<string>());
         WriteMessages("Next Recommended Tests", insights.NextRecommendedTests ?? Array.Empty<string>());
         WriteMessages("Parameter Statistics", insights.ParameterStatistics);

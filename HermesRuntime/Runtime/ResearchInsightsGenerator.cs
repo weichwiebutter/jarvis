@@ -29,6 +29,8 @@ public sealed class ResearchInsightsGenerator
             .ToList();
         var walkForward = new WalkForwardValidationService(_storagePaths).LoadReport();
         var costReport = new RealisticSimulationService(_storagePaths).LoadCostSensitivityReport();
+        var botCandidateService = new BotCandidatePipelineService(_storagePaths);
+        var botCandidateReport = botCandidateService.LoadReport() ?? botCandidateService.Evaluate();
         var acceptableVariantIds = walkForward?.Assessments
             .Where(item => item.StrategyConfidence is not "overfit_suspected" and not "rejected" and not "unstable")
             .Select(item => item.StrategyVariantId)
@@ -85,7 +87,11 @@ public sealed class ResearchInsightsGenerator
             TooGoodToBeTrueStrategies: BuildTooGoodToBeTrueStrategies(walkForward),
             CostSensitiveStrategies: BuildCostSensitiveStrategies(costReport),
             CostSensitivitySummary: BuildCostSensitivitySummary(costReport),
-            RobustGateSummary: BuildRobustGateSummary(walkForward, costReport, regimeAnalysis.StrategyPerformance));
+            RobustGateSummary: BuildRobustGateSummary(walkForward, costReport, regimeAnalysis.StrategyPerformance),
+            BotCandidateCount: botCandidateReport.BotCandidateCount,
+            RejectedCandidateCount: botCandidateReport.RejectedCandidateCount,
+            TopDemoBotCandidates: botCandidateReport.TopDemoBotCandidates,
+            NextValidationRecommendations: botCandidateReport.NextValidationRecommendations);
 
         File.WriteAllText(InsightsPath, JsonSerializer.Serialize(summary, JsonDefaults.WriteOptions));
         File.WriteAllText(ClustersPath, JsonSerializer.Serialize(clusters, JsonDefaults.WriteOptions));
