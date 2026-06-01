@@ -13,6 +13,22 @@ public sealed record ScheduleConfig(
         Jobs:
         [
             new(
+                JobId: "planning_cycle_hourly",
+                JobType: "run_planning_cycle",
+                Enabled: true,
+                ScheduleType: "interval",
+                Command: "run-planning-cycle",
+                EveryMinutes: 60,
+                Parameters: new Dictionary<string, string> { ["max_items"] = "20" }),
+            new(
+                JobId: "planning_cycle_before_nightly",
+                JobType: "run_planning_cycle",
+                Enabled: true,
+                ScheduleType: "daily",
+                Command: "run-planning-cycle",
+                DailyAt: "22:45",
+                Parameters: new Dictionary<string, string> { ["max_items"] = "20" }),
+            new(
                 JobId: "nightly_beta3_research",
                 JobType: "trading_nightly_beta3",
                 Enabled: true,
@@ -61,6 +77,14 @@ public sealed record ScheduleConfig(
                 Command: "generate-hypotheses",
                 DailyAt: "05:45",
                 Parameters: new Dictionary<string, string> { ["domain"] = "trading" }),
+            new(
+                JobId: "planning_cycle_after_nightly",
+                JobType: "run_planning_cycle",
+                Enabled: true,
+                ScheduleType: "daily",
+                Command: "run-planning-cycle",
+                DailyAt: "05:55",
+                Parameters: new Dictionary<string, string> { ["max_items"] = "20" }),
             new(
                 JobId: "health_snapshot",
                 JobType: "health_snapshot",

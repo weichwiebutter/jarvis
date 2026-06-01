@@ -86,6 +86,12 @@ internal sealed class HermesCli
             "process-research-queue" => ProcessResearchQueue(),
             "generate-hypotheses" => GenerateHypotheses(),
             "cognitive-insights" => ShowCognitiveInsights(),
+            "planning-status" => ShowPlanningStatus(),
+            "detect-needs" => DetectNeeds(),
+            "plan-next-tasks" => PlanNextTasks(),
+            "run-planning-cycle" => RunPlanningCycle(),
+            "explain-plan" => ExplainPlan(),
+            "explain-task" => ExplainTask(),
             "bot-candidates" => ShowBotCandidates(),
             "bot-candidate-report" => ShowBotCandidateReport(),
             "candidate-rejection-analysis" => ShowCandidateRejectionAnalysis(),
@@ -178,6 +184,12 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes process-research-queue --max-items 50 Research Queue verarbeiten");
         Console.WriteLine("  hermes generate-hypotheses --domain trading Cross-Knowledge-Hypothesen erzeugen");
         Console.WriteLine("  hermes cognitive-insights Cognitive Insights anzeigen");
+        Console.WriteLine("  hermes planning-status  Autonomous Planning Status anzeigen");
+        Console.WriteLine("  hermes detect-needs     aktuelle Bedarfe erkennen");
+        Console.WriteLine("  hermes plan-next-tasks --max-items 20 Aufgaben aus Needs/Goals planen");
+        Console.WriteLine("  hermes run-planning-cycle --max-items 20 Planning Cycle ausfuehren und Research Queue aktualisieren");
+        Console.WriteLine("  hermes explain-plan     letzte Planning-Entscheidung erklaeren");
+        Console.WriteLine("  hermes explain-task --id <TASK_ID> einzelne geplante Aufgabe erklaeren");
         Console.WriteLine("  hermes bot-candidates     strenge Demo-Bot-Kandidatenbewertung anzeigen");
         Console.WriteLine("  hermes bot-candidate-report Bot-Candidate-Report mit Ablehnungsgruenden anzeigen");
         Console.WriteLine("  hermes candidate-rejection-analysis Ablehnungsdiagnose fuer Bot-Kandidaten anzeigen");
@@ -713,6 +725,7 @@ internal sealed class HermesCli
         string? lastCheckpoint = null;
         string? lastError = null;
         DateTimeOffset? stopRequestedAtUtc = null;
+        var planningStepCompleted = false;
         var cognitiveStepCompleted = false;
 
         nightly.ClearStopRequest();
@@ -762,6 +775,21 @@ internal sealed class HermesCli
 
             try
             {
+                if (!planningStepCompleted)
+                {
+                    var planning = new AutonomousPlanningCycleService(storagePaths);
+                    var decision = planning.RunPlanningCycle(maxItems: 20);
+                    planningStepCompleted = true;
+                    workPerformed += decision.PlannedTasks.Count;
+
+                    WriteSubHeader("Autonomous Planning Step");
+                    WriteField("needs_detected", decision.Needs.Count.ToString());
+                    WriteField("planned_tasks", decision.PlannedTasks.Count.ToString());
+                    WriteField("planning_status", DisplayPath(planning.PlanningStatusPath));
+                    WriteField("planned_tasks_report", DisplayPath(planning.PlannedTasksPath));
+                    Console.WriteLine();
+                }
+
                 if (!cognitiveStepCompleted)
                 {
                     cognitiveSummary = cognitiveNightly.Run(maxQueueItems: 20);
@@ -1250,6 +1278,8 @@ internal sealed class HermesCli
             "process_research_queue" => ExecuteProcessResearchQueueJob(storagePaths, job),
             "generate_cognitive_insights" => ExecuteGenerateCognitiveInsightsJob(storagePaths, job),
             "trading_nightly_beta3" => ExecuteNightlyBeta3ScheduledJob(job, context),
+            "run_planning_cycle" => ExecutePlanningCycleJob(storagePaths, job),
+            "process_planned_tasks" => ExecuteProcessPlannedTasksJob(storagePaths, job),
             "market_data_refresh" => new ScheduledJobExecutionResult(
                 Status: "skipped",
                 WorkPerformed: false,
@@ -1404,6 +1434,41 @@ internal sealed class HermesCli
             ReportPath: service.SummaryPath,
             Warnings: summary.Warnings);
     }
+
+    private static ScheduledJobExecutionResult ExecutePlanningCycleJob(StoragePaths storagePaths, ScheduledJobDefinition job)
+    {
+        var maxItems = ReadMaxItems(job, fallback: 20);
+        var service = new AutonomousPlanningCycleService(storagePaths);
+        var decision = service.RunPlanningCycle(maxItems);
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: decision.PlannedTasks.Count > 0,
+            Action: $"run_planning_cycle needs={decision.Needs.Count}; planned={decision.PlannedTasks.Count}",
+            ReportPath: service.PlanningStatusPath,
+            Warnings: []);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteProcessPlannedTasksJob(StoragePaths storagePaths, ScheduledJobDefinition job)
+    {
+        var maxItems = ReadMaxItems(job, fallback: 20);
+        var service = new AutonomousPlanningCycleService(storagePaths);
+        var decision = service.LoadLatestDecision() ?? service.PlanNextTasks(maxItems);
+        var tasks = decision.PlannedTasks.Take(maxItems).ToList();
+        var queue = new ResearchQueueService(storagePaths).EnqueuePlannedTasks(tasks);
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: tasks.Count > 0,
+            Action: $"process_planned_tasks queued_open={queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase))}; tasks={tasks.Count}",
+            ReportPath: new ResearchQueueService(storagePaths).QueuePath,
+            Warnings: []);
+    }
+
+    private static int ReadMaxItems(ScheduledJobDefinition job, int fallback) =>
+        job.Parameters is not null
+            && job.Parameters.TryGetValue("max_items", out var maxItemsText)
+            && int.TryParse(maxItemsText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMaxItems)
+            ? Math.Clamp(parsedMaxItems, 1, 500)
+            : fallback;
 
     private int ShowResourceStatus()
     {
@@ -2859,6 +2924,151 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowPlanningStatus()
+    {
+        WriteHeader("Hermes Autonomous Planning Status");
+        var service = new AutonomousPlanningCycleService(BuildStoragePaths());
+        var status = service.BuildStatus();
+
+        WriteField("Status", DisplayPath(service.PlanningStatusPath));
+        WriteField("Detected Needs", status.NeedsDetected.ToString());
+        WriteField("Active Goals", status.ActiveGoals.ToString());
+        WriteField("Planned Tasks", status.PlannedTasks.ToString());
+        WriteField("Queued Research Items", status.QueuedResearchItems.ToString());
+        WriteField("Last Decision", status.LastDecisionId);
+        WriteField("Next Action", status.NextAction);
+        WriteMessages("Active Domains", status.ActiveDomains);
+        WriteMessages("Top Needs", status.TopNeeds);
+        WriteMessages("Top Tasks", status.TopTasks);
+        WriteMessages("Warnings", status.Warnings);
+        WriteField("no_auto_trading", status.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", status.HumanReviewRequired.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int DetectNeeds()
+    {
+        WriteHeader("Hermes Need Detection");
+        var service = new AutonomousPlanningCycleService(BuildStoragePaths());
+        var needs = service.DetectNeeds();
+
+        WriteField("Needs", DisplayPath(service.DetectedNeedsPath));
+        WriteField("Detected", needs.Count.ToString());
+        foreach (var need in needs.Take(30))
+        {
+            WriteDetectedNeed(need);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int PlanNextTasks()
+    {
+        WriteHeader("Hermes Autonomous Task Planner");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 20, min: 1, max: 100);
+        var service = new AutonomousPlanningCycleService(BuildStoragePaths());
+        var decision = service.PlanNextTasks(maxItems);
+
+        WriteField("Decision", decision.DecisionId);
+        WriteField("Planned Tasks", DisplayPath(service.PlannedTasksPath));
+        WriteField("Needs", decision.Needs.Count.ToString());
+        WriteField("Goals", decision.Goals.Count.ToString());
+        WriteField("Tasks", decision.PlannedTasks.Count.ToString());
+        foreach (var task in decision.PlannedTasks.Take(30))
+        {
+            WritePlannedTask(task);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunPlanningCycle()
+    {
+        WriteHeader("Hermes Autonomous Planning Cycle");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 20, min: 1, max: 100);
+        var storagePaths = BuildStoragePaths();
+        var service = new AutonomousPlanningCycleService(storagePaths);
+        var decision = service.RunPlanningCycle(maxItems);
+        var queue = new ResearchQueueService(storagePaths).LoadOrCreateQueue();
+
+        WriteField("Planning Status", DisplayPath(service.PlanningStatusPath));
+        WriteField("Detected Needs", decision.Needs.Count.ToString());
+        WriteField("Planned Tasks", decision.PlannedTasks.Count.ToString());
+        WriteField("Research Queue", DisplayPath(new ResearchQueueService(storagePaths).QueuePath));
+        WriteField("Open Queue Items", queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)).ToString());
+        WriteMessages("Top Reasons", decision.Explanations.Take(8).ToList());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainPlan()
+    {
+        WriteHeader("Hermes Planning Explanation");
+        var service = new AutonomousPlanningCycleService(BuildStoragePaths());
+        var decision = service.LoadLatestDecision() ?? service.PlanNextTasks(20);
+
+        WriteField("Decision", decision.DecisionId);
+        WriteField("Created UTC", decision.CreatedAtUtc.ToString("O"));
+        WriteField("Needs", decision.Needs.Count.ToString());
+        WriteField("Goals", decision.Goals.Count.ToString());
+        WriteField("Tasks", decision.PlannedTasks.Count.ToString());
+        WriteMessages("Explanation", decision.Explanations.Take(20).ToList());
+        foreach (var task in decision.PlannedTasks.Take(10))
+        {
+            WritePlannedTask(task);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainTask()
+    {
+        WriteHeader("Hermes Task Explanation");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteWarning("Bitte --id <TASK_ID> angeben.");
+            WriteSafety();
+            return 1;
+        }
+
+        var service = new AutonomousPlanningCycleService(BuildStoragePaths());
+        var decision = service.LoadLatestDecision() ?? service.PlanNextTasks(20);
+        var task = decision.PlannedTasks.FirstOrDefault(item => item.TaskId.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (task is null)
+        {
+            WriteWarning($"Task nicht gefunden: {id}");
+            WriteSafety();
+            return 1;
+        }
+
+        WritePlannedTask(task);
+        var need = decision.Needs.FirstOrDefault(item => item.NeedId.Equals(task.NeedId, StringComparison.OrdinalIgnoreCase));
+        if (need is not null)
+        {
+            WriteDetectedNeed(need);
+        }
+
+        var goal = decision.Goals.FirstOrDefault(item => item.GoalId.Equals(task.GoalId, StringComparison.OrdinalIgnoreCase));
+        if (goal is not null)
+        {
+            WriteHermesGoal(goal);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowStrategyClusters()
     {
         WriteHeader("Hermes Strategy Clusters");
@@ -3688,6 +3898,45 @@ internal sealed class HermesCli
         WriteField("Updated UTC", item.UpdatedAtUtc?.ToString("O") ?? "-");
         WriteMessages("Source Refs", item.SourceRefs);
         WriteMessages("Notes", item.Notes);
+    }
+
+    private void WriteDetectedNeed(DetectedNeed need)
+    {
+        WriteSubHeader($"{need.Severity} / {need.Category} / {need.NeedId}");
+        WriteField("Domain", need.Domain);
+        WriteField("Title", need.Title);
+        WriteField("Description", need.Description);
+        WriteMessages("Evidence", need.EvidenceRefs);
+        WriteMessages("Suggested Tasks", need.SuggestedTaskTypes);
+        WriteField("no_trading_execution", need.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("human_review_required", need.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteHermesGoal(HermesGoal goal)
+    {
+        WriteSubHeader($"{goal.Priority:00} / {goal.GoalId}");
+        WriteField("Active", goal.Active.ToString().ToLowerInvariant());
+        WriteField("Progress", $"{goal.ProgressScore:0.####}");
+        WriteField("Description", goal.Description);
+        WriteMessages("Blockers", goal.Blockers);
+        WriteMessages("Next Actions", goal.NextActions);
+    }
+
+    private void WritePlannedTask(PlannedTask task)
+    {
+        WriteSubHeader($"{task.TaskType} / {task.TaskId}");
+        WriteField("Domain", task.Domain);
+        WriteField("Goal", task.GoalId);
+        WriteField("Need", task.NeedId);
+        WriteField("Queue", task.QueueType);
+        WriteField("Status", task.Status);
+        WriteField("Priority", $"{task.Priority.TotalScore:0.####}");
+        WriteField("Score Detail", $"impact={task.Priority.Impact:0.##}, urgency={task.Priority.Urgency:0.##}, confidence={task.Priority.Confidence:0.##}, cost={task.Priority.Cost:0.##}, risk={task.Priority.Risk:0.##}, learning={task.Priority.ExpectedLearningValue:0.##}");
+        WriteField("Reason", task.Reason);
+        WriteField("Expected Outcome", task.ExpectedOutcome);
+        WriteMessages("Source Refs", task.SourceRefs);
+        WriteField("no_trading_execution", task.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("human_review_required", task.HumanReviewRequired.ToString().ToLowerInvariant());
     }
 
     private void WriteCognitiveHypothesis(CognitiveHypothesis hypothesis)

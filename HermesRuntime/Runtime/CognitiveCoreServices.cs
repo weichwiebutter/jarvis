@@ -343,6 +343,46 @@ public sealed class ResearchQueueService
         return Write(items);
     }
 
+    public ResearchQueue EnqueuePlannedTasks(IReadOnlyList<PlannedTask> tasks)
+    {
+        var queue = LoadOrCreateQueue();
+        var items = queue.Items.ToList();
+        var existing = items
+            .SelectMany(item => item.Notes)
+            .Where(note => note.StartsWith("planned_task:", StringComparison.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var task in tasks)
+        {
+            var marker = $"planned_task:{task.TaskId}";
+            if (existing.Contains(marker))
+            {
+                continue;
+            }
+
+            items.Add(NewItem(
+                task.Domain,
+                task.TaskType,
+                PriorityFor(task.Priority.TotalScore),
+                task.SourceRefs.Concat([task.NeedId, task.GoalId]).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                "autonomous_planning_engine",
+                [
+                    marker,
+                    $"goal:{task.GoalId}",
+                    $"need:{task.NeedId}",
+                    $"queue:{task.QueueType}",
+                    $"reason:{task.Reason}",
+                    $"expected_outcome:{task.ExpectedOutcome}",
+                    $"priority:{task.Priority.TotalScore:0.####}",
+                    "no_trading_execution",
+                    "human_review_required"
+                ]));
+            existing.Add(marker);
+        }
+
+        return Write(items);
+    }
+
     public ResearchQueue Process(int maxItems)
     {
         maxItems = Math.Clamp(maxItems, 1, 500);
@@ -430,10 +470,25 @@ public sealed class ResearchQueueService
         type.ToLowerInvariant() switch
         {
             "discovery" => "discovery",
+            "scan_knowledge_sources" => "discovery",
+            "download_missing_market_data" => "discovery",
             "simulation" => "simulation",
+            "run_strategy_research" => "simulation",
             "review" => "review",
+            "run_realism_report" => "review",
+            "run_overfit_report" => "review",
+            "run_storage_hygiene" => "review",
             "archive" => "archive",
             _ => "validation"
+        };
+
+    private static ResearchPriority PriorityFor(double score) =>
+        score switch
+        {
+            >= 0.85 => ResearchPriority.Critical,
+            >= 0.70 => ResearchPriority.High,
+            >= 0.45 => ResearchPriority.Normal,
+            _ => ResearchPriority.Low
         };
 }
 
