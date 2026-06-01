@@ -77,6 +77,15 @@ internal sealed class HermesCli
             "strategy-discovery-status" => ShowStrategyDiscoveryStatus(),
             "overfit-report" => ShowOverfitReport(),
             "robust-strategies" => ShowRobustStrategies(),
+            "cognitive-status" => ShowCognitiveStatus(),
+            "scan-knowledge-sources" => ScanKnowledgeSources(),
+            "knowledge-catalog" => ShowKnowledgeCatalog(),
+            "knowledge-item" => ShowKnowledgeItem(),
+            "research-queue" => ShowResearchQueue(),
+            "enqueue-research" => EnqueueResearch(),
+            "process-research-queue" => ProcessResearchQueue(),
+            "generate-hypotheses" => GenerateHypotheses(),
+            "cognitive-insights" => ShowCognitiveInsights(),
             "bot-candidates" => ShowBotCandidates(),
             "bot-candidate-report" => ShowBotCandidateReport(),
             "candidate-rejection-analysis" => ShowCandidateRejectionAnalysis(),
@@ -160,6 +169,15 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-discovery-status Trusted Strategy Discovery anzeigen");
         Console.WriteLine("  hermes overfit-report     Overfit-/Risk-Report anzeigen");
         Console.WriteLine("  hermes robust-strategies  robuste Strategy-Kandidaten anzeigen");
+        Console.WriteLine("  hermes cognitive-status   Cognitive Core Status anzeigen");
+        Console.WriteLine("  hermes scan-knowledge-sources Knowledge Sources read-only scannen");
+        Console.WriteLine("  hermes knowledge-catalog  allgemeinen Cognitive Knowledge Catalog anzeigen");
+        Console.WriteLine("  hermes knowledge-item --id <ID> einzelnes Knowledge Item anzeigen");
+        Console.WriteLine("  hermes research-queue     Cognitive Research Queue anzeigen");
+        Console.WriteLine("  hermes enqueue-research --domain trading --type validation Research-Item einreihen");
+        Console.WriteLine("  hermes process-research-queue --max-items 50 Research Queue verarbeiten");
+        Console.WriteLine("  hermes generate-hypotheses --domain trading Cross-Knowledge-Hypothesen erzeugen");
+        Console.WriteLine("  hermes cognitive-insights Cognitive Insights anzeigen");
         Console.WriteLine("  hermes bot-candidates     strenge Demo-Bot-Kandidatenbewertung anzeigen");
         Console.WriteLine("  hermes bot-candidate-report Bot-Candidate-Report mit Ablehnungsgruenden anzeigen");
         Console.WriteLine("  hermes candidate-rejection-analysis Ablehnungsdiagnose fuer Bot-Kandidaten anzeigen");
@@ -1188,6 +1206,10 @@ internal sealed class HermesCli
             "health_snapshot" => ExecuteHealthSnapshotJob(storagePaths),
             "strategy_discovery" => ExecuteStrategyDiscoveryJob(storagePaths),
             "walkforward_validation" => ExecuteWalkForwardValidationJob(storagePaths),
+            "scan_knowledge_sources" => ExecuteScanKnowledgeSourcesJob(storagePaths),
+            "process_research_queue" => ExecuteProcessResearchQueueJob(storagePaths, job),
+            "generate_cognitive_insights" => ExecuteGenerateCognitiveInsightsJob(storagePaths, job),
+            "trading_nightly_beta3" => ExecuteNightlyBeta3ScheduledJob(job, context),
             "market_data_refresh" => new ScheduledJobExecutionResult(
                 Status: "skipped",
                 WorkPerformed: false,
@@ -1292,6 +1314,55 @@ internal sealed class HermesCli
             WorkPerformed: true,
             Action: $"walkforward strategies={report.StrategiesEvaluated}; simulations={simulations.Count}",
             ReportPath: walkForward.WalkForwardSummaryPath,
+            Warnings: []);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteScanKnowledgeSourcesJob(StoragePaths storagePaths)
+    {
+        var scout = new KnowledgeSourceScout(storagePaths);
+        var sources = scout.Scan();
+        var registry = new KnowledgeSourceRegistry(storagePaths);
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: true,
+            Action: $"scan_knowledge_sources sources={sources.Count}",
+            ReportPath: registry.SourcesPath,
+            Warnings: []);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteProcessResearchQueueJob(StoragePaths storagePaths, ScheduledJobDefinition job)
+    {
+        var maxItems = job.Parameters is not null
+            && job.Parameters.TryGetValue("max_items", out var maxItemsText)
+            && int.TryParse(maxItemsText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMaxItems)
+            ? Math.Clamp(parsedMaxItems, 1, 500)
+            : 50;
+        var service = new ResearchQueueService(storagePaths);
+        var queue = service.Process(maxItems);
+        var processed = queue.Items.Count(item => item.Status.Equals("processed", StringComparison.OrdinalIgnoreCase));
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: processed > 0,
+            Action: $"process_research_queue processed_total={processed}",
+            ReportPath: service.QueuePath,
+            Warnings: []);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteGenerateCognitiveInsightsJob(StoragePaths storagePaths, ScheduledJobDefinition job)
+    {
+        var domain = job.Parameters is not null
+            && job.Parameters.TryGetValue("domain", out var domainText)
+            && !string.IsNullOrWhiteSpace(domainText)
+            ? domainText
+            : "trading";
+        var generator = new HypothesisGenerator(storagePaths);
+        var hypotheses = generator.Generate(domain);
+        new CognitiveCoreService(storagePaths).BuildStatus();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: hypotheses.Count > 0,
+            Action: $"generate_cognitive_insights hypotheses={hypotheses.Count}",
+            ReportPath: generator.InsightsPath,
             Warnings: []);
     }
 
@@ -2536,26 +2607,212 @@ internal sealed class HermesCli
 
     private int ShowKnowledgeSources()
     {
-        WriteHeader("Hermes Strategy Discovery Knowledge Sources");
         var storagePaths = BuildStoragePaths();
-        var knowledgeCatalog = new TradingDeKnowledgeCatalog(storagePaths);
-        var sources = knowledgeCatalog.LoadOrCreateSources();
-        var patternCatalog = new StrategyPatternCatalog(storagePaths);
-        var patterns = patternCatalog.LoadOrCreateCatalog();
-        var tradingDePatterns = patterns
-            .Where(pattern => pattern.SourceName?.Equals("Trading.de", StringComparison.OrdinalIgnoreCase) == true)
-            .ToList();
+        var registry = new KnowledgeSourceRegistry(storagePaths);
+        var sources = registry.LoadOrCreateSources();
 
-        WriteField("Sources", DisplayPath(knowledgeCatalog.SourcesPath));
+        WriteHeader("Hermes Cognitive Knowledge Sources");
+        WriteField("Sources", DisplayPath(registry.SourcesPath));
         WriteField("Source Count", sources.Count.ToString());
-        WriteField("Trading.de Catalog Entries", tradingDePatterns.Count.ToString());
         foreach (var source in sources)
         {
             WriteSubHeader($"{source.SourceName} / {source.SourceId}");
-            WriteField("URL", source.SourceUrl);
-            WriteField("Category", source.Category);
-            WriteField("source_trust", source.SourceTrust);
+            WriteField("URL/Path", source.UrlOrPath);
+            WriteField("Domain", source.Domain);
+            WriteField("Type", source.SourceType);
+            WriteField("Trust", $"{source.TrustProfile.TrustLevel} ({source.TrustProfile.TrustScore:0.##})");
+            WriteField("License", source.TrustProfile.LicenseHint);
+            WriteField("Extraction", source.ExtractionStatus);
+            WriteField("Last Checked", source.LastCheckedUtc.ToString("O"));
             WriteMessages("Concepts", source.ExtractedConcepts);
+            WriteMessages("Risk Flags", source.RiskFlags);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCognitiveStatus()
+    {
+        WriteHeader("Hermes Cognitive Core Status");
+        var service = new CognitiveCoreService(BuildStoragePaths());
+        var status = service.BuildStatus();
+
+        WriteField("Status", DisplayPath(service.StatusPath));
+        WriteField("Root", DisplayPath(status.CognitiveRoot));
+        WriteField("Sources", status.SourceCount.ToString());
+        WriteField("Knowledge Items", status.KnowledgeItemCount.ToString());
+        WriteField("Queue Items", status.QueueItemCount.ToString());
+        WriteField("Insights", status.InsightCount.ToString());
+        WriteField("Memory Entries", status.MemoryEntryCount.ToString());
+        WriteMessages("Active Domains", status.ActiveDomains);
+        WriteMessages("Next Actions", status.NextActions);
+        foreach (var domain in status.Domains)
+        {
+            WriteSubHeader($"{domain.Name} / {domain.DomainId}");
+            WriteField("Active", domain.Active.ToString().ToLowerInvariant());
+            WriteField("Status", domain.Status);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ScanKnowledgeSources()
+    {
+        WriteHeader("Hermes Knowledge Source Scout");
+        var storagePaths = BuildStoragePaths();
+        var scout = new KnowledgeSourceScout(storagePaths);
+        var sources = scout.Scan();
+        var registry = new KnowledgeSourceRegistry(storagePaths);
+
+        WriteField("Sources", DisplayPath(registry.SourcesPath));
+        WriteField("Sources Scanned", sources.Count.ToString());
+        WriteMessages("Domains", sources.Select(source => source.Domain).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
+        WriteMessages("Risk Flags", sources.SelectMany(source => source.RiskFlags).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowKnowledgeCatalog()
+    {
+        WriteHeader("Hermes Cognitive Knowledge Catalog");
+        var catalog = new KnowledgeCatalog(BuildStoragePaths());
+        var items = catalog.LoadOrCreateItems();
+
+        WriteField("Catalog", DisplayPath(catalog.CatalogPath));
+        WriteField("Items", items.Count.ToString());
+        foreach (var item in items.Take(40))
+        {
+            WriteKnowledgeCatalogItem(item);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowKnowledgeItem()
+    {
+        WriteHeader("Hermes Cognitive Knowledge Item");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteWarning("Bitte --id <ID> angeben, z. B. --id trading:breakout.");
+            WriteSafety();
+            return 1;
+        }
+
+        var catalog = new KnowledgeCatalog(BuildStoragePaths());
+        var item = catalog.FindById(id);
+        if (item is null)
+        {
+            WriteWarning($"Knowledge Item nicht gefunden: {id}");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteField("Catalog", DisplayPath(catalog.CatalogPath));
+        WriteKnowledgeCatalogItem(item);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowResearchQueue()
+    {
+        WriteHeader("Hermes Cognitive Research Queue");
+        var service = new ResearchQueueService(BuildStoragePaths());
+        var queue = service.LoadOrCreateQueue();
+
+        WriteField("Queue", DisplayPath(service.QueuePath));
+        WriteField("Items", queue.Items.Count.ToString());
+        WriteField("Open", queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)).ToString());
+        WriteField("Processed", queue.Items.Count(item => item.Status.Equals("processed", StringComparison.OrdinalIgnoreCase)).ToString());
+        foreach (var item in queue.Items.Take(30))
+        {
+            WriteResearchQueueItem(item);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int EnqueueResearch()
+    {
+        WriteHeader("Hermes Enqueue Research");
+        var domain = ReadOption(_args, "--domain") ?? "trading";
+        var type = ReadOption(_args, "--type") ?? "validation";
+        var service = new ResearchQueueService(BuildStoragePaths());
+        var queue = service.Enqueue(domain, type);
+
+        WriteField("Queue", DisplayPath(service.QueuePath));
+        WriteField("Items", queue.Items.Count.ToString());
+        WriteField("Last Item", queue.Items.LastOrDefault()?.QueueItemId ?? "-");
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ProcessResearchQueue()
+    {
+        WriteHeader("Hermes Process Research Queue");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 50, min: 1, max: 500);
+        var service = new ResearchQueueService(BuildStoragePaths());
+        var before = service.LoadOrCreateQueue();
+        var beforeProcessed = before.Items.Count(item => item.Status.Equals("processed", StringComparison.OrdinalIgnoreCase));
+        var queue = service.Process(maxItems);
+        var afterProcessed = queue.Items.Count(item => item.Status.Equals("processed", StringComparison.OrdinalIgnoreCase));
+
+        WriteField("Queue", DisplayPath(service.QueuePath));
+        WriteField("Processed This Run", Math.Max(0, afterProcessed - beforeProcessed).ToString());
+        WriteField("Processed Total", afterProcessed.ToString());
+        WriteField("Open", queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)).ToString());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int GenerateHypotheses()
+    {
+        WriteHeader("Hermes Hypothesis Generator");
+        var domain = ReadOption(_args, "--domain") ?? "trading";
+        var generator = new HypothesisGenerator(BuildStoragePaths());
+        var hypotheses = generator.Generate(domain);
+
+        WriteField("Hypotheses", DisplayPath(generator.HypothesesPath));
+        WriteField("Insights", DisplayPath(generator.InsightsPath));
+        WriteField("Generated", hypotheses.Count.ToString());
+        foreach (var hypothesis in hypotheses.Take(20))
+        {
+            WriteCognitiveHypothesis(hypothesis);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCognitiveInsights()
+    {
+        WriteHeader("Hermes Cognitive Insights");
+        var generator = new HypothesisGenerator(BuildStoragePaths());
+        var insights = generator.LoadInsights();
+        if (insights.Count == 0)
+        {
+            generator.Generate("trading");
+            insights = generator.LoadInsights();
+        }
+
+        WriteField("Insights", DisplayPath(generator.InsightsPath));
+        WriteField("Count", insights.Count.ToString());
+        foreach (var insight in insights.Take(30))
+        {
+            WriteCognitiveInsight(insight);
         }
 
         Console.WriteLine();
@@ -3296,6 +3553,55 @@ internal sealed class HermesCli
         WriteField("Skipped Reason", job.LastSkippedReason ?? "-");
         WriteField("Last Error", job.LastError ?? "-");
         WriteMessages("Warnings", job.Warnings);
+    }
+
+    private void WriteKnowledgeCatalogItem(KnowledgeCatalogItem item)
+    {
+        WriteSubHeader($"{item.Title} / {item.Id}");
+        WriteField("Domain", item.Domain);
+        WriteField("Confidence", $"{item.Confidence:0.####}");
+        WriteField("Validation", item.ValidationStatus);
+        WriteField("Last Validated", item.LastValidatedUtc?.ToString("O") ?? "-");
+        WriteMessages("Sources", item.SourceIds);
+        WriteMessages("Tags", item.Tags);
+        WriteMessages("Related", item.RelatedItems.Take(8).ToList());
+        WriteField("Summary", item.DescriptionShort);
+    }
+
+    private void WriteResearchQueueItem(ResearchQueueItem item)
+    {
+        WriteSubHeader($"{item.QueueItemId} / {item.Domain} / {item.Type}");
+        WriteField("Queue", item.Queue);
+        WriteField("Priority", item.Priority.ToString());
+        WriteField("Status", item.Status);
+        WriteField("Requested By", item.RequestedBy);
+        WriteField("Created UTC", item.CreatedAtUtc.ToString("O"));
+        WriteField("Updated UTC", item.UpdatedAtUtc?.ToString("O") ?? "-");
+        WriteMessages("Source Refs", item.SourceRefs);
+        WriteMessages("Notes", item.Notes);
+    }
+
+    private void WriteCognitiveHypothesis(CognitiveHypothesis hypothesis)
+    {
+        WriteSubHeader($"{hypothesis.Title} / {hypothesis.HypothesisId}");
+        WriteField("Domain", hypothesis.Domain);
+        WriteField("Status", hypothesis.Status);
+        WriteField("Trust", $"{hypothesis.Trust.Value:0.####} / {hypothesis.Trust.Classification}");
+        WriteField("Evidence", $"{hypothesis.Evidence.Value:0.####} / {hypothesis.Evidence.Classification}");
+        WriteField("Validation", hypothesis.ProposedValidation);
+        WriteMessages("Source Items", hypothesis.SourceItemIds);
+    }
+
+    private void WriteCognitiveInsight(CognitiveInsight insight)
+    {
+        WriteSubHeader($"{insight.Title} / {insight.InsightId}");
+        WriteField("Domain", insight.Domain);
+        WriteField("Status", insight.Status);
+        WriteField("Summary", insight.Summary);
+        WriteMessages("Evidence", insight.EvidenceRefs);
+        WriteMessages("Recommended Actions", insight.RecommendedActions);
+        WriteField("no_trading_execution", insight.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("human_review_required", insight.HumanReviewRequired.ToString().ToLowerInvariant());
     }
 
     private static bool IsProcessAlive(int? processId)
