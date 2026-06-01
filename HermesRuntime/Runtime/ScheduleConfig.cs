@@ -102,6 +102,18 @@ public sealed record ScheduleConfig(
                 EveryMinutes: 60,
                 Parameters: new Dictionary<string, string> { ["max_items"] = "50" }),
             new(
+                JobId: "autonomous_loop_hourly",
+                JobType: "run_autonomous_loop",
+                Enabled: true,
+                ScheduleType: "interval",
+                Command: "run-autonomous-loop",
+                EveryMinutes: 60,
+                Parameters: new Dictionary<string, string>
+                {
+                    ["max_iterations"] = "1",
+                    ["max_minutes"] = "10"
+                }),
+            new(
                 JobId: "health_snapshot",
                 JobType: "health_snapshot",
                 Enabled: true,

@@ -97,6 +97,10 @@ internal sealed class HermesCli
             "outcome-feedback-status" => ShowOutcomeFeedbackStatus(),
             "planner-feedback" => ShowPlannerFeedback(),
             "goal-feedback" => ShowGoalFeedback(),
+            "run-autonomous-loop" => RunAutonomousLoop(),
+            "autonomous-loop-status" => ShowAutonomousLoopStatus(),
+            "autonomous-loop-log" => ShowAutonomousLoopLog(),
+            "explain-last-loop" => ExplainLastLoop(),
             "explain-plan" => ExplainPlan(),
             "explain-task" => ExplainTask(),
             "bot-candidates" => ShowBotCandidates(),
@@ -202,6 +206,10 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes outcome-feedback-status Outcome Feedback Status anzeigen");
         Console.WriteLine("  hermes planner-feedback Planner Feedback anzeigen");
         Console.WriteLine("  hermes goal-feedback Goal Feedback anzeigen");
+        Console.WriteLine("  hermes run-autonomous-loop --max-iterations 5 vollstaendigen Need->Insight Lernloop ausfuehren");
+        Console.WriteLine("  hermes autonomous-loop-status Autonomous Learning Loop Status anzeigen");
+        Console.WriteLine("  hermes autonomous-loop-log Autonomous Learning Loop JSONL-Auszug anzeigen");
+        Console.WriteLine("  hermes explain-last-loop letzte autonome Loop-Iteration erklaeren");
         Console.WriteLine("  hermes explain-plan     letzte Planning-Entscheidung erklaeren");
         Console.WriteLine("  hermes explain-task --id <TASK_ID> einzelne geplante Aufgabe erklaeren");
         Console.WriteLine("  hermes bot-candidates     strenge Demo-Bot-Kandidatenbewertung anzeigen");
@@ -693,6 +701,7 @@ internal sealed class HermesCli
         var cognitiveJobsEnabled = AreCognitiveJobsEnabled(schedulerStatus);
         var cognitiveNightly = new CognitiveNightlyService(storagePaths);
         var cognitiveSummary = cognitiveNightly.LoadSummary();
+        var autonomousLoop = new AutonomousLearningLoop(storagePaths, Path.Combine(_runtimeRoot, "config", "autonomous.loop.json"));
 
         if (!config.IsInAllowedWindow(now))
         {
@@ -739,7 +748,6 @@ internal sealed class HermesCli
         string? lastCheckpoint = null;
         string? lastError = null;
         DateTimeOffset? stopRequestedAtUtc = null;
-        var planningStepCompleted = false;
         var cognitiveStepCompleted = false;
 
         nightly.ClearStopRequest();
@@ -771,7 +779,8 @@ internal sealed class HermesCli
             }
 
             var resources = new ResourceGuard(storagePaths).Check();
-            var cleanupPlan = new StorageHygieneService(storagePaths).BuildPlan();
+            var storageHygiene = new StorageHygieneService(storagePaths);
+            var cleanupPlan = storageHygiene.LoadPlan() ?? storageHygiene.BuildPlan();
             if (resources.ShouldStop)
             {
                 status = "stopped_resource_guard";
@@ -789,31 +798,28 @@ internal sealed class HermesCli
 
             try
             {
-                if (!planningStepCompleted)
-                {
-                    var planning = new AutonomousPlanningCycleService(storagePaths);
-                    var decision = planning.RunPlanningCycle(maxItems: 20);
-                    var executor = new PlannedTaskExecutor(storagePaths);
-                    var executionResults = executor.Execute(maxItems: 10);
-                    var outcomeEvaluator = new TaskOutcomeEvaluator(storagePaths);
-                    var outcomes = outcomeEvaluator.Evaluate(maxItems: 20);
-                    planningStepCompleted = true;
-                    workPerformed += decision.PlannedTasks.Count
-                        + executionResults.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase))
-                        + outcomes.Count;
+                var loopMinutes = Math.Max(0.01, Math.Min(10, (deadlineUtc - DateTimeOffset.UtcNow).TotalMinutes));
+                var loopSummary = autonomousLoop.Run(maxIterations: 1, maxMinutes: loopMinutes);
+                workPerformed += loopSummary.WorkPerformed;
 
-                    WriteSubHeader("Autonomous Planning Step");
-                    WriteField("needs_detected", decision.Needs.Count.ToString());
-                    WriteField("planned_tasks", decision.PlannedTasks.Count.ToString());
-                    WriteField("executed_planned_tasks", executionResults.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)).ToString());
-                    WriteField("skipped_planned_tasks", executionResults.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase)).ToString());
-                    WriteField("evaluated_outcomes", outcomes.Count.ToString());
-                    WriteField("planning_status", DisplayPath(planning.PlanningStatusPath));
-                    WriteField("planned_tasks_report", DisplayPath(planning.PlannedTasksPath));
-                    WriteField("task_execution_state", DisplayPath(executor.ExecutionStatePath));
-                    WriteField("planner_feedback", DisplayPath(outcomeEvaluator.PlannerFeedbackPath));
-                    Console.WriteLine();
+                WriteSubHeader("Autonomous Learning Loop Step");
+                WriteField("loop_status", loopSummary.Status);
+                WriteField("loop_iterations", loopSummary.IterationsCompleted.ToString());
+                WriteField("loop_work_performed", loopSummary.WorkPerformed.ToString());
+                WriteField("loop_idle_iterations", loopSummary.IdleIterations.ToString());
+                WriteField("loop_next_action", loopSummary.NextAction);
+                WriteField("loop_summary", DisplayPath(autonomousLoop.SummaryPath));
+                WriteField("loop_log", DisplayPath(autonomousLoop.LogPath));
+                if (loopSummary.LastIteration is not null)
+                {
+                    WriteField("needs_detected", loopSummary.LastIteration.NeedsDetected.ToString());
+                    WriteField("planned_tasks", loopSummary.LastIteration.TasksPlanned.ToString());
+                    WriteField("executed_planned_tasks", loopSummary.LastIteration.TasksExecuted.ToString());
+                    WriteField("evaluated_outcomes", loopSummary.LastIteration.OutcomesEvaluated.ToString());
+                    WriteField("avg_learning", $"{loopSummary.LastIteration.AverageOutcomeLearningValue:0.####}");
+                    WriteMessages("feedback_changes", loopSummary.LastIteration.FeedbackChanges.Take(8).ToList());
                 }
+                Console.WriteLine();
 
                 if (!cognitiveStepCompleted)
                 {
@@ -1306,6 +1312,7 @@ internal sealed class HermesCli
             "run_planning_cycle" => ExecutePlanningCycleJob(storagePaths, job),
             "process_planned_tasks" => ExecuteProcessPlannedTasksJob(storagePaths, job),
             "evaluate_task_outcomes" => ExecuteEvaluateTaskOutcomesJob(storagePaths, job),
+            "run_autonomous_loop" => ExecuteAutonomousLoopJob(storagePaths, job),
             "market_data_refresh" => new ScheduledJobExecutionResult(
                 Status: "skipped",
                 WorkPerformed: false,
@@ -1505,6 +1512,30 @@ internal sealed class HermesCli
                 .Select(outcome => $"{outcome.TaskType}:{outcome.Recommendation}")
                 .Take(20)
                 .ToList());
+    }
+
+    private ScheduledJobExecutionResult ExecuteAutonomousLoopJob(StoragePaths storagePaths, ScheduledJobDefinition job)
+    {
+        var maxIterations = job.Parameters is not null
+            && job.Parameters.TryGetValue("max_iterations", out var maxIterationsText)
+            && int.TryParse(maxIterationsText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedIterations)
+                ? Math.Clamp(parsedIterations, 1, 1000)
+                : 1;
+        var maxMinutes = job.Parameters is not null
+            && job.Parameters.TryGetValue("max_minutes", out var maxMinutesText)
+            && double.TryParse(maxMinutesText, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedMinutes)
+                ? Math.Clamp(parsedMinutes, 0.01, 1440)
+                : 10;
+        var loop = new AutonomousLearningLoop(
+            storagePaths,
+            Path.Combine(_runtimeRoot, "config", "autonomous.loop.json"));
+        var summary = loop.Run(maxIterations, maxMinutes);
+        return new ScheduledJobExecutionResult(
+            Status: summary.Status.StartsWith("stopped_", StringComparison.OrdinalIgnoreCase) ? "skipped" : "completed",
+            WorkPerformed: summary.WorkPerformed > 0,
+            Action: $"run_autonomous_loop iterations={summary.IterationsCompleted}; work={summary.WorkPerformed}; idle={summary.IdleIterations}",
+            ReportPath: loop.SummaryPath,
+            Warnings: summary.Warnings);
     }
 
     private static int ReadMaxItems(ScheduledJobDefinition job, int fallback) =>
@@ -3215,6 +3246,109 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunAutonomousLoop()
+    {
+        WriteHeader("Hermes Autonomous Learning Loop");
+        var loop = BuildAutonomousLearningLoop();
+        var config = loop.LoadConfig();
+        var maxIterations = ReadIntOption(
+            _args,
+            "--max-iterations",
+            fallback: config.MaxIdleIterations,
+            min: 1,
+            max: 1000);
+        var maxMinutes = ReadDoubleOption(_args, "--max-minutes", fallback: 30, min: 0.01, max: 1440);
+        var summary = loop.Run(maxIterations, maxMinutes);
+
+        WriteField("Config", DisplayPath(Path.Combine(_runtimeRoot, "config", "autonomous.loop.json")));
+        WriteAutonomousLoopSummary(summary);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutonomousLoopStatus()
+    {
+        WriteHeader("Hermes Autonomous Learning Loop Status");
+        var loop = BuildAutonomousLearningLoop();
+        var state = loop.LoadState();
+        var summary = loop.LoadSummary();
+
+        WriteField("State", DisplayPath(loop.StatePath));
+        WriteField("Summary", DisplayPath(loop.SummaryPath));
+        WriteField("Log", DisplayPath(loop.LogPath));
+        WriteField("Status", state.Status);
+        WriteField("Run ID", string.IsNullOrWhiteSpace(state.RunId) ? "-" : state.RunId);
+        WriteField("Iterations", state.IterationsCompleted.ToString());
+        WriteField("Idle Iterations", state.IdleIterations.ToString());
+        WriteField("Work Performed", state.WorkPerformed.ToString());
+        WriteField("Average Learning", $"{state.AverageLearningValue:0.####}");
+        WriteField("Next Action", state.NextAction);
+        WriteField("Last Stop Reason", state.LastStopReason ?? "-");
+        WriteField("Last Checkpoint", DisplayOptionalPath(state.LastCheckpointPath));
+        if (summary?.LastIteration is not null)
+        {
+            WriteAutonomousLoopIteration(summary.LastIteration);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutonomousLoopLog()
+    {
+        WriteHeader("Hermes Autonomous Learning Loop Log");
+        var loop = BuildAutonomousLearningLoop();
+        var limit = ReadIntOption(_args, "--limit", fallback: 10, min: 1, max: 100);
+        var iterations = loop.LoadLog(limit);
+
+        WriteField("Log", DisplayPath(loop.LogPath));
+        WriteField("Entries", iterations.Count.ToString());
+        foreach (var iteration in iterations.Take(limit))
+        {
+            WriteAutonomousLoopIteration(iteration);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainLastLoop()
+    {
+        WriteHeader("Hermes Last Autonomous Loop Explanation");
+        var loop = BuildAutonomousLearningLoop();
+        var summary = loop.LoadSummary();
+        var last = summary?.LastIteration ?? loop.LoadLog(1).FirstOrDefault();
+        if (last is null)
+        {
+            WriteField("Status", "no_loop_iteration_available");
+            WriteField("Next Action", "run-autonomous-loop");
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+
+        WriteAutonomousLoopIteration(last);
+        WriteMessages("Warum weiter/stoppen",
+            [
+                last.StopReason is not null
+                    ? $"stop_reason:{last.StopReason}"
+                    : last.Idle
+                        ? "idle:true; keine neuen sinnvollen Ausfuehrungen oder Outcomes"
+                        : "learning_work_detected:true",
+                $"next_action:{last.NextAction}",
+                $"feedback_changes:{last.FeedbackChanges.Count}",
+                "no_trading_execution:true",
+                "human_review_required:true"
+            ]);
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ExplainPlan()
     {
         WriteHeader("Hermes Planning Explanation");
@@ -4223,6 +4357,53 @@ internal sealed class HermesCli
         WriteMessages("Improved Needs", item.ImprovedNeeds);
         WriteMessages("Persistent Needs", item.PersistentNeeds);
         WriteMessages("Recommended Actions", item.RecommendedActions);
+    }
+
+    private void WriteAutonomousLoopSummary(AutonomousLoopSummary summary)
+    {
+        WriteField("Status", summary.Status);
+        WriteField("Run ID", summary.RunId);
+        WriteField("Requested Iterations", summary.RequestedIterations.ToString());
+        WriteField("Max Minutes", $"{summary.MaxMinutes:0.###}");
+        WriteField("Iterations", summary.IterationsCompleted.ToString());
+        WriteField("Idle Iterations", summary.IdleIterations.ToString());
+        WriteField("Work Performed", summary.WorkPerformed.ToString());
+        WriteField("Average Learning", $"{summary.AverageLearningValue:0.####}");
+        WriteField("Next Action", summary.NextAction);
+        WriteField("Stop Reason", summary.StopReason ?? "-");
+        WriteMessages("Warnings", summary.Warnings);
+        if (summary.LastIteration is not null)
+        {
+            WriteAutonomousLoopIteration(summary.LastIteration);
+        }
+    }
+
+    private void WriteAutonomousLoopIteration(AutonomousLoopIterationSummary iteration)
+    {
+        WriteSubHeader($"{iteration.Status} / iteration {iteration.IterationNumber}");
+        WriteField("Iteration ID", iteration.IterationId);
+        WriteField("Started UTC", iteration.StartedAtUtc.ToString("O"));
+        WriteField("Completed UTC", iteration.CompletedAtUtc.ToString("O"));
+        WriteField("Resource Action", iteration.ResourceAction);
+        WriteField("Cleanup Candidates", iteration.CleanupCandidates.ToString());
+        WriteField("Needs", iteration.NeedsDetected.ToString());
+        WriteField("Planned Tasks", iteration.TasksPlanned.ToString());
+        WriteField("Executed Tasks", iteration.TasksExecuted.ToString());
+        WriteField("Completed/Skipped/Failed", $"{iteration.TasksCompleted}/{iteration.TasksSkipped}/{iteration.TasksFailed}");
+        WriteField("Outcomes Evaluated", iteration.OutcomesEvaluated.ToString());
+        WriteField("Avg Usefulness", $"{iteration.AverageOutcomeUsefulness:0.####}");
+        WriteField("Avg Learning", $"{iteration.AverageOutcomeLearningValue:0.####}");
+        WriteField("Cognitive Insights", iteration.CognitiveInsights.ToString());
+        WriteField("Work Performed", iteration.WorkPerformed.ToString().ToLowerInvariant());
+        WriteField("Idle", iteration.Idle.ToString().ToLowerInvariant());
+        WriteField("Next Action", iteration.NextAction);
+        WriteField("Stop Reason", iteration.StopReason ?? "-");
+        WriteField("Checkpoint", DisplayOptionalPath(iteration.CheckpointPath));
+        WriteMessages("Feedback Changes", iteration.FeedbackChanges);
+        WriteMessages("Warnings", iteration.Warnings);
+        WriteMessages("Resource Warnings", iteration.ResourceWarnings);
+        WriteField("no_trading_execution", iteration.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("human_review_required", iteration.HumanReviewRequired.ToString().ToLowerInvariant());
     }
 
     private void WriteCognitiveHypothesis(CognitiveHypothesis hypothesis)
@@ -5847,6 +6028,9 @@ internal sealed class HermesCli
         EnsureStorageDirectories(fallbackPaths);
         return fallbackPaths;
     }
+
+    private AutonomousLearningLoop BuildAutonomousLearningLoop() =>
+        new(BuildStoragePaths(), Path.Combine(_runtimeRoot, "config", "autonomous.loop.json"));
 
     private StoragePaths BuildReadOnlyStoragePaths()
     {

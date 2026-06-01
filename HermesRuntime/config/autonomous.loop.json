@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "max_tasks_per_iteration": 10,
+  "max_outcomes_per_iteration": 50,
+  "sleep_seconds_between_iterations": 1,
+  "max_idle_iterations": 3,
+  "min_learning_value_to_continue": 0.05
+}
