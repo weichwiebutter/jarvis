@@ -19,7 +19,8 @@ public sealed class HermesInternalScheduler
         "generate_cognitive_insights",
         "trading_nightly_beta3",
         "run_planning_cycle",
-        "process_planned_tasks"
+        "process_planned_tasks",
+        "evaluate_task_outcomes"
     };
 
     private readonly StoragePaths _storagePaths;
@@ -270,6 +271,7 @@ public sealed class HermesInternalScheduler
             "run_planning_cycle" => job.Command.Equals("run-planning-cycle", StringComparison.OrdinalIgnoreCase),
             "process_planned_tasks" => job.Command.Equals("process-planned-tasks", StringComparison.OrdinalIgnoreCase)
                 || job.Command.Equals("execute-planned-tasks", StringComparison.OrdinalIgnoreCase),
+            "evaluate_task_outcomes" => job.Command.Equals("evaluate-task-outcomes", StringComparison.OrdinalIgnoreCase),
             _ => false
         };
     }

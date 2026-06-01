@@ -107,6 +107,17 @@
       }
     },
     {
+      "job_id": "outcome_feedback_after_planned_tasks",
+      "job_type": "evaluate_task_outcomes",
+      "enabled": true,
+      "schedule_type": "interval",
+      "command": "evaluate-task-outcomes",
+      "every_minutes": 60,
+      "parameters": {
+        "max_items": "50"
+      }
+    },
+    {
       "job_id": "health_snapshot",
       "job_type": "health_snapshot",
       "enabled": true,

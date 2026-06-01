@@ -291,16 +291,23 @@ public sealed class GoalManager
     public IReadOnlyList<HermesGoal> EvaluateGoals(IReadOnlyList<DetectedNeed> needs)
     {
         Directory.CreateDirectory(Root);
+        var goalFeedback = new TaskOutcomeEvaluator(_storagePaths).LoadGoalFeedback();
         var goals = Defaults()
             .Select(goal =>
             {
                 var blockers = BlockersFor(goal.GoalId, needs);
-                var nextActions = NextActionsFor(goal.GoalId, blockers, needs);
+                var feedback = goalFeedback?.Goals.FirstOrDefault(item =>
+                    item.GoalId.Equals(goal.GoalId, StringComparison.OrdinalIgnoreCase));
+                var nextActions = NextActionsFor(goal.GoalId, blockers, needs)
+                    .Concat(feedback?.RecommendedActions ?? [])
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(8)
+                    .ToList();
                 var severityPenalty = blockers
                     .Select(blocker => needs.FirstOrDefault(need => need.NeedId.Equals(blocker, StringComparison.OrdinalIgnoreCase)))
                     .Where(need => need is not null)
                     .Sum(need => NeedDetectionEngine.SeverityRank(need!.Severity) * 0.08);
-                var progress = Math.Round(Math.Clamp(0.78 - severityPenalty, 0.05, 0.95), 4);
+                var progress = Math.Round(Math.Clamp(0.78 - severityPenalty + (feedback?.ProgressDelta ?? 0), 0.05, 0.95), 4);
                 return goal with
                 {
                     ProgressScore = progress,
@@ -389,6 +396,15 @@ public sealed class AutonomousTaskPlanner
 
     public PlanningDecision Plan(IReadOnlyList<DetectedNeed> needs, IReadOnlyList<HermesGoal> goals, int maxItems)
     {
+        return Plan(needs, goals, maxItems, plannerFeedback: null);
+    }
+
+    public PlanningDecision Plan(
+        IReadOnlyList<DetectedNeed> needs,
+        IReadOnlyList<HermesGoal> goals,
+        int maxItems,
+        PlannerFeedback? plannerFeedback)
+    {
         maxItems = Math.Clamp(maxItems, 1, 100);
         var now = DateTimeOffset.UtcNow;
         var planned = new List<PlannedTask>();
@@ -399,7 +415,8 @@ public sealed class AutonomousTaskPlanner
             foreach (var taskType in TaskTypesFor(need).Where(AllowedTaskTypes.Contains))
             {
                 var goal = matchingGoals.FirstOrDefault() ?? goals.OrderBy(goal => goal.Priority).First();
-                var priority = Score(need, goal, taskType);
+                var priority = ApplyFeedback(Score(need, goal, taskType), taskType, need.NeedId, plannerFeedback);
+                var feedbackNote = FeedbackNoteFor(taskType, need.NeedId, plannerFeedback);
                 planned.Add(new PlannedTask(
                     TaskId: StableTaskId(need.NeedId, goal.GoalId, taskType),
                     TaskType: taskType,
@@ -408,7 +425,7 @@ public sealed class AutonomousTaskPlanner
                     NeedId: need.NeedId,
                     QueueType: QueueTypeFor(taskType, need),
                     Priority: priority,
-                    Reason: $"Need '{need.Title}' ({need.Category}, {need.Severity}) unterstuetzt Ziel '{goal.GoalId}'.",
+                    Reason: $"Need '{need.Title}' ({need.Category}, {need.Severity}) unterstuetzt Ziel '{goal.GoalId}'.{feedbackNote}",
                     ExpectedOutcome: ExpectedOutcomeFor(taskType),
                     SourceRefs: need.EvidenceRefs,
                     CreatedAtUtc: now,
@@ -487,6 +504,48 @@ public sealed class AutonomousTaskPlanner
             Math.Round(Math.Clamp(total, 0, 1), 4));
     }
 
+    private static PriorityScore ApplyFeedback(
+        PriorityScore score,
+        string taskType,
+        string needId,
+        PlannerFeedback? feedback)
+    {
+        var taskFeedback = feedback?.TaskTypeFeedback.FirstOrDefault(item =>
+            item.TaskType.Equals(taskType, StringComparison.OrdinalIgnoreCase));
+        if (taskFeedback is null)
+        {
+            return score;
+        }
+
+        var repeatedNeedPenalty = taskFeedback.RepeatedUnsuccessfulNeeds.Contains(needId, StringComparer.OrdinalIgnoreCase)
+            ? -0.05
+            : 0;
+        var adjustment = taskFeedback.PriorityAdjustment + repeatedNeedPenalty;
+        var learning = Math.Clamp(score.ExpectedLearningValue + Math.Max(0, adjustment) * 0.5, 0, 1);
+        var risk = Math.Clamp(score.Risk + Math.Max(0, -adjustment) * 0.4, 0, 1);
+        return score with
+        {
+            ExpectedLearningValue = Math.Round(learning, 4),
+            Risk = Math.Round(risk, 4),
+            TotalScore = Math.Round(Math.Clamp(score.TotalScore + adjustment, 0, 1), 4)
+        };
+    }
+
+    private static string FeedbackNoteFor(string taskType, string needId, PlannerFeedback? feedback)
+    {
+        var taskFeedback = feedback?.TaskTypeFeedback.FirstOrDefault(item =>
+            item.TaskType.Equals(taskType, StringComparison.OrdinalIgnoreCase));
+        if (taskFeedback is null)
+        {
+            return string.Empty;
+        }
+
+        var repeatedNeed = taskFeedback.RepeatedUnsuccessfulNeeds.Contains(needId, StringComparer.OrdinalIgnoreCase)
+            ? "; repeated_unsuccessful_need"
+            : string.Empty;
+        return $" Planner feedback: {taskFeedback.Recommendation}, priority_adjustment={taskFeedback.PriorityAdjustment:0.####}{repeatedNeed}.";
+    }
+
     private static string QueueTypeFor(string taskType, DetectedNeed need) =>
         taskType switch
         {
@@ -555,7 +614,8 @@ public sealed class AutonomousPlanningCycleService
     {
         var needs = _needs.Detect();
         var goals = _goals.EvaluateGoals(needs);
-        var decision = _planner.Plan(needs, goals, maxItems);
+        var feedback = new TaskOutcomeEvaluator(_storagePaths).LoadPlannerFeedback();
+        var decision = _planner.Plan(needs, goals, maxItems, feedback);
         WriteDecision(decision);
         WriteStatus(decision, queuedResearchItems: new ResearchQueueService(_storagePaths).LoadOrCreateQueue().Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)));
         return decision;

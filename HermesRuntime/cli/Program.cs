@@ -93,6 +93,10 @@ internal sealed class HermesCli
             "execute-planned-tasks" => ExecutePlannedTasks(),
             "planned-task-status" => ShowPlannedTaskStatus(),
             "task-execution-log" => ShowTaskExecutionLog(),
+            "evaluate-task-outcomes" => EvaluateTaskOutcomes(),
+            "outcome-feedback-status" => ShowOutcomeFeedbackStatus(),
+            "planner-feedback" => ShowPlannerFeedback(),
+            "goal-feedback" => ShowGoalFeedback(),
             "explain-plan" => ExplainPlan(),
             "explain-task" => ExplainTask(),
             "bot-candidates" => ShowBotCandidates(),
@@ -194,6 +198,10 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes execute-planned-tasks --max-items 10 geplante Aufgaben kontrolliert ausfuehren");
         Console.WriteLine("  hermes planned-task-status Planned Task Execution Status anzeigen");
         Console.WriteLine("  hermes task-execution-log Planned Task Execution Log anzeigen");
+        Console.WriteLine("  hermes evaluate-task-outcomes --max-items 50 ausgefuehrte Planned Tasks bewerten");
+        Console.WriteLine("  hermes outcome-feedback-status Outcome Feedback Status anzeigen");
+        Console.WriteLine("  hermes planner-feedback Planner Feedback anzeigen");
+        Console.WriteLine("  hermes goal-feedback Goal Feedback anzeigen");
         Console.WriteLine("  hermes explain-plan     letzte Planning-Entscheidung erklaeren");
         Console.WriteLine("  hermes explain-task --id <TASK_ID> einzelne geplante Aufgabe erklaeren");
         Console.WriteLine("  hermes bot-candidates     strenge Demo-Bot-Kandidatenbewertung anzeigen");
@@ -787,18 +795,23 @@ internal sealed class HermesCli
                     var decision = planning.RunPlanningCycle(maxItems: 20);
                     var executor = new PlannedTaskExecutor(storagePaths);
                     var executionResults = executor.Execute(maxItems: 10);
+                    var outcomeEvaluator = new TaskOutcomeEvaluator(storagePaths);
+                    var outcomes = outcomeEvaluator.Evaluate(maxItems: 20);
                     planningStepCompleted = true;
                     workPerformed += decision.PlannedTasks.Count
-                        + executionResults.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase));
+                        + executionResults.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase))
+                        + outcomes.Count;
 
                     WriteSubHeader("Autonomous Planning Step");
                     WriteField("needs_detected", decision.Needs.Count.ToString());
                     WriteField("planned_tasks", decision.PlannedTasks.Count.ToString());
                     WriteField("executed_planned_tasks", executionResults.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)).ToString());
                     WriteField("skipped_planned_tasks", executionResults.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase)).ToString());
+                    WriteField("evaluated_outcomes", outcomes.Count.ToString());
                     WriteField("planning_status", DisplayPath(planning.PlanningStatusPath));
                     WriteField("planned_tasks_report", DisplayPath(planning.PlannedTasksPath));
                     WriteField("task_execution_state", DisplayPath(executor.ExecutionStatePath));
+                    WriteField("planner_feedback", DisplayPath(outcomeEvaluator.PlannerFeedbackPath));
                     Console.WriteLine();
                 }
 
@@ -1292,6 +1305,7 @@ internal sealed class HermesCli
             "trading_nightly_beta3" => ExecuteNightlyBeta3ScheduledJob(job, context),
             "run_planning_cycle" => ExecutePlanningCycleJob(storagePaths, job),
             "process_planned_tasks" => ExecuteProcessPlannedTasksJob(storagePaths, job),
+            "evaluate_task_outcomes" => ExecuteEvaluateTaskOutcomesJob(storagePaths, job),
             "market_data_refresh" => new ScheduledJobExecutionResult(
                 Status: "skipped",
                 WorkPerformed: false,
@@ -1474,6 +1488,23 @@ internal sealed class HermesCli
             Action: $"process_planned_tasks completed={completed}; skipped={skipped}; failed={failed}",
             ReportPath: executor.ExecutionStatePath,
             Warnings: results.SelectMany(result => result.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
+    }
+
+    private static ScheduledJobExecutionResult ExecuteEvaluateTaskOutcomesJob(StoragePaths storagePaths, ScheduledJobDefinition job)
+    {
+        var maxItems = ReadMaxItems(job, fallback: 50);
+        var evaluator = new TaskOutcomeEvaluator(storagePaths);
+        var outcomes = evaluator.Evaluate(maxItems);
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: outcomes.Count > 0,
+            Action: $"evaluate_task_outcomes evaluated={outcomes.Count}",
+            ReportPath: evaluator.PlannerFeedbackPath,
+            Warnings: outcomes
+                .Where(outcome => outcome.Recommendation is "escalate_to_review" or "retire_task_type")
+                .Select(outcome => $"{outcome.TaskType}:{outcome.Recommendation}")
+                .Take(20)
+                .ToList());
     }
 
     private static int ReadMaxItems(ScheduledJobDefinition job, int fallback) =>
@@ -2940,8 +2971,10 @@ internal sealed class HermesCli
     private int ShowPlanningStatus()
     {
         WriteHeader("Hermes Autonomous Planning Status");
-        var service = new AutonomousPlanningCycleService(BuildStoragePaths());
+        var storagePaths = BuildStoragePaths();
+        var service = new AutonomousPlanningCycleService(storagePaths);
         var status = service.BuildStatus();
+        var outcomeStatus = new TaskOutcomeEvaluator(storagePaths).BuildStatus();
 
         WriteField("Status", DisplayPath(service.PlanningStatusPath));
         WriteField("Detected Needs", status.NeedsDetected.ToString());
@@ -2954,6 +2987,10 @@ internal sealed class HermesCli
         WriteMessages("Top Needs", status.TopNeeds);
         WriteMessages("Top Tasks", status.TopTasks);
         WriteMessages("Warnings", status.Warnings);
+        WriteField("Outcome Feedback", DisplayPath(outcomeStatus.TaskOutcomesPath));
+        WriteField("Outcome Total", outcomeStatus.TotalOutcomes.ToString());
+        WriteField("Outcome Last UTC", outcomeStatus.LastOutcomeUtc?.ToString("O") ?? "-");
+        WriteMessages("Outcome Recommendations", outcomeStatus.LatestRecommendations.Take(5).ToList());
         WriteField("no_auto_trading", status.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", status.HumanReviewRequired.ToString().ToLowerInvariant());
         Console.WriteLine();
@@ -3094,17 +3131,115 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int EvaluateTaskOutcomes()
+    {
+        WriteHeader("Hermes Task Outcome Evaluation");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 50, min: 1, max: 500);
+        var evaluator = new TaskOutcomeEvaluator(BuildStoragePaths());
+        var outcomes = evaluator.Evaluate(maxItems);
+        var status = evaluator.BuildStatus();
+
+        WriteField("Task Outcomes", DisplayPath(evaluator.TaskOutcomesPath));
+        WriteField("Planner Feedback", DisplayPath(evaluator.PlannerFeedbackPath));
+        WriteField("Goal Feedback", DisplayPath(evaluator.GoalFeedbackPath));
+        WriteField("Evaluated", outcomes.Count.ToString());
+        WriteField("Total Outcomes", status.TotalOutcomes.ToString());
+        foreach (var outcome in outcomes.Take(20))
+        {
+            WriteTaskOutcome(outcome);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowOutcomeFeedbackStatus()
+    {
+        WriteHeader("Hermes Outcome Feedback Status");
+        var evaluator = new TaskOutcomeEvaluator(BuildStoragePaths());
+        var status = evaluator.BuildStatus();
+
+        WriteField("Status", DisplayPath(evaluator.StatusPath));
+        WriteField("Task Outcomes", DisplayPath(status.TaskOutcomesPath));
+        WriteField("Planner Feedback", DisplayPath(status.PlannerFeedbackPath));
+        WriteField("Goal Feedback", DisplayPath(status.GoalFeedbackPath));
+        WriteField("Updated UTC", status.UpdatedAtUtc.ToString("O"));
+        WriteField("Total Outcomes", status.TotalOutcomes.ToString());
+        WriteField("Last Outcome UTC", status.LastOutcomeUtc?.ToString("O") ?? "-");
+        WriteField("Evaluated Last Run", status.OutcomesEvaluatedLastRun.ToString());
+        WriteMessages("Latest Recommendations", status.LatestRecommendations);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPlannerFeedback()
+    {
+        WriteHeader("Hermes Planner Feedback");
+        var evaluator = new TaskOutcomeEvaluator(BuildStoragePaths());
+        var feedback = evaluator.LoadOrCreatePlannerFeedback();
+
+        WriteField("Planner Feedback", DisplayPath(evaluator.PlannerFeedbackPath));
+        WriteField("Updated UTC", feedback.UpdatedAtUtc.ToString("O"));
+        WriteField("Outcomes Evaluated", feedback.OutcomesEvaluated.ToString());
+        WriteMessages("Retired Task Types", feedback.RetiredTaskTypes);
+        WriteMessages("Warnings", feedback.Warnings);
+        foreach (var item in feedback.TaskTypeFeedback.Take(30))
+        {
+            WritePlannerTaskTypeFeedback(item);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowGoalFeedback()
+    {
+        WriteHeader("Hermes Goal Feedback");
+        var evaluator = new TaskOutcomeEvaluator(BuildStoragePaths());
+        var feedback = evaluator.LoadOrCreateGoalFeedback();
+
+        WriteField("Goal Feedback", DisplayPath(evaluator.GoalFeedbackPath));
+        WriteField("Updated UTC", feedback.UpdatedAtUtc.ToString("O"));
+        WriteField("Outcomes Evaluated", feedback.OutcomesEvaluated.ToString());
+        WriteMessages("Warnings", feedback.Warnings);
+        foreach (var item in feedback.Goals.Take(30))
+        {
+            WriteGoalFeedbackEntry(item);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ExplainPlan()
     {
         WriteHeader("Hermes Planning Explanation");
-        var service = new AutonomousPlanningCycleService(BuildStoragePaths());
+        var storagePaths = BuildStoragePaths();
+        var service = new AutonomousPlanningCycleService(storagePaths);
         var decision = service.LoadLatestDecision() ?? service.PlanNextTasks(20);
+        var plannerFeedback = new TaskOutcomeEvaluator(storagePaths).LoadPlannerFeedback();
 
         WriteField("Decision", decision.DecisionId);
         WriteField("Created UTC", decision.CreatedAtUtc.ToString("O"));
         WriteField("Needs", decision.Needs.Count.ToString());
         WriteField("Goals", decision.Goals.Count.ToString());
         WriteField("Tasks", decision.PlannedTasks.Count.ToString());
+        if (plannerFeedback is not null)
+        {
+            WriteField("Planner Feedback UTC", plannerFeedback.UpdatedAtUtc.ToString("O"));
+            WriteMessages(
+                "Feedback Adjustments",
+                plannerFeedback.TaskTypeFeedback
+                    .Where(item => Math.Abs(item.PriorityAdjustment) > 0.0001)
+                    .Select(item => $"{item.TaskType}: {item.Recommendation}, adjustment={item.PriorityAdjustment:0.####}")
+                    .Take(12)
+                    .ToList());
+        }
+
         WriteMessages("Explanation", decision.Explanations.Take(20).ToList());
         foreach (var task in decision.PlannedTasks.Take(10))
         {
@@ -4040,6 +4175,54 @@ internal sealed class HermesCli
         WriteField("no_broker_action", result.NoBrokerAction.ToString().ToLowerInvariant());
         WriteField("no_auto_trading", result.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", result.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteTaskOutcome(TaskOutcomeResult outcome)
+    {
+        WriteSubHeader($"{outcome.Recommendation} / {outcome.TaskType} / {outcome.TaskId}");
+        WriteField("Outcome ID", outcome.OutcomeId);
+        WriteField("Need", outcome.NeedId);
+        WriteField("Goal", outcome.GoalId);
+        WriteField("Executed UTC", outcome.ExecutedAtUtc.ToString("O"));
+        WriteField("Evaluated UTC", outcome.EvaluatedAtUtc.ToString("O"));
+        WriteField("Usefulness", $"{outcome.OutcomeScore.UsefulnessScore:0.####}");
+        WriteField("Learning Value", $"{outcome.OutcomeScore.LearningValue:0.####}");
+        WriteField("Cost", $"{outcome.OutcomeScore.CostScore:0.####}");
+        WriteField("Risk", $"{outcome.OutcomeScore.RiskScore:0.####}");
+        WriteField("Redundancy", $"{outcome.OutcomeScore.RedundancyScore:0.####}");
+        WriteField("Need Reduced", outcome.Evidence.NeedReduced.ToString().ToLowerInvariant());
+        WriteField("Goal Improved", outcome.Evidence.GoalImproved.ToString().ToLowerInvariant());
+        WriteField("Queue Changed", outcome.Evidence.ResearchQueueChanged.ToString().ToLowerInvariant());
+        WriteMessages("Evidence", outcome.Evidence.Notes);
+        WriteMessages("Followups", outcome.FollowupTaskIds);
+        WriteField("no_trading_execution", outcome.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("human_review_required", outcome.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WritePlannerTaskTypeFeedback(PlannerTaskTypeFeedback item)
+    {
+        WriteSubHeader($"{item.Recommendation} / {item.TaskType}");
+        WriteField("Evaluations", item.Evaluations.ToString());
+        WriteField("Avg Usefulness", $"{item.AverageUsefulnessScore:0.####}");
+        WriteField("Avg Learning", $"{item.AverageLearningValue:0.####}");
+        WriteField("Avg Cost", $"{item.AverageCostScore:0.####}");
+        WriteField("Avg Risk", $"{item.AverageRiskScore:0.####}");
+        WriteField("Avg Redundancy", $"{item.AverageRedundancyScore:0.####}");
+        WriteField("Priority Adjustment", $"{item.PriorityAdjustment:0.####}");
+        WriteField("Last Evaluated", item.LastEvaluatedUtc.ToString("O"));
+        WriteMessages("Repeated Unsuccessful Needs", item.RepeatedUnsuccessfulNeeds);
+    }
+
+    private void WriteGoalFeedbackEntry(GoalFeedbackEntry item)
+    {
+        WriteSubHeader($"{item.GoalId}");
+        WriteField("Evaluations", item.Evaluations.ToString());
+        WriteField("Avg Usefulness", $"{item.AverageUsefulnessScore:0.####}");
+        WriteField("Progress Delta", $"{item.ProgressDelta:0.####}");
+        WriteField("Last Evaluated", item.LastEvaluatedUtc.ToString("O"));
+        WriteMessages("Improved Needs", item.ImprovedNeeds);
+        WriteMessages("Persistent Needs", item.PersistentNeeds);
+        WriteMessages("Recommended Actions", item.RecommendedActions);
     }
 
     private void WriteCognitiveHypothesis(CognitiveHypothesis hypothesis)

@@ -94,6 +94,14 @@ public sealed record ScheduleConfig(
                 EveryMinutes: 60,
                 Parameters: new Dictionary<string, string> { ["max_items"] = "10" }),
             new(
+                JobId: "outcome_feedback_after_planned_tasks",
+                JobType: "evaluate_task_outcomes",
+                Enabled: true,
+                ScheduleType: "interval",
+                Command: "evaluate-task-outcomes",
+                EveryMinutes: 60,
+                Parameters: new Dictionary<string, string> { ["max_items"] = "50" }),
+            new(
                 JobId: "health_snapshot",
                 JobType: "health_snapshot",
                 Enabled: true,
