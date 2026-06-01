@@ -30,6 +30,7 @@ internal sealed class HermesCli
         return command switch
         {
             "" or "help" or "--help" or "-h" => ShowHelp(),
+            "master-status" => ShowMasterStatus(),
             "health" => ShowHealth(),
             "setup-watch" => ShowSetupWatch(),
             "events" => ShowEvents(),
@@ -153,6 +154,7 @@ internal sealed class HermesCli
         Console.WriteLine("Lokale Sicherheits-CLI fuer HermesRuntime. Status-Kommandos sind read-only; generate-features und run-nightly-research schreiben nur lokale Analyseartefakte.");
         Console.WriteLine();
         Console.WriteLine("Kommandos:");
+        Console.WriteLine("  hermes master-status      kompakten Gesamtstatus aus bestehenden Reports anzeigen");
         Console.WriteLine("  hermes health             RuntimeHealth anzeigen");
         Console.WriteLine("  hermes setup-watch        Setup-Watch-Kandidaten anzeigen");
         Console.WriteLine("  hermes events recent      letzte Runtime-Events anzeigen");
@@ -268,6 +270,353 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private int ShowMasterStatus()
+    {
+        WriteHeader("Hermes Master Status");
+        var storagePaths = BuildReadOnlyStoragePaths();
+        var reportDirectory = Path.Combine(storagePaths.Root, "reports", "master_status");
+        var reportPath = Path.Combine(reportDirectory, "master_status.json");
+        var scheduleConfigPath = Path.Combine(_runtimeRoot, "config", "schedules.json");
+        var nightlyConfigPath = Path.Combine(_runtimeRoot, "config", "nightly.research.json");
+
+        var schedulerStatus = new HermesInternalScheduler(storagePaths, scheduleConfigPath).GetStatus();
+        var supervisor = new HermesSupervisor(storagePaths, scheduleConfigPath);
+        var supervisorState = supervisor.LoadState();
+        var supervisorHeartbeat = supervisor.LoadHeartbeat();
+        var supervisorProcess = new SupervisorProcessManager(storagePaths)
+            .GetStatus(supervisorState, supervisorHeartbeat?.SupervisorId == supervisorState.SupervisorId ? supervisorHeartbeat : null);
+        var nightlyState = new NightlyResearchService(storagePaths, nightlyConfigPath).LoadState();
+
+        var runtimeHealthPath = Path.Combine(storagePaths.Root, "reports", "runtime_health.json");
+        var resourceStatusPath = new ResourceGuard(storagePaths).StatusPath;
+        var storagePlanPath = new StorageHygieneService(storagePaths).CleanupPlanPath;
+        var cognitiveRoot = Path.Combine(storagePaths.Root, "cognitive_core");
+        var strategyRoot = Path.Combine(storagePaths.Root, "strategy_research");
+        var simulationRoot = Path.Combine(storagePaths.Root, "reports", "simulation");
+        var botCandidatePath = Path.Combine(storagePaths.Root, "bot_candidates", "latest_bot_candidate_report.json");
+
+        var runtimeHealth = TryLoadJson(runtimeHealthPath, out var runtimeHealthJson) ? runtimeHealthJson : default;
+        var resourceStatus = TryLoadJson(resourceStatusPath, out var resourceStatusJson) ? resourceStatusJson : default;
+        var storagePlan = TryLoadJson(storagePlanPath, out var storagePlanJson) ? storagePlanJson : default;
+        var cognitiveStatus = TryLoadJson(Path.Combine(cognitiveRoot, "cognitive_status.json"), out var cognitiveStatusJson) ? cognitiveStatusJson : default;
+        var domainStatus = TryLoadJson(Path.Combine(cognitiveRoot, "domain_status.json"), out var domainStatusJson) ? domainStatusJson : default;
+        var planningStatus = TryLoadJson(Path.Combine(cognitiveRoot, "planning_status.json"), out var planningStatusJson) ? planningStatusJson : default;
+        var autonomousLoop = TryLoadJson(Path.Combine(cognitiveRoot, "autonomous_loop_summary.json"), out var autonomousLoopJson) ? autonomousLoopJson : default;
+        var outcomeStatus = TryLoadJson(Path.Combine(cognitiveRoot, "outcome_feedback_status.json"), out var outcomeStatusJson) ? outcomeStatusJson : default;
+        var metaReview = TryLoadJson(Path.Combine(cognitiveRoot, "meta_review.json"), out var metaReviewJson) ? metaReviewJson : default;
+        var learningStrategy = TryLoadJson(Path.Combine(cognitiveRoot, "learning_strategy.json"), out var learningStrategyJson) ? learningStrategyJson : default;
+        var researchInsights = TryLoadJson(Path.Combine(strategyRoot, "research_insights.json"), out var researchInsightsJson) ? researchInsightsJson : default;
+        var robustStrategies = TryLoadJson(Path.Combine(strategyRoot, "robust_strategies.json"), out var robustStrategiesJson) ? robustStrategiesJson : default;
+        var overfitReport = TryLoadJson(Path.Combine(simulationRoot, "overfit_report.json"), out var overfitReportJson) ? overfitReportJson : default;
+        var botCandidateReport = TryLoadJson(botCandidatePath, out var botCandidateJson) ? botCandidateJson : default;
+
+        var activeDomains = CombineStringLists(
+            GetStringArray(domainStatus, "active_domains", "activeDomains"),
+            GetStringArray(planningStatus, "active_domains", "activeDomains"),
+            GetStringArray(cognitiveStatus, "active_domains", "activeDomains"),
+            nightlyState.ActiveDomains ?? []);
+        if (activeDomains.Count == 0)
+        {
+            activeDomains = ["trading"];
+        }
+
+        var topBlockers = CombineStringLists(
+            GetStringArray(planningStatus, "top_needs", "topNeeds"),
+            GetStringArray(planningStatus, "warnings"),
+            GetStringArray(researchInsights, "top_blockers", "topBlockers"),
+            GetStringArray(researchInsights, "why_no_candidates", "whyNoCandidates"),
+            GetStringArray(metaReview, "recurring_needs", "recurringNeeds"),
+            GetStringArray(domainStatus, "weak_domains", "weakDomains").Select(item => $"weak_domain:{item}"))
+            .Take(10)
+            .ToList();
+
+        var nextRecommendedActions = CombineStringLists(
+            GetStringArray(planningStatus, "top_tasks", "topTasks"),
+            GetStringArray(learningStrategy, "priority_task_types", "priorityTaskTypes"),
+            GetStringArray(researchInsights, "recommended_next_experiments", "recommendedNextExperiments"),
+            GetStringArray(researchInsights, "next_validation_recommendations", "nextValidationRecommendations"))
+            .Take(10)
+            .ToList();
+
+        var learningStrategyName = FirstNonEmpty(
+            GetString(learningStrategy, "current_strategy", "currentStrategy"),
+            GetString(metaReview, "learning_strategy", "learningStrategy"),
+            "unknown");
+        var domainFocus = GetStringArray(learningStrategy, "domain_focus", "domainFocus");
+        var currentFocus = domainFocus.Count > 0
+            ? $"{learningStrategyName}: {string.Join(", ", domainFocus)}"
+            : $"{learningStrategyName}: {string.Join(", ", activeDomains)}";
+
+        var queuedTasks = FirstPositive(
+            GetInt(planningStatus, "queued_research_items", "queuedResearchItems"),
+            nightlyState.QueuedResearchItems ?? 0,
+            GetInt(cognitiveStatus, "queue_items", "queueItems"),
+            GetArrayCount(cognitiveStatus, "queue", "items"));
+
+        var cleanupCandidates = GetArrayCount(storagePlan, "candidates");
+        var noAutoTrading = schedulerStatus.NoAutoTrading
+            && supervisorState.NoAutoTrading
+            && nightlyState.NoAutoTrading
+            && SafetyFlagTrue([runtimeHealth, resourceStatus, storagePlan, cognitiveStatus, planningStatus, autonomousLoop, outcomeStatus, metaReview, learningStrategy, researchInsights, botCandidateReport], "no_auto_trading", "noAutoTrading");
+        var humanReviewRequired = schedulerStatus.HumanReviewRequired
+            && supervisorState.HumanReviewRequired
+            && nightlyState.HumanReviewRequired
+            && SafetyFlagTrue([runtimeHealth, resourceStatus, storagePlan, cognitiveStatus, planningStatus, autonomousLoop, outcomeStatus, metaReview, learningStrategy, researchInsights, botCandidateReport], "human_review_required", "humanReviewRequired");
+
+        var criticalReasons = new List<string>();
+        var warningReasons = new List<string>();
+        var requiredReportStates = new (string Name, JsonElement Root)[]
+        {
+            ("runtime_health", runtimeHealth),
+            ("resource_status", resourceStatus),
+            ("planning_status", planningStatus),
+            ("autonomous_loop_summary", autonomousLoop),
+            ("meta_review", metaReview),
+            ("learning_strategy", learningStrategy)
+        };
+
+        warningReasons.AddRange(requiredReportStates
+            .Where(reportState => reportState.Root.ValueKind != JsonValueKind.Object)
+            .Select(reportState => $"report_missing:{reportState.Name}"));
+
+        if (!noAutoTrading)
+        {
+            criticalReasons.Add("no_auto_trading_not_confirmed");
+        }
+
+        if (!humanReviewRequired)
+        {
+            criticalReasons.Add("human_review_required_not_confirmed");
+        }
+
+        if (JsonBool(resourceStatus, false, "should_stop", "shouldStop"))
+        {
+            criticalReasons.Add("resource_guard_should_stop");
+        }
+
+        if (JsonBool(resourceStatus, false, "should_pause", "shouldPause"))
+        {
+            warningReasons.Add("resource_guard_should_pause");
+        }
+
+        if (supervisorProcess.StalePid)
+        {
+            warningReasons.Add("supervisor_stale_pid");
+        }
+
+        if (!string.IsNullOrWhiteSpace(supervisorState.LastError))
+        {
+            warningReasons.Add($"supervisor_error:{supervisorState.LastError}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(nightlyState.LastError))
+        {
+            warningReasons.Add($"nightly_error:{nightlyState.LastError}");
+        }
+
+        if (schedulerStatus.Warnings.Count > 0)
+        {
+            warningReasons.AddRange(schedulerStatus.Warnings.Select(warning => $"scheduler:{warning}"));
+        }
+
+        warningReasons.AddRange(schedulerStatus.Jobs
+            .Where(job => job.FailureCount > 0 || job.Status.Equals("failed", StringComparison.OrdinalIgnoreCase))
+            .Select(job => $"scheduled_job_issue:{job.JobId}:{job.Status}"));
+
+        if (cleanupCandidates > 0)
+        {
+            warningReasons.Add($"cleanup_candidates:{cleanupCandidates}");
+        }
+
+        if (topBlockers.Count > 0)
+        {
+            warningReasons.AddRange(topBlockers.Take(5));
+        }
+
+        var overallStatus = criticalReasons.Count > 0
+            ? "critical"
+            : warningReasons.Count > 0
+                ? "warning"
+                : "ok";
+
+        var robustCount = GetArrayCount(robustStrategies, "robust_strategies", "robustStrategies");
+        var overfitCount = FirstPositive(
+            GetInt(overfitReport, "overfit_suspected_strategies", "overfitSuspectedStrategies"),
+            GetArrayCount(researchInsights, "overfit_suspected_strategies", "overfitSuspectedStrategies"));
+        var highRiskCount = FirstPositive(
+            GetInt(overfitReport, "high_risk_strategies", "highRiskStrategies"),
+            GetArrayCount(researchInsights, "high_risk_strategies", "highRiskStrategies"));
+        var demoBotCandidates = FirstPositive(
+            GetInt(botCandidateReport, "demo_bot_candidate_count", "demoBotCandidateCount"),
+            GetInt(researchInsights, "bot_candidate_count", "botCandidateCount"));
+        var rejectedCandidates = FirstPositive(
+            GetInt(botCandidateReport, "rejected_candidate_count", "rejectedCandidateCount"),
+            GetInt(researchInsights, "rejected_candidate_count", "rejectedCandidateCount"));
+
+        var report = new
+        {
+            report_version = "master_status_v1",
+            updated_at_utc = DateTimeOffset.UtcNow,
+            data_root = storagePaths.Root,
+            overall_status = overallStatus,
+            current_focus = currentFocus,
+            active_domains = activeDomains,
+            queued_tasks = queuedTasks,
+            last_nightly_run = nightlyState.LastStartUtc?.ToString("O") ?? nightlyState.StartedAtUtc?.ToString("O"),
+            last_autonomous_loop = GetString(autonomousLoop, "updated_at_utc", "updatedAtUtc"),
+            last_meta_review = GetString(metaReview, "updated_at_utc", "updatedAtUtc"),
+            learning_strategy = learningStrategyName,
+            top_blockers = topBlockers,
+            next_recommended_actions = nextRecommendedActions,
+            runtime_health = new
+            {
+                report_path = runtimeHealthPath,
+                state = GetString(runtimeHealth, "runtime_state", "runtimeState") ?? "unknown",
+                timestamp_utc = GetString(runtimeHealth, "timestamp_utc", "timestampUtc"),
+                safe_mode = GetBoolText(runtimeHealth, "safe_mode", "safeMode"),
+                last_error = GetString(runtimeHealth, "last_error", "lastError")
+            },
+            scheduler = new
+            {
+                config_path = schedulerStatus.ConfigPath,
+                state_path = schedulerStatus.StatePath,
+                enabled_jobs = schedulerStatus.Jobs.Count(job => job.Enabled),
+                active_jobs = schedulerStatus.Jobs.Count(job => job.CurrentlyRunning),
+                failed_jobs = schedulerStatus.Jobs.Count(job => job.FailureCount > 0 || job.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)),
+                next_job = schedulerStatus.Jobs.FirstOrDefault(job => job.NextRunUtc is not null)?.JobId,
+                warnings = schedulerStatus.Warnings
+            },
+            supervisor = new
+            {
+                state_path = supervisor.StatePath,
+                heartbeat_path = supervisor.HeartbeatPath,
+                running = supervisorProcess.Running,
+                pid = supervisorProcess.Pid,
+                status = supervisorState.Status,
+                heartbeat_age_seconds = supervisorProcess.HeartbeatAgeSeconds,
+                current_job = supervisorState.CurrentJobId,
+                next_action = supervisorState.NextAction,
+                last_error = supervisorState.LastError
+            },
+            nightly_beta3 = new
+            {
+                status = nightlyState.Status,
+                last_start_utc = nightlyState.LastStartUtc ?? nightlyState.StartedAtUtc,
+                next_scheduled_start_utc = nightlyState.NextScheduledStartUtc,
+                iterations = nightlyState.IterationsCompleted,
+                work_performed = nightlyState.WorkPerformed,
+                next_action = nightlyState.NextAction,
+                cognitive_jobs_enabled = nightlyState.CognitiveJobsEnabled,
+                queued_research_items = nightlyState.QueuedResearchItems,
+                last_cognitive_error = nightlyState.LastCognitiveError
+            },
+            cognitive_core = new
+            {
+                status_path = Path.Combine(cognitiveRoot, "cognitive_status.json"),
+                sources = GetInt(cognitiveStatus, "source_count", "sourceCount"),
+                knowledge_items = GetInt(cognitiveStatus, "knowledge_item_count", "knowledgeItemCount"),
+                queue_items = GetInt(cognitiveStatus, "queue_item_count", "queueItemCount"),
+                insights = GetInt(cognitiveStatus, "insight_count", "insightCount"),
+                active_domains = activeDomains
+            },
+            planning_engine = new
+            {
+                status_path = Path.Combine(cognitiveRoot, "planning_status.json"),
+                needs_detected = GetInt(planningStatus, "needs_detected", "needsDetected"),
+                planned_tasks = GetInt(planningStatus, "planned_tasks", "plannedTasks"),
+                queued_research_items = queuedTasks,
+                next_action = GetString(planningStatus, "next_action", "nextAction")
+            },
+            autonomous_loop = new
+            {
+                summary_path = Path.Combine(cognitiveRoot, "autonomous_loop_summary.json"),
+                status = GetString(autonomousLoop, "status"),
+                iterations = GetInt(autonomousLoop, "iterations_completed", "iterationsCompleted"),
+                average_learning_value = GetDouble(autonomousLoop, "average_learning_value", "averageLearningValue"),
+                next_action = GetString(autonomousLoop, "next_action", "nextAction")
+            },
+            outcome_feedback = new
+            {
+                status_path = Path.Combine(cognitiveRoot, "outcome_feedback_status.json"),
+                total_outcomes = GetInt(outcomeStatus, "total_outcomes", "totalOutcomes"),
+                last_outcome_utc = GetString(outcomeStatus, "last_outcome_utc", "lastOutcomeUtc"),
+                latest_recommendations = GetStringArray(outcomeStatus, "latest_recommendations", "latestRecommendations").Take(10).ToList()
+            },
+            meta_review = new
+            {
+                report_path = Path.Combine(cognitiveRoot, "meta_review.json"),
+                status = GetString(metaReview, "status") ?? "unknown",
+                updated_at_utc = GetString(metaReview, "updated_at_utc", "updatedAtUtc"),
+                observations = GetArrayCount(metaReview, "observations"),
+                recurring_needs = GetStringArray(metaReview, "recurring_needs", "recurringNeeds").Take(10).ToList()
+            },
+            resource_status = new
+            {
+                report_path = resourceStatusPath,
+                action = GetString(resourceStatus, "action") ?? "unknown",
+                cpu_usage_percent = GetDouble(resourceStatus, "cpu_usage_percent", "cpuUsagePercent"),
+                memory_usage_percent = GetDouble(resourceStatus, "memory_usage_percent", "memoryUsagePercent"),
+                free_disk_percent = GetDouble(resourceStatus, "free_disk_percent", "freeDiskPercent"),
+                should_pause = JsonBool(resourceStatus, false, "should_pause", "shouldPause"),
+                should_stop = JsonBool(resourceStatus, false, "should_stop", "shouldStop"),
+                warnings = GetStringArray(resourceStatus, "warnings")
+            },
+            storage_status = new
+            {
+                cleanup_plan_path = storagePlanPath,
+                storage_root = GetString(storagePlan, "storage_root", "storageRoot") ?? storagePaths.Root,
+                cleanup_candidates = cleanupCandidates,
+                safe_to_apply = GetBoolText(storagePlan, "safe_to_apply", "safeToApply"),
+                estimated_bytes_to_free = GetString(storagePlan, "estimated_bytes_to_free", "estimatedBytesToFree")
+            },
+            trading_domain = new
+            {
+                research_insights_path = Path.Combine(strategyRoot, "research_insights.json"),
+                robust_strategies = robustCount,
+                overfit_suspected = overfitCount,
+                high_risk_strategies = highRiskCount,
+                demo_bot_candidates = demoBotCandidates,
+                rejected_candidates = rejectedCandidates,
+                next_validation_recommendations = GetStringArray(researchInsights, "next_validation_recommendations", "nextValidationRecommendations").Take(8).ToList()
+            },
+            status_reasons = new
+            {
+                critical = criticalReasons,
+                warnings = warningReasons.Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList()
+            },
+            no_auto_trading = noAutoTrading,
+            human_review_required = humanReviewRequired
+        };
+
+        Directory.CreateDirectory(reportDirectory);
+        File.WriteAllText(reportPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
+
+        WriteField("overall_status", overallStatus);
+        WriteField("current_focus", currentFocus);
+        WriteField("active_domains", string.Join(", ", activeDomains));
+        WriteField("queued_tasks", queuedTasks.ToString());
+        WriteField("last_nightly_run", report.last_nightly_run ?? "-");
+        WriteField("last_autonomous_loop", report.last_autonomous_loop ?? "-");
+        WriteField("last_meta_review", report.last_meta_review ?? "-");
+        WriteField("learning_strategy", learningStrategyName);
+        WriteField("supervisor_running", supervisorProcess.Running.ToString().ToLowerInvariant());
+        WriteField("scheduler_enabled", schedulerStatus.Jobs.Count(job => job.Enabled).ToString());
+        WriteField("resource_action", report.resource_status.action);
+        WriteField("storage_cleanup", cleanupCandidates.ToString());
+        WriteField("robust_strategies", robustCount.ToString());
+        WriteField("demo_bot_candidates", demoBotCandidates.ToString());
+        WriteField("no_auto_trading", noAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", humanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("JSON Report", DisplayPath(reportPath));
+        WriteMessages("Top Blockers", topBlockers.Take(8).ToList());
+        WriteMessages("Next Recommended Actions", nextRecommendedActions.Take(8).ToList());
+        WriteMessages("Warnings", warningReasons.Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToList());
+
+        Console.WriteLine();
+        WriteSafety();
+        return criticalReasons.Count > 0 ? 1 : 0;
     }
 
     private int StartReadOnlyBridge()
@@ -6222,6 +6571,74 @@ internal sealed class HermesCli
             _ => GetString(root, names) ?? "unknown"
         };
     }
+
+    private static bool JsonBool(JsonElement root, bool fallback, params string[] names)
+    {
+        if (!TryGetProperty(root, out var value, names))
+        {
+            return fallback;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when bool.TryParse(value.GetString(), out var parsed) => parsed,
+            _ => fallback
+        };
+    }
+
+    private static bool SafetyFlagTrue(IEnumerable<JsonElement> roots, params string[] names)
+    {
+        foreach (var root in roots.Where(root => root.ValueKind == JsonValueKind.Object))
+        {
+            if (TryGetProperty(root, out var value, names))
+            {
+                if (value.ValueKind == JsonValueKind.False)
+                {
+                    return false;
+                }
+
+                if (value.ValueKind == JsonValueKind.String
+                    && bool.TryParse(value.GetString(), out var parsed)
+                    && !parsed)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static int GetArrayCount(JsonElement root, params string[] names)
+    {
+        if (!TryGetProperty(root, out var value, names))
+        {
+            return 0;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Array => value.GetArrayLength(),
+            JsonValueKind.Number when value.TryGetInt32(out var number) => number,
+            JsonValueKind.String when int.TryParse(value.GetString(), out var parsed) => parsed,
+            _ => 0
+        };
+    }
+
+    private static int FirstPositive(params int[] values) => values.FirstOrDefault(value => value > 0);
+
+    private static string FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+
+    private static List<string> CombineStringLists(params IEnumerable<string>[] groups) =>
+        groups
+            .SelectMany(group => group)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private static string FirstCommand(string[] args) => CommandAt(args, 0);
 
