@@ -61,6 +61,38 @@
       "daily_at": "05:40"
     },
     {
+      "job_id": "scan_software_domain",
+      "job_type": "scan_software_domain",
+      "enabled": true,
+      "schedule_type": "daily",
+      "command": "scan-software-domain",
+      "daily_at": "05:42"
+    },
+    {
+      "job_id": "scan_documentation_domain",
+      "job_type": "scan_documentation_domain",
+      "enabled": true,
+      "schedule_type": "daily",
+      "command": "scan-documentation-domain",
+      "daily_at": "05:43"
+    },
+    {
+      "job_id": "scan_process_domain",
+      "job_type": "scan_process_domain",
+      "enabled": true,
+      "schedule_type": "daily",
+      "command": "scan-process-domain",
+      "daily_at": "05:44"
+    },
+    {
+      "job_id": "scan_research_domain",
+      "job_type": "scan_research_domain",
+      "enabled": true,
+      "schedule_type": "daily",
+      "command": "scan-research-domain",
+      "daily_at": "05:45"
+    },
+    {
       "job_id": "process_research_queue",
       "job_type": "process_research_queue",
       "enabled": true,
@@ -79,10 +111,18 @@
       "enabled": true,
       "schedule_type": "daily",
       "command": "generate-hypotheses",
-      "daily_at": "05:45",
+      "daily_at": "05:50",
       "parameters": {
         "domain": "trading"
       }
+    },
+    {
+      "job_id": "generate_domain_insights",
+      "job_type": "generate_domain_insights",
+      "enabled": true,
+      "schedule_type": "daily",
+      "command": "domain-insights",
+      "daily_at": "05:52"
     },
     {
       "job_id": "planning_cycle_after_nightly",

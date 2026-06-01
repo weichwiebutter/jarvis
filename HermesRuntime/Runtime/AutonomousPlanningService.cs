@@ -31,6 +31,9 @@ public sealed class NeedDetectionEngine
         var walkForward = new WalkForwardValidationService(_storagePaths).LoadReport();
         var resource = new ResourceGuard(_storagePaths).Check();
         var cleanupPlan = new StorageHygieneService(_storagePaths).LoadPlan();
+        var domainService = new DomainCognitiveService(_storagePaths);
+        var domainStatus = domainService.BuildStatus();
+        var domainInsights = domainService.BuildInsights(domainStatus);
 
         DateTimeOffset? lastSourceCheck = sources.Count == 0
             ? null
@@ -194,23 +197,85 @@ public sealed class NeedDetectionEngine
                 ["run_storage_hygiene"]));
         }
 
-        var activeSourceDomains = sources
-            .Select(source => source.Domain)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var domain in CognitiveCoreService.Domains().Where(domain => !domain.Active))
+        foreach (var entry in domainStatus.Domains.Where(entry => entry.Active))
         {
-            if (!activeSourceDomains.Contains(domain.DomainId))
+            var domainItems = domainService.LoadKnowledgeItems(entry.Domain);
+            if (entry.Domain.Equals("software", StringComparison.OrdinalIgnoreCase)
+                && (entry.LastScannedAtUtc is null || entry.KnowledgeItemCount == 0))
             {
                 needs.Add(Need(
-                    $"domain_{domain.DomainId}_without_sources",
+                    "software_domain_missing_scan",
+                    NeedCategory.domain_gap,
+                    NeedSeverity.medium,
+                    "software",
+                    "Software-Domäne ohne aktuellen Scan",
+                    "Die aktive Software-Domäne braucht strukturierte Repo-, Architektur- und Test-Knowledge-Items.",
+                    [DomainFile(entry.Domain, "domain_profile.json"), DomainFile(entry.Domain, "knowledge_items.json")],
+                    ["scan_software_domain", "generate_domain_insights"]));
+            }
+
+            if (entry.Domain.Equals("documentation", StringComparison.OrdinalIgnoreCase)
+                && (entry.LastScannedAtUtc is null
+                    || entry.KnowledgeItemCount == 0
+                    || entry.Warnings.Count > 0
+                    || domainItems.Any(item => item.Tags.Contains("todo", StringComparer.OrdinalIgnoreCase)
+                        || item.Tags.Contains("documentation_gap", StringComparer.OrdinalIgnoreCase))))
+            {
+                needs.Add(Need(
+                    "documentation_gaps",
+                    NeedCategory.knowledge_gap,
+                    NeedSeverity.medium,
+                    "documentation",
+                    "Dokumentationsluecken prüfen",
+                    "Die Dokumentations-Domäne meldet fehlende, offene oder noch nicht geprüfte Dokumentationssignale.",
+                    [DomainFile(entry.Domain, "knowledge_items.json"), domainService.DomainInsightsPath],
+                    ["scan_documentation_domain", "generate_domain_insights"]));
+            }
+
+            if (entry.Domain.Equals("process", StringComparison.OrdinalIgnoreCase)
+                && (entry.LastScannedAtUtc is null
+                    || domainItems.Any(item => item.Tags.Contains("automation_candidate", StringComparer.OrdinalIgnoreCase))))
+            {
+                needs.Add(Need(
+                    "process_automation_candidates",
                     NeedCategory.domain_gap,
                     NeedSeverity.low,
-                    domain.DomainId,
-                    $"Domäne {domain.DomainId} ohne Quellen",
-                    $"Die geplante Domäne '{domain.Name}' hat noch keine Knowledge Sources.",
-                    [sourceRegistry.SourcesPath],
-                    ["scan_knowledge_sources"]));
+                    "process",
+                    "Prozess-Automation Kandidaten prüfen",
+                    "Die Prozess-Domäne enthält wiederkehrende Workflows oder sichere Automationskandidaten.",
+                    [DomainFile(entry.Domain, "knowledge_items.json")],
+                    ["scan_process_domain", "generate_domain_insights"]));
+            }
+
+            if (entry.Domain.Equals("research", StringComparison.OrdinalIgnoreCase)
+                && (entry.LastScannedAtUtc is null || (now - entry.LastScannedAtUtc.Value).TotalDays > 7))
+            {
+                needs.Add(Need(
+                    "research_sources_stale",
+                    NeedCategory.knowledge_gap,
+                    NeedSeverity.medium,
+                    "research",
+                    "Research-Quellen veraltet oder ungescannt",
+                    "Die allgemeine Research-Domäne benötigt einen aktuellen metadata-only Source Scan.",
+                    [DomainFile(entry.Domain, "knowledge_sources.json")],
+                    ["scan_research_domain", "generate_domain_insights"]));
+            }
+
+            var hasRecentDomainInsight = domainInsights.Insights.Any(insight =>
+                insight.Domain.Equals(entry.Domain, StringComparison.OrdinalIgnoreCase));
+            if (!hasRecentDomainInsight
+                && entry.LastScannedAtUtc is not null
+                && (now - entry.LastScannedAtUtc.Value).TotalHours > 24)
+            {
+                needs.Add(Need(
+                    $"domain_without_recent_insights_{entry.Domain}",
+                    NeedCategory.domain_gap,
+                    NeedSeverity.low,
+                    entry.Domain,
+                    $"Domäne {entry.Domain} ohne aktuelle Insights",
+                    "Aktive Domänen sollen regelmäßig zusammengefasst werden, damit Trading nicht alle kognitiven Ressourcen bindet.",
+                    [domainService.DomainInsightsPath, DomainFile(entry.Domain, "domain_profile.json")],
+                    ["generate_domain_insights"]));
             }
         }
 
@@ -244,6 +309,9 @@ public sealed class NeedDetectionEngine
                 DetectedAtUtc: now,
                 NoTradingExecution: true,
                 HumanReviewRequired: true);
+
+        string DomainFile(string domain, string fileName) =>
+            Path.Combine(domainService.DomainsRoot, domain, fileName);
     }
 
     public IReadOnlyList<DetectedNeed> LoadNeeds()
@@ -391,7 +459,12 @@ public sealed class AutonomousTaskPlanner
         "run_overfit_report",
         "run_storage_hygiene",
         "download_missing_market_data",
-        "generate_cognitive_insights"
+        "generate_cognitive_insights",
+        "scan_software_domain",
+        "scan_documentation_domain",
+        "scan_process_domain",
+        "scan_research_domain",
+        "generate_domain_insights"
     };
 
     public PlanningDecision Plan(IReadOnlyList<DetectedNeed> needs, IReadOnlyList<HermesGoal> goals, int maxItems)
@@ -474,7 +547,7 @@ public sealed class AutonomousTaskPlanner
             NeedCategory.data_gap => ["download_missing_market_data", "run_walkforward_validation"],
             NeedCategory.quality_risk => ["run_overfit_report", "run_realism_report"],
             NeedCategory.resource_risk or NeedCategory.maintenance => ["run_storage_hygiene"],
-            NeedCategory.domain_gap => ["scan_knowledge_sources"],
+            NeedCategory.domain_gap => ["scan_knowledge_sources", "generate_domain_insights"],
             _ => ["generate_cognitive_insights"]
         };
     }
@@ -550,6 +623,10 @@ public sealed class AutonomousTaskPlanner
         taskType switch
         {
             "scan_knowledge_sources" => "discovery",
+            "scan_software_domain" => "discovery",
+            "scan_documentation_domain" => "discovery",
+            "scan_process_domain" => "discovery",
+            "scan_research_domain" => "discovery",
             "download_missing_market_data" => "discovery",
             "process_research_queue" => "validation",
             "run_walkforward_validation" => "validation",
@@ -557,6 +634,7 @@ public sealed class AutonomousTaskPlanner
             "run_realism_report" => "review",
             "run_overfit_report" => "review",
             "run_storage_hygiene" => "review",
+            "generate_domain_insights" => "review",
             _ => need.Category == NeedCategory.domain_gap ? "discovery" : "validation"
         };
 
@@ -573,6 +651,11 @@ public sealed class AutonomousTaskPlanner
             "run_storage_hygiene" => "storage_health_reviewed",
             "download_missing_market_data" => "historical_data_gap_reduced",
             "generate_cognitive_insights" => "cognitive_insights_updated",
+            "scan_software_domain" => "software_domain_knowledge_updated",
+            "scan_documentation_domain" => "documentation_domain_gaps_updated",
+            "scan_process_domain" => "process_domain_workflows_updated",
+            "scan_research_domain" => "research_domain_sources_updated",
+            "generate_domain_insights" => "multi_domain_insights_updated",
             _ => "structured_research_progress"
         };
 
@@ -625,7 +708,12 @@ public sealed class AutonomousPlanningCycleService
     {
         var decision = PlanNextTasks(maxItems);
         var queue = new ResearchQueueService(_storagePaths).EnqueuePlannedTasks(decision.PlannedTasks);
-        new HypothesisGenerator(_storagePaths).Generate("trading");
+        foreach (var domain in CognitiveCoreService.Domains().Where(domain => domain.Active).Select(domain => domain.DomainId))
+        {
+            new HypothesisGenerator(_storagePaths).Generate(domain);
+        }
+
+        new DomainCognitiveService(_storagePaths).BuildInsights();
         new CognitiveCoreService(_storagePaths).BuildStatus();
         WriteStatus(decision, queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)));
         return decision;
@@ -704,7 +792,10 @@ public sealed class AutonomousPlanningCycleService
             ActiveGoals: decision.Goals.Count(goal => goal.Active),
             PlannedTasks: decision.PlannedTasks.Count,
             QueuedResearchItems: queuedResearchItems,
-            ActiveDomains: ["trading"],
+            ActiveDomains: CognitiveCoreService.Domains()
+                .Where(domain => domain.Active)
+                .Select(domain => domain.DomainId)
+                .ToList(),
             LastDecisionId: decision.DecisionId,
             NextAction: decision.PlannedTasks.Count == 0 ? "monitor_current_state" : "process_research_queue",
             TopNeeds: decision.Needs.Take(8).Select(need => $"{need.Severity}:{need.Category}:{need.NeedId}").ToList(),

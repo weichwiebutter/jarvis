@@ -203,7 +203,9 @@ public sealed class TaskOutcomeEvaluator
             && result.OutputPaths.Any(path => File.Exists(path) || Directory.Exists(path));
         var insightEvidence = result.TaskType.Equals("generate_hypotheses", StringComparison.OrdinalIgnoreCase)
             || result.TaskType.Equals("generate_cognitive_insights", StringComparison.OrdinalIgnoreCase)
+            || result.TaskType.Equals("generate_domain_insights", StringComparison.OrdinalIgnoreCase)
             || result.OutputPaths.Any(path => path.Contains("cognitive_insights", StringComparison.OrdinalIgnoreCase))
+            || result.OutputPaths.Any(path => path.Contains("domain_insights", StringComparison.OrdinalIgnoreCase))
             || insights.Count > 0;
         var queueChanged = queue.Items.Any(item =>
             item.Notes.Any(note => note.Contains(result.TaskId, StringComparison.OrdinalIgnoreCase))
@@ -478,16 +480,19 @@ public sealed class TaskOutcomeEvaluator
             "download_missing_market_data" => 0.55,
             "run_storage_hygiene" => 0.35,
             "process_research_queue" => 0.3,
+            "scan_software_domain" or "scan_documentation_domain" or "scan_process_domain" or "scan_research_domain" => 0.2,
+            "generate_domain_insights" => 0.18,
             _ => 0.22
         };
 
     private static double LearningFor(string taskType) =>
         taskType switch
         {
-            "generate_hypotheses" or "generate_cognitive_insights" => 0.82,
+            "generate_hypotheses" or "generate_cognitive_insights" or "generate_domain_insights" => 0.82,
             "run_strategy_research" or "run_walkforward_validation" => 0.78,
             "run_overfit_report" or "run_realism_report" => 0.68,
             "scan_knowledge_sources" => 0.62,
+            "scan_software_domain" or "scan_documentation_domain" or "scan_process_domain" or "scan_research_domain" => 0.66,
             "process_research_queue" => 0.56,
             "run_storage_hygiene" => 0.32,
             _ => 0.42

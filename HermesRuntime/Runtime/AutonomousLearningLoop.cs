@@ -313,7 +313,12 @@ public sealed class AutonomousLearningLoop
         var outcomes = evaluator.Evaluate(config.MaxOutcomesPerIteration);
         var plannerFeedback = evaluator.LoadOrCreatePlannerFeedback();
         var goalFeedback = evaluator.LoadOrCreateGoalFeedback();
-        var insights = new HypothesisGenerator(_storagePaths).Generate("trading");
+        var generator = new HypothesisGenerator(_storagePaths);
+        var insights = CognitiveCoreService.Domains()
+            .Where(domain => domain.Active)
+            .SelectMany(domain => generator.Generate(domain.DomainId))
+            .ToList();
+        new DomainCognitiveService(_storagePaths).BuildInsights();
         new CognitiveCoreService(_storagePaths).BuildStatus();
         var metaReview = new MetaReviewEngine(_storagePaths).RunReview();
 

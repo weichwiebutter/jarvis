@@ -24,12 +24,20 @@ public sealed class CognitiveCoreService
     public CognitiveStatus BuildStatus()
     {
         EnsureDirectories();
+        var domainService = new DomainCognitiveService(_storagePaths);
+        domainService.EnsureProfiles();
         var sourceRegistry = new KnowledgeSourceRegistry(_storagePaths);
         var sources = sourceRegistry.LoadOrCreateSources();
         var catalog = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
         var queue = new ResearchQueueService(_storagePaths).LoadOrCreateQueue();
         var insights = new HypothesisGenerator(_storagePaths).LoadInsights();
         var memory = new TradingDomainAdapter(_storagePaths).SyncMemory();
+        var domainStatus = domainService.BuildStatus();
+        domainService.BuildInsights(domainStatus);
+        var activeDomains = Domains()
+            .Where(domain => domain.Active)
+            .Select(domain => domain.DomainId)
+            .ToList();
 
         var status = new CognitiveStatus(
             StatusVersion: "cognitive_status_v1",
@@ -40,13 +48,18 @@ public sealed class CognitiveCoreService
             QueueItemCount: queue.Items.Count,
             InsightCount: insights.Count,
             MemoryEntryCount: memory.Count,
-            ActiveDomains: ["trading"],
+            ActiveDomains: activeDomains,
             NextActions:
             [
+                "scan_software_domain",
+                "scan_documentation_domain",
+                "scan_process_domain",
+                "scan_research_domain",
                 "scan_knowledge_sources",
                 "process_research_queue",
                 "generate_cognitive_insights",
-                "keep_trading_research_inside_no_auto_trading_safety"
+                "generate_domain_insights",
+                "keep_all_domains_inside_no_auto_trading_safety"
             ],
             CognitiveRoot: Root,
             NoTradingExecution: true,
@@ -61,10 +74,10 @@ public sealed class CognitiveCoreService
     public static IReadOnlyList<CognitiveDomain> Domains() =>
     [
         new("trading", "Trading Research", Active: true, Status: "active_domain_1"),
-        new("software", "Software Engineering", Active: false, Status: "planned"),
-        new("documentation", "Documentation", Active: false, Status: "planned"),
-        new("process", "Process Improvement", Active: false, Status: "planned"),
-        new("research", "General Research", Active: false, Status: "planned")
+        new("software", "Software Engineering", Active: true, Status: "active_domain_v1"),
+        new("documentation", "Documentation", Active: true, Status: "active_domain_v1"),
+        new("process", "Process Improvement", Active: true, Status: "active_domain_v1"),
+        new("research", "General Research", Active: true, Status: "active_domain_v1")
     ];
 
     private void EnsureDirectories()
@@ -93,12 +106,19 @@ public sealed class KnowledgeSourceRegistry
     {
         Directory.CreateDirectory(Root);
         var existing = LoadSources();
+        var defaults = DefaultSources(DateTimeOffset.UtcNow);
         if (existing.Count > 0)
         {
-            return existing;
+            var merged = MergeSources(existing, defaults);
+            if (merged.Count != existing.Count)
+            {
+                File.WriteAllText(SourcesPath, JsonSerializer.Serialize(merged, JsonDefaults.WriteOptions));
+            }
+
+            return merged;
         }
 
-        var sources = DefaultSources(DateTimeOffset.UtcNow);
+        var sources = defaults;
         File.WriteAllText(SourcesPath, JsonSerializer.Serialize(sources, JsonDefaults.WriteOptions));
         return sources;
     }
@@ -168,7 +188,27 @@ public sealed class KnowledgeSourceRegistry
 
         return tradingDe
             .Concat(trusted)
+            .Concat(DomainCognitiveService.DefaultCognitiveSources(timestampUtc))
             .OrderBy(source => source.SourceId, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static IReadOnlyList<CognitiveSource> MergeSources(
+        IReadOnlyList<CognitiveSource> existing,
+        IReadOnlyList<CognitiveSource> defaults)
+    {
+        var byId = existing.ToDictionary(source => source.SourceId, StringComparer.OrdinalIgnoreCase);
+        foreach (var source in defaults)
+        {
+            if (!byId.ContainsKey(source.SourceId))
+            {
+                byId[source.SourceId] = source;
+            }
+        }
+
+        return byId.Values
+            .OrderBy(source => source.Domain, StringComparer.Ordinal)
+            .ThenBy(source => source.SourceId, StringComparer.Ordinal)
             .ToList();
     }
 
@@ -223,7 +263,14 @@ public sealed class KnowledgeCatalog
     public IReadOnlyList<KnowledgeCatalogItem> LoadOrCreateItems()
     {
         Directory.CreateDirectory(Root);
-        var items = new TradingKnowledgeMapper(_storagePaths).MapPatternCatalog();
+        var items = new TradingKnowledgeMapper(_storagePaths)
+            .MapPatternCatalog()
+            .Concat(new DomainCognitiveService(_storagePaths).LoadAllDomainKnowledgeItems())
+            .GroupBy(item => item.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(item => item.Domain, StringComparer.Ordinal)
+            .ThenBy(item => item.Id, StringComparer.Ordinal)
+            .ToList();
         File.WriteAllText(CatalogPath, JsonSerializer.Serialize(items, JsonDefaults.WriteOptions));
         new AnalystRole(_storagePaths).WriteCatalogOutput(items);
         return items;
@@ -532,10 +579,15 @@ public sealed class ResearchQueueService
         {
             "discovery" => "discovery",
             "scan_knowledge_sources" => "discovery",
+            "scan_software_domain" => "discovery",
+            "scan_documentation_domain" => "discovery",
+            "scan_process_domain" => "discovery",
+            "scan_research_domain" => "discovery",
             "download_missing_market_data" => "discovery",
             "simulation" => "simulation",
             "run_strategy_research" => "simulation",
             "review" => "review",
+            "generate_domain_insights" => "review",
             "run_realism_report" => "review",
             "run_overfit_report" => "review",
             "run_storage_hygiene" => "review",
@@ -719,10 +771,37 @@ public sealed class HypothesisGenerator
                 HumanReviewRequired: true))
             .ToList();
 
-        File.WriteAllText(HypothesesPath, JsonSerializer.Serialize(hypotheses, JsonDefaults.WriteOptions));
+        var allHypotheses = LoadHypotheses()
+            .Where(hypothesis => !hypothesis.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase))
+            .Concat(hypotheses)
+            .GroupBy(hypothesis => hypothesis.HypothesisId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(hypothesis => hypothesis.Domain, StringComparer.Ordinal)
+            .ThenBy(hypothesis => hypothesis.HypothesisId, StringComparer.Ordinal)
+            .ToList();
+        File.WriteAllText(HypothesesPath, JsonSerializer.Serialize(allHypotheses, JsonDefaults.WriteOptions));
         WriteInsights(domain, hypotheses);
         new SummarizerRole(_storagePaths).WriteHypothesisSummary(hypotheses);
         return hypotheses;
+    }
+
+    private IReadOnlyList<CognitiveHypothesis> LoadHypotheses()
+    {
+        if (!File.Exists(HypothesesPath))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<IReadOnlyList<CognitiveHypothesis>>(
+                File.ReadAllText(HypothesesPath),
+                JsonDefaults.SnapshotReadOptions) ?? [];
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return [];
+        }
     }
 
     public IReadOnlyList<CognitiveInsight> LoadInsights()
@@ -764,7 +843,15 @@ public sealed class HypothesisGenerator
                 HumanReviewRequired: true))
             .ToList();
 
-        File.WriteAllText(InsightsPath, JsonSerializer.Serialize(insights, JsonDefaults.WriteOptions));
+        var allInsights = LoadInsights()
+            .Where(insight => !insight.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase))
+            .Concat(insights)
+            .GroupBy(insight => insight.InsightId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(insight => insight.Domain, StringComparer.Ordinal)
+            .ThenBy(insight => insight.InsightId, StringComparer.Ordinal)
+            .ToList();
+        File.WriteAllText(InsightsPath, JsonSerializer.Serialize(allInsights, JsonDefaults.WriteOptions));
     }
 }
 
@@ -792,7 +879,10 @@ public sealed class CognitiveNightlyService
         var queuedResearchItems = 0;
         var hypothesesGenerated = 0;
         var insightsGenerated = 0;
-        IReadOnlyList<string> activeDomains = ["trading"];
+        IReadOnlyList<string> activeDomains = CognitiveCoreService.Domains()
+            .Where(domain => domain.Active)
+            .Select(domain => domain.DomainId)
+            .ToList();
         DateTimeOffset? lastKnowledgeScanUtc = null;
         DateTimeOffset? lastQueueProcessedUtc = null;
         DateTimeOffset? lastCognitiveInsightsUtc = null;
@@ -833,9 +923,15 @@ public sealed class CognitiveNightlyService
                 warnings.Add("no_open_research_queue_items_processed");
             }
 
-            var hypotheses = new HypothesisGenerator(_storagePaths).Generate("trading");
+            var domainService = new DomainCognitiveService(_storagePaths);
+            domainService.BuildStatus();
+            domainService.BuildInsights();
+            var generator = new HypothesisGenerator(_storagePaths);
+            var hypotheses = activeDomains
+                .SelectMany(domain => generator.Generate(domain))
+                .ToList();
             hypothesesGenerated = hypotheses.Count;
-            var insights = new HypothesisGenerator(_storagePaths).LoadInsights();
+            var insights = generator.LoadInsights();
             insightsGenerated = insights.Count;
             lastCognitiveInsightsUtc = DateTimeOffset.UtcNow;
             if (hypotheses.Count == 0)

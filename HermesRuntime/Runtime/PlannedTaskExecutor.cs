@@ -284,6 +284,11 @@ public sealed class PlannedTaskExecutor
                 ["download_missing_market_data_requires_explicit_parameters"],
                 "requires_explicit_market_data_parameters"),
             "generate_cognitive_insights" => ExecuteGenerateCognitiveInsights(task),
+            "scan_software_domain" => ExecuteScanDomain(task, "software"),
+            "scan_documentation_domain" => ExecuteScanDomain(task, "documentation"),
+            "scan_process_domain" => ExecuteScanDomain(task, "process"),
+            "scan_research_domain" => ExecuteScanDomain(task, "research"),
+            "generate_domain_insights" => ExecuteGenerateDomainInsights(task),
             _ => BuildResult(
                 task,
                 "skipped",
@@ -445,21 +450,57 @@ public sealed class PlannedTaskExecutor
 
     private PlannedTaskExecutionResult ExecuteGenerateCognitiveInsights(PlannedTask task)
     {
-        var hypotheses = new HypothesisGenerator(_storagePaths).Generate("trading");
+        var generator = new HypothesisGenerator(_storagePaths);
+        var hypotheses = CognitiveCoreService.Domains()
+            .Where(domain => domain.Active)
+            .SelectMany(domain => generator.Generate(domain.DomainId))
+            .ToList();
         var status = new CognitiveCoreService(_storagePaths).BuildStatus();
         return BuildResult(
             task,
             "completed",
             $"Cognitive insights updated; hypotheses={hypotheses.Count}; queue_items={status.QueueItemCount}.",
-            [new HypothesisGenerator(_storagePaths).InsightsPath, new CognitiveCoreService(_storagePaths).StatusPath],
+            [generator.InsightsPath, new CognitiveCoreService(_storagePaths).StatusPath],
             hypotheses.Count == 0 ? ["no_cognitive_insights_generated"] : []);
+    }
+
+    private PlannedTaskExecutionResult ExecuteScanDomain(PlannedTask task, string domain)
+    {
+        var service = new DomainCognitiveService(_storagePaths);
+        var result = service.ScanDomain(domain);
+        return BuildResult(
+            task,
+            "completed",
+            $"Domain scan completed for '{domain}'; sources={result.SourcesScanned}; knowledge_items={result.KnowledgeItems}.",
+            result.OutputPaths,
+            result.Warnings);
+    }
+
+    private PlannedTaskExecutionResult ExecuteGenerateDomainInsights(PlannedTask task)
+    {
+        var service = new DomainCognitiveService(_storagePaths);
+        var status = service.BuildStatus();
+        var insights = service.BuildInsights(status);
+        new CognitiveCoreService(_storagePaths).BuildStatus();
+        return BuildResult(
+            task,
+            "completed",
+            $"Domain insights updated; active_domains={status.ActiveDomains.Count}; insights={insights.Insights.Count}.",
+            [service.DomainStatusPath, service.DomainInsightsPath],
+            insights.Insights.Count == 0 ? ["no_domain_insights_generated"] : []);
     }
 
     private void RefreshCognitivePlanningOutputs()
     {
         try
         {
-            new HypothesisGenerator(_storagePaths).Generate("trading");
+            var generator = new HypothesisGenerator(_storagePaths);
+            foreach (var domain in CognitiveCoreService.Domains().Where(domain => domain.Active))
+            {
+                generator.Generate(domain.DomainId);
+            }
+
+            new DomainCognitiveService(_storagePaths).BuildInsights();
             var needs = new NeedDetectionEngine(_storagePaths).Detect();
             new GoalManager(_storagePaths).EvaluateGoals(needs);
             new CognitiveCoreService(_storagePaths).BuildStatus();

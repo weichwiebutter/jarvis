@@ -723,7 +723,7 @@ public sealed class LearningStrategyManager
         {
             strategy = "source_expansion";
             reason = "At least one domain has no knowledge sources.";
-            priorityTasks = ["scan_knowledge_sources", "generate_hypotheses"];
+            priorityTasks = ["scan_knowledge_sources", "scan_software_domain", "scan_documentation_domain", "scan_process_domain", "scan_research_domain", "generate_domain_insights"];
             deprioritized = [];
             expected = "increase curated knowledge coverage";
         }
@@ -731,9 +731,21 @@ public sealed class LearningStrategyManager
         {
             strategy = "exploration";
             reason = "No dominant blocker; explore new hypotheses conservatively.";
-            priorityTasks = ["generate_hypotheses", "scan_knowledge_sources", "process_research_queue"];
+            priorityTasks = ["generate_hypotheses", "scan_knowledge_sources", "generate_domain_insights", "process_research_queue"];
             deprioritized = [];
             expected = "discover new candidates while preserving no-auto-trading safety";
+        }
+
+        var focusDomains = domains
+            .Where(domain => domain.Active || domain.Score.Classification is "weak" or "needs_more_data")
+            .Select(domain => domain.Domain)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(5)
+            .ToList();
+        if (focusDomains.Count > 1
+            && !focusDomains.Contains("balanced", StringComparer.OrdinalIgnoreCase))
+        {
+            focusDomains.Insert(0, "balanced");
         }
 
         return new LearningStrategy(
@@ -743,12 +755,7 @@ public sealed class LearningStrategyManager
             Reason: reason,
             PriorityTaskTypes: priorityTasks,
             DeprioritizedTaskTypes: deprioritized.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-            DomainFocus: domains
-                .Where(domain => domain.Active || domain.Score.Classification is "weak" or "needs_more_data")
-                .Select(domain => domain.Domain)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(5)
-                .ToList(),
+            DomainFocus: focusDomains.Take(5).ToList(),
             ExpectedEffect: expected,
             NoTradingExecution: true,
             NoBrokerAction: true,
