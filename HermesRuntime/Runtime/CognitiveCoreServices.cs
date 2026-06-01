@@ -385,6 +385,65 @@ public sealed class ResearchQueueService
 
     public ResearchQueue Process(int maxItems)
     {
+        return ProcessWhere(maxItems, _ => true, "processed_by_cognitive_queue_no_trading_execution");
+    }
+
+    public ResearchQueue ProcessNonPlannedItems(int maxItems)
+    {
+        return ProcessWhere(
+            maxItems,
+            item => !item.Notes.Any(note => note.StartsWith("planned_task:", StringComparison.OrdinalIgnoreCase)),
+            "processed_by_planned_task_executor_no_trading_execution");
+    }
+
+    public ResearchQueue MarkPlannedTaskExecution(
+        string plannedTaskId,
+        string status,
+        string reason,
+        IReadOnlyList<string> warnings)
+    {
+        var queue = LoadOrCreateQueue();
+        var now = DateTimeOffset.UtcNow;
+        var items = queue.Items
+            .Select(item =>
+            {
+                var matches = item.Notes.Any(note =>
+                    note.Equals($"planned_task:{plannedTaskId}", StringComparison.OrdinalIgnoreCase));
+                if (!matches)
+                {
+                    return item;
+                }
+
+                var nextQueue = status.Equals("completed", StringComparison.OrdinalIgnoreCase)
+                    ? "archive"
+                    : status.Equals("failed", StringComparison.OrdinalIgnoreCase) || status.Equals("skipped", StringComparison.OrdinalIgnoreCase)
+                        ? "review"
+                        : item.Queue;
+                return item with
+                {
+                    Status = status,
+                    Queue = nextQueue,
+                    UpdatedAtUtc = now,
+                    Notes = item.Notes
+                        .Concat([
+                            $"execution_status:{status}",
+                            $"execution_reason:{reason}",
+                            $"execution_updated_utc:{now:O}"
+                        ])
+                        .Concat(warnings.Select(warning => $"execution_warning:{warning}"))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList()
+                };
+            })
+            .ToList();
+        return Write(items);
+    }
+
+    private ResearchQueue ProcessWhere(
+        int maxItems,
+        Func<ResearchQueueItem, bool> predicate,
+        string processedNote)
+    {
         maxItems = Math.Clamp(maxItems, 1, 500);
         var queue = LoadOrCreateQueue();
         var now = DateTimeOffset.UtcNow;
@@ -392,7 +451,9 @@ public sealed class ResearchQueueService
         var items = queue.Items
             .Select(item =>
             {
-                if (processed >= maxItems || !item.Status.Equals("open", StringComparison.OrdinalIgnoreCase))
+                if (processed >= maxItems
+                    || !item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)
+                    || !predicate(item))
                 {
                     return item;
                 }
@@ -405,7 +466,7 @@ public sealed class ResearchQueueService
                     Status = "processed",
                     Queue = item.Type.Equals("review", StringComparison.OrdinalIgnoreCase) ? "review" : "archive",
                     UpdatedAtUtc = now,
-                    Notes = item.Notes.Concat(["processed_by_cognitive_queue_no_trading_execution"]).ToList()
+                    Notes = item.Notes.Concat([processedNote]).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
                 };
             })
             .ToList();

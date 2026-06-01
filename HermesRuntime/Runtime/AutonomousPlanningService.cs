@@ -590,6 +590,32 @@ public sealed class AutonomousPlanningCycleService
         }
     }
 
+    public PlanningDecision? UpdateTaskStatuses(IReadOnlyDictionary<string, string> statuses)
+    {
+        var decision = LoadLatestDecision();
+        if (decision is null)
+        {
+            return null;
+        }
+
+        var updated = decision with
+        {
+            PlannedTasks = decision.PlannedTasks
+                .Select(task => statuses.TryGetValue(task.TaskId, out var status)
+                    ? task with { Status = status }
+                    : task)
+                .ToList()
+        };
+        WriteDecision(updated);
+        WriteStatus(
+            updated,
+            queuedResearchItems: new ResearchQueueService(_storagePaths)
+                .LoadOrCreateQueue()
+                .Items
+                .Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)));
+        return updated;
+    }
+
     public AutonomousPlanningStatus BuildStatus()
     {
         var decision = LoadLatestDecision();

@@ -268,7 +268,8 @@ public sealed class HermesInternalScheduler
                 || job.Command.Equals("cognitive-insights", StringComparison.OrdinalIgnoreCase),
             "trading_nightly_beta3" => job.Command.Equals("run-nightly-beta3", StringComparison.OrdinalIgnoreCase),
             "run_planning_cycle" => job.Command.Equals("run-planning-cycle", StringComparison.OrdinalIgnoreCase),
-            "process_planned_tasks" => job.Command.Equals("process-planned-tasks", StringComparison.OrdinalIgnoreCase),
+            "process_planned_tasks" => job.Command.Equals("process-planned-tasks", StringComparison.OrdinalIgnoreCase)
+                || job.Command.Equals("execute-planned-tasks", StringComparison.OrdinalIgnoreCase),
             _ => false
         };
     }

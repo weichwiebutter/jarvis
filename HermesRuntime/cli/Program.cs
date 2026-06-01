@@ -90,6 +90,9 @@ internal sealed class HermesCli
             "detect-needs" => DetectNeeds(),
             "plan-next-tasks" => PlanNextTasks(),
             "run-planning-cycle" => RunPlanningCycle(),
+            "execute-planned-tasks" => ExecutePlannedTasks(),
+            "planned-task-status" => ShowPlannedTaskStatus(),
+            "task-execution-log" => ShowTaskExecutionLog(),
             "explain-plan" => ExplainPlan(),
             "explain-task" => ExplainTask(),
             "bot-candidates" => ShowBotCandidates(),
@@ -188,6 +191,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes detect-needs     aktuelle Bedarfe erkennen");
         Console.WriteLine("  hermes plan-next-tasks --max-items 20 Aufgaben aus Needs/Goals planen");
         Console.WriteLine("  hermes run-planning-cycle --max-items 20 Planning Cycle ausfuehren und Research Queue aktualisieren");
+        Console.WriteLine("  hermes execute-planned-tasks --max-items 10 geplante Aufgaben kontrolliert ausfuehren");
+        Console.WriteLine("  hermes planned-task-status Planned Task Execution Status anzeigen");
+        Console.WriteLine("  hermes task-execution-log Planned Task Execution Log anzeigen");
         Console.WriteLine("  hermes explain-plan     letzte Planning-Entscheidung erklaeren");
         Console.WriteLine("  hermes explain-task --id <TASK_ID> einzelne geplante Aufgabe erklaeren");
         Console.WriteLine("  hermes bot-candidates     strenge Demo-Bot-Kandidatenbewertung anzeigen");
@@ -779,14 +785,20 @@ internal sealed class HermesCli
                 {
                     var planning = new AutonomousPlanningCycleService(storagePaths);
                     var decision = planning.RunPlanningCycle(maxItems: 20);
+                    var executor = new PlannedTaskExecutor(storagePaths);
+                    var executionResults = executor.Execute(maxItems: 10);
                     planningStepCompleted = true;
-                    workPerformed += decision.PlannedTasks.Count;
+                    workPerformed += decision.PlannedTasks.Count
+                        + executionResults.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase));
 
                     WriteSubHeader("Autonomous Planning Step");
                     WriteField("needs_detected", decision.Needs.Count.ToString());
                     WriteField("planned_tasks", decision.PlannedTasks.Count.ToString());
+                    WriteField("executed_planned_tasks", executionResults.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)).ToString());
+                    WriteField("skipped_planned_tasks", executionResults.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase)).ToString());
                     WriteField("planning_status", DisplayPath(planning.PlanningStatusPath));
                     WriteField("planned_tasks_report", DisplayPath(planning.PlannedTasksPath));
+                    WriteField("task_execution_state", DisplayPath(executor.ExecutionStatePath));
                     Console.WriteLine();
                 }
 
@@ -1451,16 +1463,17 @@ internal sealed class HermesCli
     private static ScheduledJobExecutionResult ExecuteProcessPlannedTasksJob(StoragePaths storagePaths, ScheduledJobDefinition job)
     {
         var maxItems = ReadMaxItems(job, fallback: 20);
-        var service = new AutonomousPlanningCycleService(storagePaths);
-        var decision = service.LoadLatestDecision() ?? service.PlanNextTasks(maxItems);
-        var tasks = decision.PlannedTasks.Take(maxItems).ToList();
-        var queue = new ResearchQueueService(storagePaths).EnqueuePlannedTasks(tasks);
+        var executor = new PlannedTaskExecutor(storagePaths);
+        var results = executor.Execute(maxItems);
+        var completed = results.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase));
+        var skipped = results.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase));
+        var failed = results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase));
         return new ScheduledJobExecutionResult(
-            Status: "completed",
-            WorkPerformed: tasks.Count > 0,
-            Action: $"process_planned_tasks queued_open={queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase))}; tasks={tasks.Count}",
-            ReportPath: new ResearchQueueService(storagePaths).QueuePath,
-            Warnings: []);
+            Status: failed > 0 ? "failed" : "completed",
+            WorkPerformed: completed > 0,
+            Action: $"process_planned_tasks completed={completed}; skipped={skipped}; failed={failed}",
+            ReportPath: executor.ExecutionStatePath,
+            Warnings: results.SelectMany(result => result.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
     }
 
     private static int ReadMaxItems(ScheduledJobDefinition job, int fallback) =>
@@ -3008,6 +3021,79 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ExecutePlannedTasks()
+    {
+        WriteHeader("Hermes Controlled Planned Task Execution");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 10, min: 1, max: 100);
+        var storagePaths = BuildStoragePaths();
+        var executor = new PlannedTaskExecutor(storagePaths);
+        var results = executor.Execute(maxItems);
+        var state = executor.LoadState() ?? executor.BuildStatus();
+
+        WriteField("Execution State", DisplayPath(executor.ExecutionStatePath));
+        WriteField("Execution Log", DisplayPath(executor.ExecutionLogPath));
+        WriteField("Requested Max Items", maxItems.ToString());
+        WriteField("Results", results.Count.ToString());
+        WriteField("Completed", results.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)).ToString());
+        WriteField("Skipped", results.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase)).ToString());
+        WriteField("Failed", results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)).ToString());
+        WriteField("Pending Tasks", state.PendingTasks.ToString());
+        foreach (var result in results)
+        {
+            WritePlannedTaskExecutionResult(result);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return results.Any(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)) ? 1 : 0;
+    }
+
+    private int ShowPlannedTaskStatus()
+    {
+        WriteHeader("Hermes Planned Task Execution Status");
+        var executor = new PlannedTaskExecutor(BuildStoragePaths());
+        var state = executor.BuildStatus();
+
+        WriteField("State", DisplayPath(executor.ExecutionStatePath));
+        WriteField("Execution Log", DisplayPath(executor.ExecutionLogPath));
+        WriteField("Updated UTC", state.UpdatedAtUtc.ToString("O"));
+        WriteField("Pending", state.PendingTasks.ToString());
+        WriteField("Running", state.RunningTasks.ToString());
+        WriteField("Completed", state.CompletedTasks.ToString());
+        WriteField("Skipped", state.SkippedTasks.ToString());
+        WriteField("Failed", state.FailedTasks.ToString());
+        WriteField("Running Task", state.RunningTaskId ?? "-");
+        WriteField("Last Task", state.LastTaskId ?? "-");
+        WriteField("Last Status", state.LastStatus);
+        foreach (var result in state.RecentResults.Take(10))
+        {
+            WritePlannedTaskExecutionResult(result);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowTaskExecutionLog()
+    {
+        WriteHeader("Hermes Planned Task Execution Log");
+        var limit = ReadIntOption(_args, "--limit", fallback: 20, min: 1, max: 200);
+        var executor = new PlannedTaskExecutor(BuildStoragePaths());
+        var results = executor.LoadRecentResults(limit);
+
+        WriteField("Execution Log", DisplayPath(executor.ExecutionLogPath));
+        WriteField("Entries Shown", results.Count.ToString());
+        foreach (var result in results)
+        {
+            WritePlannedTaskExecutionResult(result);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ExplainPlan()
     {
         WriteHeader("Hermes Planning Explanation");
@@ -3937,6 +4023,23 @@ internal sealed class HermesCli
         WriteMessages("Source Refs", task.SourceRefs);
         WriteField("no_trading_execution", task.NoTradingExecution.ToString().ToLowerInvariant());
         WriteField("human_review_required", task.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WritePlannedTaskExecutionResult(PlannedTaskExecutionResult result)
+    {
+        WriteSubHeader($"{result.Status} / {result.TaskType} / {result.TaskId}");
+        WriteField("Need", result.NeedId);
+        WriteField("Goal", result.GoalId);
+        WriteField("Started UTC", result.StartedAtUtc.ToString("O"));
+        WriteField("Completed UTC", result.CompletedAtUtc?.ToString("O") ?? "-");
+        WriteField("Reason", result.Reason);
+        WriteField("Skipped Reason", result.SkippedReason ?? "-");
+        WriteMessages("Output Paths", result.OutputPaths.Select(DisplayPath).ToList());
+        WriteMessages("Warnings", result.Warnings);
+        WriteField("no_trading_execution", result.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("no_broker_action", result.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("no_auto_trading", result.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", result.HumanReviewRequired.ToString().ToLowerInvariant());
     }
 
     private void WriteCognitiveHypothesis(CognitiveHypothesis hypothesis)

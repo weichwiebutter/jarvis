@@ -96,6 +96,17 @@
       }
     },
     {
+      "job_id": "process_planned_tasks_after_planning",
+      "job_type": "process_planned_tasks",
+      "enabled": true,
+      "schedule_type": "interval",
+      "command": "execute-planned-tasks",
+      "every_minutes": 60,
+      "parameters": {
+        "max_items": "10"
+      }
+    },
+    {
       "job_id": "health_snapshot",
       "job_type": "health_snapshot",
       "enabled": true,

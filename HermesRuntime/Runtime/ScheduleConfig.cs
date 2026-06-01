@@ -86,6 +86,14 @@ public sealed record ScheduleConfig(
                 DailyAt: "05:55",
                 Parameters: new Dictionary<string, string> { ["max_items"] = "20" }),
             new(
+                JobId: "process_planned_tasks_after_planning",
+                JobType: "process_planned_tasks",
+                Enabled: true,
+                ScheduleType: "interval",
+                Command: "execute-planned-tasks",
+                EveryMinutes: 60,
+                Parameters: new Dictionary<string, string> { ["max_items"] = "10" }),
+            new(
                 JobId: "health_snapshot",
                 JobType: "health_snapshot",
                 Enabled: true,
