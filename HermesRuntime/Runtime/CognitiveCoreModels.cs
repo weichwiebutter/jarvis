@@ -189,3 +189,24 @@ public sealed record CognitiveStatus(
     bool NoBrokerAction,
     bool NoAutoTrading,
     bool HumanReviewRequired);
+
+public sealed record NightlyCognitiveSummary(
+    string SummaryVersion,
+    DateTimeOffset UpdatedAtUtc,
+    string Status,
+    int SourcesScanned,
+    int KnowledgeItems,
+    int QueueItemsProcessed,
+    int QueuedResearchItems,
+    int HypothesesGenerated,
+    int InsightsGenerated,
+    IReadOnlyList<string> ActiveDomains,
+    IReadOnlyList<string> Warnings,
+    DateTimeOffset? LastKnowledgeScanUtc,
+    DateTimeOffset? LastQueueProcessedUtc,
+    DateTimeOffset? LastCognitiveInsightsUtc,
+    string? LastError,
+    bool NoTradingExecution,
+    bool NoBrokerAction,
+    bool NoAutoTrading,
+    bool HumanReviewRequired);

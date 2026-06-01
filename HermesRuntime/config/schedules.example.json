@@ -4,7 +4,7 @@
   "jobs": [
     {
       "job_id": "nightly_beta3_research",
-      "job_type": "nightly_beta3_research",
+      "job_type": "trading_nightly_beta3",
       "enabled": true,
       "schedule_type": "window",
       "command": "run-nightly-beta3",

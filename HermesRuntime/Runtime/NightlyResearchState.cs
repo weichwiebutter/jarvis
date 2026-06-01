@@ -22,4 +22,12 @@ public sealed record NightlyResearchState(
     bool CurrentlyRunning = false,
     double RuntimeDurationMinutes = 0,
     int? ProcessId = null,
-    DateTimeOffset? StopRequestedAtUtc = null);
+    DateTimeOffset? StopRequestedAtUtc = null,
+    bool? CognitiveJobsEnabled = null,
+    DateTimeOffset? LastKnowledgeScanUtc = null,
+    DateTimeOffset? LastQueueProcessedUtc = null,
+    DateTimeOffset? LastCognitiveInsightsUtc = null,
+    int? QueuedResearchItems = null,
+    IReadOnlyList<string>? ActiveDomains = null,
+    string? LastCognitiveError = null,
+    string? LastCognitiveSummaryPath = null);

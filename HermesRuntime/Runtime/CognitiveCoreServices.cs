@@ -652,6 +652,136 @@ public sealed class HypothesisGenerator
     }
 }
 
+public sealed class CognitiveNightlyService
+{
+    private readonly StoragePaths _storagePaths;
+
+    public CognitiveNightlyService(StoragePaths storagePaths)
+    {
+        _storagePaths = storagePaths;
+    }
+
+    public string Root => Path.Combine(_storagePaths.Root, "cognitive_core");
+
+    public string SummaryPath => Path.Combine(Root, "nightly_cognitive_summary.json");
+
+    public NightlyCognitiveSummary Run(int maxQueueItems = 20)
+    {
+        Directory.CreateDirectory(Root);
+        var now = DateTimeOffset.UtcNow;
+        var warnings = new List<string>();
+        var sourcesScanned = 0;
+        var knowledgeItems = 0;
+        var queueItemsProcessed = 0;
+        var queuedResearchItems = 0;
+        var hypothesesGenerated = 0;
+        var insightsGenerated = 0;
+        IReadOnlyList<string> activeDomains = ["trading"];
+        DateTimeOffset? lastKnowledgeScanUtc = null;
+        DateTimeOffset? lastQueueProcessedUtc = null;
+        DateTimeOffset? lastCognitiveInsightsUtc = null;
+        string? lastError = null;
+        var status = "completed";
+
+        try
+        {
+            var sources = new KnowledgeSourceScout(_storagePaths).Scan();
+            sourcesScanned = sources.Count;
+            lastKnowledgeScanUtc = now;
+            if (sources.Count == 0)
+            {
+                warnings.Add("no_knowledge_sources_scanned");
+            }
+
+            var catalog = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
+            knowledgeItems = catalog.Count;
+            if (catalog.Count == 0)
+            {
+                warnings.Add("knowledge_catalog_empty");
+            }
+
+            var queueService = new ResearchQueueService(_storagePaths);
+            var queueBefore = queueService.LoadOrCreateQueue();
+            var processedBefore = queueBefore.Items
+                .Where(item => item.Status.Equals("processed", StringComparison.OrdinalIgnoreCase))
+                .Select(item => item.QueueItemId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var queueAfter = queueService.Process(maxQueueItems);
+            queueItemsProcessed = queueAfter.Items.Count(item =>
+                item.Status.Equals("processed", StringComparison.OrdinalIgnoreCase)
+                && !processedBefore.Contains(item.QueueItemId));
+            queuedResearchItems = queueAfter.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase));
+            lastQueueProcessedUtc = DateTimeOffset.UtcNow;
+            if (queueItemsProcessed == 0)
+            {
+                warnings.Add("no_open_research_queue_items_processed");
+            }
+
+            var hypotheses = new HypothesisGenerator(_storagePaths).Generate("trading");
+            hypothesesGenerated = hypotheses.Count;
+            var insights = new HypothesisGenerator(_storagePaths).LoadInsights();
+            insightsGenerated = insights.Count;
+            lastCognitiveInsightsUtc = DateTimeOffset.UtcNow;
+            if (hypotheses.Count == 0)
+            {
+                warnings.Add("no_cognitive_hypotheses_generated");
+            }
+
+            var cognitiveStatus = new CognitiveCoreService(_storagePaths).BuildStatus();
+            activeDomains = cognitiveStatus.ActiveDomains;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
+        {
+            status = "completed_with_warnings";
+            lastError = ex.Message;
+            warnings.Add($"cognitive_nightly_error:{ex.GetType().Name}");
+        }
+
+        var summary = new NightlyCognitiveSummary(
+            SummaryVersion: "nightly_cognitive_summary_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            Status: status,
+            SourcesScanned: sourcesScanned,
+            KnowledgeItems: knowledgeItems,
+            QueueItemsProcessed: queueItemsProcessed,
+            QueuedResearchItems: queuedResearchItems,
+            HypothesesGenerated: hypothesesGenerated,
+            InsightsGenerated: insightsGenerated,
+            ActiveDomains: activeDomains,
+            Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            LastKnowledgeScanUtc: lastKnowledgeScanUtc,
+            LastQueueProcessedUtc: lastQueueProcessedUtc,
+            LastCognitiveInsightsUtc: lastCognitiveInsightsUtc,
+            LastError: lastError,
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+
+        File.WriteAllText(SummaryPath, JsonSerializer.Serialize(summary, JsonDefaults.WriteOptions));
+        return summary;
+    }
+
+    public NightlyCognitiveSummary? LoadSummary()
+    {
+        if (!File.Exists(SummaryPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<NightlyCognitiveSummary>(
+                File.ReadAllText(SummaryPath),
+                JsonDefaults.SnapshotReadOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+}
+
 public sealed class DomainKnowledgeAdapter
 {
     private readonly StoragePaths _storagePaths;

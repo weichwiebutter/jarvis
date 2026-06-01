@@ -663,19 +663,24 @@ internal sealed class HermesCli
         WriteField("Allowed Window", $"{config.StartHour:00}:00 -> {config.EndHour:00}:00");
         WriteField("Current Local Time", now.ToString("yyyy-MM-dd HH:mm:ss zzz"));
         WriteField("Max Quality Candidates", maxQualityCandidates.ToString());
+        var schedulerStatus = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json")).GetStatus();
+        var cognitiveJobsEnabled = AreCognitiveJobsEnabled(schedulerStatus);
+        var cognitiveNightly = new CognitiveNightlyService(storagePaths);
+        var cognitiveSummary = cognitiveNightly.LoadSummary();
 
         if (!config.IsInAllowedWindow(now))
         {
             var existing = nightly.LoadState();
-            var state = nightly.WriteState(existing with
+            var state = nightly.WriteState(WithCognitiveState(existing with
             {
                 UpdatedAtUtc = DateTimeOffset.UtcNow,
                 Status = "outside_nightly_window",
                 NextAction = "wait_for_23_00_to_05_00_window",
                 NextScheduledStartUtc = NightlyResearchService.CalculateNextScheduledStart(config, now).ToUniversalTime(),
                 CurrentlyRunning = false,
-                ProcessId = null
-            });
+                ProcessId = null,
+                StopRequestedAtUtc = null
+            }, cognitiveJobsEnabled, cognitiveSummary, cognitiveNightly.SummaryPath));
             WriteField("Status", state.Status);
             WriteField("Nightly State", DisplayPath(nightly.StatePath));
             Console.WriteLine();
@@ -708,9 +713,14 @@ internal sealed class HermesCli
         string? lastCheckpoint = null;
         string? lastError = null;
         DateTimeOffset? stopRequestedAtUtc = null;
+        var cognitiveStepCompleted = false;
 
         nightly.ClearStopRequest();
-        nightly.WriteState(nightly.CreateRunState(runId, startedAtUtc, deadlineUtc, status, nextAction));
+        nightly.WriteState(WithCognitiveState(
+            nightly.CreateRunState(runId, startedAtUtc, deadlineUtc, status, nextAction),
+            cognitiveJobsEnabled,
+            cognitiveSummary,
+            cognitiveNightly.SummaryPath));
 
         using var eventStore = new EventStore(storagePaths);
         var eventBus = new EventBus();
@@ -752,6 +762,26 @@ internal sealed class HermesCli
 
             try
             {
+                if (!cognitiveStepCompleted)
+                {
+                    cognitiveSummary = cognitiveNightly.Run(maxQueueItems: 20);
+                    cognitiveStepCompleted = true;
+                    var cognitiveWorkUnits = cognitiveSummary.QueueItemsProcessed
+                        + cognitiveSummary.HypothesesGenerated
+                        + cognitiveSummary.InsightsGenerated;
+                    workPerformed += cognitiveWorkUnits;
+
+                    WriteSubHeader("Cognitive Nightly Step");
+                    WriteField("sources_scanned", cognitiveSummary.SourcesScanned.ToString());
+                    WriteField("knowledge_items", cognitiveSummary.KnowledgeItems.ToString());
+                    WriteField("queue_items_processed", cognitiveSummary.QueueItemsProcessed.ToString());
+                    WriteField("hypotheses_generated", cognitiveSummary.HypothesesGenerated.ToString());
+                    WriteField("insights_generated", cognitiveSummary.InsightsGenerated.ToString());
+                    WriteField("summary", DisplayPath(cognitiveNightly.SummaryPath));
+                    WriteMessages("Warnings", cognitiveSummary.Warnings);
+                    Console.WriteLine();
+                }
+
                 var iteration = RunResearchAutopilotIteration(
                     storagePaths,
                     memoryService,
@@ -785,11 +815,11 @@ internal sealed class HermesCli
                     job,
                     iterations,
                     iteration.Status,
-                    $"nightly_beta3 work_performed={iteration.WorkUnits}; idle_iterations={idleIterations}; cleanup_candidates={cleanupPlan.Candidates.Count}",
+                    $"nightly_beta3 work_performed={iteration.WorkUnits}; cognitive_jobs_enabled={cognitiveJobsEnabled.ToString().ToLowerInvariant()}; idle_iterations={idleIterations}; cleanup_candidates={cleanupPlan.Candidates.Count}",
                     iteration.Index,
                     betaRunId: iteration.BetaReport?.RunId);
 
-                nightly.WriteState(new NightlyResearchState(
+                nightly.WriteState(WithCognitiveState(new NightlyResearchState(
                     StateVersion: "nightly_research_state_v1",
                     UpdatedAtUtc: DateTimeOffset.UtcNow,
                     Status: "running",
@@ -811,7 +841,10 @@ internal sealed class HermesCli
                     CurrentlyRunning: true,
                     RuntimeDurationMinutes: Math.Round((DateTimeOffset.UtcNow - startedAtUtc).TotalMinutes, 2),
                     ProcessId: Environment.ProcessId,
-                    StopRequestedAtUtc: null));
+                    StopRequestedAtUtc: null),
+                    cognitiveJobsEnabled,
+                    cognitiveSummary,
+                    cognitiveNightly.SummaryPath));
 
                 WriteSubHeader($"Nightly Iteration {iterations}");
                 WriteField("work_performed", iteration.WorkUnits.ToString());
@@ -867,7 +900,7 @@ internal sealed class HermesCli
             memoryService.UpdateIndex(),
             betaRunId: null);
 
-        var finalState = nightly.WriteState(new NightlyResearchState(
+        var finalState = nightly.WriteState(WithCognitiveState(new NightlyResearchState(
             StateVersion: "nightly_research_state_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
             Status: status,
@@ -889,7 +922,10 @@ internal sealed class HermesCli
             CurrentlyRunning: false,
             RuntimeDurationMinutes: Math.Round((DateTimeOffset.UtcNow - startedAtUtc).TotalMinutes, 2),
             ProcessId: null,
-            StopRequestedAtUtc: stopRequestedAtUtc));
+            StopRequestedAtUtc: stopRequestedAtUtc),
+            cognitiveJobsEnabled,
+            cognitiveSummary,
+            cognitiveNightly.SummaryPath));
 
         nightly.ClearStopRequest();
 
@@ -931,6 +967,7 @@ internal sealed class HermesCli
 
         WriteField("State", DisplayPath(service.StatePath));
         WriteNightlyState(displayState);
+        WriteCognitiveOperationalStatus(storagePaths);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -963,6 +1000,7 @@ internal sealed class HermesCli
         WriteField("Enabled Jobs", status.Jobs.Count(job => job.Enabled).ToString());
         WriteField("Next Action", status.Jobs.Count == 0 ? "no_jobs_configured" : $"next_job={status.Jobs.FirstOrDefault(job => job.NextRunUtc is not null)?.JobId ?? "-"}");
         WriteMessages("Warnings", status.Warnings);
+        WriteCognitiveOperationalStatus(storagePaths, status);
         foreach (var job in status.Jobs.Take(8))
         {
             WriteSchedulerJob(job);
@@ -1167,6 +1205,8 @@ internal sealed class HermesCli
             WriteSchedulerJob(job);
         }
 
+        WriteCognitiveOperationalStatus(storagePaths, schedulerStatus);
+
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -1350,20 +1390,19 @@ internal sealed class HermesCli
 
     private static ScheduledJobExecutionResult ExecuteGenerateCognitiveInsightsJob(StoragePaths storagePaths, ScheduledJobDefinition job)
     {
-        var domain = job.Parameters is not null
-            && job.Parameters.TryGetValue("domain", out var domainText)
-            && !string.IsNullOrWhiteSpace(domainText)
-            ? domainText
-            : "trading";
-        var generator = new HypothesisGenerator(storagePaths);
-        var hypotheses = generator.Generate(domain);
-        new CognitiveCoreService(storagePaths).BuildStatus();
+        var maxItems = job.Parameters is not null
+            && job.Parameters.TryGetValue("max_items", out var maxItemsText)
+            && int.TryParse(maxItemsText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMaxItems)
+            ? Math.Clamp(parsedMaxItems, 1, 500)
+            : 20;
+        var service = new CognitiveNightlyService(storagePaths);
+        var summary = service.Run(maxItems);
         return new ScheduledJobExecutionResult(
             Status: "completed",
-            WorkPerformed: hypotheses.Count > 0,
-            Action: $"generate_cognitive_insights hypotheses={hypotheses.Count}",
-            ReportPath: generator.InsightsPath,
-            Warnings: []);
+            WorkPerformed: summary.HypothesesGenerated > 0 || summary.QueueItemsProcessed > 0,
+            Action: $"generate_cognitive_insights hypotheses={summary.HypothesesGenerated}; queue_processed={summary.QueueItemsProcessed}",
+            ReportPath: service.SummaryPath,
+            Warnings: summary.Warnings);
     }
 
     private int ShowResourceStatus()
@@ -3466,6 +3505,68 @@ internal sealed class HermesCli
         WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
     }
 
+    private NightlyResearchState WithCognitiveState(
+        NightlyResearchState state,
+        bool cognitiveJobsEnabled,
+        NightlyCognitiveSummary? summary,
+        string summaryPath) =>
+        state with
+        {
+            CognitiveJobsEnabled = cognitiveJobsEnabled,
+            LastKnowledgeScanUtc = summary?.LastKnowledgeScanUtc,
+            LastQueueProcessedUtc = summary?.LastQueueProcessedUtc,
+            LastCognitiveInsightsUtc = summary?.LastCognitiveInsightsUtc,
+            QueuedResearchItems = summary?.QueuedResearchItems,
+            ActiveDomains = summary?.ActiveDomains ?? ["trading"],
+            LastCognitiveError = summary?.LastError,
+            LastCognitiveSummaryPath = summaryPath
+        };
+
+    private void WriteCognitiveOperationalStatus(StoragePaths storagePaths, SchedulerStatus? schedulerStatus = null)
+    {
+        schedulerStatus ??= new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json")).GetStatus();
+        var summaryService = new CognitiveNightlyService(storagePaths);
+        var summary = summaryService.LoadSummary();
+        var sources = new KnowledgeSourceRegistry(storagePaths).LoadSources();
+        var insights = new HypothesisGenerator(storagePaths).LoadInsights();
+        var queuedResearchItems = summary?.QueuedResearchItems;
+
+        if (queuedResearchItems is null)
+        {
+            var queue = new ResearchQueueService(storagePaths).LoadOrCreateQueue();
+            queuedResearchItems = queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase));
+        }
+
+        var lastKnowledgeScan = summary?.LastKnowledgeScanUtc
+            ?? sources.OrderByDescending(source => source.LastCheckedUtc).FirstOrDefault()?.LastCheckedUtc;
+        var lastCognitiveInsights = summary?.LastCognitiveInsightsUtc
+            ?? insights.OrderByDescending(insight => insight.CreatedAtUtc).FirstOrDefault()?.CreatedAtUtc;
+
+        WriteSubHeader("Cognitive Core");
+        WriteField("cognitive_jobs_enabled", AreCognitiveJobsEnabled(schedulerStatus).ToString().ToLowerInvariant());
+        WriteField("last_knowledge_scan", lastKnowledgeScan?.ToString("O") ?? "-");
+        WriteField("last_queue_processed", summary?.LastQueueProcessedUtc?.ToString("O") ?? "-");
+        WriteField("last_cognitive_insights", lastCognitiveInsights?.ToString("O") ?? "-");
+        WriteField("queued_research_items", queuedResearchItems?.ToString() ?? "-");
+        WriteField("active_domains", summary?.ActiveDomains is { Count: > 0 } ? string.Join(", ", summary.ActiveDomains) : "trading");
+        WriteField("last_cognitive_error", string.IsNullOrWhiteSpace(summary?.LastError) ? "-" : summary.LastError);
+        WriteField("cognitive_summary", File.Exists(summaryService.SummaryPath) ? DisplayPath(summaryService.SummaryPath) : "-");
+    }
+
+    private static bool AreCognitiveJobsEnabled(SchedulerStatus schedulerStatus)
+    {
+        string[] required =
+        [
+            "scan_knowledge_sources",
+            "process_research_queue",
+            "generate_cognitive_insights"
+        ];
+
+        return required.All(jobType => schedulerStatus.Jobs.Any(job =>
+            job.Enabled
+            && job.JobType.Equals(jobType, StringComparison.OrdinalIgnoreCase)));
+    }
+
     private void WriteNightlyState(NightlyResearchState state)
     {
         var currentlyRunning = state.CurrentlyRunning && IsProcessAlive(state.ProcessId);
@@ -3490,6 +3591,14 @@ internal sealed class HermesCli
         WriteField("Last Checkpoint", DisplayOptionalPath(state.LastCheckpointPath));
         WriteField("Stop Requested UTC", state.StopRequestedAtUtc?.ToString("O") ?? "-");
         WriteField("Last Error", state.LastError ?? "-");
+        WriteField("cognitive_jobs_enabled", state.CognitiveJobsEnabled?.ToString().ToLowerInvariant() ?? "-");
+        WriteField("last_knowledge_scan", state.LastKnowledgeScanUtc?.ToString("O") ?? "-");
+        WriteField("last_queue_processed", state.LastQueueProcessedUtc?.ToString("O") ?? "-");
+        WriteField("last_cognitive_insights", state.LastCognitiveInsightsUtc?.ToString("O") ?? "-");
+        WriteField("queued_research_items", state.QueuedResearchItems?.ToString() ?? "-");
+        WriteField("active_domains", state.ActiveDomains is { Count: > 0 } ? string.Join(", ", state.ActiveDomains) : "-");
+        WriteField("last_cognitive_error", string.IsNullOrWhiteSpace(state.LastCognitiveError) ? "-" : state.LastCognitiveError);
+        WriteField("cognitive_summary", DisplayOptionalPath(state.LastCognitiveSummaryPath));
         WriteField("no_auto_trading", state.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", state.HumanReviewRequired.ToString().ToLowerInvariant());
     }

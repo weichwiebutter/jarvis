@@ -14,7 +14,7 @@ public sealed record ScheduleConfig(
         [
             new(
                 JobId: "nightly_beta3_research",
-                JobType: "nightly_beta3_research",
+                JobType: "trading_nightly_beta3",
                 Enabled: true,
                 ScheduleType: "window",
                 Command: "run-nightly-beta3",
@@ -34,18 +34,46 @@ public sealed record ScheduleConfig(
                 JobType: "research_insights",
                 Enabled: true,
                 ScheduleType: "daily",
+                Command: "research-insights",
                 DailyAt: "05:30"),
+            new(
+                JobId: "scan_knowledge_sources",
+                JobType: "scan_knowledge_sources",
+                Enabled: true,
+                ScheduleType: "daily",
+                Command: "scan-knowledge-sources",
+                DailyAt: "05:40"),
+            new(
+                JobId: "process_research_queue",
+                JobType: "process_research_queue",
+                Enabled: true,
+                ScheduleType: "window",
+                Command: "process-research-queue",
+                WindowStart: "23:00",
+                WindowEnd: "05:00",
+                MaxRuntimeMinutes: 60,
+                Parameters: new Dictionary<string, string> { ["max_items"] = "50" }),
+            new(
+                JobId: "generate_cognitive_insights",
+                JobType: "generate_cognitive_insights",
+                Enabled: true,
+                ScheduleType: "daily",
+                Command: "generate-hypotheses",
+                DailyAt: "05:45",
+                Parameters: new Dictionary<string, string> { ["domain"] = "trading" }),
             new(
                 JobId: "health_snapshot",
                 JobType: "health_snapshot",
                 Enabled: true,
                 ScheduleType: "interval",
+                Command: "resource-status",
                 EveryMinutes: 60),
             new(
                 JobId: "market_data_refresh",
                 JobType: "market_data_refresh",
                 Enabled: false,
                 ScheduleType: "daily",
+                Command: "download-history",
                 DailyAt: "22:30")
         ]);
 
