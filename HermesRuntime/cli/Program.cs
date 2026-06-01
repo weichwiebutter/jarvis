@@ -101,6 +101,10 @@ internal sealed class HermesCli
             "autonomous-loop-status" => ShowAutonomousLoopStatus(),
             "autonomous-loop-log" => ShowAutonomousLoopLog(),
             "explain-last-loop" => ExplainLastLoop(),
+            "meta-review" => ShowMetaReview(),
+            "domain-health" => ShowDomainHealth(),
+            "learning-strategy" => ShowLearningStrategy(),
+            "governance-status" => ShowGovernanceStatus(),
             "explain-plan" => ExplainPlan(),
             "explain-task" => ExplainTask(),
             "bot-candidates" => ShowBotCandidates(),
@@ -210,6 +214,10 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes autonomous-loop-status Autonomous Learning Loop Status anzeigen");
         Console.WriteLine("  hermes autonomous-loop-log Autonomous Learning Loop JSONL-Auszug anzeigen");
         Console.WriteLine("  hermes explain-last-loop letzte autonome Loop-Iteration erklaeren");
+        Console.WriteLine("  hermes meta-review Meta-Learning Review erzeugen/anzeigen");
+        Console.WriteLine("  hermes domain-health Domain Health Scores anzeigen");
+        Console.WriteLine("  hermes learning-strategy aktuelle Lernstrategie anzeigen");
+        Console.WriteLine("  hermes governance-status Governance Entscheidungen anzeigen");
         Console.WriteLine("  hermes explain-plan     letzte Planning-Entscheidung erklaeren");
         Console.WriteLine("  hermes explain-task --id <TASK_ID> einzelne geplante Aufgabe erklaeren");
         Console.WriteLine("  hermes bot-candidates     strenge Demo-Bot-Kandidatenbewertung anzeigen");
@@ -3349,6 +3357,67 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowMetaReview()
+    {
+        WriteHeader("Hermes Meta Review");
+        var engine = new MetaReviewEngine(BuildStoragePaths());
+        var review = engine.RunReview();
+
+        WriteField("Meta Review", DisplayPath(engine.MetaReviewPath));
+        WriteMetaReview(review);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowDomainHealth()
+    {
+        WriteHeader("Hermes Domain Health");
+        var engine = new MetaReviewEngine(BuildStoragePaths());
+        var health = engine.LoadOrCreateDomainHealth();
+
+        WriteField("Domain Health", DisplayPath(engine.DomainHealthPath));
+        foreach (var domain in health)
+        {
+            WriteDomainHealth(domain);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowLearningStrategy()
+    {
+        WriteHeader("Hermes Learning Strategy");
+        var engine = new MetaReviewEngine(BuildStoragePaths());
+        var strategy = engine.LoadOrCreateLearningStrategy();
+
+        WriteField("Learning Strategy", DisplayPath(engine.LearningStrategyPath));
+        WriteLearningStrategy(strategy);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowGovernanceStatus()
+    {
+        WriteHeader("Hermes Governance Status");
+        var engine = new MetaReviewEngine(BuildStoragePaths());
+        var review = engine.LoadOrCreateReview();
+
+        WriteField("Meta Review", DisplayPath(engine.MetaReviewPath));
+        WriteField("Decisions", review.GovernanceDecisions.Count.ToString());
+        foreach (var decision in review.GovernanceDecisions)
+        {
+            WriteGovernanceDecision(decision);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ExplainPlan()
     {
         WriteHeader("Hermes Planning Explanation");
@@ -4404,6 +4473,78 @@ internal sealed class HermesCli
         WriteMessages("Resource Warnings", iteration.ResourceWarnings);
         WriteField("no_trading_execution", iteration.NoTradingExecution.ToString().ToLowerInvariant());
         WriteField("human_review_required", iteration.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteMetaReview(MetaReviewResult review)
+    {
+        WriteField("Status", review.Status);
+        WriteField("Updated UTC", review.UpdatedAtUtc.ToString("O"));
+        WriteField("Goals Reviewed", review.GoalsReviewed.ToString());
+        WriteField("Outcomes Reviewed", review.OutcomesReviewed.ToString());
+        WriteField("Planner Task Types", review.PlannerTaskTypesReviewed.ToString());
+        WriteField("Knowledge Items", review.KnowledgeItems.ToString());
+        WriteField("Research Queue Items", review.ResearchQueueItems.ToString());
+        WriteField("Learning Strategy", review.LearningStrategy.CurrentStrategy);
+        WriteMessages("Activities With Progress", review.ActivitiesWithProgress);
+        WriteMessages("Activities Generating Work", review.ActivitiesGeneratingWork);
+        WriteMessages("Stagnant Goals", review.StagnantGoals);
+        WriteMessages("Recurring Needs", review.RecurringNeeds);
+        foreach (var observation in review.Observations.Take(12))
+        {
+            WriteMetaObservation(observation);
+        }
+        WriteField("no_auto_trading", review.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", review.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteMetaObservation(MetaObservation observation)
+    {
+        WriteSubHeader($"{observation.Severity} / {observation.Category} / {observation.Title}");
+        WriteField("Observation", observation.ObservationId);
+        WriteField("Summary", observation.Summary);
+        WriteMessages("Evidence", observation.EvidenceRefs);
+        WriteMessages("Recommended Actions", observation.RecommendedActions);
+    }
+
+    private void WriteDomainHealth(DomainHealth health)
+    {
+        WriteSubHeader($"{health.Domain} / {health.Score.Classification}");
+        WriteField("Active", health.Active.ToString().ToLowerInvariant());
+        WriteField("Sources", health.SourceCount.ToString());
+        WriteField("Knowledge Items", health.KnowledgeItemCount.ToString());
+        WriteField("Queue Items", health.QueueItems.ToString());
+        WriteField("Open Queue", health.OpenQueueItems.ToString());
+        WriteField("Processed Queue", health.ProcessedQueueItems.ToString());
+        WriteField("Outcomes", health.OutcomeCount.ToString());
+        WriteField("Overall", $"{health.Score.OverallScore:0.####}");
+        WriteField("Knowledge", $"{health.Score.KnowledgeCoverage:0.####}");
+        WriteField("Validation", $"{health.Score.ValidationCoverage:0.####}");
+        WriteField("Trust", $"{health.Score.TrustScore:0.####}");
+        WriteField("Redundancy", $"{health.Score.RedundancyScore:0.####}");
+        WriteField("Learning Velocity", $"{health.Score.LearningVelocity:0.####}");
+        WriteMessages("Reasons", health.Score.Reasons);
+        WriteMessages("Warnings", health.Warnings);
+    }
+
+    private void WriteLearningStrategy(LearningStrategy strategy)
+    {
+        WriteField("Strategy", strategy.CurrentStrategy);
+        WriteField("Updated UTC", strategy.UpdatedAtUtc.ToString("O"));
+        WriteField("Reason", strategy.Reason);
+        WriteField("Expected Effect", strategy.ExpectedEffect);
+        WriteMessages("Priority Task Types", strategy.PriorityTaskTypes);
+        WriteMessages("Deprioritized Task Types", strategy.DeprioritizedTaskTypes);
+        WriteMessages("Domain Focus", strategy.DomainFocus);
+        WriteField("no_auto_trading", strategy.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", strategy.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteGovernanceDecision(GovernanceDecision decision)
+    {
+        WriteSubHeader($"{decision.Status} / {decision.RuleId}");
+        WriteField("Reason", decision.Reason);
+        WriteField("Action", decision.Action);
+        WriteMessages("Evidence", decision.EvidenceRefs);
     }
 
     private void WriteCognitiveHypothesis(CognitiveHypothesis hypothesis)

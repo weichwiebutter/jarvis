@@ -315,6 +315,7 @@ public sealed class AutonomousLearningLoop
         var goalFeedback = evaluator.LoadOrCreateGoalFeedback();
         var insights = new HypothesisGenerator(_storagePaths).Generate("trading");
         new CognitiveCoreService(_storagePaths).BuildStatus();
+        var metaReview = new MetaReviewEngine(_storagePaths).RunReview();
 
         feedbackChanges.AddRange(plannerFeedback.TaskTypeFeedback
             .Where(item => Math.Abs(item.PriorityAdjustment) > 0.0001)
@@ -324,6 +325,11 @@ public sealed class AutonomousLearningLoop
             .Where(goal => Math.Abs(goal.ProgressDelta) > 0.0001)
             .Select(goal => $"{goal.GoalId}:progress_delta={goal.ProgressDelta:0.####}")
             .Take(12));
+        feedbackChanges.Add($"learning_strategy:{metaReview.LearningStrategy.CurrentStrategy}");
+        feedbackChanges.AddRange(metaReview.GovernanceDecisions
+            .Where(decision => !decision.Status.Equals("pass", StringComparison.OrdinalIgnoreCase))
+            .Select(decision => $"governance:{decision.RuleId}:{decision.Status}")
+            .Take(8));
 
         var averageLearning = outcomes.Count == 0
             ? 0
