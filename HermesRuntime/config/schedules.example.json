@@ -25,6 +25,14 @@
       }
     },
     {
+      "job_id": "goal_review_before_nightly",
+      "job_type": "review_goals",
+      "enabled": true,
+      "schedule_type": "daily",
+      "command": "goals",
+      "daily_at": "22:50"
+    },
+    {
       "job_id": "nightly_beta3_research",
       "job_type": "trading_nightly_beta3",
       "enabled": true,
@@ -134,6 +142,22 @@
       "parameters": {
         "max_items": "20"
       }
+    },
+    {
+      "job_id": "goal_progress_update",
+      "job_type": "update_goal_progress",
+      "enabled": true,
+      "schedule_type": "daily",
+      "command": "goal-progress",
+      "daily_at": "05:58"
+    },
+    {
+      "job_id": "goal_review_after_nightly",
+      "job_type": "review_goals",
+      "enabled": true,
+      "schedule_type": "daily",
+      "command": "goals",
+      "daily_at": "06:00"
     },
     {
       "job_id": "process_planned_tasks_after_planning",

@@ -279,6 +279,42 @@ public sealed class NeedDetectionEngine
             }
         }
 
+        var goalState = LoadGoalState();
+        if (goalState is not null)
+        {
+            var activeGoalIds = goalState.Goals
+                .Where(goal => goal.Active)
+                .Select(goal => goal.GoalId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (activeGoalIds.Contains("improve_autonomous_planning_quality")
+                && !File.Exists(new TaskOutcomeEvaluator(_storagePaths).StatusPath))
+            {
+                needs.Add(Need(
+                    "goal_planning_feedback_missing",
+                    NeedCategory.validation_gap,
+                    NeedSeverity.medium,
+                    "research",
+                    "Planning-Feedback fehlt",
+                    "Das aktive Ziel improve_autonomous_planning_quality benötigt Outcome Feedback, damit Prioritäten angepasst werden können.",
+                    [new TaskOutcomeEvaluator(_storagePaths).StatusPath],
+                    ["process_research_queue", "generate_cognitive_insights"]));
+            }
+
+            if (activeGoalIds.Contains("improve_research_efficiency")
+                && queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)) > 50)
+            {
+                needs.Add(Need(
+                    "goal_research_efficiency_queue_backlog",
+                    NeedCategory.validation_gap,
+                    NeedSeverity.medium,
+                    "process",
+                    "Research-Effizienz durch Queue-Backlog belastet",
+                    "Das aktive Ziel improve_research_efficiency priorisiert Queue-Verarbeitung und Redundanzabbau.",
+                    [new ResearchQueueService(_storagePaths).QueuePath],
+                    ["process_research_queue", "generate_cognitive_insights"]));
+            }
+        }
+
         var distinct = needs
             .GroupBy(need => need.NeedId, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderByDescending(need => SeverityRank(need.Severity)).First())
@@ -341,6 +377,26 @@ public sealed class NeedDetectionEngine
             NeedSeverity.medium => 2,
             _ => 1
         };
+
+    private GoalState? LoadGoalState()
+    {
+        var path = new GoalManager(_storagePaths).GoalStatePath;
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<GoalState>(
+                File.ReadAllText(path),
+                JsonDefaults.SnapshotReadOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
 }
 
 public sealed class GoalManager
@@ -352,20 +408,38 @@ public sealed class GoalManager
         _storagePaths = storagePaths;
     }
 
-    public string Root => Path.Combine(_storagePaths.Root, "cognitive_core");
+    public string Root => Path.Combine(_storagePaths.Root, "cognitive_core", "goals");
+
+    public string LegacyRoot => Path.Combine(_storagePaths.Root, "cognitive_core");
 
     public string GoalProgressPath => Path.Combine(Root, "goal_progress.json");
 
+    public string GoalStatePath => Path.Combine(Root, "goal_state.json");
+
+    public string GoalOutcomesPath => Path.Combine(Root, "goal_outcomes.jsonl");
+
     public IReadOnlyList<HermesGoal> EvaluateGoals(IReadOnlyList<DetectedNeed> needs)
+    {
+        return EvaluateGoalState(needs).Goals;
+    }
+
+    public GoalState EvaluateGoalState(IReadOnlyList<DetectedNeed> needs)
     {
         Directory.CreateDirectory(Root);
         var goalFeedback = new TaskOutcomeEvaluator(_storagePaths).LoadGoalFeedback();
+        var recentOutcomes = new TaskOutcomeEvaluator(_storagePaths).LoadOutcomes(250);
         var goals = Defaults()
             .Select(goal =>
             {
                 var blockers = BlockersFor(goal.GoalId, needs);
                 var feedback = goalFeedback?.Goals.FirstOrDefault(item =>
                     item.GoalId.Equals(goal.GoalId, StringComparison.OrdinalIgnoreCase));
+                var goalOutcomes = recentOutcomes
+                    .Where(outcome => outcome.GoalId.Equals(goal.GoalId, StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(outcome => outcome.EvaluatedAtUtc)
+                    .Take(8)
+                    .Select(outcome => $"{outcome.TaskType}:{outcome.Recommendation}:{outcome.OutcomeScore.UsefulnessScore:0.####}")
+                    .ToList();
                 var nextActions = NextActionsFor(goal.GoalId, blockers, needs)
                     .Concat(feedback?.RecommendedActions ?? [])
                     .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -376,40 +450,118 @@ public sealed class GoalManager
                     .Where(need => need is not null)
                     .Sum(need => NeedDetectionEngine.SeverityRank(need!.Severity) * 0.08);
                 var progress = Math.Round(Math.Clamp(0.78 - severityPenalty + (feedback?.ProgressDelta ?? 0), 0.05, 0.95), 4);
+                var relatedTasks = needs
+                    .Where(need => blockers.Contains(need.NeedId, StringComparer.OrdinalIgnoreCase))
+                    .SelectMany(need => need.SuggestedTaskTypes)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(12)
+                    .ToList();
+                var currentState = blockers.Count == 0
+                    ? progress >= 0.8 ? "on_track" : "active"
+                    : blockers.Count >= 3 || progress < 0.35 ? "blocked" : "needs_attention";
                 return goal with
                 {
+                    CurrentState = currentState,
                     ProgressScore = progress,
+                    BlockerCount = blockers.Count,
+                    LastUpdatedUtc = DateTimeOffset.UtcNow,
+                    NextRecommendedActions = nextActions,
+                    RelatedNeeds = blockers,
+                    RelatedTasks = relatedTasks,
+                    RecentOutcomes = goalOutcomes,
                     Blockers = blockers,
                     NextActions = nextActions
                 };
             })
+            .ToList();
+
+        goals = new GoalPriorityAdjuster().AdjustPriorities(goals, goalFeedback)
             .OrderBy(goal => goal.Priority)
             .ToList();
 
         var progressItems = goals
             .Select(goal => new GoalProgress(
                 GoalId: goal.GoalId,
+                Title: goal.Title,
+                Domain: goal.Domain,
+                Priority: goal.Priority,
+                TargetState: goal.TargetState,
+                CurrentState: goal.CurrentState,
                 ProgressScore: goal.ProgressScore,
+                BlockerCount: goal.BlockerCount,
+                RelatedNeeds: goal.RelatedNeeds,
+                RelatedTasks: goal.RelatedTasks,
+                RecentOutcomes: goal.RecentOutcomes,
+                NextRecommendedActions: goal.NextRecommendedActions,
                 Blockers: goal.Blockers,
                 NextActions: goal.NextActions,
                 UpdatedAtUtc: DateTimeOffset.UtcNow))
             .ToList();
-        File.WriteAllText(GoalProgressPath, JsonSerializer.Serialize(progressItems, JsonDefaults.WriteOptions));
-        return goals;
+        var progressReport = new GoalProgressReport(
+            ReportVersion: "goal_progress_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            Goals: progressItems,
+            ProgressSummary: goals.ToDictionary(goal => goal.GoalId, goal => goal.ProgressScore, StringComparer.OrdinalIgnoreCase),
+            BlockedGoals: goals.Where(goal => goal.BlockerCount > 0).Select(goal => goal.GoalId).ToList(),
+            TopNextActions: goals.SelectMany(goal => goal.NextRecommendedActions.Select(action => $"{goal.GoalId}:{action}"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(20)
+                .ToList(),
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+        File.WriteAllText(GoalProgressPath, JsonSerializer.Serialize(progressReport, JsonDefaults.WriteOptions));
+        var state = new GoalState(
+            StateVersion: "goal_state_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            Goals: goals,
+            ActiveGoals: goals.Count(goal => goal.Active),
+            TopGoalId: goals.FirstOrDefault(goal => goal.Active)?.GoalId ?? string.Empty,
+            BlockedGoals: goals.Where(goal => goal.BlockerCount > 0 || goal.CurrentState == "blocked").Select(goal => goal.GoalId).ToList(),
+            Warnings: goals
+                .Where(goal => goal.ProgressScore < 0.35 || goal.BlockerCount >= 3)
+                .Select(goal => $"{goal.GoalId}:{goal.CurrentState}:progress={goal.ProgressScore:0.####}")
+                .ToList(),
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+        File.WriteAllText(GoalStatePath, JsonSerializer.Serialize(state, JsonDefaults.WriteOptions));
+        return state;
     }
 
     private static IReadOnlyList<HermesGoal> Defaults() =>
     [
-        Goal("improve_trading_robustness", "Trading-Domain robuster und OOS-stabiler bewerten.", 10),
-        Goal("reduce_overfit_risk", "Overfit-Risiko durch Validierung und Realism-Gates reduzieren.", 20),
-        Goal("expand_knowledge_sources", "Kuratierte Quellen aktuell halten und Knowledge Gaps schließen.", 30),
-        Goal("improve_cognitive_memory_quality", "Research Queue, Hypothesen und Insights in verwertbare Erinnerung überführen.", 40),
-        Goal("maintain_storage_health", "Storage/Resource-Zustand für Dauerbetrieb stabil halten.", 50),
-        Goal("prepare_multi_domain_learning", "Nicht-Trading-Domänen strukturiert vorbereiten, ohne Trading zum Kern zu machen.", 60)
+        Goal("improve_trading_robustness", "Trading-Robustheit verbessern", "trading", "Trading-Domain robuster und OOS-stabiler bewerten.", "Robuste, realistisch bewertete Trading-Research-Kandidaten mit OOS- und Kostenresilienz.", 10),
+        Goal("reduce_overfit_risk", "Overfit-Risiko reduzieren", "trading", "Overfit-Risiko durch Validierung und Realism-Gates reduzieren.", "Overfit-Verdacht sinkt; zu perfekte Strategien werden markiert oder abgelehnt.", 20),
+        Goal("expand_knowledge_sources", "Knowledge Sources erweitern", "research", "Kuratierte Quellen aktuell halten und Knowledge Gaps schließen.", "Kuratierte Quellen sind aktuell, vertrauensbewertet und im Knowledge Catalog nutzbar.", 30),
+        Goal("improve_cognitive_memory_quality", "Cognitive Memory verbessern", "research", "Research Queue, Hypothesen und Insights in verwertbare Erinnerung überführen.", "Memory enthält validierte, nicht redundante Knowledge Items und klare Insights.", 40),
+        Goal("maintain_storage_health", "Storage Health sichern", "process", "Storage/Resource-Zustand für Dauerbetrieb stabil halten.", "Dauerbetrieb bleibt innerhalb ResourceGuard-/StorageGuard-Grenzen.", 50),
+        Goal("prepare_multi_domain_learning", "Multi-Domain Learning vorbereiten", "research", "Nicht-Trading-Domänen strukturiert vorbereiten, ohne Trading zum Kern zu machen.", "Software, Documentation, Process und Research liefern nutzbare Domain-Signale.", 60),
+        Goal("improve_autonomous_planning_quality", "Planning-Qualität verbessern", "research", "Needs, Tasks und Feedback zielgerichteter verbinden.", "Planner erzeugt wenige, relevante, nicht redundante Tasks mit messbarem Nutzen.", 70),
+        Goal("improve_research_efficiency", "Research-Effizienz verbessern", "process", "Mehr Lernwert pro kontrolliertem Task erreichen und Doppelarbeit reduzieren.", "Wiederholte Low-Value-Tasks werden reduziert, High-Learning-Tasks priorisiert.", 80)
     ];
 
-    private static HermesGoal Goal(string id, string description, int priority) =>
-        new(id, description, priority, Active: true, ProgressScore: 0.5, Blockers: [], NextActions: []);
+    private static HermesGoal Goal(string id, string title, string domain, string description, string targetState, int priority) =>
+        new(
+            GoalId: id,
+            Title: title,
+            Domain: domain,
+            Description: description,
+            Priority: priority,
+            Active: true,
+            TargetState: targetState,
+            CurrentState: "not_evaluated",
+            ProgressScore: 0.5,
+            BlockerCount: 0,
+            LastUpdatedUtc: DateTimeOffset.UtcNow,
+            NextRecommendedActions: [],
+            RelatedNeeds: [],
+            RelatedTasks: [],
+            RecentOutcomes: [],
+            Blockers: [],
+            NextActions: []);
 
     private static IReadOnlyList<string> BlockersFor(string goalId, IReadOnlyList<DetectedNeed> needs) =>
         goalId switch
@@ -420,6 +572,8 @@ public sealed class GoalManager
             "improve_cognitive_memory_quality" => NeedIds(needs, NeedCategory.validation_gap, NeedCategory.knowledge_gap),
             "maintain_storage_health" => NeedIds(needs, NeedCategory.resource_risk, NeedCategory.maintenance),
             "prepare_multi_domain_learning" => NeedIds(needs, NeedCategory.domain_gap, NeedCategory.knowledge_gap),
+            "improve_autonomous_planning_quality" => NeedIds(needs, NeedCategory.validation_gap, NeedCategory.domain_gap, NeedCategory.quality_risk),
+            "improve_research_efficiency" => NeedIds(needs, NeedCategory.maintenance, NeedCategory.validation_gap, NeedCategory.resource_risk),
             _ => []
         };
 
@@ -442,6 +596,207 @@ public sealed class GoalManager
             .SelectMany(need => need.SuggestedTaskTypes)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(6)
+            .ToList();
+    }
+}
+
+public sealed class GoalProgressTracker
+{
+    private readonly StoragePaths _storagePaths;
+    private readonly GoalManager _goalManager;
+
+    public GoalProgressTracker(StoragePaths storagePaths)
+    {
+        _storagePaths = storagePaths;
+        _goalManager = new GoalManager(storagePaths);
+    }
+
+    public string GoalStatePath => _goalManager.GoalStatePath;
+
+    public string GoalProgressPath => _goalManager.GoalProgressPath;
+
+    public GoalState Update()
+    {
+        var needs = new NeedDetectionEngine(_storagePaths).LoadNeeds();
+        if (needs.Count == 0)
+        {
+            needs = new NeedDetectionEngine(_storagePaths).Detect();
+        }
+
+        return _goalManager.EvaluateGoalState(needs);
+    }
+
+    public GoalState LoadOrCreateState()
+    {
+        var loaded = LoadState();
+        return loaded ?? Update();
+    }
+
+    public GoalState? LoadState()
+    {
+        if (!File.Exists(GoalStatePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<GoalState>(
+                File.ReadAllText(GoalStatePath),
+                JsonDefaults.SnapshotReadOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    public GoalProgressReport? LoadProgress()
+    {
+        if (!File.Exists(GoalProgressPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<GoalProgressReport>(
+                File.ReadAllText(GoalProgressPath),
+                JsonDefaults.SnapshotReadOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+}
+
+public sealed class GoalOutcomeEvaluator
+{
+    private readonly StoragePaths _storagePaths;
+
+    public GoalOutcomeEvaluator(StoragePaths storagePaths)
+    {
+        _storagePaths = storagePaths;
+    }
+
+    public string GoalOutcomesPath => new GoalManager(_storagePaths).GoalOutcomesPath;
+
+    public IReadOnlyList<GoalOutcomeEvaluation> Evaluate(IReadOnlyList<TaskOutcomeResult> taskOutcomes)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(GoalOutcomesPath)!);
+        if (!File.Exists(GoalOutcomesPath))
+        {
+            File.WriteAllText(GoalOutcomesPath, string.Empty);
+        }
+
+        var existingTaskIds = LoadRecent(10000)
+            .Select(item => item.TaskId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var evaluations = taskOutcomes
+            .Where(outcome => !string.IsNullOrWhiteSpace(outcome.GoalId))
+            .Where(outcome => !existingTaskIds.Contains(outcome.TaskId))
+            .Select(ToGoalOutcome)
+            .ToList();
+
+        foreach (var evaluation in evaluations)
+        {
+            File.AppendAllText(GoalOutcomesPath, JsonSerializer.Serialize(evaluation, JsonDefaults.WriteOptions) + Environment.NewLine);
+        }
+
+        return evaluations;
+    }
+
+    public IReadOnlyList<GoalOutcomeEvaluation> LoadRecent(int limit)
+    {
+        if (!File.Exists(GoalOutcomesPath))
+        {
+            return [];
+        }
+
+        var items = new List<GoalOutcomeEvaluation>();
+        foreach (var line in File.ReadLines(GoalOutcomesPath).Reverse())
+        {
+            if (items.Count >= Math.Clamp(limit, 1, 10000))
+            {
+                break;
+            }
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            try
+            {
+                var item = JsonSerializer.Deserialize<GoalOutcomeEvaluation>(
+                    line,
+                    JsonDefaults.SnapshotReadOptions);
+                if (item is not null)
+                {
+                    items.Add(item);
+                }
+            }
+            catch (JsonException)
+            {
+                // Append-only feedback should remain resilient to older malformed rows.
+            }
+        }
+
+        return items;
+    }
+
+    private static GoalOutcomeEvaluation ToGoalOutcome(TaskOutcomeResult outcome)
+    {
+        var delta = Math.Round((outcome.OutcomeScore.UsefulnessScore - 0.5) * 0.2
+            + (outcome.Evidence.NeedReduced ? 0.05 : 0)
+            - (outcome.Evidence.TaskRedundant ? 0.04 : 0)
+            - (outcome.Evidence.TaskFailed ? 0.08 : 0), 4);
+        return new GoalOutcomeEvaluation(
+            OutcomeId: $"goal_outcome_{outcome.TaskId}_{outcome.EvaluatedAtUtc:yyyyMMddHHmmssfff}",
+            GoalId: outcome.GoalId,
+            TaskId: outcome.TaskId,
+            NeedId: outcome.NeedId,
+            EvaluatedAtUtc: DateTimeOffset.UtcNow,
+            GoalDelta: Math.Clamp(delta, -0.2, 0.2),
+            Recommendation: outcome.Recommendation,
+            EvidenceRefs: outcome.Evidence.EvidenceRefs,
+            Notes: outcome.Evidence.Notes
+                .Concat([$"task_usefulness:{outcome.OutcomeScore.UsefulnessScore:0.####}", $"learning_value:{outcome.OutcomeScore.LearningValue:0.####}"])
+                .ToList(),
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+    }
+}
+
+public sealed class GoalPriorityAdjuster
+{
+    public IReadOnlyList<HermesGoal> AdjustPriorities(IReadOnlyList<HermesGoal> goals, GoalFeedback? feedback)
+    {
+        return goals
+            .Select(goal =>
+            {
+                var goalFeedback = feedback?.Goals.FirstOrDefault(item =>
+                    item.GoalId.Equals(goal.GoalId, StringComparison.OrdinalIgnoreCase));
+                if (goalFeedback is null)
+                {
+                    return goal;
+                }
+
+                var adjustment = goalFeedback.AverageUsefulnessScore switch
+                {
+                    >= 0.72 => -3,
+                    < 0.35 => 5,
+                    _ => 0
+                };
+                var blockerAdjustment = goal.BlockerCount >= 3 ? -2 : 0;
+                return goal with
+                {
+                    Priority = Math.Clamp(goal.Priority + adjustment + blockerAdjustment, 1, 100)
+                };
+            })
             .ToList();
     }
 }
@@ -503,6 +858,9 @@ public sealed class AutonomousTaskPlanner
                     SourceRefs: need.EvidenceRefs,
                     CreatedAtUtc: now,
                     Status: "planned",
+                    SupportingGoalId: goal.GoalId,
+                    GoalReason: GoalReasonFor(goal, need, taskType),
+                    ExpectedGoalDelta: ExpectedGoalDeltaFor(priority, need, taskType),
                     NoTradingExecution: true,
                     HumanReviewRequired: true));
             }
@@ -561,12 +919,16 @@ public sealed class AutonomousTaskPlanner
         var cost = taskType is "run_strategy_research" or "run_walkforward_validation" ? 0.55 : 0.25;
         var risk = taskType is "download_missing_market_data" ? 0.35 : 0.12;
         var learning = need.Category is NeedCategory.quality_risk or NeedCategory.validation_gap ? 0.82 : 0.58;
-        var total = impact * 0.28
-            + urgency * 0.22
-            + confidence * 0.16
-            + learning * 0.22
-            - cost * 0.08
-            - risk * 0.04;
+        var goalPriority = Math.Clamp(1 - ((goal.Priority - 1) / 100.0), 0.05, 1);
+        const double redundancyPenalty = 0;
+        var total = impact * 0.22
+            + urgency * 0.18
+            + confidence * 0.14
+            + learning * 0.2
+            + goalPriority * 0.16
+            - cost * 0.06
+            - risk * 0.03
+            - redundancyPenalty * 0.05;
         return new PriorityScore(
             Math.Round(impact, 4),
             Math.Round(urgency, 4),
@@ -574,6 +936,8 @@ public sealed class AutonomousTaskPlanner
             Math.Round(cost, 4),
             Math.Round(risk, 4),
             Math.Round(learning, 4),
+            Math.Round(goalPriority, 4),
+            Math.Round(redundancyPenalty, 4),
             Math.Round(Math.Clamp(total, 0, 1), 4));
     }
 
@@ -590,17 +954,18 @@ public sealed class AutonomousTaskPlanner
             return score;
         }
 
-        var repeatedNeedPenalty = taskFeedback.RepeatedUnsuccessfulNeeds.Contains(needId, StringComparer.OrdinalIgnoreCase)
-            ? -0.05
-            : 0;
+        var repeatedNeed = taskFeedback.RepeatedUnsuccessfulNeeds.Contains(needId, StringComparer.OrdinalIgnoreCase);
+        var repeatedNeedPenalty = repeatedNeed ? -0.05 : 0;
         var adjustment = taskFeedback.PriorityAdjustment + repeatedNeedPenalty;
         var learning = Math.Clamp(score.ExpectedLearningValue + Math.Max(0, adjustment) * 0.5, 0, 1);
         var risk = Math.Clamp(score.Risk + Math.Max(0, -adjustment) * 0.4, 0, 1);
+        var redundancyPenalty = Math.Clamp(score.RedundancyPenalty + (repeatedNeed ? 0.12 : 0), 0, 1);
         return score with
         {
             ExpectedLearningValue = Math.Round(learning, 4),
             Risk = Math.Round(risk, 4),
-            TotalScore = Math.Round(Math.Clamp(score.TotalScore + adjustment, 0, 1), 4)
+            RedundancyPenalty = Math.Round(redundancyPenalty, 4),
+            TotalScore = Math.Round(Math.Clamp(score.TotalScore + adjustment - redundancyPenalty * 0.05, 0, 1), 4)
         };
     }
 
@@ -664,6 +1029,16 @@ public sealed class AutonomousTaskPlanner
         var input = $"{needId}|{goalId}|{taskType}";
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input))).ToLowerInvariant()[..12];
         return $"planned_{taskType}_{hash}";
+    }
+
+    private static string GoalReasonFor(HermesGoal goal, DetectedNeed need, string taskType) =>
+        $"Goal '{goal.GoalId}' ({goal.Title}) is active; need '{need.NeedId}' maps to {need.Category}; task '{taskType}' is expected to reduce blockers or improve progress.";
+
+    private static double ExpectedGoalDeltaFor(PriorityScore priority, DetectedNeed need, string taskType)
+    {
+        var severityBoost = NeedDetectionEngine.SeverityRank(need.Severity) * 0.01;
+        var heavyCostPenalty = taskType is "run_strategy_research" or "run_walkforward_validation" ? 0.015 : 0;
+        return Math.Round(Math.Clamp((priority.TotalScore * 0.12) + severityBoost - heavyCostPenalty, 0.01, 0.2), 4);
     }
 }
 

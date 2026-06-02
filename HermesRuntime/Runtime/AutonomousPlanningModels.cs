@@ -34,19 +34,79 @@ public sealed record DetectedNeed(
 
 public sealed record GoalProgress(
     string GoalId,
+    string Title,
+    string Domain,
+    int Priority,
+    string TargetState,
+    string CurrentState,
     double ProgressScore,
+    int BlockerCount,
+    IReadOnlyList<string> RelatedNeeds,
+    IReadOnlyList<string> RelatedTasks,
+    IReadOnlyList<string> RecentOutcomes,
+    IReadOnlyList<string> NextRecommendedActions,
     IReadOnlyList<string> Blockers,
     IReadOnlyList<string> NextActions,
     DateTimeOffset UpdatedAtUtc);
 
 public sealed record HermesGoal(
     string GoalId,
+    string Title,
+    string Domain,
     string Description,
     int Priority,
     bool Active,
+    string TargetState,
+    string CurrentState,
     double ProgressScore,
+    int BlockerCount,
+    DateTimeOffset LastUpdatedUtc,
+    IReadOnlyList<string> NextRecommendedActions,
+    IReadOnlyList<string> RelatedNeeds,
+    IReadOnlyList<string> RelatedTasks,
+    IReadOnlyList<string> RecentOutcomes,
     IReadOnlyList<string> Blockers,
     IReadOnlyList<string> NextActions);
+
+public sealed record GoalState(
+    string StateVersion,
+    DateTimeOffset UpdatedAtUtc,
+    IReadOnlyList<HermesGoal> Goals,
+    int ActiveGoals,
+    string TopGoalId,
+    IReadOnlyList<string> BlockedGoals,
+    IReadOnlyList<string> Warnings,
+    bool NoTradingExecution,
+    bool NoBrokerAction,
+    bool NoAutoTrading,
+    bool HumanReviewRequired);
+
+public sealed record GoalProgressReport(
+    string ReportVersion,
+    DateTimeOffset UpdatedAtUtc,
+    IReadOnlyList<GoalProgress> Goals,
+    IReadOnlyDictionary<string, double> ProgressSummary,
+    IReadOnlyList<string> BlockedGoals,
+    IReadOnlyList<string> TopNextActions,
+    bool NoTradingExecution,
+    bool NoBrokerAction,
+    bool NoAutoTrading,
+    bool HumanReviewRequired);
+
+public sealed record GoalOutcomeEvaluation(
+    string OutcomeId,
+    string GoalId,
+    string TaskId,
+    string NeedId,
+    DateTimeOffset EvaluatedAtUtc,
+    double GoalDelta,
+    string Recommendation,
+    IReadOnlyList<string> EvidenceRefs,
+    IReadOnlyList<string> Notes,
+    bool NoTradingExecution,
+    bool NoBrokerAction,
+    bool NoAutoTrading,
+    bool HumanReviewRequired);
 
 public sealed record PriorityScore(
     double Impact,
@@ -55,6 +115,8 @@ public sealed record PriorityScore(
     double Cost,
     double Risk,
     double ExpectedLearningValue,
+    double GoalPriority,
+    double RedundancyPenalty,
     double TotalScore);
 
 public sealed record PlannedTask(
@@ -70,6 +132,9 @@ public sealed record PlannedTask(
     IReadOnlyList<string> SourceRefs,
     DateTimeOffset CreatedAtUtc,
     string Status,
+    string SupportingGoalId,
+    string GoalReason,
+    double ExpectedGoalDelta,
     bool NoTradingExecution,
     bool HumanReviewRequired);
 

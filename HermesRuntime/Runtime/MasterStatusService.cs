@@ -59,6 +59,7 @@ public sealed class MasterStatusService
         var nightlyReport = LoadOrDefault(nightlyStatePath);
         var robustStrategies = LoadOrDefault(Path.Combine(strategyRoot, "robust_strategies.json"));
         var overfitReport = LoadOrDefault(Path.Combine(strategyRoot, "overfit_report.json"));
+        var goalState = new GoalProgressTracker(_storagePaths).LoadOrCreateState();
         if (overfitReport.ValueKind != JsonValueKind.Object)
         {
             overfitReport = LoadOrDefault(Path.Combine(simulationRoot, "overfit_report.json"));
@@ -83,7 +84,8 @@ public sealed class MasterStatusService
             GetStringArray(researchInsights, "top_blockers", "topBlockers"),
             GetStringArray(researchInsights, "why_no_candidates", "whyNoCandidates"),
             GetStringArray(metaReview, "recurring_needs", "recurringNeeds"),
-            GetStringArray(domainStatus, "weak_domains", "weakDomains").Select(item => $"weak_domain:{item}"))
+            GetStringArray(domainStatus, "weak_domains", "weakDomains").Select(item => $"weak_domain:{item}"),
+            goalState.BlockedGoals.Select(item => $"blocked_goal:{item}"))
             .Take(10)
             .ToList();
 
@@ -91,7 +93,10 @@ public sealed class MasterStatusService
             GetStringArray(planningStatus, "top_tasks", "topTasks"),
             GetStringArray(learningStrategy, "priority_task_types", "priorityTaskTypes"),
             GetStringArray(researchInsights, "recommended_next_experiments", "recommendedNextExperiments"),
-            GetStringArray(researchInsights, "next_validation_recommendations", "nextValidationRecommendations"))
+            GetStringArray(researchInsights, "next_validation_recommendations", "nextValidationRecommendations"),
+            goalState.Goals
+                .OrderBy(goal => goal.Priority)
+                .SelectMany(goal => goal.NextRecommendedActions.Select(action => $"{goal.GoalId}:{action}")))
             .Take(10)
             .ToList();
 
@@ -375,6 +380,10 @@ public sealed class MasterStatusService
             StorageCleanup: cleanupCandidates,
             RobustStrategies: robustCount,
             DemoBotCandidates: demoBotCandidates,
+            ActiveGoals: goalState.Goals.Where(goal => goal.Active).Select(goal => goal.GoalId).ToList(),
+            TopGoal: goalState.TopGoalId,
+            BlockedGoals: goalState.BlockedGoals,
+            GoalProgressSummary: goalState.Goals.ToDictionary(goal => goal.GoalId, goal => goal.ProgressScore, StringComparer.OrdinalIgnoreCase),
             NoAutoTrading: noAutoTrading,
             HumanReviewRequired: humanReviewRequired,
             BrokerOrdersEnabled: false,

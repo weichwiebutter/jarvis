@@ -26,7 +26,9 @@ public sealed class HermesInternalScheduler
         "run_planning_cycle",
         "process_planned_tasks",
         "evaluate_task_outcomes",
-        "run_autonomous_loop"
+        "run_autonomous_loop",
+        "update_goal_progress",
+        "review_goals"
     };
 
     private readonly StoragePaths _storagePaths;
@@ -284,6 +286,10 @@ public sealed class HermesInternalScheduler
                 || job.Command.Equals("execute-planned-tasks", StringComparison.OrdinalIgnoreCase),
             "evaluate_task_outcomes" => job.Command.Equals("evaluate-task-outcomes", StringComparison.OrdinalIgnoreCase),
             "run_autonomous_loop" => job.Command.Equals("run-autonomous-loop", StringComparison.OrdinalIgnoreCase),
+            "update_goal_progress" => job.Command.Equals("goal-progress", StringComparison.OrdinalIgnoreCase),
+            "review_goals" => job.Command.Equals("goals", StringComparison.OrdinalIgnoreCase)
+                || job.Command.Equals("goal-status", StringComparison.OrdinalIgnoreCase)
+                || job.Command.Equals("goal-progress", StringComparison.OrdinalIgnoreCase),
             _ => false
         };
     }

@@ -426,8 +426,20 @@ public sealed class MetaReviewEngine
 
         try
         {
+            var text = File.ReadAllText(path);
+            if (text.TrimStart().StartsWith('{'))
+            {
+                var report = JsonSerializer.Deserialize<GoalProgressReport>(
+                    text,
+                    JsonDefaults.SnapshotReadOptions);
+                if (report is not null)
+                {
+                    return report.Goals;
+                }
+            }
+
             return JsonSerializer.Deserialize<IReadOnlyList<GoalProgress>>(
-                File.ReadAllText(path),
+                text,
                 JsonDefaults.SnapshotReadOptions) ?? [];
         }
         catch (Exception ex) when (ex is IOException or JsonException)

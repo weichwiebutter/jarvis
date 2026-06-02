@@ -57,6 +57,8 @@ public sealed class TaskOutcomeEvaluator
             .ToList();
         WritePlannerFeedback(allOutcomes);
         WriteGoalFeedback(allOutcomes);
+        new GoalOutcomeEvaluator(_storagePaths).Evaluate(outcomes);
+        new GoalProgressTracker(_storagePaths).Update();
         WriteStatus(outcomes, allOutcomes);
         new CognitiveCoreService(_storagePaths).BuildStatus();
         return outcomes;

@@ -109,6 +109,10 @@ internal sealed class HermesCli
             "outcome-feedback-status" => ShowOutcomeFeedbackStatus(),
             "planner-feedback" => ShowPlannerFeedback(),
             "goal-feedback" => ShowGoalFeedback(),
+            "goals" => ShowGoals(),
+            "goal-status" => ShowGoalStatus(),
+            "goal-progress" => ShowGoalProgress(),
+            "explain-goal" => ExplainGoal(),
             "run-autonomous-loop" => RunAutonomousLoop(),
             "autonomous-loop-status" => ShowAutonomousLoopStatus(),
             "autonomous-loop-log" => ShowAutonomousLoopLog(),
@@ -230,6 +234,10 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes outcome-feedback-status Outcome Feedback Status anzeigen");
         Console.WriteLine("  hermes planner-feedback Planner Feedback anzeigen");
         Console.WriteLine("  hermes goal-feedback Goal Feedback anzeigen");
+        Console.WriteLine("  hermes goals persistente Hermes Goals anzeigen");
+        Console.WriteLine("  hermes goal-status --id <GOAL_ID> einzelnes Goal anzeigen");
+        Console.WriteLine("  hermes goal-progress Goal Progress Report anzeigen");
+        Console.WriteLine("  hermes explain-goal --id <GOAL_ID> Zielbezug, Blocker und naechste Aktionen erklaeren");
         Console.WriteLine("  hermes run-autonomous-loop --max-iterations 5 vollstaendigen Need->Insight Lernloop ausfuehren");
         Console.WriteLine("  hermes autonomous-loop-status Autonomous Learning Loop Status anzeigen");
         Console.WriteLine("  hermes autonomous-loop-log Autonomous Learning Loop JSONL-Auszug anzeigen");
@@ -337,6 +345,16 @@ internal sealed class HermesCli
         WriteField("storage_cleanup", snapshot.StorageCleanup.ToString());
         WriteField("robust_strategies", snapshot.RobustStrategies.ToString());
         WriteField("demo_bot_candidates", snapshot.DemoBotCandidates.ToString());
+        WriteField("top_goal", string.IsNullOrWhiteSpace(snapshot.TopGoal) ? "-" : snapshot.TopGoal);
+        WriteMessages("active_goals", snapshot.ActiveGoals);
+        WriteMessages("blocked_goals", snapshot.BlockedGoals);
+        WriteMessages(
+            "goal_progress_summary",
+            snapshot.GoalProgressSummary
+                .OrderByDescending(item => item.Value)
+                .Take(8)
+                .Select(item => $"{item.Key}: {item.Value:0.####}")
+                .ToList());
         WriteField("no_auto_trading", snapshot.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", snapshot.HumanReviewRequired.ToString().ToLowerInvariant());
         WriteField("broker_orders_enabled", snapshot.BrokerOrdersEnabled.ToString().ToLowerInvariant());
@@ -1768,6 +1786,8 @@ internal sealed class HermesCli
             "process_planned_tasks" => ExecuteProcessPlannedTasksJob(storagePaths, job),
             "evaluate_task_outcomes" => ExecuteEvaluateTaskOutcomesJob(storagePaths, job),
             "run_autonomous_loop" => ExecuteAutonomousLoopJob(storagePaths, job),
+            "update_goal_progress" => ExecuteUpdateGoalProgressJob(storagePaths),
+            "review_goals" => ExecuteReviewGoalsJob(storagePaths),
             "market_data_refresh" => new ScheduledJobExecutionResult(
                 Status: "skipped",
                 WorkPerformed: false,
@@ -1796,7 +1816,9 @@ internal sealed class HermesCli
         || jobType.Equals("run_autonomous_loop", StringComparison.OrdinalIgnoreCase)
         || jobType.Equals("run_planning_cycle", StringComparison.OrdinalIgnoreCase)
         || jobType.Equals("process_planned_tasks", StringComparison.OrdinalIgnoreCase)
-        || jobType.Equals("evaluate_task_outcomes", StringComparison.OrdinalIgnoreCase);
+        || jobType.Equals("evaluate_task_outcomes", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("update_goal_progress", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("review_goals", StringComparison.OrdinalIgnoreCase);
 
     private ScheduledJobExecutionResult ExecuteNightlyBeta3ScheduledJob(ScheduledJobDefinition job, SupervisorJobContext context)
     {
@@ -2031,6 +2053,31 @@ internal sealed class HermesCli
             Action: $"run_autonomous_loop iterations={summary.IterationsCompleted}; work={summary.WorkPerformed}; idle={summary.IdleIterations}",
             ReportPath: loop.SummaryPath,
             Warnings: summary.Warnings);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteUpdateGoalProgressJob(StoragePaths storagePaths)
+    {
+        var tracker = new GoalProgressTracker(storagePaths);
+        var state = tracker.Update();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: state.Goals.Count > 0,
+            Action: $"update_goal_progress active={state.ActiveGoals}; blocked={state.BlockedGoals.Count}; top={state.TopGoalId}",
+            ReportPath: tracker.GoalProgressPath,
+            Warnings: state.Warnings);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteReviewGoalsJob(StoragePaths storagePaths)
+    {
+        var tracker = new GoalProgressTracker(storagePaths);
+        var state = tracker.Update();
+        var blocked = state.BlockedGoals.Count;
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: true,
+            Action: $"review_goals active={state.ActiveGoals}; blocked={blocked}",
+            ReportPath: tracker.GoalStatePath,
+            Warnings: state.Warnings);
     }
 
     private static int ReadMaxItems(ScheduledJobDefinition job, int fallback) =>
@@ -3827,6 +3874,145 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowGoals()
+    {
+        WriteHeader("Hermes Goals");
+        var tracker = new GoalProgressTracker(BuildStoragePaths());
+        var state = tracker.Update();
+
+        WriteField("Goal State", DisplayPath(tracker.GoalStatePath));
+        WriteField("Goal Progress", DisplayPath(tracker.GoalProgressPath));
+        WriteField("Active Goals", state.ActiveGoals.ToString());
+        WriteField("Top Goal", string.IsNullOrWhiteSpace(state.TopGoalId) ? "-" : state.TopGoalId);
+        WriteMessages("Blocked Goals", state.BlockedGoals);
+        foreach (var goal in state.Goals)
+        {
+            WriteHermesGoal(goal);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowGoalStatus()
+    {
+        WriteHeader("Hermes Goal Status");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteWarning("Bitte --id <GOAL_ID> angeben.");
+            WriteSafety();
+            return 1;
+        }
+
+        var tracker = new GoalProgressTracker(BuildStoragePaths());
+        var state = tracker.LoadOrCreateState();
+        var goal = state.Goals.FirstOrDefault(item => item.GoalId.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (goal is null)
+        {
+            WriteWarning($"Goal nicht gefunden: {id}");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteField("Goal State", DisplayPath(tracker.GoalStatePath));
+        WriteHermesGoal(goal);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowGoalProgress()
+    {
+        WriteHeader("Hermes Goal Progress");
+        var tracker = new GoalProgressTracker(BuildStoragePaths());
+        var state = tracker.Update();
+        var progress = tracker.LoadProgress();
+
+        WriteField("Goal State", DisplayPath(tracker.GoalStatePath));
+        WriteField("Goal Progress", DisplayPath(tracker.GoalProgressPath));
+        WriteField("Updated UTC", progress?.UpdatedAtUtc.ToString("O") ?? state.UpdatedAtUtc.ToString("O"));
+        WriteField("Active Goals", state.ActiveGoals.ToString());
+        WriteField("Top Goal", string.IsNullOrWhiteSpace(state.TopGoalId) ? "-" : state.TopGoalId);
+        WriteMessages("Blocked Goals", progress?.BlockedGoals ?? state.BlockedGoals);
+        WriteMessages("Top Next Actions", progress?.TopNextActions.Take(12).ToList() ?? []);
+        foreach (var goal in state.Goals.Take(20))
+        {
+            WriteSubHeader($"{goal.Priority:00} / {goal.GoalId}");
+            WriteField("Progress", $"{goal.ProgressScore:0.####}");
+            WriteField("Current State", goal.CurrentState);
+            WriteField("Blockers", goal.BlockerCount.ToString());
+            WriteMessages("Next Actions", goal.NextRecommendedActions.Take(6).ToList());
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainGoal()
+    {
+        WriteHeader("Hermes Goal Explanation");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteWarning("Bitte --id <GOAL_ID> angeben.");
+            WriteSafety();
+            return 1;
+        }
+
+        var storagePaths = BuildStoragePaths();
+        var tracker = new GoalProgressTracker(storagePaths);
+        var state = tracker.LoadOrCreateState();
+        var goal = state.Goals.FirstOrDefault(item => item.GoalId.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (goal is null)
+        {
+            WriteWarning($"Goal nicht gefunden: {id}");
+            WriteSafety();
+            return 1;
+        }
+
+        var decision = new AutonomousPlanningCycleService(storagePaths).LoadLatestDecision();
+        var outcomes = new TaskOutcomeEvaluator(storagePaths).LoadOutcomes(100)
+            .Where(outcome => outcome.GoalId.Equals(goal.GoalId, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(outcome => outcome.EvaluatedAtUtc)
+            .Take(8)
+            .ToList();
+
+        WriteHermesGoal(goal);
+        WriteMessages("Warum aktiv", [
+            goal.Active ? "goal_active:true" : "goal_active:false",
+            $"target_state:{goal.TargetState}",
+            goal.BlockerCount > 0 ? $"blockers:{goal.BlockerCount}" : "blockers:0",
+            $"progress_score:{goal.ProgressScore:0.####}"
+        ]);
+        WriteMessages("Zugehoerige Needs", goal.RelatedNeeds);
+        WriteMessages(
+            "Zuletzt geplante Tasks",
+            decision?.PlannedTasks
+                .Where(task => task.GoalId.Equals(goal.GoalId, StringComparison.OrdinalIgnoreCase))
+                .Take(8)
+                .Select(task => $"{task.TaskType}:{task.Status}:{task.TaskId}")
+                .ToList() ?? []);
+        WriteMessages(
+            "Was geholfen hat",
+            outcomes
+                .Where(outcome => outcome.OutcomeScore.UsefulnessScore >= 0.55 || outcome.Evidence.NeedReduced)
+                .Select(outcome => $"{outcome.TaskType}:{outcome.Recommendation}:usefulness={outcome.OutcomeScore.UsefulnessScore:0.####}")
+                .ToList());
+        WriteMessages(
+            "Was blockiert",
+            outcomes
+                .Where(outcome => outcome.OutcomeScore.UsefulnessScore < 0.35 || outcome.Evidence.TaskRedundant || outcome.Evidence.TaskFailed)
+                .Select(outcome => $"{outcome.TaskType}:{outcome.Recommendation}:usefulness={outcome.OutcomeScore.UsefulnessScore:0.####}")
+                .ToList());
+        WriteMessages("Naechste empfohlene Aktionen", goal.NextRecommendedActions);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int RunAutonomousLoop()
     {
         WriteHeader("Hermes Autonomous Learning Loop");
@@ -4954,11 +5140,20 @@ internal sealed class HermesCli
     private void WriteHermesGoal(HermesGoal goal)
     {
         WriteSubHeader($"{goal.Priority:00} / {goal.GoalId}");
+        WriteField("Title", goal.Title);
+        WriteField("Domain", goal.Domain);
         WriteField("Active", goal.Active.ToString().ToLowerInvariant());
+        WriteField("Current State", goal.CurrentState);
+        WriteField("Target State", goal.TargetState);
         WriteField("Progress", $"{goal.ProgressScore:0.####}");
+        WriteField("Blocker Count", goal.BlockerCount.ToString());
+        WriteField("Last Updated UTC", goal.LastUpdatedUtc.ToString("O"));
         WriteField("Description", goal.Description);
+        WriteMessages("Related Needs", goal.RelatedNeeds);
+        WriteMessages("Related Tasks", goal.RelatedTasks);
+        WriteMessages("Recent Outcomes", goal.RecentOutcomes);
         WriteMessages("Blockers", goal.Blockers);
-        WriteMessages("Next Actions", goal.NextActions);
+        WriteMessages("Next Actions", goal.NextRecommendedActions.Count > 0 ? goal.NextRecommendedActions : goal.NextActions);
     }
 
     private void WritePlannedTask(PlannedTask task)
@@ -4966,12 +5161,15 @@ internal sealed class HermesCli
         WriteSubHeader($"{task.TaskType} / {task.TaskId}");
         WriteField("Domain", task.Domain);
         WriteField("Goal", task.GoalId);
+        WriteField("Supporting Goal", task.SupportingGoalId);
         WriteField("Need", task.NeedId);
         WriteField("Queue", task.QueueType);
         WriteField("Status", task.Status);
         WriteField("Priority", $"{task.Priority.TotalScore:0.####}");
-        WriteField("Score Detail", $"impact={task.Priority.Impact:0.##}, urgency={task.Priority.Urgency:0.##}, confidence={task.Priority.Confidence:0.##}, cost={task.Priority.Cost:0.##}, risk={task.Priority.Risk:0.##}, learning={task.Priority.ExpectedLearningValue:0.##}");
+        WriteField("Score Detail", $"impact={task.Priority.Impact:0.##}, urgency={task.Priority.Urgency:0.##}, confidence={task.Priority.Confidence:0.##}, cost={task.Priority.Cost:0.##}, risk={task.Priority.Risk:0.##}, learning={task.Priority.ExpectedLearningValue:0.##}, goal={task.Priority.GoalPriority:0.##}, redundancy={task.Priority.RedundancyPenalty:0.##}");
+        WriteField("Expected Goal Delta", $"{task.ExpectedGoalDelta:0.####}");
         WriteField("Reason", task.Reason);
+        WriteField("Goal Reason", task.GoalReason);
         WriteField("Expected Outcome", task.ExpectedOutcome);
         WriteMessages("Source Refs", task.SourceRefs);
         WriteField("no_trading_execution", task.NoTradingExecution.ToString().ToLowerInvariant());

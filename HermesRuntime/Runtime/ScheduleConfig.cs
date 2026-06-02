@@ -29,6 +29,13 @@ public sealed record ScheduleConfig(
                 DailyAt: "22:45",
                 Parameters: new Dictionary<string, string> { ["max_items"] = "20" }),
             new(
+                JobId: "goal_review_before_nightly",
+                JobType: "review_goals",
+                Enabled: true,
+                ScheduleType: "daily",
+                Command: "goals",
+                DailyAt: "22:50"),
+            new(
                 JobId: "nightly_beta3_research",
                 JobType: "trading_nightly_beta3",
                 Enabled: true,
@@ -120,6 +127,20 @@ public sealed record ScheduleConfig(
                 Command: "run-planning-cycle",
                 DailyAt: "05:55",
                 Parameters: new Dictionary<string, string> { ["max_items"] = "20" }),
+            new(
+                JobId: "goal_progress_update",
+                JobType: "update_goal_progress",
+                Enabled: true,
+                ScheduleType: "daily",
+                Command: "goal-progress",
+                DailyAt: "05:58"),
+            new(
+                JobId: "goal_review_after_nightly",
+                JobType: "review_goals",
+                Enabled: true,
+                ScheduleType: "daily",
+                Command: "goals",
+                DailyAt: "06:00"),
             new(
                 JobId: "process_planned_tasks_after_planning",
                 JobType: "process_planned_tasks",
