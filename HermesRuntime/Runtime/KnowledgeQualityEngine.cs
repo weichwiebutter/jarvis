@@ -156,11 +156,12 @@ public sealed class KnowledgeQualityEngine
         var catalog = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
         var queue = new ResearchQueueService(_storagePaths).LoadOrCreateQueue();
         var outcomes = new TaskOutcomeEvaluator(_storagePaths).LoadOutcomes(5000);
+        var validationExecutions = new KnowledgeValidationExecutor(_storagePaths).LoadResults(5000);
         var goals = LoadGoalState()?.Goals ?? [];
         var insights = new HypothesisGenerator(_storagePaths).LoadInsights();
         var warnings = new List<string>();
         var items = catalog
-            .Select(item => ScoreItem(item, sourcesById, queue, outcomes, goals, insights, now))
+            .Select(item => ScoreItem(item, sourcesById, queue, outcomes, validationExecutions, goals, insights, now))
             .OrderByDescending(item => item.QualityScore)
             .ThenBy(item => item.Domain, StringComparer.Ordinal)
             .ThenBy(item => item.KnowledgeId, StringComparer.Ordinal)
@@ -252,6 +253,7 @@ public sealed class KnowledgeQualityEngine
         IReadOnlyDictionary<string, CognitiveSource> sourcesById,
         ResearchQueue queue,
         IReadOnlyList<TaskOutcomeResult> outcomes,
+        IReadOnlyList<KnowledgeValidationExecutionResult> validationExecutions,
         IReadOnlyList<HermesGoal> goals,
         IReadOnlyList<CognitiveInsight> insights,
         DateTimeOffset now)
@@ -279,6 +281,16 @@ public sealed class KnowledgeQualityEngine
         var supportingOutcomes = relatedOutcomes
             .Select(outcome => $"outcome:{outcome.OutcomeId}:{outcome.Recommendation}")
             .ToList();
+        var relatedValidationExecutions = validationExecutions
+            .Where(result => result.KnowledgeItemId.Equals(item.Id, StringComparison.OrdinalIgnoreCase))
+            .Take(16)
+            .ToList();
+        var validationExecutionRefs = relatedValidationExecutions
+            .Select(result => $"validation:{result.ExecutionId}:{result.OutcomeStatus}")
+            .Concat(relatedValidationExecutions.SelectMany(result => result.EvidenceRefs))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(24)
+            .ToList();
         var supportingGoals = goals
             .Where(goal => goal.Domain.Equals(item.Domain, StringComparison.OrdinalIgnoreCase)
                 || goal.GoalId.Contains("knowledge", StringComparison.OrdinalIgnoreCase)
@@ -295,7 +307,7 @@ public sealed class KnowledgeQualityEngine
             .Take(8)
             .ToList();
 
-        var validation = ValidationScoreFor(item, relatedOutcomes, queueRefs);
+        var validation = ValidationScoreFor(item, relatedOutcomes, queueRefs, relatedValidationExecutions, validationExecutionRefs);
         var evidence = EvidenceScoreFor(item, sourceRefs, queueRefs, supportingOutcomes, supportingGoals, insightRefs);
         var reuse = ReuseScoreFor(item, queueRefs, supportingOutcomes, insightRefs);
         var age = LifetimeScoreFor(item, now);
@@ -333,6 +345,7 @@ public sealed class KnowledgeQualityEngine
             QualityScore: quality,
             EvidenceRefs: sourceRefs
                 .Concat(validation.ValidationRefs)
+                .Concat(validationExecutionRefs)
                 .Concat(queueRefs)
                 .Concat(supportingOutcomes)
                 .Concat(supportingGoals)
@@ -394,7 +407,9 @@ public sealed class KnowledgeQualityEngine
     private static KnowledgeValidationScore ValidationScoreFor(
         KnowledgeCatalogItem item,
         IReadOnlyList<TaskOutcomeResult> outcomes,
-        IReadOnlyList<string> queueRefs)
+        IReadOnlyList<string> queueRefs,
+        IReadOnlyList<KnowledgeValidationExecutionResult> validationExecutions,
+        IReadOnlyList<string> validationExecutionRefs)
     {
         var statusScore = item.ValidationStatus.ToLowerInvariant() switch
         {
@@ -414,13 +429,22 @@ public sealed class KnowledgeQualityEngine
         var queueBoost = queueRefs.Any(reference => reference.Contains("processed", StringComparison.OrdinalIgnoreCase))
             ? 0.08
             : 0;
-        var value = Math.Round(Math.Clamp(statusScore + outcomeBoost + queueBoost, 0, 1), 4);
+        var executionBoost = validationExecutions.Count == 0
+            ? 0
+            : Math.Clamp(
+                validationExecutions.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)) * 0.035
+                + validationExecutions.Count(result => result.Status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase)) * 0.012
+                - validationExecutions.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)) * 0.03,
+                0,
+                0.16);
+        var value = Math.Round(Math.Clamp(statusScore + outcomeBoost + queueBoost + executionBoost, 0, 1), 4);
         return new KnowledgeValidationScore(
             Value: value,
             Status: item.ValidationStatus,
             ValidationRefs: outcomes
                 .Select(outcome => $"validation:{outcome.OutcomeId}:{outcome.Recommendation}")
                 .Concat(queueRefs.Where(reference => reference.Contains("processed", StringComparison.OrdinalIgnoreCase)).Select(reference => $"validation:{reference}"))
+                .Concat(validationExecutionRefs)
                 .Take(16)
                 .ToList());
     }

@@ -101,7 +101,7 @@ public sealed class NeedDetectionEngine
                     "Zu viele schwache Knowledge Items",
                     $"Weak={knowledgeQuality.WeakKnowledge}, total={knowledgeQuality.TotalKnowledgeItems}, average_quality={knowledgeQuality.AverageQualityScore:0.####}.",
                     [new KnowledgeQualityEngine(_storagePaths).QualityPath],
-                    ["generate_validation_plans", "validate_knowledge_items", "consolidate_memory", "evaluate_knowledge_quality"]));
+                    ["generate_validation_plans", "validate_knowledge_items", "execute_validation_tasks", "consolidate_memory", "evaluate_knowledge_quality"]));
             }
 
             if (knowledgeQuality.DeprecatedKnowledge > 0)
@@ -133,6 +133,19 @@ public sealed class NeedDetectionEngine
         }
         else if (validationStatus is not null)
         {
+            if (validationStatus.ValidationTasksPending > 0)
+            {
+                needs.Add(Need(
+                    "knowledge_validation_tasks_pending",
+                    NeedCategory.validation_gap,
+                    NeedSeverity.high,
+                    "research",
+                    "Validation Tasks warten auf Ausfuehrung",
+                    $"{validationStatus.ValidationTasksPending} Knowledge Validation Tasks sind gequeued und muessen kontrolliert ausgefuehrt werden.",
+                    [validationStatus.ResearchQueuePath, validationStatus.PlansPath],
+                    ["execute_validation_tasks", "evaluate_knowledge_quality"]));
+            }
+
             if (validationStatus.ValidationPlansOpen > 0 && validationStatus.ValidationTasksPending == 0)
             {
                 needs.Add(Need(
@@ -421,7 +434,7 @@ public sealed class NeedDetectionEngine
                     "Knowledge Quality unter Zielwert",
                     $"Das aktive Ziel improve_knowledge_quality priorisiert Konsolidierung; average_quality={knowledgeQuality.AverageQualityScore:0.####}.",
                     [new KnowledgeQualityEngine(_storagePaths).QualityPath],
-                    ["generate_validation_plans", "validate_knowledge_items", "consolidate_memory", "evaluate_knowledge_quality"]));
+                    ["generate_validation_plans", "validate_knowledge_items", "execute_validation_tasks", "consolidate_memory", "evaluate_knowledge_quality"]));
             }
 
             if (activeGoalIds.Contains("reduce_low_confidence_knowledge") && knowledgeQuality is not null && knowledgeQuality.WeakKnowledge > 0)
@@ -434,7 +447,7 @@ public sealed class NeedDetectionEngine
                     "Low-Confidence Knowledge reduzieren",
                     $"{knowledgeQuality.WeakKnowledge} Knowledge Items benoetigen bessere Evidenz, Validierung oder Deprecation-Markierung.",
                     [new KnowledgeQualityEngine(_storagePaths).QualityPath, new KnowledgeQualityEngine(_storagePaths).EvidencePath],
-                    ["generate_validation_plans", "validate_knowledge_items", "consolidate_memory", "evaluate_knowledge_quality"]));
+                    ["generate_validation_plans", "validate_knowledge_items", "execute_validation_tasks", "consolidate_memory", "evaluate_knowledge_quality"]));
             }
         }
 
@@ -952,7 +965,8 @@ public sealed class AutonomousTaskPlanner
         "evaluate_knowledge_quality",
         "consolidate_memory",
         "generate_validation_plans",
-        "validate_knowledge_items"
+        "validate_knowledge_items",
+        "execute_validation_tasks"
     };
 
     public PlanningDecision Plan(IReadOnlyList<DetectedNeed> needs, IReadOnlyList<HermesGoal> goals, int maxItems)
@@ -1130,6 +1144,7 @@ public sealed class AutonomousTaskPlanner
             "consolidate_memory" => "review",
             "generate_validation_plans" => "review",
             "validate_knowledge_items" => "validation",
+            "execute_validation_tasks" => "validation",
             "process_research_queue" => "validation",
             "run_walkforward_validation" => "validation",
             "run_strategy_research" => "simulation",
@@ -1162,6 +1177,7 @@ public sealed class AutonomousTaskPlanner
             "consolidate_memory" => "memory_consolidation_updated_no_delete",
             "generate_validation_plans" => "knowledge_validation_plans_created",
             "validate_knowledge_items" => "knowledge_validation_tasks_queued",
+            "execute_validation_tasks" => "knowledge_validation_evidence_written",
             _ => "structured_research_progress"
         };
 

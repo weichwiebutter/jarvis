@@ -537,6 +537,56 @@ public sealed class ResearchQueueService
         return Write(items);
     }
 
+    public ResearchQueue MarkValidationTaskExecution(
+        string validationTaskId,
+        string status,
+        string outcomeStatus,
+        IReadOnlyList<string> evidenceRefs,
+        IReadOnlyList<string> warnings)
+    {
+        var queue = LoadOrCreateQueue();
+        var now = DateTimeOffset.UtcNow;
+        var items = queue.Items
+            .Select(item =>
+            {
+                var matches = item.Notes.Any(note =>
+                    note.Equals($"validation_task:{validationTaskId}", StringComparison.OrdinalIgnoreCase));
+                if (!matches)
+                {
+                    return item;
+                }
+
+                var processedStatus = status.Equals("skipped", StringComparison.OrdinalIgnoreCase)
+                    || status.Equals("failed", StringComparison.OrdinalIgnoreCase)
+                        ? status
+                        : "processed";
+                var nextQueue = processedStatus.Equals("processed", StringComparison.OrdinalIgnoreCase)
+                    ? outcomeStatus.Contains("missing", StringComparison.OrdinalIgnoreCase)
+                        || status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase)
+                            ? "review"
+                            : "archive"
+                    : "review";
+                return item with
+                {
+                    Status = processedStatus,
+                    Queue = nextQueue,
+                    UpdatedAtUtc = now,
+                    Notes = item.Notes
+                        .Concat([
+                            $"validation_execution_status:{status}",
+                            $"validation_execution_outcome:{outcomeStatus}",
+                            $"validation_execution_updated_utc:{now:O}"
+                        ])
+                        .Concat(evidenceRefs.Select(reference => $"validation_evidence:{reference}"))
+                        .Concat(warnings.Select(warning => $"validation_warning:{warning}"))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList()
+                };
+            })
+            .ToList();
+        return Write(items);
+    }
+
     private ResearchQueue ProcessWhere(
         int maxItems,
         Func<ResearchQueueItem, bool> predicate,

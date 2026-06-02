@@ -293,6 +293,7 @@ public sealed class PlannedTaskExecutor
             "consolidate_memory" => ExecuteConsolidateMemory(task),
             "generate_validation_plans" => ExecuteGenerateValidationPlans(task),
             "validate_knowledge_items" => ExecuteValidateKnowledgeItems(task),
+            "execute_validation_tasks" => ExecuteValidationTasks(task),
             _ => BuildResult(
                 task,
                 "skipped",
@@ -540,6 +541,27 @@ public sealed class PlannedTaskExecutor
             $"Knowledge validation tasks queued; pending={status.ValidationTasksPending}; queue_items={status.QueueValidationTasks}.",
             [service.StatusPath, service.PlansPath, status.ResearchQueuePath],
             status.Warnings);
+    }
+
+    private PlannedTaskExecutionResult ExecuteValidationTasks(PlannedTask task)
+    {
+        var executor = new KnowledgeValidationExecutor(_storagePaths);
+        var results = executor.Execute(20);
+        var completed = results.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase));
+        var needsMoreData = results.Count(result => result.Status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase));
+        var skipped = results.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase));
+        var failed = results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase));
+        return BuildResult(
+            task,
+            failed > 0 ? "failed" : "completed",
+            $"Knowledge validation tasks executed; completed={completed}; needs_more_data={needsMoreData}; skipped={skipped}; failed={failed}.",
+            [
+                executor.ExecutionLogPath,
+                new KnowledgeValidationStrategy(_storagePaths).StatusPath,
+                new KnowledgeQualityEngine(_storagePaths).QualityPath,
+                new KnowledgeQualityEngine(_storagePaths).EvidencePath
+            ],
+            results.SelectMany(result => result.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
     }
 
     private void RefreshCognitivePlanningOutputs()

@@ -161,7 +161,7 @@ public sealed class KnowledgeValidationStrategy
             ReportVersion: "knowledge_validation_plans_v1",
             UpdatedAtUtc: now,
             TotalPlans: plans.Count,
-            OpenPlans: plans.Count(plan => plan.Status.Equals("open", StringComparison.OrdinalIgnoreCase)),
+            OpenPlans: plans.Count(IsOpenPlan),
             TrustedCandidateCount: plans.Count(plan => plan.TargetStatus.Equals("trusted_candidate", StringComparison.OrdinalIgnoreCase)),
             KnowledgeItemsNeedingOos: plans.Count(plan => plan.Requirements.Any(requirement =>
                 requirement.RequirementType is "out_of_sample_test" or "walkforward_test")),
@@ -273,28 +273,54 @@ public sealed class KnowledgeValidationStrategy
         IReadOnlyDictionary<string, KnowledgeValidationPlan> existingPlans)
     {
         var goal = RelatedGoalFor(qualityItem, goals);
-        var requirements = BuildRequirements(qualityItem, catalogItem, oosAvailable, costStressAvailable, monteCarloAvailable);
+        var planId = StableId("validation_plan", qualityItem.KnowledgeId);
+        var existing = existingPlans.GetValueOrDefault(planId);
+        var existingRequirements = existing?.Requirements.ToDictionary(requirement => requirement.RequirementId, StringComparer.OrdinalIgnoreCase)
+            ?? new Dictionary<string, KnowledgeValidationRequirement>(StringComparer.OrdinalIgnoreCase);
+        var existingTasks = existing?.RequiredTasks.ToDictionary(task => task.TaskId, StringComparer.OrdinalIgnoreCase)
+            ?? new Dictionary<string, KnowledgeValidationTask>(StringComparer.OrdinalIgnoreCase);
+        var requirements = BuildRequirements(qualityItem, catalogItem, oosAvailable, costStressAvailable, monteCarloAvailable)
+            .Select(requirement =>
+            {
+                if (!existingRequirements.TryGetValue(requirement.RequirementId, out var prior))
+                {
+                    return requirement;
+                }
+
+                return requirement with
+                {
+                    Status = prior.Status,
+                    EvidenceRefs = prior.EvidenceRefs
+                        .Concat(requirement.EvidenceRefs)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Take(40)
+                        .ToList()
+                };
+            })
+            .ToList();
         var tasks = requirements
-            .Select(requirement => new KnowledgeValidationTask(
-                TaskId: StableId("validation_task", qualityItem.KnowledgeId, requirement.RequirementType, requirement.RequiredTaskType),
-                KnowledgeItemId: qualityItem.KnowledgeId,
-                TaskType: requirement.RequiredTaskType,
-                Domain: qualityItem.Domain,
-                RequirementType: requirement.RequirementType,
-                Status: "planned",
-                Priority: requirement.Priority,
-                ExpectedEvidence: requirement.Reason,
-                MappedInternalTaskType: requirement.MappedInternalTaskType,
-                SourceRefs: [qualityItem.KnowledgeId, requirement.RequirementId],
-                NoTradingExecution: true,
-                HumanReviewRequired: true))
+            .Select(requirement =>
+            {
+                var taskId = StableId("validation_task", qualityItem.KnowledgeId, requirement.RequirementType, requirement.RequiredTaskType);
+                return new KnowledgeValidationTask(
+                    TaskId: taskId,
+                    KnowledgeItemId: qualityItem.KnowledgeId,
+                    TaskType: requirement.RequiredTaskType,
+                    Domain: qualityItem.Domain,
+                    RequirementType: requirement.RequirementType,
+                    Status: existingTasks.TryGetValue(taskId, out var priorTask) ? priorTask.Status : "planned",
+                    Priority: requirement.Priority,
+                    ExpectedEvidence: requirement.Reason,
+                    MappedInternalTaskType: requirement.MappedInternalTaskType,
+                    SourceRefs: [qualityItem.KnowledgeId, requirement.RequirementId],
+                    NoTradingExecution: true,
+                    HumanReviewRequired: true);
+            })
             .GroupBy(task => task.TaskId, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .OrderByDescending(task => task.Priority)
             .ToList();
         var missing = requirements.SelectMany(requirement => requirement.MissingEvidence).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var planId = StableId("validation_plan", qualityItem.KnowledgeId);
-        var existing = existingPlans.GetValueOrDefault(planId);
         var qualityGap = Math.Clamp(0.82 - qualityItem.QualityScore, 0, 1);
         var goalPriority = goal is null ? 0.35 : Math.Clamp(1 - ((goal.Priority - 1) / 100.0), 0.05, 1);
         var requirementWeight = Math.Clamp(requirements.Count / 8.0, 0, 1);
@@ -315,11 +341,28 @@ public sealed class KnowledgeValidationStrategy
             RelatedGoalId: goal?.GoalId ?? "improve_knowledge_quality",
             CreatedAtUtc: existing?.CreatedAtUtc ?? now,
             UpdatedAtUtc: now,
-            Status: requirements.Count == 0 ? "ready_for_quality_review" : "open",
+            Status: PlanStatusFor(requirements),
             NoTradingExecution: true,
             NoBrokerAction: true,
             NoAutoTrading: true,
             HumanReviewRequired: true);
+    }
+
+    private static string PlanStatusFor(IReadOnlyList<KnowledgeValidationRequirement> requirements)
+    {
+        if (requirements.Count == 0 || requirements.All(requirement => requirement.Status.Equals("satisfied", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "ready_for_quality_review";
+        }
+
+        if (requirements.Any(requirement => requirement.Status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "needs_more_data";
+        }
+
+        return requirements.Any(requirement => requirement.Status.Equals("satisfied", StringComparison.OrdinalIgnoreCase))
+            ? "in_progress"
+            : "open";
     }
 
     private IReadOnlyList<KnowledgeValidationRequirement> BuildRequirements(
@@ -419,6 +462,11 @@ public sealed class KnowledgeValidationStrategy
         File.WriteAllText(StatusPath, JsonSerializer.Serialize(status, JsonDefaults.WriteOptions));
         return status;
     }
+
+    private static bool IsOpenPlan(KnowledgeValidationPlan plan) =>
+        plan.Status.Equals("open", StringComparison.OrdinalIgnoreCase)
+        || plan.Status.Equals("in_progress", StringComparison.OrdinalIgnoreCase)
+        || plan.Status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase);
 
     private static HermesGoal? RelatedGoalFor(KnowledgeQualityItem item, IReadOnlyList<HermesGoal> goals)
     {

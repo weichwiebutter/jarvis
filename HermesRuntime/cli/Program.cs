@@ -98,6 +98,8 @@ internal sealed class HermesCli
             "validation-plans" => ShowValidationPlans(),
             "generate-validation-plans" => GenerateValidationPlans(),
             "validate-knowledge" => ValidateKnowledge(),
+            "execute-validation-tasks" => ExecuteValidationTasks(),
+            "validation-execution-log" => ShowValidationExecutionLog(),
             "knowledge-validation-status" => ShowKnowledgeValidationStatus(),
             "explain-validation" => ExplainValidation(),
             "research-queue" => ShowResearchQueue(),
@@ -230,6 +232,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes generate-validation-plans --max-items 50 Plaene fuer weak Knowledge erzeugen");
         Console.WriteLine("  hermes validation-plans   Knowledge Validation Plans anzeigen");
         Console.WriteLine("  hermes validate-knowledge --max-items 20 Validation Tasks in Research Queue einreihen");
+        Console.WriteLine("  hermes execute-validation-tasks --max-items 20 Validation Tasks kontrolliert ausfuehren");
+        Console.WriteLine("  hermes validation-execution-log Validation Execution Log anzeigen");
         Console.WriteLine("  hermes knowledge-validation-status Validation Fortschritt anzeigen");
         Console.WriteLine("  hermes explain-validation --id <KNOWLEDGE_ITEM_ID> Validierungsplan erklaeren");
         Console.WriteLine("  hermes research-queue     Cognitive Research Queue anzeigen");
@@ -1816,6 +1820,7 @@ internal sealed class HermesCli
             "review_goals" => ExecuteReviewGoalsJob(storagePaths),
             "evaluate_knowledge_quality" => ExecuteKnowledgeQualityJob(storagePaths),
             "consolidate_memory" => ExecuteConsolidateMemoryJob(storagePaths),
+            "execute_validation_tasks" => ExecuteValidationTasksJob(storagePaths, job),
             "market_data_refresh" => new ScheduledJobExecutionResult(
                 Status: "skipped",
                 WorkPerformed: false,
@@ -2132,6 +2137,22 @@ internal sealed class HermesCli
             Action: $"consolidate_memory weak={report.WeakKnowledge}; deprecated={report.DeprecatedKnowledge}; duplicate_groups={report.DuplicateGroups}",
             ReportPath: service.ConsolidationPath,
             Warnings: report.Warnings);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteValidationTasksJob(StoragePaths storagePaths, ScheduledJobDefinition job)
+    {
+        var maxItems = ReadMaxItems(job, fallback: 20);
+        var executor = new KnowledgeValidationExecutor(storagePaths);
+        var results = executor.Execute(maxItems);
+        var completed = results.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase));
+        var needsMoreData = results.Count(result => result.Status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase));
+        var failed = results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase));
+        return new ScheduledJobExecutionResult(
+            Status: failed > 0 ? "failed" : "completed",
+            WorkPerformed: results.Count > 0,
+            Action: $"execute_validation_tasks completed={completed}; needs_more_data={needsMoreData}; failed={failed}",
+            ReportPath: executor.ExecutionLogPath,
+            Warnings: results.SelectMany(result => result.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
     }
 
     private static int ReadMaxItems(ScheduledJobDefinition job, int fallback) =>
@@ -3667,6 +3688,33 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ExecuteValidationTasks()
+    {
+        WriteHeader("Hermes Execute Knowledge Validation Tasks");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 20, min: 1, max: 200);
+        var storagePaths = BuildStoragePaths();
+        var executor = new KnowledgeValidationExecutor(storagePaths);
+        var results = executor.Execute(maxItems);
+
+        WriteValidationExecutionSummary(results, executor.ExecutionLogPath);
+        TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowValidationExecutionLog()
+    {
+        WriteHeader("Hermes Knowledge Validation Execution Log");
+        var executor = new KnowledgeValidationExecutor(BuildStoragePaths());
+        var results = executor.LoadResults(50);
+
+        WriteValidationExecutionSummary(results, executor.ExecutionLogPath);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowKnowledgeValidationStatus()
     {
         WriteHeader("Hermes Knowledge Validation Status");
@@ -3700,6 +3748,18 @@ internal sealed class HermesCli
         }
 
         WriteValidationPlan(plan);
+        var executions = new KnowledgeValidationExecutor(BuildStoragePaths())
+            .LoadResults(200)
+            .Where(result => result.KnowledgeItemId.Equals(plan.KnowledgeItemId, StringComparison.OrdinalIgnoreCase))
+            .Take(8)
+            .ToList();
+        if (executions.Count > 0)
+        {
+            WriteMessages(
+                "Recent Execution",
+                executions.Select(result => $"{result.RequirementType}:{result.Status}:{result.OutcomeStatus}:{result.CompletedAtUtc:O}").ToList());
+        }
+
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -5345,6 +5405,36 @@ internal sealed class HermesCli
         WriteField("Needs Source Check", status.KnowledgeItemsNeedingSourceCheck.ToString());
         WriteMessages("Most Common Missing Evidence", status.MostCommonMissingEvidence);
         WriteMessages("Warnings", status.Warnings);
+    }
+
+    private void WriteValidationExecutionSummary(IReadOnlyList<KnowledgeValidationExecutionResult> results, string executionLogPath)
+    {
+        WriteField("Execution Log", DisplayPath(executionLogPath));
+        WriteField("Results", results.Count.ToString());
+        WriteField("Completed", results.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)).ToString());
+        WriteField("Needs More Data", results.Count(result => result.Status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase)).ToString());
+        WriteField("Skipped", results.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase)).ToString());
+        WriteField("Failed", results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)).ToString());
+        WriteMessages(
+            "Outcome Status",
+            results
+                .GroupBy(result => result.OutcomeStatus, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(group => group.Count())
+                .ThenBy(group => group.Key, StringComparer.Ordinal)
+                .Take(12)
+                .Select(group => $"{group.Key}:{group.Count()}")
+                .ToList());
+        foreach (var result in results.Take(12))
+        {
+            WriteSubHeader($"{result.RequirementType} / {result.KnowledgeItemId}");
+            WriteField("Status", result.Status);
+            WriteField("Outcome", result.OutcomeStatus);
+            WriteField("Plan", result.PlanId);
+            WriteField("Queue Item", result.QueueItemId);
+            WriteField("Evidence", result.EvidenceSummary);
+            WriteMessages("Evidence Refs", result.EvidenceRefs.Take(8).ToList());
+            WriteMessages("Warnings", result.Warnings);
+        }
     }
 
     private void WriteCognitiveDomainStatusEntry(DomainStatusEntry entry)
