@@ -577,6 +577,9 @@ public sealed class ResearchQueueService
                             $"validation_execution_outcome:{outcomeStatus}",
                             $"validation_execution_updated_utc:{now:O}"
                         ])
+                        .Concat(outcomeStatus.Equals("validation_type_not_supported_for_domain", StringComparison.OrdinalIgnoreCase)
+                            ? ["invalid_for_domain"]
+                            : [])
                         .Concat(evidenceRefs.Select(reference => $"validation_evidence:{reference}"))
                         .Concat(warnings.Select(warning => $"validation_warning:{warning}"))
                         .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -585,6 +588,55 @@ public sealed class ResearchQueueService
             })
             .ToList();
         return Write(items);
+    }
+
+    public ValidationTaskCleanupResult CleanupInvalidValidationTasks()
+    {
+        var queue = LoadOrCreateQueue();
+        var router = new DomainValidationRouter(_storagePaths);
+        var now = DateTimeOffset.UtcNow;
+        var invalidItems = queue.Items
+            .Where(router.IsInvalidOpenValidationTask)
+            .ToList();
+        var invalidIds = invalidItems
+            .Select(item => item.QueueItemId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var items = queue.Items
+            .Select(item =>
+            {
+                if (!invalidIds.Contains(item.QueueItemId))
+                {
+                    return item;
+                }
+
+                var requirement = DomainValidationRouter.NoteValue(item, "requirement") ?? "unknown";
+                return item with
+                {
+                    Status = "skipped",
+                    Queue = "review",
+                    UpdatedAtUtc = now,
+                    Notes = item.Notes
+                        .Concat([
+                            "invalid_for_domain",
+                            $"invalid_requirement:{requirement}",
+                            $"validation_execution_status:skipped",
+                            "validation_execution_outcome:validation_type_not_supported_for_domain",
+                            $"validation_execution_updated_utc:{now:O}",
+                            $"validation_warning:router:{item.Domain}:{requirement}:validation_type_not_supported_for_domain"
+                        ])
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList()
+                };
+            })
+            .ToList();
+        var updated = Write(items);
+        var status = new DomainValidationRouter(_storagePaths).BuildStatus();
+        return new ValidationTaskCleanupResult(
+            InvalidValidationTasks: invalidItems.Count,
+            ValidationTasksCleaned: invalidItems.Count,
+            ValidationRoutingHealth: status.ValidationRoutingHealth,
+            CleanedQueueItemIds: invalidItems.Select(item => item.QueueItemId).ToList(),
+            Warnings: invalidItems.Count == 0 ? [] : [$"invalid_validation_tasks_cleaned:{invalidItems.Count}"]);
     }
 
     private ResearchQueue ProcessWhere(

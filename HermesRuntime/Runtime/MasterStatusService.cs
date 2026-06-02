@@ -91,6 +91,7 @@ public sealed class MasterStatusService
             knowledgeQuality.DeprecatedKnowledge > 0 ? [$"deprecated_knowledge:{knowledgeQuality.DeprecatedKnowledge}"] : [],
             knowledgeValidation?.ValidationPlansOpen > 0 ? [$"validation_plans_open:{knowledgeValidation.ValidationPlansOpen}"] : [],
             knowledgeValidation?.KnowledgeItemsNeedingOos > 0 ? [$"knowledge_needs_oos:{knowledgeValidation.KnowledgeItemsNeedingOos}"] : [],
+            knowledgeValidation?.InvalidValidationTasks > 0 ? [$"invalid_validation_tasks:{knowledgeValidation.InvalidValidationTasks}"] : [],
             goalState.BlockedGoals.Select(item => $"blocked_goal:{item}"))
             .Take(10)
             .ToList();
@@ -100,11 +101,12 @@ public sealed class MasterStatusService
             GetStringArray(learningStrategy, "priority_task_types", "priorityTaskTypes"),
             GetStringArray(researchInsights, "recommended_next_experiments", "recommendedNextExperiments"),
             GetStringArray(researchInsights, "next_validation_recommendations", "nextValidationRecommendations"),
+            knowledgeValidation?.InvalidValidationTasks > 0 ? ["cleanup-invalid-validation-tasks"] : [],
             goalState.Goals
                 .OrderBy(goal => goal.Priority)
                 .SelectMany(goal => goal.NextRecommendedActions.Select(action => $"{goal.GoalId}:{action}")),
             knowledgeQuality.KnowledgeHealth is "critical" or "needs_consolidation"
-                ? ["generate_validation_plans", "validate_knowledge_items", "consolidate_memory", "evaluate_knowledge_quality"]
+                ? ["generate_validation_plans", "validate_knowledge_items", "execute_validation_tasks", "cleanup-invalid-validation-tasks", "consolidate_memory", "evaluate_knowledge_quality"]
                 : [])
             .Take(10)
             .ToList();
@@ -223,6 +225,11 @@ public sealed class MasterStatusService
             warningReasons.Add($"knowledge_validation_needs_oos:{knowledgeValidation.KnowledgeItemsNeedingOos}");
         }
 
+        if (knowledgeValidation?.InvalidValidationTasks > 0)
+        {
+            warningReasons.Add($"invalid_validation_tasks:{knowledgeValidation.InvalidValidationTasks}");
+        }
+
         warningReasons.AddRange(topBlockers.Take(5));
         warningReasons = warningReasons
             .Where(item => !string.IsNullOrWhiteSpace(item))
@@ -268,6 +275,9 @@ public sealed class MasterStatusService
                     ["trusted_candidate_count"] = knowledgeValidation?.TrustedCandidateCount ?? 0,
                     ["knowledge_items_needing_oos"] = knowledgeValidation?.KnowledgeItemsNeedingOos ?? 0,
                     ["knowledge_items_needing_source_check"] = knowledgeValidation?.KnowledgeItemsNeedingSourceCheck ?? 0,
+                    ["invalid_validation_tasks"] = knowledgeValidation?.InvalidValidationTasks ?? 0,
+                    ["validation_tasks_cleaned"] = knowledgeValidation?.ValidationTasksCleaned ?? 0,
+                    ["validation_routing_health"] = knowledgeValidation?.ValidationRoutingHealth ?? "unknown",
                     ["queue_items"] = FirstPositive(GetInt(cognitiveStatus, "queue_item_count", "queueItemCount"), queuedTasks),
                     ["insights"] = GetInt(cognitiveStatus, "insight_count", "insightCount"),
                     ["active_domains"] = activeDomains
@@ -425,6 +435,9 @@ public sealed class MasterStatusService
             TrustedCandidateCount: knowledgeValidation?.TrustedCandidateCount ?? 0,
             KnowledgeItemsNeedingOos: knowledgeValidation?.KnowledgeItemsNeedingOos ?? 0,
             KnowledgeItemsNeedingSourceCheck: knowledgeValidation?.KnowledgeItemsNeedingSourceCheck ?? 0,
+            InvalidValidationTasks: knowledgeValidation?.InvalidValidationTasks ?? 0,
+            ValidationTasksCleaned: knowledgeValidation?.ValidationTasksCleaned ?? 0,
+            ValidationRoutingHealth: knowledgeValidation?.ValidationRoutingHealth ?? "unknown",
             ActiveGoals: goalState.Goals.Where(goal => goal.Active).Select(goal => goal.GoalId).ToList(),
             TopGoal: goalState.TopGoalId,
             BlockedGoals: goalState.BlockedGoals,

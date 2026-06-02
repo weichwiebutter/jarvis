@@ -56,11 +56,20 @@ public sealed class KnowledgeValidationEvidenceWriter
 
         foreach (var group in results.GroupBy(result => result.KnowledgeItemId, StringComparer.OrdinalIgnoreCase))
         {
+            var effectiveResults = group
+                .Where(result => !result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase)
+                    && !result.OutcomeStatus.Equals("validation_type_not_supported_for_domain", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (effectiveResults.Count == 0)
+            {
+                continue;
+            }
+
             var existing = byId.GetValueOrDefault(group.Key);
-            var first = group.First();
-            var validationRefs = group
+            var first = effectiveResults.First();
+            var validationRefs = effectiveResults
                 .Select(result => $"validation:{result.ExecutionId}:{result.OutcomeStatus}")
-                .Concat(group.SelectMany(result => result.EvidenceRefs))
+                .Concat(effectiveResults.SelectMany(result => result.EvidenceRefs))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Take(80)
                 .ToList();
@@ -73,7 +82,7 @@ public sealed class KnowledgeValidationEvidenceWriter
                     ValidationEvidenceRefs: validationRefs,
                     OutcomeRefs: [],
                     GoalRefs: [],
-                    QueueRefs: group.Select(result => $"queue:{result.QueueItemId}:processed").Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                    QueueRefs: effectiveResults.Select(result => $"queue:{result.QueueItemId}:processed").Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                     RelatedItems: [],
                     UpdatedAtUtc: DateTimeOffset.UtcNow,
                     HumanReviewRequired: true)
@@ -85,7 +94,7 @@ public sealed class KnowledgeValidationEvidenceWriter
                         .Take(120)
                         .ToList(),
                     QueueRefs = existing.QueueRefs
-                        .Concat(group.Select(result => $"queue:{result.QueueItemId}:processed"))
+                        .Concat(effectiveResults.Select(result => $"queue:{result.QueueItemId}:processed"))
                         .Distinct(StringComparer.OrdinalIgnoreCase)
                         .Take(80)
                         .ToList(),
@@ -265,6 +274,26 @@ public sealed class KnowledgeValidationExecutor
         KnowledgeValidationTask task,
         DateTimeOffset started)
     {
+        var router = new DomainValidationRouter(_storagePaths);
+        if (!router.IsAllowed(plan.Domain, requirement.RequirementType))
+        {
+            return BuildResult(
+                item,
+                task.TaskId,
+                plan.PlanId,
+                requirement.RequirementId,
+                plan.KnowledgeItemId,
+                plan.Domain,
+                requirement.RequirementType,
+                "skipped",
+                "validation_type_not_supported_for_domain",
+                $"Requirement '{requirement.RequirementType}' is not supported for domain '{plan.Domain}' and was skipped by DomainValidationRouter.",
+                [],
+                [],
+                [$"validation_type_not_supported_for_domain:{plan.Domain}:{requirement.RequirementType}"],
+                started);
+        }
+
         return requirement.RequirementType switch
         {
             "source_verification" => ExecuteSourceVerification(item, plan, requirement, task, started),
@@ -276,6 +305,14 @@ public sealed class KnowledgeValidationExecutor
             "monte_carlo_test" => ExecuteMonteCarloTest(item, plan, requirement, task, started),
             "domain_review" => ExecuteDomainReview(item, plan, requirement, task, started),
             "stale_check" => ExecuteStaleCheck(item, plan, requirement, task, started),
+            "consistency_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "consistency_check"),
+            "reference_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "reference_check"),
+            "static_analysis" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "static_analysis"),
+            "test_presence_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "test_presence_check"),
+            "build_reference_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "build_reference_check"),
+            "process_owner_review_stub" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "process_owner_review_stub"),
+            "citation_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "citation_check"),
+            "reproducibility_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "reproducibility_check"),
             _ => BuildResult(item, task.TaskId, plan.PlanId, requirement.RequirementId, plan.KnowledgeItemId, plan.Domain, requirement.RequirementType, "skipped", "unsupported_requirement_type", "Unsupported validation requirement type.", [], [], [$"unsupported_requirement_type:{requirement.RequirementType}"], started)
         };
     }
@@ -360,6 +397,31 @@ public sealed class KnowledgeValidationExecutor
         var status = service.BuildStatus();
         var insights = service.BuildInsights(status);
         return BuildResult(item, task.TaskId, plan.PlanId, requirement.RequirementId, plan.KnowledgeItemId, plan.Domain, requirement.RequirementType, "completed", "structured_domain_review_stub", $"Structured domain review evidence written; active_domains={status.ActiveDomains.Count}; insights={insights.Insights.Count}.", [$"domain_review:{plan.Domain}", $"domain_insights:{service.DomainInsightsPath}"], [service.DomainStatusPath, service.DomainInsightsPath], [], started);
+    }
+
+    private KnowledgeValidationExecutionResult ExecuteStructuredNonTradingCheck(ResearchQueueItem item, KnowledgeValidationPlan plan, KnowledgeValidationRequirement requirement, KnowledgeValidationTask task, DateTimeOffset started, string checkType)
+    {
+        var service = new DomainCognitiveService(_storagePaths);
+        var status = service.BuildStatus();
+        var insights = service.BuildInsights(status);
+        var warning = checkType is "process_owner_review_stub"
+            ? "human_or_process_owner_review_still_required"
+            : "structured_stub_no_external_execution";
+        return BuildResult(
+            item,
+            task.TaskId,
+            plan.PlanId,
+            requirement.RequirementId,
+            plan.KnowledgeItemId,
+            plan.Domain,
+            requirement.RequirementType,
+            "completed",
+            $"{checkType}_structured_stub",
+            $"Structured {checkType} evidence written from local metadata only; no external execution was performed.",
+            [$"{checkType}:{plan.Domain}", $"domain_insights:{service.DomainInsightsPath}"],
+            [service.DomainStatusPath, service.DomainInsightsPath],
+            [warning],
+            started);
     }
 
     private KnowledgeValidationExecutionResult ExecuteStaleCheck(ResearchQueueItem item, KnowledgeValidationPlan plan, KnowledgeValidationRequirement requirement, KnowledgeValidationTask task, DateTimeOffset started)

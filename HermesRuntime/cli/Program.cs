@@ -100,6 +100,9 @@ internal sealed class HermesCli
             "validate-knowledge" => ValidateKnowledge(),
             "execute-validation-tasks" => ExecuteValidationTasks(),
             "validation-execution-log" => ShowValidationExecutionLog(),
+            "validation-routing-status" => ShowValidationRoutingStatus(),
+            "cleanup-invalid-validation-tasks" => CleanupInvalidValidationTasks(),
+            "explain-validation-routing" => ExplainValidationRouting(),
             "knowledge-validation-status" => ShowKnowledgeValidationStatus(),
             "explain-validation" => ExplainValidation(),
             "research-queue" => ShowResearchQueue(),
@@ -234,6 +237,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes validate-knowledge --max-items 20 Validation Tasks in Research Queue einreihen");
         Console.WriteLine("  hermes execute-validation-tasks --max-items 20 Validation Tasks kontrolliert ausfuehren");
         Console.WriteLine("  hermes validation-execution-log Validation Execution Log anzeigen");
+        Console.WriteLine("  hermes validation-routing-status Domain Validation Router anzeigen");
+        Console.WriteLine("  hermes cleanup-invalid-validation-tasks unpassende Validation Tasks bereinigen");
+        Console.WriteLine("  hermes explain-validation-routing --domain documentation Routing-Profil erklaeren");
         Console.WriteLine("  hermes knowledge-validation-status Validation Fortschritt anzeigen");
         Console.WriteLine("  hermes explain-validation --id <KNOWLEDGE_ITEM_ID> Validierungsplan erklaeren");
         Console.WriteLine("  hermes research-queue     Cognitive Research Queue anzeigen");
@@ -375,6 +381,9 @@ internal sealed class HermesCli
         WriteField("trusted_candidate_count", snapshot.TrustedCandidateCount.ToString());
         WriteField("knowledge_items_needing_oos", snapshot.KnowledgeItemsNeedingOos.ToString());
         WriteField("knowledge_items_needing_source_check", snapshot.KnowledgeItemsNeedingSourceCheck.ToString());
+        WriteField("invalid_validation_tasks", snapshot.InvalidValidationTasks.ToString());
+        WriteField("validation_tasks_cleaned", snapshot.ValidationTasksCleaned.ToString());
+        WriteField("validation_routing_health", snapshot.ValidationRoutingHealth);
         WriteField("top_goal", string.IsNullOrWhiteSpace(snapshot.TopGoal) ? "-" : snapshot.TopGoal);
         WriteMessages("active_goals", snapshot.ActiveGoals);
         WriteMessages("blocked_goals", snapshot.BlockedGoals);
@@ -3715,6 +3724,48 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowValidationRoutingStatus()
+    {
+        WriteHeader("Hermes Domain Validation Routing Status");
+        var status = new DomainValidationRouter(BuildStoragePaths()).BuildStatus();
+
+        WriteValidationRoutingStatus(status);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int CleanupInvalidValidationTasks()
+    {
+        WriteHeader("Hermes Cleanup Invalid Validation Tasks");
+        var storagePaths = BuildStoragePaths();
+        var result = new ResearchQueueService(storagePaths).CleanupInvalidValidationTasks();
+        var status = new KnowledgeValidationStrategy(storagePaths).BuildStatus();
+
+        WriteField("Invalid Tasks Before Cleanup", result.InvalidValidationTasks.ToString());
+        WriteField("Cleaned Tasks", result.ValidationTasksCleaned.ToString());
+        WriteField("Routing Health", status.ValidationRoutingHealth);
+        WriteMessages("Cleaned Queue Items", result.CleanedQueueItemIds.Take(20).ToList());
+        WriteMessages("Warnings", result.Warnings);
+        TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainValidationRouting()
+    {
+        WriteHeader("Hermes Explain Validation Routing");
+        var domain = ReadOption(_args, "--domain") ?? "trading";
+        var router = new DomainValidationRouter(BuildStoragePaths());
+        var profile = router.ProfileFor(domain);
+
+        WriteValidationRoutingProfile(profile);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowKnowledgeValidationStatus()
     {
         WriteHeader("Hermes Knowledge Validation Status");
@@ -5360,6 +5411,12 @@ internal sealed class HermesCli
         WriteField("Needs OOS", report.KnowledgeItemsNeedingOos.ToString());
         WriteField("Needs Source Check", report.KnowledgeItemsNeedingSourceCheck.ToString());
         WriteMessages("Most Common Missing Evidence", report.MostCommonMissingEvidence);
+        var skippedByRouter = report.Plans
+            .SelectMany(plan => plan.SkippedByRouterReasons ?? [])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(20)
+            .ToList();
+        WriteMessages("Router Hints", skippedByRouter);
         foreach (var plan in report.Plans.Take(20))
         {
             WriteValidationPlan(plan);
@@ -5380,6 +5437,7 @@ internal sealed class HermesCli
         WriteField("Expected Quality Delta", $"{plan.ExpectedQualityDelta:0.####}");
         WriteField("Related Goal", plan.RelatedGoalId);
         WriteMessages("Missing Evidence", plan.MissingEvidence);
+        WriteMessages("Router Hints", (plan.SkippedByRouterReasons ?? []).Take(8).ToList());
         WriteMessages(
             "Requirements",
             plan.Requirements
@@ -5403,6 +5461,9 @@ internal sealed class HermesCli
         WriteField("Trusted Candidates", status.TrustedCandidateCount.ToString());
         WriteField("Needs OOS", status.KnowledgeItemsNeedingOos.ToString());
         WriteField("Needs Source Check", status.KnowledgeItemsNeedingSourceCheck.ToString());
+        WriteField("Invalid Validation Tasks", status.InvalidValidationTasks.ToString());
+        WriteField("Validation Tasks Cleaned", status.ValidationTasksCleaned.ToString());
+        WriteField("Validation Routing Health", status.ValidationRoutingHealth);
         WriteMessages("Most Common Missing Evidence", status.MostCommonMissingEvidence);
         WriteMessages("Warnings", status.Warnings);
     }
@@ -5435,6 +5496,31 @@ internal sealed class HermesCli
             WriteMessages("Evidence Refs", result.EvidenceRefs.Take(8).ToList());
             WriteMessages("Warnings", result.Warnings);
         }
+    }
+
+    private void WriteValidationRoutingStatus(DomainValidationRoutingStatus status)
+    {
+        WriteField("Profiles", status.Profiles.ToString());
+        WriteField("Invalid Validation Tasks", status.InvalidValidationTasks.ToString());
+        WriteField("Validation Tasks Cleaned", status.ValidationTasksCleaned.ToString());
+        WriteField("Validation Routing Health", status.ValidationRoutingHealth);
+        foreach (var profile in status.DomainProfiles)
+        {
+            WriteValidationRoutingProfile(profile);
+        }
+
+        WriteMessages("Warnings", status.Warnings);
+    }
+
+    private void WriteValidationRoutingProfile(DomainValidationProfile profile)
+    {
+        WriteSubHeader(profile.Domain);
+        WriteMessages(
+            "Allowed",
+            profile.Capabilities
+                .Select(capability => $"{capability.RequirementType}:{capability.DefaultTaskType}:{capability.DefaultMappedInternalTaskType}")
+                .ToList());
+        WriteMessages("Not Allowed", profile.ExplicitlyUnsupportedRequirementTypes);
     }
 
     private void WriteCognitiveDomainStatusEntry(DomainStatusEntry entry)

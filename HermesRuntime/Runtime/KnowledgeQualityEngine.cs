@@ -283,6 +283,8 @@ public sealed class KnowledgeQualityEngine
             .ToList();
         var relatedValidationExecutions = validationExecutions
             .Where(result => result.KnowledgeItemId.Equals(item.Id, StringComparison.OrdinalIgnoreCase))
+            .Where(result => !result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase)
+                && !result.OutcomeStatus.Equals("validation_type_not_supported_for_domain", StringComparison.OrdinalIgnoreCase))
             .Take(16)
             .ToList();
         var validationExecutionRefs = relatedValidationExecutions

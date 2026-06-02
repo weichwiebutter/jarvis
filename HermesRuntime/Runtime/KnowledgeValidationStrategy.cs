@@ -51,7 +51,8 @@ public sealed record KnowledgeValidationPlan(
     bool NoTradingExecution,
     bool NoBrokerAction,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
+    bool HumanReviewRequired,
+    IReadOnlyList<string>? SkippedByRouterReasons = null);
 
 public sealed record KnowledgeValidationPlanReport(
     string ReportVersion,
@@ -97,7 +98,10 @@ public sealed record KnowledgeValidationStatus(
     bool NoTradingExecution,
     bool NoBrokerAction,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
+    bool HumanReviewRequired,
+    int InvalidValidationTasks = 0,
+    int ValidationTasksCleaned = 0,
+    string ValidationRoutingHealth = "unknown");
 
 public sealed class KnowledgeValidationStrategy
 {
@@ -279,7 +283,14 @@ public sealed class KnowledgeValidationStrategy
             ?? new Dictionary<string, KnowledgeValidationRequirement>(StringComparer.OrdinalIgnoreCase);
         var existingTasks = existing?.RequiredTasks.ToDictionary(task => task.TaskId, StringComparer.OrdinalIgnoreCase)
             ?? new Dictionary<string, KnowledgeValidationTask>(StringComparer.OrdinalIgnoreCase);
-        var requirements = BuildRequirements(qualityItem, catalogItem, oosAvailable, costStressAvailable, monteCarloAvailable)
+        var router = new DomainValidationRouter(_storagePaths);
+        var rawRequirements = BuildRequirements(qualityItem, catalogItem, oosAvailable, costStressAvailable, monteCarloAvailable);
+        var route = router.Route(qualityItem.Domain, rawRequirements);
+        var routerReasons = route.SkippedByRouterReasons
+            .Concat(RouterReplacementReasons(qualityItem))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var requirements = route.AllowedRequirements
             .Select(requirement =>
             {
                 if (!existingRequirements.TryGetValue(requirement.RequirementId, out var prior))
@@ -345,7 +356,8 @@ public sealed class KnowledgeValidationStrategy
             NoTradingExecution: true,
             NoBrokerAction: true,
             NoAutoTrading: true,
-            HumanReviewRequired: true);
+            HumanReviewRequired: true,
+            SkippedByRouterReasons: routerReasons);
     }
 
     private static string PlanStatusFor(IReadOnlyList<KnowledgeValidationRequirement> requirements)
@@ -395,7 +407,15 @@ public sealed class KnowledgeValidationStrategy
 
         if (qualityItem.ValidationScore < 0.68)
         {
-            requirements.Add(Requirement(qualityItem, "historical_test", "Validation Score reicht nicht fuer robust/trusted.", ["historical_validation_result"], "validate_knowledge_item", MappedInternalTask(qualityItem.Domain, "historical_test"), 0.72));
+            var primaryRequirement = PrimaryValidationRequirementType(qualityItem.Domain);
+            requirements.Add(Requirement(
+                qualityItem,
+                primaryRequirement,
+                $"Validation Score reicht nicht fuer robust/trusted; Domain-Router plant {primaryRequirement}.",
+                MissingEvidenceFor(primaryRequirement),
+                RequiredTaskType(qualityItem.Domain, primaryRequirement),
+                MappedInternalTask(qualityItem.Domain, primaryRequirement),
+                0.72));
         }
 
         if (qualityItem.Domain.Equals("trading", StringComparison.OrdinalIgnoreCase))
@@ -411,6 +431,43 @@ public sealed class KnowledgeValidationStrategy
             .Select(group => group.OrderByDescending(requirement => requirement.Priority).First())
             .OrderByDescending(requirement => requirement.Priority)
             .ToList();
+    }
+
+    private static string PrimaryValidationRequirementType(string domain) =>
+        domain.ToLowerInvariant() switch
+        {
+            "trading" => "historical_test",
+            "documentation" => "consistency_check",
+            "software" => "static_analysis",
+            "process" => "process_owner_review_stub",
+            "research" => "reproducibility_check",
+            _ => "domain_review"
+        };
+
+    private static IReadOnlyList<string> MissingEvidenceFor(string requirementType) =>
+        requirementType switch
+        {
+            "historical_test" => ["historical_validation_result"],
+            "consistency_check" => ["consistency_review_result"],
+            "reference_check" => ["reference_check_result"],
+            "static_analysis" => ["static_analysis_result"],
+            "test_presence_check" => ["test_presence_result"],
+            "build_reference_check" => ["build_reference_result"],
+            "process_owner_review_stub" => ["process_owner_review_result"],
+            "citation_check" => ["citation_check_result"],
+            "reproducibility_check" => ["reproducibility_check_result"],
+            _ => ["domain_review_evidence"]
+        };
+
+    private static IReadOnlyList<string> RouterReplacementReasons(KnowledgeQualityItem item)
+    {
+        if (item.ValidationScore >= 0.68 || item.Domain.Equals("trading", StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        var replacement = PrimaryValidationRequirementType(item.Domain);
+        return [$"skipped_by_router:{item.Domain}:historical_test:replaced_by_{replacement}"];
     }
 
     private static KnowledgeValidationRequirement Requirement(
@@ -441,6 +498,7 @@ public sealed class KnowledgeValidationStrategy
             .Where(item => item.RequestedBy.Equals("knowledge_validation_strategy", StringComparison.OrdinalIgnoreCase)
                 || item.Notes.Any(note => note.StartsWith("validation_plan:", StringComparison.OrdinalIgnoreCase)))
             .ToList();
+        var routingStatus = new DomainValidationRouter(_storagePaths).BuildStatus();
         var status = new KnowledgeValidationStatus(
             StatusVersion: "knowledge_validation_status_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -458,7 +516,10 @@ public sealed class KnowledgeValidationStrategy
             NoTradingExecution: true,
             NoBrokerAction: true,
             NoAutoTrading: true,
-            HumanReviewRequired: true);
+            HumanReviewRequired: true,
+            InvalidValidationTasks: routingStatus.InvalidValidationTasks,
+            ValidationTasksCleaned: routingStatus.ValidationTasksCleaned,
+            ValidationRoutingHealth: routingStatus.ValidationRoutingHealth);
         File.WriteAllText(StatusPath, JsonSerializer.Serialize(status, JsonDefaults.WriteOptions));
         return status;
     }
@@ -494,6 +555,12 @@ public sealed class KnowledgeValidationStrategy
 
     private static string MappedInternalTask(string domain, string requirementType)
     {
+        var capability = new DomainValidationRouter().CapabilityFor(domain, requirementType);
+        if (capability is not null)
+        {
+            return capability.DefaultMappedInternalTaskType;
+        }
+
         if (!domain.Equals("trading", StringComparison.OrdinalIgnoreCase))
         {
             return "generate_domain_insights";
@@ -509,6 +576,12 @@ public sealed class KnowledgeValidationStrategy
             "source_verification" => "scan_knowledge_sources",
             _ => "generate_cognitive_insights"
         };
+    }
+
+    private static string RequiredTaskType(string domain, string requirementType)
+    {
+        var capability = new DomainValidationRouter().CapabilityFor(domain, requirementType);
+        return capability?.DefaultTaskType ?? "run_domain_review";
     }
 
     private static double CostPenalty(KnowledgeQualityItem item, IReadOnlyList<KnowledgeValidationRequirement> requirements)
