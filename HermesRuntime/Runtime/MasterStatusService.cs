@@ -68,6 +68,7 @@ public sealed class MasterStatusService
         var walkforward = LoadOrDefault(walkforwardPath);
         var botCandidateReport = LoadOrDefault(botCandidatePath);
         var knowledgeQuality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
+        var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
 
         var activeDomains = CombineStringLists(
             GetStringArray(domainStatus, "active_domains", "activeDomains"),
@@ -88,6 +89,8 @@ public sealed class MasterStatusService
             GetStringArray(domainStatus, "weak_domains", "weakDomains").Select(item => $"weak_domain:{item}"),
             knowledgeQuality.WeakKnowledge > 0 ? [$"weak_knowledge:{knowledgeQuality.WeakKnowledge}"] : [],
             knowledgeQuality.DeprecatedKnowledge > 0 ? [$"deprecated_knowledge:{knowledgeQuality.DeprecatedKnowledge}"] : [],
+            knowledgeValidation?.ValidationPlansOpen > 0 ? [$"validation_plans_open:{knowledgeValidation.ValidationPlansOpen}"] : [],
+            knowledgeValidation?.KnowledgeItemsNeedingOos > 0 ? [$"knowledge_needs_oos:{knowledgeValidation.KnowledgeItemsNeedingOos}"] : [],
             goalState.BlockedGoals.Select(item => $"blocked_goal:{item}"))
             .Take(10)
             .ToList();
@@ -101,7 +104,7 @@ public sealed class MasterStatusService
                 .OrderBy(goal => goal.Priority)
                 .SelectMany(goal => goal.NextRecommendedActions.Select(action => $"{goal.GoalId}:{action}")),
             knowledgeQuality.KnowledgeHealth is "critical" or "needs_consolidation"
-                ? ["consolidate_memory", "evaluate_knowledge_quality"]
+                ? ["generate_validation_plans", "validate_knowledge_items", "consolidate_memory", "evaluate_knowledge_quality"]
                 : [])
             .Take(10)
             .ToList();
@@ -215,6 +218,11 @@ public sealed class MasterStatusService
             warningReasons.Add($"knowledge_health:{knowledgeQuality.KnowledgeHealth}");
         }
 
+        if (knowledgeValidation?.KnowledgeItemsNeedingOos > 0)
+        {
+            warningReasons.Add($"knowledge_validation_needs_oos:{knowledgeValidation.KnowledgeItemsNeedingOos}");
+        }
+
         warningReasons.AddRange(topBlockers.Take(5));
         warningReasons = warningReasons
             .Where(item => !string.IsNullOrWhiteSpace(item))
@@ -255,6 +263,11 @@ public sealed class MasterStatusService
                     ["average_quality_score"] = knowledgeQuality.AverageQualityScore,
                     ["average_trust_score"] = knowledgeQuality.AverageTrustScore,
                     ["knowledge_health"] = knowledgeQuality.KnowledgeHealth,
+                    ["validation_plans_open"] = knowledgeValidation?.ValidationPlansOpen ?? 0,
+                    ["validation_tasks_pending"] = knowledgeValidation?.ValidationTasksPending ?? 0,
+                    ["trusted_candidate_count"] = knowledgeValidation?.TrustedCandidateCount ?? 0,
+                    ["knowledge_items_needing_oos"] = knowledgeValidation?.KnowledgeItemsNeedingOos ?? 0,
+                    ["knowledge_items_needing_source_check"] = knowledgeValidation?.KnowledgeItemsNeedingSourceCheck ?? 0,
                     ["queue_items"] = FirstPositive(GetInt(cognitiveStatus, "queue_item_count", "queueItemCount"), queuedTasks),
                     ["insights"] = GetInt(cognitiveStatus, "insight_count", "insightCount"),
                     ["active_domains"] = activeDomains
@@ -407,6 +420,11 @@ public sealed class MasterStatusService
             AverageTrustScore: knowledgeQuality.AverageTrustScore,
             KnowledgeHealth: knowledgeQuality.KnowledgeHealth,
             KnowledgeTrend: knowledgeQuality.KnowledgeTrend,
+            ValidationPlansOpen: knowledgeValidation?.ValidationPlansOpen ?? 0,
+            ValidationTasksPending: knowledgeValidation?.ValidationTasksPending ?? 0,
+            TrustedCandidateCount: knowledgeValidation?.TrustedCandidateCount ?? 0,
+            KnowledgeItemsNeedingOos: knowledgeValidation?.KnowledgeItemsNeedingOos ?? 0,
+            KnowledgeItemsNeedingSourceCheck: knowledgeValidation?.KnowledgeItemsNeedingSourceCheck ?? 0,
             ActiveGoals: goalState.Goals.Where(goal => goal.Active).Select(goal => goal.GoalId).ToList(),
             TopGoal: goalState.TopGoalId,
             BlockedGoals: goalState.BlockedGoals,

@@ -17,6 +17,11 @@ export const runtimeMasterStatusMock = {
   average_trust_score: 0.66,
   knowledge_health: 'needs_consolidation',
   knowledge_trend: 'baseline',
+  validation_plans_open: 50,
+  validation_tasks_pending: 20,
+  trusted_candidate_count: 0,
+  knowledge_items_needing_oos: 24,
+  knowledge_items_needing_source_check: 41,
   top_goal: 'improve_trading_robustness',
   active_goals: [
     'improve_trading_robustness',

@@ -200,6 +200,9 @@ function KnowledgeHealthCard({ masterStatus }) {
         <MiniMetric label="Avg Trust" value={scorePercent(masterStatus.average_trust_score)} tone="info" />
         <MiniMetric label="Avg Quality" value={scorePercent(masterStatus.average_quality_score)} tone={tone} />
         <MiniMetric label="Knowledge Trend" value={masterStatus.knowledge_trend || '-'} tone="info" />
+        <MiniMetric label="Open Validation Plans" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
+        <MiniMetric label="Needs OOS" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
+        <MiniMetric label="Trusted Candidates" value={formatNumber(masterStatus.trusted_candidate_count)} tone={masterStatus.trusted_candidate_count ? 'good' : 'info'} />
       </div>
     </details>
   );

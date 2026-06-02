@@ -101,7 +101,7 @@ public sealed class NeedDetectionEngine
                     "Zu viele schwache Knowledge Items",
                     $"Weak={knowledgeQuality.WeakKnowledge}, total={knowledgeQuality.TotalKnowledgeItems}, average_quality={knowledgeQuality.AverageQualityScore:0.####}.",
                     [new KnowledgeQualityEngine(_storagePaths).QualityPath],
-                    ["consolidate_memory", "evaluate_knowledge_quality", "process_research_queue"]));
+                    ["generate_validation_plans", "validate_knowledge_items", "consolidate_memory", "evaluate_knowledge_quality"]));
             }
 
             if (knowledgeQuality.DeprecatedKnowledge > 0)
@@ -115,6 +115,61 @@ public sealed class NeedDetectionEngine
                     $"{knowledgeQuality.DeprecatedKnowledge} Knowledge Items sind veraltet oder retention-deprecated.",
                     [new KnowledgeQualityEngine(_storagePaths).QualityPath, new MemoryConsolidationService(_storagePaths).ConsolidationPath],
                     ["consolidate_memory", "evaluate_knowledge_quality"]));
+            }
+        }
+
+        var validationStatus = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
+        if (validationStatus is null && knowledgeQuality?.WeakKnowledge > 0)
+        {
+            needs.Add(Need(
+                "knowledge_validation_plans_missing",
+                NeedCategory.validation_gap,
+                NeedSeverity.high,
+                "research",
+                "Knowledge Validation Plans fehlen",
+                "Schwaches Wissen existiert, aber es gibt noch keine konkreten Validierungsplaene.",
+                [new KnowledgeValidationStrategy(_storagePaths).PlansPath],
+                ["generate_validation_plans"]));
+        }
+        else if (validationStatus is not null)
+        {
+            if (validationStatus.ValidationPlansOpen > 0 && validationStatus.ValidationTasksPending == 0)
+            {
+                needs.Add(Need(
+                    "knowledge_validation_queue_missing",
+                    NeedCategory.validation_gap,
+                    NeedSeverity.high,
+                    "research",
+                    "Validation Plans ohne Queue Tasks",
+                    $"{validationStatus.ValidationPlansOpen} offene Validation Plans haben keine offenen Queue-Tasks.",
+                    [validationStatus.PlansPath, validationStatus.ResearchQueuePath],
+                    ["validate_knowledge_items", "process_research_queue"]));
+            }
+
+            if (validationStatus.KnowledgeItemsNeedingOos > 0)
+            {
+                needs.Add(Need(
+                    "knowledge_items_need_oos_validation",
+                    NeedCategory.data_gap,
+                    NeedSeverity.high,
+                    "trading",
+                    "Knowledge Items brauchen OOS-Validierung",
+                    $"{validationStatus.KnowledgeItemsNeedingOos} Knowledge Items duerfen ohne OOS/Walk-Forward-Evidenz nicht trusted werden.",
+                    [validationStatus.PlansPath],
+                    ["download_missing_market_data", "run_walkforward_validation", "generate_validation_plans"]));
+            }
+
+            if (validationStatus.KnowledgeItemsNeedingSourceCheck > 0)
+            {
+                needs.Add(Need(
+                    "knowledge_items_need_source_check",
+                    NeedCategory.knowledge_gap,
+                    NeedSeverity.medium,
+                    "research",
+                    "Knowledge Items brauchen Source Checks",
+                    $"{validationStatus.KnowledgeItemsNeedingSourceCheck} Knowledge Items benoetigen Quellen- oder Cross-Source-Pruefung.",
+                    [validationStatus.RequirementsPath],
+                    ["scan_knowledge_sources", "generate_validation_plans"]));
             }
         }
 
@@ -366,7 +421,7 @@ public sealed class NeedDetectionEngine
                     "Knowledge Quality unter Zielwert",
                     $"Das aktive Ziel improve_knowledge_quality priorisiert Konsolidierung; average_quality={knowledgeQuality.AverageQualityScore:0.####}.",
                     [new KnowledgeQualityEngine(_storagePaths).QualityPath],
-                    ["consolidate_memory", "evaluate_knowledge_quality", "process_research_queue"]));
+                    ["generate_validation_plans", "validate_knowledge_items", "consolidate_memory", "evaluate_knowledge_quality"]));
             }
 
             if (activeGoalIds.Contains("reduce_low_confidence_knowledge") && knowledgeQuality is not null && knowledgeQuality.WeakKnowledge > 0)
@@ -379,7 +434,7 @@ public sealed class NeedDetectionEngine
                     "Low-Confidence Knowledge reduzieren",
                     $"{knowledgeQuality.WeakKnowledge} Knowledge Items benoetigen bessere Evidenz, Validierung oder Deprecation-Markierung.",
                     [new KnowledgeQualityEngine(_storagePaths).QualityPath, new KnowledgeQualityEngine(_storagePaths).EvidencePath],
-                    ["consolidate_memory", "evaluate_knowledge_quality", "generate_cognitive_insights"]));
+                    ["generate_validation_plans", "validate_knowledge_items", "consolidate_memory", "evaluate_knowledge_quality"]));
             }
         }
 
@@ -895,7 +950,9 @@ public sealed class AutonomousTaskPlanner
         "scan_research_domain",
         "generate_domain_insights",
         "evaluate_knowledge_quality",
-        "consolidate_memory"
+        "consolidate_memory",
+        "generate_validation_plans",
+        "validate_knowledge_items"
     };
 
     public PlanningDecision Plan(IReadOnlyList<DetectedNeed> needs, IReadOnlyList<HermesGoal> goals, int maxItems)
@@ -1071,6 +1128,8 @@ public sealed class AutonomousTaskPlanner
             "download_missing_market_data" => "discovery",
             "evaluate_knowledge_quality" => "review",
             "consolidate_memory" => "review",
+            "generate_validation_plans" => "review",
+            "validate_knowledge_items" => "validation",
             "process_research_queue" => "validation",
             "run_walkforward_validation" => "validation",
             "run_strategy_research" => "simulation",
@@ -1101,6 +1160,8 @@ public sealed class AutonomousTaskPlanner
             "generate_domain_insights" => "multi_domain_insights_updated",
             "evaluate_knowledge_quality" => "knowledge_quality_scores_updated",
             "consolidate_memory" => "memory_consolidation_updated_no_delete",
+            "generate_validation_plans" => "knowledge_validation_plans_created",
+            "validate_knowledge_items" => "knowledge_validation_tasks_queued",
             _ => "structured_research_progress"
         };
 

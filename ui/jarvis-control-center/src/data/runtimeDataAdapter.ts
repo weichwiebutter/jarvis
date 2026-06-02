@@ -1477,6 +1477,26 @@ export function normalizeMasterStatus(raw = {}) {
       firstDefined(raw.knowledge_trend, raw.knowledgeTrend, raw.knowledge_health?.knowledge_trend, raw.knowledgeHealth?.knowledgeTrend),
       '-',
     ),
+    validation_plans_open: asNumber(
+      firstDefined(raw.validation_plans_open, raw.validationPlansOpen, raw.knowledge_health?.validation_plans_open, raw.knowledgeHealth?.validationPlansOpen),
+      0,
+    ),
+    validation_tasks_pending: asNumber(
+      firstDefined(raw.validation_tasks_pending, raw.validationTasksPending, raw.knowledge_health?.validation_tasks_pending, raw.knowledgeHealth?.validationTasksPending),
+      0,
+    ),
+    trusted_candidate_count: asNumber(
+      firstDefined(raw.trusted_candidate_count, raw.trustedCandidateCount, raw.knowledge_health?.trusted_candidate_count, raw.knowledgeHealth?.trustedCandidateCount),
+      0,
+    ),
+    knowledge_items_needing_oos: asNumber(
+      firstDefined(raw.knowledge_items_needing_oos, raw.knowledgeItemsNeedingOos, raw.knowledge_health?.knowledge_items_needing_oos, raw.knowledgeHealth?.knowledgeItemsNeedingOos),
+      0,
+    ),
+    knowledge_items_needing_source_check: asNumber(
+      firstDefined(raw.knowledge_items_needing_source_check, raw.knowledgeItemsNeedingSourceCheck, raw.knowledge_health?.knowledge_items_needing_source_check, raw.knowledgeHealth?.knowledgeItemsNeedingSourceCheck),
+      0,
+    ),
     no_auto_trading: asBoolean(firstDefined(raw.no_auto_trading, raw.noAutoTrading), true),
     human_review_required: asBoolean(
       firstDefined(raw.human_review_required, raw.humanReviewRequired),

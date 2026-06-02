@@ -291,6 +291,8 @@ public sealed class PlannedTaskExecutor
             "generate_domain_insights" => ExecuteGenerateDomainInsights(task),
             "evaluate_knowledge_quality" => ExecuteEvaluateKnowledgeQuality(task),
             "consolidate_memory" => ExecuteConsolidateMemory(task),
+            "generate_validation_plans" => ExecuteGenerateValidationPlans(task),
+            "validate_knowledge_items" => ExecuteValidateKnowledgeItems(task),
             _ => BuildResult(
                 task,
                 "skipped",
@@ -514,6 +516,30 @@ public sealed class PlannedTaskExecutor
             $"Memory consolidation updated; weak={report.WeakKnowledge}; deprecated={report.DeprecatedKnowledge}; duplicate_groups={report.DuplicateGroups}.",
             [service.ConsolidationPath, report.KnowledgeQualityPath, report.KnowledgeEvidencePath],
             report.Warnings);
+    }
+
+    private PlannedTaskExecutionResult ExecuteGenerateValidationPlans(PlannedTask task)
+    {
+        var service = new KnowledgeValidationStrategy(_storagePaths);
+        var report = service.GeneratePlans(50);
+        return BuildResult(
+            task,
+            "completed",
+            $"Knowledge validation plans generated; open={report.OpenPlans}; needs_oos={report.KnowledgeItemsNeedingOos}; needs_source_check={report.KnowledgeItemsNeedingSourceCheck}.",
+            [service.PlansPath, service.RequirementsPath],
+            report.Warnings);
+    }
+
+    private PlannedTaskExecutionResult ExecuteValidateKnowledgeItems(PlannedTask task)
+    {
+        var service = new KnowledgeValidationStrategy(_storagePaths);
+        var status = service.ValidateKnowledge(20);
+        return BuildResult(
+            task,
+            "completed",
+            $"Knowledge validation tasks queued; pending={status.ValidationTasksPending}; queue_items={status.QueueValidationTasks}.",
+            [service.StatusPath, service.PlansPath, status.ResearchQueuePath],
+            status.Warnings);
     }
 
     private void RefreshCognitivePlanningOutputs()

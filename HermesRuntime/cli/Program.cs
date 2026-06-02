@@ -95,6 +95,11 @@ internal sealed class HermesCli
             "knowledge-item" => ShowKnowledgeItem(),
             "knowledge-health" => ShowKnowledgeHealth(),
             "consolidate-memory" => ConsolidateMemory(),
+            "validation-plans" => ShowValidationPlans(),
+            "generate-validation-plans" => GenerateValidationPlans(),
+            "validate-knowledge" => ValidateKnowledge(),
+            "knowledge-validation-status" => ShowKnowledgeValidationStatus(),
+            "explain-validation" => ExplainValidation(),
             "research-queue" => ShowResearchQueue(),
             "enqueue-research" => EnqueueResearch(),
             "process-research-queue" => ProcessResearchQueue(),
@@ -222,6 +227,11 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-item --id <ID> einzelnes Knowledge Item anzeigen");
         Console.WriteLine("  hermes knowledge-health   Knowledge Trust/Quality Scores erzeugen und anzeigen");
         Console.WriteLine("  hermes consolidate-memory Cognitive Memory markieren/konsolidieren, ohne Wissen zu loeschen");
+        Console.WriteLine("  hermes generate-validation-plans --max-items 50 Plaene fuer weak Knowledge erzeugen");
+        Console.WriteLine("  hermes validation-plans   Knowledge Validation Plans anzeigen");
+        Console.WriteLine("  hermes validate-knowledge --max-items 20 Validation Tasks in Research Queue einreihen");
+        Console.WriteLine("  hermes knowledge-validation-status Validation Fortschritt anzeigen");
+        Console.WriteLine("  hermes explain-validation --id <KNOWLEDGE_ITEM_ID> Validierungsplan erklaeren");
         Console.WriteLine("  hermes research-queue     Cognitive Research Queue anzeigen");
         Console.WriteLine("  hermes enqueue-research --domain trading --type validation Research-Item einreihen");
         Console.WriteLine("  hermes process-research-queue --max-items 50 Research Queue verarbeiten");
@@ -356,6 +366,11 @@ internal sealed class HermesCli
         WriteField("average_trust_score", $"{snapshot.AverageTrustScore:0.####}");
         WriteField("knowledge_health", snapshot.KnowledgeHealth);
         WriteField("knowledge_trend", snapshot.KnowledgeTrend);
+        WriteField("validation_plans_open", snapshot.ValidationPlansOpen.ToString());
+        WriteField("validation_tasks_pending", snapshot.ValidationTasksPending.ToString());
+        WriteField("trusted_candidate_count", snapshot.TrustedCandidateCount.ToString());
+        WriteField("knowledge_items_needing_oos", snapshot.KnowledgeItemsNeedingOos.ToString());
+        WriteField("knowledge_items_needing_source_check", snapshot.KnowledgeItemsNeedingSourceCheck.ToString());
         WriteField("top_goal", string.IsNullOrWhiteSpace(snapshot.TopGoal) ? "-" : snapshot.TopGoal);
         WriteMessages("active_goals", snapshot.ActiveGoals);
         WriteMessages("blocked_goals", snapshot.BlockedGoals);
@@ -3610,6 +3625,86 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int GenerateValidationPlans()
+    {
+        WriteHeader("Hermes Generate Knowledge Validation Plans");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 50, min: 1, max: 500);
+        var storagePaths = BuildStoragePaths();
+        var service = new KnowledgeValidationStrategy(storagePaths);
+        var report = service.GeneratePlans(maxItems);
+
+        WriteValidationPlanReport(report, service.PlansPath);
+        TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowValidationPlans()
+    {
+        WriteHeader("Hermes Knowledge Validation Plans");
+        var service = new KnowledgeValidationStrategy(BuildStoragePaths());
+        var report = service.LoadPlanReport() ?? service.GeneratePlans(50);
+
+        WriteValidationPlanReport(report, service.PlansPath);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ValidateKnowledge()
+    {
+        WriteHeader("Hermes Validate Knowledge");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 20, min: 1, max: 500);
+        var storagePaths = BuildStoragePaths();
+        var service = new KnowledgeValidationStrategy(storagePaths);
+        var status = service.ValidateKnowledge(maxItems);
+
+        WriteKnowledgeValidationStatus(status);
+        TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowKnowledgeValidationStatus()
+    {
+        WriteHeader("Hermes Knowledge Validation Status");
+        var service = new KnowledgeValidationStrategy(BuildStoragePaths());
+        var status = service.BuildStatus();
+
+        WriteKnowledgeValidationStatus(status);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainValidation()
+    {
+        WriteHeader("Hermes Explain Knowledge Validation");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteWarning("Bitte --id <KNOWLEDGE_ITEM_ID> angeben, z. B. --id trading:ema_pullback.");
+            WriteSafety();
+            return 1;
+        }
+
+        var service = new KnowledgeValidationStrategy(BuildStoragePaths());
+        var plan = service.FindPlan(id);
+        if (plan is null)
+        {
+            WriteWarning($"Kein Validation Plan gefunden: {id}");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteValidationPlan(plan);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowResearchQueue()
     {
         WriteHeader("Hermes Cognitive Research Queue");
@@ -5193,6 +5288,63 @@ internal sealed class HermesCli
         }
 
         WriteMessages("Warnings", report.Warnings);
+    }
+
+    private void WriteValidationPlanReport(KnowledgeValidationPlanReport report, string reportPath)
+    {
+        WriteField("Validation Plans", DisplayPath(reportPath));
+        WriteField("Requirements", DisplayPath(report.RequirementsPath));
+        WriteField("Total Plans", report.TotalPlans.ToString());
+        WriteField("Open Plans", report.OpenPlans.ToString());
+        WriteField("Trusted Candidates", report.TrustedCandidateCount.ToString());
+        WriteField("Needs OOS", report.KnowledgeItemsNeedingOos.ToString());
+        WriteField("Needs Source Check", report.KnowledgeItemsNeedingSourceCheck.ToString());
+        WriteMessages("Most Common Missing Evidence", report.MostCommonMissingEvidence);
+        foreach (var plan in report.Plans.Take(20))
+        {
+            WriteValidationPlan(plan);
+        }
+
+        WriteMessages("Warnings", report.Warnings);
+    }
+
+    private void WriteValidationPlan(KnowledgeValidationPlan plan)
+    {
+        WriteSubHeader($"{plan.Title} / {plan.KnowledgeItemId}");
+        WriteField("Plan ID", plan.PlanId);
+        WriteField("Domain", plan.Domain);
+        WriteField("Status", plan.Status);
+        WriteField("Current Status", plan.CurrentStatus);
+        WriteField("Target Status", plan.TargetStatus);
+        WriteField("Priority", $"{plan.Priority:0.####}");
+        WriteField("Expected Quality Delta", $"{plan.ExpectedQualityDelta:0.####}");
+        WriteField("Related Goal", plan.RelatedGoalId);
+        WriteMessages("Missing Evidence", plan.MissingEvidence);
+        WriteMessages(
+            "Requirements",
+            plan.Requirements
+                .Select(requirement => $"{requirement.RequirementType}:{requirement.RequiredTaskType}:priority={requirement.Priority:0.####}")
+                .ToList());
+        WriteMessages(
+            "Required Tasks",
+            plan.RequiredTasks
+                .Select(task => $"{task.TaskType}:{task.MappedInternalTaskType}:{task.Status}")
+                .ToList());
+    }
+
+    private void WriteKnowledgeValidationStatus(KnowledgeValidationStatus status)
+    {
+        WriteField("Status", DisplayPath(status.PlansPath));
+        WriteField("Requirements", DisplayPath(status.RequirementsPath));
+        WriteField("Research Queue", DisplayPath(status.ResearchQueuePath));
+        WriteField("Open Plans", status.ValidationPlansOpen.ToString());
+        WriteField("Pending Validation Tasks", status.ValidationTasksPending.ToString());
+        WriteField("Queue Validation Tasks", status.QueueValidationTasks.ToString());
+        WriteField("Trusted Candidates", status.TrustedCandidateCount.ToString());
+        WriteField("Needs OOS", status.KnowledgeItemsNeedingOos.ToString());
+        WriteField("Needs Source Check", status.KnowledgeItemsNeedingSourceCheck.ToString());
+        WriteMessages("Most Common Missing Evidence", status.MostCommonMissingEvidence);
+        WriteMessages("Warnings", status.Warnings);
     }
 
     private void WriteCognitiveDomainStatusEntry(DomainStatusEntry entry)

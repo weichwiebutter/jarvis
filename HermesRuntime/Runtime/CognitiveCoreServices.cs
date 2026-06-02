@@ -430,6 +430,57 @@ public sealed class ResearchQueueService
         return Write(items);
     }
 
+    public ResearchQueue EnqueueValidationPlans(IReadOnlyList<KnowledgeValidationPlan> plans, int maxTasks)
+    {
+        maxTasks = Math.Clamp(maxTasks, 1, 1000);
+        var queue = LoadOrCreateQueue();
+        var items = queue.Items.ToList();
+        var existing = items
+            .SelectMany(item => item.Notes)
+            .Where(note => note.StartsWith("validation_task:", StringComparison.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var queued = 0;
+
+        foreach (var plan in plans.OrderByDescending(plan => plan.Priority))
+        {
+            foreach (var task in plan.RequiredTasks.OrderByDescending(task => task.Priority))
+            {
+                if (queued >= maxTasks)
+                {
+                    break;
+                }
+
+                var marker = $"validation_task:{task.TaskId}";
+                if (existing.Contains(marker))
+                {
+                    continue;
+                }
+
+                items.Add(NewItem(
+                    plan.Domain,
+                    task.TaskType,
+                    PriorityFor(task.Priority),
+                    task.SourceRefs.Concat([plan.PlanId, plan.KnowledgeItemId]).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                    "knowledge_validation_strategy",
+                    [
+                        marker,
+                        $"validation_plan:{plan.PlanId}",
+                        $"knowledge_item:{plan.KnowledgeItemId}",
+                        $"requirement:{task.RequirementType}",
+                        $"mapped_internal_task:{task.MappedInternalTaskType}",
+                        $"related_goal:{plan.RelatedGoalId}",
+                        $"expected_quality_delta:{plan.ExpectedQualityDelta:0.####}",
+                        "no_trading_execution",
+                        "human_review_required"
+                    ]));
+                existing.Add(marker);
+                queued++;
+            }
+        }
+
+        return Write(items);
+    }
+
     public ResearchQueue Process(int maxItems)
     {
         return ProcessWhere(maxItems, _ => true, "processed_by_cognitive_queue_no_trading_execution");
@@ -584,9 +635,14 @@ public sealed class ResearchQueueService
             "scan_process_domain" => "discovery",
             "scan_research_domain" => "discovery",
             "download_missing_market_data" => "discovery",
+            "collect_missing_evidence" => "discovery",
+            "run_cross_source_check" => "discovery",
             "simulation" => "simulation",
             "run_strategy_research" => "simulation",
+            "run_oos_validation" => "validation",
+            "validate_knowledge_item" => "validation",
             "review" => "review",
+            "run_domain_review" => "review",
             "generate_domain_insights" => "review",
             "run_realism_report" => "review",
             "run_overfit_report" => "review",

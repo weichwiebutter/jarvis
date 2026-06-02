@@ -191,6 +191,9 @@ function KnowledgeHealthCard({ masterStatus }) {
         <Metric label="Avg Trust" value={scorePercent(masterStatus.average_trust_score)} tone="info" />
         <Metric label="Avg Quality" value={scorePercent(masterStatus.average_quality_score)} tone={tone} />
         <Metric label="Trend" value={masterStatus.knowledge_trend || '-'} tone="info" />
+        <Metric label="Open Plans" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
+        <Metric label="Needs OOS" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
+        <Metric label="Trusted Candidates" value={formatNumber(masterStatus.trusted_candidate_count)} tone={masterStatus.trusted_candidate_count ? 'good' : 'info'} />
       </div>
     </details>
   );
