@@ -289,6 +289,8 @@ public sealed class PlannedTaskExecutor
             "scan_process_domain" => ExecuteScanDomain(task, "process"),
             "scan_research_domain" => ExecuteScanDomain(task, "research"),
             "generate_domain_insights" => ExecuteGenerateDomainInsights(task),
+            "evaluate_knowledge_quality" => ExecuteEvaluateKnowledgeQuality(task),
+            "consolidate_memory" => ExecuteConsolidateMemory(task),
             _ => BuildResult(
                 task,
                 "skipped",
@@ -490,6 +492,30 @@ public sealed class PlannedTaskExecutor
             insights.Insights.Count == 0 ? ["no_domain_insights_generated"] : []);
     }
 
+    private PlannedTaskExecutionResult ExecuteEvaluateKnowledgeQuality(PlannedTask task)
+    {
+        var engine = new KnowledgeQualityEngine(_storagePaths);
+        var report = engine.Run();
+        return BuildResult(
+            task,
+            "completed",
+            $"Knowledge quality updated; trusted={report.TrustedKnowledge}; weak={report.WeakKnowledge}; deprecated={report.DeprecatedKnowledge}; avg_quality={report.AverageQualityScore:0.####}.",
+            [engine.QualityPath, engine.EvidencePath],
+            report.Warnings);
+    }
+
+    private PlannedTaskExecutionResult ExecuteConsolidateMemory(PlannedTask task)
+    {
+        var service = new MemoryConsolidationService(_storagePaths);
+        var report = service.Run();
+        return BuildResult(
+            task,
+            "completed",
+            $"Memory consolidation updated; weak={report.WeakKnowledge}; deprecated={report.DeprecatedKnowledge}; duplicate_groups={report.DuplicateGroups}.",
+            [service.ConsolidationPath, report.KnowledgeQualityPath, report.KnowledgeEvidencePath],
+            report.Warnings);
+    }
+
     private void RefreshCognitivePlanningOutputs()
     {
         try
@@ -503,6 +529,7 @@ public sealed class PlannedTaskExecutor
             new DomainCognitiveService(_storagePaths).BuildInsights();
             var needs = new NeedDetectionEngine(_storagePaths).Detect();
             new GoalManager(_storagePaths).EvaluateGoals(needs);
+            new MemoryConsolidationService(_storagePaths).Run();
             new CognitiveCoreService(_storagePaths).BuildStatus();
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)

@@ -158,6 +158,20 @@ public sealed record ScheduleConfig(
                 EveryMinutes: 60,
                 Parameters: new Dictionary<string, string> { ["max_items"] = "50" }),
             new(
+                JobId: "knowledge_quality_after_outcomes",
+                JobType: "evaluate_knowledge_quality",
+                Enabled: true,
+                ScheduleType: "interval",
+                Command: "knowledge-health",
+                EveryMinutes: 120),
+            new(
+                JobId: "memory_consolidation_daily",
+                JobType: "consolidate_memory",
+                Enabled: true,
+                ScheduleType: "daily",
+                Command: "consolidate-memory",
+                DailyAt: "06:04"),
+            new(
                 JobId: "autonomous_loop_hourly",
                 JobType: "run_autonomous_loop",
                 Enabled: true,

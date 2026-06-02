@@ -100,6 +100,10 @@ function goalProgressPercent(progress) {
   return `${Math.round(Number(progress || 0) * 100)}%`;
 }
 
+function scorePercent(value) {
+  return `${Math.round(Number(value || 0) * 100)}%`;
+}
+
 function GoalSystemCard({ masterStatus }) {
   const goalAvailable = masterStatus.goal_system_available;
   const progressItems = masterStatus.goal_progress_summary || [];
@@ -159,6 +163,35 @@ function GoalSystemCard({ masterStatus }) {
       ) : (
         <p>Goal-System noch nicht verfuegbar.</p>
       )}
+    </details>
+  );
+}
+
+function KnowledgeHealthCard({ masterStatus }) {
+  const health = masterStatus.knowledge_health || 'unbekannt';
+  const tone = health.includes('critical')
+    ? 'danger'
+    : health.includes('needs') || masterStatus.weak_knowledge
+      ? 'warn'
+      : health.includes('healthy')
+        ? 'good'
+        : 'info';
+
+  return (
+    <details className="knowledge-health-card" open>
+      <summary>
+        <span>Knowledge Health</span>
+        <strong>{health}</strong>
+        <StatusPill tone={tone}>{masterStatus.knowledge_trend || '-'}</StatusPill>
+      </summary>
+      <div className="goal-system-metrics">
+        <Metric label="Trusted" value={formatNumber(masterStatus.trusted_knowledge)} tone="good" />
+        <Metric label="Weak" value={formatNumber(masterStatus.weak_knowledge)} tone={masterStatus.weak_knowledge ? 'warn' : 'good'} />
+        <Metric label="Deprecated" value={formatNumber(masterStatus.deprecated_knowledge)} tone={masterStatus.deprecated_knowledge ? 'warn' : 'good'} />
+        <Metric label="Avg Trust" value={scorePercent(masterStatus.average_trust_score)} tone="info" />
+        <Metric label="Avg Quality" value={scorePercent(masterStatus.average_quality_score)} tone={tone} />
+        <Metric label="Trend" value={masterStatus.knowledge_trend || '-'} tone="info" />
+      </div>
     </details>
   );
 }
@@ -350,6 +383,7 @@ function MasterStatusOverview({ masterStatus, source }) {
         <Metric label="live_trading" value={String(masterStatus.live_trading_enabled)} tone={masterStatus.live_trading_enabled ? 'danger' : 'good'} />
       </div>
       <GoalSystemCard masterStatus={masterStatus} />
+      <KnowledgeHealthCard masterStatus={masterStatus} />
     </section>
   );
 }

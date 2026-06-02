@@ -10,6 +10,13 @@ export const runtimeMasterStatusMock = {
   last_autonomous_loop: '2026-06-01T15:18:36.3732613+00:00',
   last_meta_review: '2026-06-01T15:18:35.7665691+00:00',
   learning_strategy: 'consolidation',
+  trusted_knowledge: 3,
+  weak_knowledge: 18,
+  deprecated_knowledge: 2,
+  average_quality_score: 0.57,
+  average_trust_score: 0.66,
+  knowledge_health: 'needs_consolidation',
+  knowledge_trend: 'baseline',
   top_goal: 'improve_trading_robustness',
   active_goals: [
     'improve_trading_robustness',
@@ -20,6 +27,8 @@ export const runtimeMasterStatusMock = {
     'prepare_multi_domain_learning',
     'improve_autonomous_planning_quality',
     'improve_research_efficiency',
+    'improve_knowledge_quality',
+    'reduce_low_confidence_knowledge',
   ],
   blocked_goals: [
     'improve_trading_robustness',

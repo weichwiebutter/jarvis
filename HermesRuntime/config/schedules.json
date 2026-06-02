@@ -182,6 +182,22 @@
       }
     },
     {
+      "job_id": "knowledge_quality_after_outcomes",
+      "job_type": "evaluate_knowledge_quality",
+      "enabled": true,
+      "schedule_type": "interval",
+      "command": "knowledge-health",
+      "every_minutes": 120
+    },
+    {
+      "job_id": "memory_consolidation_daily",
+      "job_type": "consolidate_memory",
+      "enabled": true,
+      "schedule_type": "daily",
+      "command": "consolidate-memory",
+      "daily_at": "06:04"
+    },
+    {
       "job_id": "autonomous_loop_hourly",
       "job_type": "run_autonomous_loop",
       "enabled": true,

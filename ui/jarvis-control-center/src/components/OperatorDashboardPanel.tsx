@@ -109,6 +109,10 @@ function goalProgressPercent(progress) {
   return `${Math.round(Number(progress || 0) * 100)}%`;
 }
 
+function scorePercent(value) {
+  return `${Math.round(Number(value || 0) * 100)}%`;
+}
+
 function GoalSystemCard({ masterStatus }) {
   const goalAvailable = masterStatus.goal_system_available;
   const progressItems = masterStatus.goal_progress_summary || [];
@@ -168,6 +172,35 @@ function GoalSystemCard({ masterStatus }) {
       ) : (
         <p>Goal-System noch nicht verfuegbar.</p>
       )}
+    </details>
+  );
+}
+
+function KnowledgeHealthCard({ masterStatus }) {
+  const health = masterStatus.knowledge_health || 'unbekannt';
+  const tone = health.includes('critical')
+    ? 'danger'
+    : health.includes('needs') || masterStatus.weak_knowledge
+      ? 'warn'
+      : health.includes('healthy')
+        ? 'good'
+        : 'info';
+
+  return (
+    <details className="knowledge-health-card operator-goal-card" open>
+      <summary>
+        <span>Knowledge Health</span>
+        <strong>{health}</strong>
+        <StatusPill tone={tone}>{masterStatus.knowledge_trend || '-'}</StatusPill>
+      </summary>
+      <div className="goal-system-metrics">
+        <MiniMetric label="Trusted Knowledge" value={formatNumber(masterStatus.trusted_knowledge)} tone="good" />
+        <MiniMetric label="Weak Knowledge" value={formatNumber(masterStatus.weak_knowledge)} tone={masterStatus.weak_knowledge ? 'warn' : 'good'} />
+        <MiniMetric label="Deprecated" value={formatNumber(masterStatus.deprecated_knowledge)} tone={masterStatus.deprecated_knowledge ? 'warn' : 'good'} />
+        <MiniMetric label="Avg Trust" value={scorePercent(masterStatus.average_trust_score)} tone="info" />
+        <MiniMetric label="Avg Quality" value={scorePercent(masterStatus.average_quality_score)} tone={tone} />
+        <MiniMetric label="Knowledge Trend" value={masterStatus.knowledge_trend || '-'} tone="info" />
+      </div>
     </details>
   );
 }
@@ -343,6 +376,7 @@ export function OperatorDashboardPanel() {
           ))}
         </div>
         <GoalSystemCard masterStatus={operatorState.masterStatus} />
+        <KnowledgeHealthCard masterStatus={operatorState.masterStatus} />
       </OperatorCard>
 
       <div className="operator-top-grid">

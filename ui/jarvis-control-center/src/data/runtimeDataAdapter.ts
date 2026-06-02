@@ -1449,6 +1449,34 @@ export function normalizeMasterStatus(raw = {}) {
       ),
       0,
     ),
+    trusted_knowledge: asNumber(
+      firstDefined(raw.trusted_knowledge, raw.trustedKnowledge, raw.knowledge_health?.trusted_knowledge, raw.knowledgeHealth?.trustedKnowledge),
+      0,
+    ),
+    weak_knowledge: asNumber(
+      firstDefined(raw.weak_knowledge, raw.weakKnowledge, raw.knowledge_health?.weak_knowledge, raw.knowledgeHealth?.weakKnowledge),
+      0,
+    ),
+    deprecated_knowledge: asNumber(
+      firstDefined(raw.deprecated_knowledge, raw.deprecatedKnowledge, raw.knowledge_health?.deprecated_knowledge, raw.knowledgeHealth?.deprecatedKnowledge),
+      0,
+    ),
+    average_quality_score: asNumber(
+      firstDefined(raw.average_quality_score, raw.averageQualityScore, raw.knowledge_health?.average_quality_score, raw.knowledgeHealth?.averageQualityScore),
+      0,
+    ),
+    average_trust_score: asNumber(
+      firstDefined(raw.average_trust_score, raw.averageTrustScore, raw.knowledge_health?.average_trust_score, raw.knowledgeHealth?.averageTrustScore),
+      0,
+    ),
+    knowledge_health: asString(
+      firstDefined(raw.knowledge_health, raw.knowledgeHealth?.status, raw.knowledgeHealth),
+      'unbekannt',
+    ),
+    knowledge_trend: asString(
+      firstDefined(raw.knowledge_trend, raw.knowledgeTrend, raw.knowledge_health?.knowledge_trend, raw.knowledgeHealth?.knowledgeTrend),
+      '-',
+    ),
     no_auto_trading: asBoolean(firstDefined(raw.no_auto_trading, raw.noAutoTrading), true),
     human_review_required: asBoolean(
       firstDefined(raw.human_review_required, raw.humanReviewRequired),

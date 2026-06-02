@@ -76,6 +76,48 @@ public sealed class NeedDetectionEngine
                 ["scan_knowledge_sources", "generate_hypotheses"]));
         }
 
+        var knowledgeQuality = new KnowledgeQualityEngine(_storagePaths).LoadReport();
+        if (knowledgeQuality is null)
+        {
+            needs.Add(Need(
+                "knowledge_quality_missing",
+                NeedCategory.knowledge_gap,
+                NeedSeverity.medium,
+                "research",
+                "Knowledge Quality Report fehlt",
+                "Hermes kann noch nicht erklaeren, warum Knowledge Items vertrauenswuerdig sind.",
+                [new KnowledgeQualityEngine(_storagePaths).QualityPath],
+                ["evaluate_knowledge_quality", "consolidate_memory"]));
+        }
+        else
+        {
+            if (knowledgeQuality.WeakKnowledge > Math.Max(5, knowledgeQuality.TotalKnowledgeItems / 3))
+            {
+                needs.Add(Need(
+                    "weak_knowledge_detected",
+                    NeedCategory.quality_risk,
+                    NeedSeverity.medium,
+                    "research",
+                    "Zu viele schwache Knowledge Items",
+                    $"Weak={knowledgeQuality.WeakKnowledge}, total={knowledgeQuality.TotalKnowledgeItems}, average_quality={knowledgeQuality.AverageQualityScore:0.####}.",
+                    [new KnowledgeQualityEngine(_storagePaths).QualityPath],
+                    ["consolidate_memory", "evaluate_knowledge_quality", "process_research_queue"]));
+            }
+
+            if (knowledgeQuality.DeprecatedKnowledge > 0)
+            {
+                needs.Add(Need(
+                    "deprecated_knowledge_present",
+                    NeedCategory.maintenance,
+                    NeedSeverity.low,
+                    "research",
+                    "Deprecated Knowledge markieren",
+                    $"{knowledgeQuality.DeprecatedKnowledge} Knowledge Items sind veraltet oder retention-deprecated.",
+                    [new KnowledgeQualityEngine(_storagePaths).QualityPath, new MemoryConsolidationService(_storagePaths).ConsolidationPath],
+                    ["consolidate_memory", "evaluate_knowledge_quality"]));
+            }
+        }
+
         var openQueue = queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase));
         if (openQueue == 0)
         {
@@ -313,6 +355,32 @@ public sealed class NeedDetectionEngine
                     [new ResearchQueueService(_storagePaths).QueuePath],
                     ["process_research_queue", "generate_cognitive_insights"]));
             }
+
+            if (activeGoalIds.Contains("improve_knowledge_quality") && knowledgeQuality is not null && knowledgeQuality.AverageQualityScore < 0.58)
+            {
+                needs.Add(Need(
+                    "goal_knowledge_quality_low",
+                    NeedCategory.quality_risk,
+                    NeedSeverity.medium,
+                    "research",
+                    "Knowledge Quality unter Zielwert",
+                    $"Das aktive Ziel improve_knowledge_quality priorisiert Konsolidierung; average_quality={knowledgeQuality.AverageQualityScore:0.####}.",
+                    [new KnowledgeQualityEngine(_storagePaths).QualityPath],
+                    ["consolidate_memory", "evaluate_knowledge_quality", "process_research_queue"]));
+            }
+
+            if (activeGoalIds.Contains("reduce_low_confidence_knowledge") && knowledgeQuality is not null && knowledgeQuality.WeakKnowledge > 0)
+            {
+                needs.Add(Need(
+                    "goal_low_confidence_knowledge",
+                    NeedCategory.quality_risk,
+                    NeedSeverity.medium,
+                    "research",
+                    "Low-Confidence Knowledge reduzieren",
+                    $"{knowledgeQuality.WeakKnowledge} Knowledge Items benoetigen bessere Evidenz, Validierung oder Deprecation-Markierung.",
+                    [new KnowledgeQualityEngine(_storagePaths).QualityPath, new KnowledgeQualityEngine(_storagePaths).EvidencePath],
+                    ["consolidate_memory", "evaluate_knowledge_quality", "generate_cognitive_insights"]));
+            }
         }
 
         var distinct = needs
@@ -422,6 +490,8 @@ public sealed class GoalManager
     {
         return EvaluateGoalState(needs).Goals;
     }
+
+    internal static int DefaultGoalCount => Defaults().Count;
 
     public GoalState EvaluateGoalState(IReadOnlyList<DetectedNeed> needs)
     {
@@ -540,7 +610,9 @@ public sealed class GoalManager
         Goal("maintain_storage_health", "Storage Health sichern", "process", "Storage/Resource-Zustand für Dauerbetrieb stabil halten.", "Dauerbetrieb bleibt innerhalb ResourceGuard-/StorageGuard-Grenzen.", 50),
         Goal("prepare_multi_domain_learning", "Multi-Domain Learning vorbereiten", "research", "Nicht-Trading-Domänen strukturiert vorbereiten, ohne Trading zum Kern zu machen.", "Software, Documentation, Process und Research liefern nutzbare Domain-Signale.", 60),
         Goal("improve_autonomous_planning_quality", "Planning-Qualität verbessern", "research", "Needs, Tasks und Feedback zielgerichteter verbinden.", "Planner erzeugt wenige, relevante, nicht redundante Tasks mit messbarem Nutzen.", 70),
-        Goal("improve_research_efficiency", "Research-Effizienz verbessern", "process", "Mehr Lernwert pro kontrolliertem Task erreichen und Doppelarbeit reduzieren.", "Wiederholte Low-Value-Tasks werden reduziert, High-Learning-Tasks priorisiert.", 80)
+        Goal("improve_research_efficiency", "Research-Effizienz verbessern", "process", "Mehr Lernwert pro kontrolliertem Task erreichen und Doppelarbeit reduzieren.", "Wiederholte Low-Value-Tasks werden reduziert, High-Learning-Tasks priorisiert.", 80),
+        Goal("improve_knowledge_quality", "Knowledge Quality verbessern", "research", "Wissen nach Trust, Evidenz, Validierung, Wiederverwendung und Alter bewerten.", "Knowledge Items besitzen nachvollziehbare Quality Scores und Evidenzbelege.", 90),
+        Goal("reduce_low_confidence_knowledge", "Low-Confidence Knowledge reduzieren", "research", "Schwaches, unvalidiertes oder veraltetes Wissen markieren und priorisiert nacharbeiten.", "Weak Knowledge sinkt; deprecated Wissen bleibt markiert, aber wird nicht geloescht.", 95)
     ];
 
     private static HermesGoal Goal(string id, string title, string domain, string description, string targetState, int priority) =>
@@ -574,6 +646,8 @@ public sealed class GoalManager
             "prepare_multi_domain_learning" => NeedIds(needs, NeedCategory.domain_gap, NeedCategory.knowledge_gap),
             "improve_autonomous_planning_quality" => NeedIds(needs, NeedCategory.validation_gap, NeedCategory.domain_gap, NeedCategory.quality_risk),
             "improve_research_efficiency" => NeedIds(needs, NeedCategory.maintenance, NeedCategory.validation_gap, NeedCategory.resource_risk),
+            "improve_knowledge_quality" => NeedIds(needs, NeedCategory.knowledge_gap, NeedCategory.quality_risk, NeedCategory.validation_gap),
+            "reduce_low_confidence_knowledge" => NeedIds(needs, NeedCategory.quality_risk, NeedCategory.knowledge_gap, NeedCategory.maintenance),
             _ => []
         };
 
@@ -629,7 +703,7 @@ public sealed class GoalProgressTracker
     public GoalState LoadOrCreateState()
     {
         var loaded = LoadState();
-        return loaded ?? Update();
+        return loaded is null || loaded.Goals.Count < GoalManager.DefaultGoalCount ? Update() : loaded;
     }
 
     public GoalState? LoadState()
@@ -819,7 +893,9 @@ public sealed class AutonomousTaskPlanner
         "scan_documentation_domain",
         "scan_process_domain",
         "scan_research_domain",
-        "generate_domain_insights"
+        "generate_domain_insights",
+        "evaluate_knowledge_quality",
+        "consolidate_memory"
     };
 
     public PlanningDecision Plan(IReadOnlyList<DetectedNeed> needs, IReadOnlyList<HermesGoal> goals, int maxItems)
@@ -993,6 +1069,8 @@ public sealed class AutonomousTaskPlanner
             "scan_process_domain" => "discovery",
             "scan_research_domain" => "discovery",
             "download_missing_market_data" => "discovery",
+            "evaluate_knowledge_quality" => "review",
+            "consolidate_memory" => "review",
             "process_research_queue" => "validation",
             "run_walkforward_validation" => "validation",
             "run_strategy_research" => "simulation",
@@ -1021,6 +1099,8 @@ public sealed class AutonomousTaskPlanner
             "scan_process_domain" => "process_domain_workflows_updated",
             "scan_research_domain" => "research_domain_sources_updated",
             "generate_domain_insights" => "multi_domain_insights_updated",
+            "evaluate_knowledge_quality" => "knowledge_quality_scores_updated",
+            "consolidate_memory" => "memory_consolidation_updated_no_delete",
             _ => "structured_research_progress"
         };
 

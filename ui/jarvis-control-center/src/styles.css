@@ -555,7 +555,8 @@ h2 {
   line-height: 1.25;
 }
 
-.goal-system-card {
+.goal-system-card,
+.knowledge-health-card {
   display: grid;
   gap: 8px;
   min-width: 0;
@@ -565,7 +566,8 @@ h2 {
   background: rgba(248, 193, 74, 0.055);
 }
 
-.goal-system-card summary {
+.goal-system-card summary,
+.knowledge-health-card summary {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -576,18 +578,21 @@ h2 {
   list-style: none;
 }
 
-.goal-system-card summary::-webkit-details-marker {
+.goal-system-card summary::-webkit-details-marker,
+.knowledge-health-card summary::-webkit-details-marker {
   display: none;
 }
 
-.goal-system-card summary span {
+.goal-system-card summary span,
+.knowledge-health-card summary span {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 
-.goal-system-card summary strong {
+.goal-system-card summary strong,
+.knowledge-health-card summary strong {
   overflow: hidden;
   color: var(--text);
   font-size: 0.86rem;
@@ -595,7 +600,8 @@ h2 {
   white-space: nowrap;
 }
 
-.goal-system-card p {
+.goal-system-card p,
+.knowledge-health-card p {
   margin: 0;
   color: var(--soft);
   font-size: 0.82rem;

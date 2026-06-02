@@ -67,6 +67,7 @@ public sealed class MasterStatusService
 
         var walkforward = LoadOrDefault(walkforwardPath);
         var botCandidateReport = LoadOrDefault(botCandidatePath);
+        var knowledgeQuality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
 
         var activeDomains = CombineStringLists(
             GetStringArray(domainStatus, "active_domains", "activeDomains"),
@@ -85,6 +86,8 @@ public sealed class MasterStatusService
             GetStringArray(researchInsights, "why_no_candidates", "whyNoCandidates"),
             GetStringArray(metaReview, "recurring_needs", "recurringNeeds"),
             GetStringArray(domainStatus, "weak_domains", "weakDomains").Select(item => $"weak_domain:{item}"),
+            knowledgeQuality.WeakKnowledge > 0 ? [$"weak_knowledge:{knowledgeQuality.WeakKnowledge}"] : [],
+            knowledgeQuality.DeprecatedKnowledge > 0 ? [$"deprecated_knowledge:{knowledgeQuality.DeprecatedKnowledge}"] : [],
             goalState.BlockedGoals.Select(item => $"blocked_goal:{item}"))
             .Take(10)
             .ToList();
@@ -96,7 +99,10 @@ public sealed class MasterStatusService
             GetStringArray(researchInsights, "next_validation_recommendations", "nextValidationRecommendations"),
             goalState.Goals
                 .OrderBy(goal => goal.Priority)
-                .SelectMany(goal => goal.NextRecommendedActions.Select(action => $"{goal.GoalId}:{action}")))
+                .SelectMany(goal => goal.NextRecommendedActions.Select(action => $"{goal.GoalId}:{action}")),
+            knowledgeQuality.KnowledgeHealth is "critical" or "needs_consolidation"
+                ? ["consolidate_memory", "evaluate_knowledge_quality"]
+                : [])
             .Take(10)
             .ToList();
 
@@ -204,6 +210,11 @@ public sealed class MasterStatusService
             warningReasons.Add($"cleanup_candidates:{cleanupCandidates}");
         }
 
+        if (knowledgeQuality.KnowledgeHealth is "critical" or "needs_consolidation")
+        {
+            warningReasons.Add($"knowledge_health:{knowledgeQuality.KnowledgeHealth}");
+        }
+
         warningReasons.AddRange(topBlockers.Take(5));
         warningReasons = warningReasons
             .Where(item => !string.IsNullOrWhiteSpace(item))
@@ -238,11 +249,20 @@ public sealed class MasterStatusService
                 {
                     ["sources"] = GetInt(cognitiveStatus, "source_count", "sourceCount"),
                     ["knowledge_items"] = GetInt(cognitiveStatus, "knowledge_item_count", "knowledgeItemCount"),
+                    ["trusted_knowledge"] = knowledgeQuality.TrustedKnowledge,
+                    ["weak_knowledge"] = knowledgeQuality.WeakKnowledge,
+                    ["deprecated_knowledge"] = knowledgeQuality.DeprecatedKnowledge,
+                    ["average_quality_score"] = knowledgeQuality.AverageQualityScore,
+                    ["average_trust_score"] = knowledgeQuality.AverageTrustScore,
+                    ["knowledge_health"] = knowledgeQuality.KnowledgeHealth,
                     ["queue_items"] = FirstPositive(GetInt(cognitiveStatus, "queue_item_count", "queueItemCount"), queuedTasks),
                     ["insights"] = GetInt(cognitiveStatus, "insight_count", "insightCount"),
                     ["active_domains"] = activeDomains
                 },
-                Warnings: GetStringArray(cognitiveStatus, "warnings")),
+                Warnings: CombineStringLists(
+                    GetStringArray(cognitiveStatus, "warnings"),
+                    knowledgeQuality.Warnings,
+                    knowledgeQuality.KnowledgeHealth is "critical" or "needs_consolidation" ? [$"knowledge_health:{knowledgeQuality.KnowledgeHealth}"] : [])),
             ResearchQueueStatus: new MasterStatusSection(
                 Status: queuedTasks > 0 ? "open_items" : "empty_or_idle",
                 ReportPath: Path.Combine(cognitiveRoot, "research_queue.json"),
@@ -380,6 +400,13 @@ public sealed class MasterStatusService
             StorageCleanup: cleanupCandidates,
             RobustStrategies: robustCount,
             DemoBotCandidates: demoBotCandidates,
+            TrustedKnowledge: knowledgeQuality.TrustedKnowledge,
+            WeakKnowledge: knowledgeQuality.WeakKnowledge,
+            DeprecatedKnowledge: knowledgeQuality.DeprecatedKnowledge,
+            AverageQualityScore: knowledgeQuality.AverageQualityScore,
+            AverageTrustScore: knowledgeQuality.AverageTrustScore,
+            KnowledgeHealth: knowledgeQuality.KnowledgeHealth,
+            KnowledgeTrend: knowledgeQuality.KnowledgeTrend,
             ActiveGoals: goalState.Goals.Where(goal => goal.Active).Select(goal => goal.GoalId).ToList(),
             TopGoal: goalState.TopGoalId,
             BlockedGoals: goalState.BlockedGoals,

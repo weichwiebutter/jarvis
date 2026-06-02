@@ -311,6 +311,7 @@ public sealed class AutonomousLearningLoop
         var executionResults = executor.Execute(config.MaxTasksPerIteration);
         var evaluator = new TaskOutcomeEvaluator(_storagePaths);
         var outcomes = evaluator.Evaluate(config.MaxOutcomesPerIteration);
+        var consolidation = new MemoryConsolidationService(_storagePaths).Run();
         var plannerFeedback = evaluator.LoadOrCreatePlannerFeedback();
         var goalFeedback = evaluator.LoadOrCreateGoalFeedback();
         var generator = new HypothesisGenerator(_storagePaths);
@@ -330,6 +331,7 @@ public sealed class AutonomousLearningLoop
             .Where(goal => Math.Abs(goal.ProgressDelta) > 0.0001)
             .Select(goal => $"{goal.GoalId}:progress_delta={goal.ProgressDelta:0.####}")
             .Take(12));
+        feedbackChanges.Add($"knowledge_quality:weak={consolidation.WeakKnowledge}:deprecated={consolidation.DeprecatedKnowledge}:duplicates={consolidation.DuplicateGroups}");
         feedbackChanges.Add($"learning_strategy:{metaReview.LearningStrategy.CurrentStrategy}");
         feedbackChanges.AddRange(metaReview.GovernanceDecisions
             .Where(decision => !decision.Status.Equals("pass", StringComparison.OrdinalIgnoreCase))

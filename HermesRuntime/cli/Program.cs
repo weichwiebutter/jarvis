@@ -93,6 +93,8 @@ internal sealed class HermesCli
             "scan-research-domain" => ScanDomain("research"),
             "knowledge-catalog" => ShowKnowledgeCatalog(),
             "knowledge-item" => ShowKnowledgeItem(),
+            "knowledge-health" => ShowKnowledgeHealth(),
+            "consolidate-memory" => ConsolidateMemory(),
             "research-queue" => ShowResearchQueue(),
             "enqueue-research" => EnqueueResearch(),
             "process-research-queue" => ProcessResearchQueue(),
@@ -218,6 +220,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes scan-research-domain Research-Domaene metadata-only scannen");
         Console.WriteLine("  hermes knowledge-catalog  allgemeinen Cognitive Knowledge Catalog anzeigen");
         Console.WriteLine("  hermes knowledge-item --id <ID> einzelnes Knowledge Item anzeigen");
+        Console.WriteLine("  hermes knowledge-health   Knowledge Trust/Quality Scores erzeugen und anzeigen");
+        Console.WriteLine("  hermes consolidate-memory Cognitive Memory markieren/konsolidieren, ohne Wissen zu loeschen");
         Console.WriteLine("  hermes research-queue     Cognitive Research Queue anzeigen");
         Console.WriteLine("  hermes enqueue-research --domain trading --type validation Research-Item einreihen");
         Console.WriteLine("  hermes process-research-queue --max-items 50 Research Queue verarbeiten");
@@ -345,6 +349,13 @@ internal sealed class HermesCli
         WriteField("storage_cleanup", snapshot.StorageCleanup.ToString());
         WriteField("robust_strategies", snapshot.RobustStrategies.ToString());
         WriteField("demo_bot_candidates", snapshot.DemoBotCandidates.ToString());
+        WriteField("trusted_knowledge", snapshot.TrustedKnowledge.ToString());
+        WriteField("weak_knowledge", snapshot.WeakKnowledge.ToString());
+        WriteField("deprecated_knowledge", snapshot.DeprecatedKnowledge.ToString());
+        WriteField("average_quality_score", $"{snapshot.AverageQualityScore:0.####}");
+        WriteField("average_trust_score", $"{snapshot.AverageTrustScore:0.####}");
+        WriteField("knowledge_health", snapshot.KnowledgeHealth);
+        WriteField("knowledge_trend", snapshot.KnowledgeTrend);
         WriteField("top_goal", string.IsNullOrWhiteSpace(snapshot.TopGoal) ? "-" : snapshot.TopGoal);
         WriteMessages("active_goals", snapshot.ActiveGoals);
         WriteMessages("blocked_goals", snapshot.BlockedGoals);
@@ -1788,6 +1799,8 @@ internal sealed class HermesCli
             "run_autonomous_loop" => ExecuteAutonomousLoopJob(storagePaths, job),
             "update_goal_progress" => ExecuteUpdateGoalProgressJob(storagePaths),
             "review_goals" => ExecuteReviewGoalsJob(storagePaths),
+            "evaluate_knowledge_quality" => ExecuteKnowledgeQualityJob(storagePaths),
+            "consolidate_memory" => ExecuteConsolidateMemoryJob(storagePaths),
             "market_data_refresh" => new ScheduledJobExecutionResult(
                 Status: "skipped",
                 WorkPerformed: false,
@@ -1818,7 +1831,9 @@ internal sealed class HermesCli
         || jobType.Equals("process_planned_tasks", StringComparison.OrdinalIgnoreCase)
         || jobType.Equals("evaluate_task_outcomes", StringComparison.OrdinalIgnoreCase)
         || jobType.Equals("update_goal_progress", StringComparison.OrdinalIgnoreCase)
-        || jobType.Equals("review_goals", StringComparison.OrdinalIgnoreCase);
+        || jobType.Equals("review_goals", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("evaluate_knowledge_quality", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("consolidate_memory", StringComparison.OrdinalIgnoreCase);
 
     private ScheduledJobExecutionResult ExecuteNightlyBeta3ScheduledJob(ScheduledJobDefinition job, SupervisorJobContext context)
     {
@@ -2078,6 +2093,30 @@ internal sealed class HermesCli
             Action: $"review_goals active={state.ActiveGoals}; blocked={blocked}",
             ReportPath: tracker.GoalStatePath,
             Warnings: state.Warnings);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteKnowledgeQualityJob(StoragePaths storagePaths)
+    {
+        var engine = new KnowledgeQualityEngine(storagePaths);
+        var report = engine.Run();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: report.TotalKnowledgeItems > 0,
+            Action: $"knowledge_health trusted={report.TrustedKnowledge}; weak={report.WeakKnowledge}; deprecated={report.DeprecatedKnowledge}; health={report.KnowledgeHealth}",
+            ReportPath: engine.QualityPath,
+            Warnings: report.Warnings);
+    }
+
+    private static ScheduledJobExecutionResult ExecuteConsolidateMemoryJob(StoragePaths storagePaths)
+    {
+        var service = new MemoryConsolidationService(storagePaths);
+        var report = service.Run();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: report.TotalKnowledgeItems > 0,
+            Action: $"consolidate_memory weak={report.WeakKnowledge}; deprecated={report.DeprecatedKnowledge}; duplicate_groups={report.DuplicateGroups}",
+            ReportPath: service.ConsolidationPath,
+            Warnings: report.Warnings);
     }
 
     private static int ReadMaxItems(ScheduledJobDefinition job, int fallback) =>
@@ -3525,6 +3564,52 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowKnowledgeHealth()
+    {
+        WriteHeader("Hermes Knowledge Health");
+        var storagePaths = BuildStoragePaths();
+        var engine = new KnowledgeQualityEngine(storagePaths);
+        var report = engine.Run();
+
+        WriteKnowledgeQualityReport(report, engine.QualityPath);
+        TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ConsolidateMemory()
+    {
+        WriteHeader("Hermes Memory Consolidation");
+        var storagePaths = BuildStoragePaths();
+        var service = new MemoryConsolidationService(storagePaths);
+        var report = service.Run();
+
+        WriteField("Consolidation Report", DisplayPath(service.ConsolidationPath));
+        WriteField("Knowledge Quality", DisplayPath(report.KnowledgeQualityPath));
+        WriteField("Knowledge Evidence", DisplayPath(report.KnowledgeEvidencePath));
+        WriteField("Total Knowledge", report.TotalKnowledgeItems.ToString());
+        WriteField("Active", report.ActiveKnowledge.ToString());
+        WriteField("Archived", report.ArchivedKnowledge.ToString());
+        WriteField("Deprecated", report.DeprecatedKnowledge.ToString());
+        WriteField("Weak", report.WeakKnowledge.ToString());
+        WriteField("Duplicate Groups", report.DuplicateGroups.ToString());
+        WriteField("Prioritized", report.PrioritizedKnowledge.ToString());
+        foreach (var entry in report.Entries.Take(20))
+        {
+            Console.WriteLine();
+            WriteField(entry.KnowledgeId, $"{entry.Action} / {entry.LifecycleStatus} / quality={entry.QualityScore:0.####}");
+            WriteField("Reason", entry.Reason);
+            WriteMessages("Related", entry.RelatedKnowledgeIds.Take(6).ToList());
+        }
+
+        WriteMessages("Warnings", report.Warnings);
+        TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowResearchQueue()
     {
         WriteHeader("Hermes Cognitive Research Queue");
@@ -4959,7 +5044,9 @@ internal sealed class HermesCli
         [
             "scan_knowledge_sources",
             "process_research_queue",
-            "generate_cognitive_insights"
+            "generate_cognitive_insights",
+            "evaluate_knowledge_quality",
+            "consolidate_memory"
         ];
 
         return required.All(jobType => schedulerStatus.Jobs.Any(job =>
@@ -5075,6 +5162,37 @@ internal sealed class HermesCli
         WriteMessages("Tags", item.Tags);
         WriteMessages("Related", item.RelatedItems.Take(8).ToList());
         WriteField("Summary", item.DescriptionShort);
+    }
+
+    private void WriteKnowledgeQualityReport(KnowledgeQualityReport report, string reportPath)
+    {
+        WriteField("Knowledge Quality", DisplayPath(reportPath));
+        WriteField("Knowledge Evidence", DisplayPath(report.EvidencePath));
+        WriteField("Total Knowledge", report.TotalKnowledgeItems.ToString());
+        WriteField("Trusted Knowledge", report.TrustedKnowledge.ToString());
+        WriteField("Weak Knowledge", report.WeakKnowledge.ToString());
+        WriteField("Deprecated Knowledge", report.DeprecatedKnowledge.ToString());
+        WriteField("Average Quality Score", $"{report.AverageQualityScore:0.####}");
+        WriteField("Average Trust Score", $"{report.AverageTrustScore:0.####}");
+        WriteField("Knowledge Health", report.KnowledgeHealth);
+        WriteField("Knowledge Trend", report.KnowledgeTrend);
+        foreach (var item in report.Items.Take(20))
+        {
+            WriteSubHeader($"{item.Title} / {item.KnowledgeId}");
+            WriteField("Domain", item.Domain);
+            WriteField("Lifecycle", item.LifecycleStatus);
+            WriteField("Retention", item.RetentionState);
+            WriteField("quality_score", $"{item.QualityScore:0.####}");
+            WriteField("trust_score", $"{item.TrustScore:0.####}");
+            WriteField("evidence_score", $"{item.EvidenceScore:0.####}");
+            WriteField("reuse_score", $"{item.ReuseScore:0.####}");
+            WriteField("validation_score", $"{item.ValidationScore:0.####}");
+            WriteField("age_score", $"{item.AgeScore:0.####}");
+            WriteMessages("Evidence", item.EvidenceRefs.Take(8).ToList());
+            WriteMessages("Reasons", item.Reasons);
+        }
+
+        WriteMessages("Warnings", report.Warnings);
     }
 
     private void WriteCognitiveDomainStatusEntry(DomainStatusEntry entry)
