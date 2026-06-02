@@ -30,6 +30,7 @@ internal sealed class HermesCli
         return command switch
         {
             "" or "help" or "--help" or "-h" => ShowHelp(),
+            "write-master-status" => WriteMasterStatus(),
             "master-status" => ShowMasterStatus(),
             "health" => ShowHealth(),
             "setup-watch" => ShowSetupWatch(),
@@ -154,6 +155,7 @@ internal sealed class HermesCli
         Console.WriteLine("Lokale Sicherheits-CLI fuer HermesRuntime. Status-Kommandos sind read-only; generate-features und run-nightly-research schreiben nur lokale Analyseartefakte.");
         Console.WriteLine();
         Console.WriteLine("Kommandos:");
+        Console.WriteLine("  hermes write-master-status Master Status Snapshot schreiben");
         Console.WriteLine("  hermes master-status      kompakten Gesamtstatus aus bestehenden Reports anzeigen");
         Console.WriteLine("  hermes health             RuntimeHealth anzeigen");
         Console.WriteLine("  hermes setup-watch        Setup-Watch-Kandidaten anzeigen");
@@ -272,7 +274,80 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int WriteMasterStatus()
+    {
+        WriteHeader("Hermes Master Status Snapshot");
+        var writer = BuildMasterStatusWriter(BuildStoragePaths());
+        var snapshot = writer.WriteSnapshot();
+
+        PrintMasterStatusSnapshot(snapshot, writer.SnapshotPath);
+        Console.WriteLine();
+        WriteSafety();
+        return snapshot.OverallStatus.Equals("critical", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+    }
+
     private int ShowMasterStatus()
+    {
+        WriteHeader("Hermes Master Status");
+        var writer = BuildMasterStatusWriter(BuildStoragePaths());
+        var snapshot = writer.WriteSnapshot();
+
+        PrintMasterStatusSnapshot(snapshot, writer.SnapshotPath);
+        Console.WriteLine();
+        WriteSafety();
+        return snapshot.OverallStatus.Equals("critical", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+    }
+
+    private MasterStatusWriter BuildMasterStatusWriter(StoragePaths storagePaths) =>
+        new(new MasterStatusService(storagePaths, _runtimeRoot));
+
+    private void TryWriteMasterStatusSnapshot(StoragePaths storagePaths, bool printPath = true)
+    {
+        try
+        {
+            var writer = BuildMasterStatusWriter(storagePaths);
+            writer.WriteSnapshot();
+            if (printPath)
+            {
+                WriteField("Master Status", DisplayPath(writer.SnapshotPath));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            if (printPath)
+            {
+                WriteWarning($"Master Status Snapshot konnte nicht geschrieben werden: {ex.Message}");
+            }
+        }
+    }
+
+    private void PrintMasterStatusSnapshot(MasterStatusSnapshot snapshot, string reportPath)
+    {
+        WriteField("overall_status", snapshot.OverallStatus);
+        WriteField("current_focus", snapshot.CurrentFocus);
+        WriteField("active_domains", string.Join(", ", snapshot.ActiveDomains));
+        WriteField("queued_tasks", snapshot.QueuedTasks.ToString());
+        WriteField("last_nightly_run", snapshot.LastNightlyRun ?? "-");
+        WriteField("last_autonomous_loop", snapshot.LastAutonomousLoop ?? "-");
+        WriteField("last_meta_review", snapshot.LastMetaReview ?? "-");
+        WriteField("learning_strategy", snapshot.LearningStrategy);
+        WriteField("supervisor_running", snapshot.SupervisorRunning.ToString().ToLowerInvariant());
+        WriteField("scheduler_enabled", snapshot.SchedulerEnabled.ToString());
+        WriteField("resource_action", snapshot.ResourceAction);
+        WriteField("storage_cleanup", snapshot.StorageCleanup.ToString());
+        WriteField("robust_strategies", snapshot.RobustStrategies.ToString());
+        WriteField("demo_bot_candidates", snapshot.DemoBotCandidates.ToString());
+        WriteField("no_auto_trading", snapshot.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", snapshot.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", snapshot.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", snapshot.LiveTradingEnabled.ToString().ToLowerInvariant());
+        WriteField("JSON Report", DisplayPath(reportPath));
+        WriteMessages("Top Blockers", snapshot.TopBlockers.Take(8).ToList());
+        WriteMessages("Next Recommended Actions", snapshot.NextRecommendedActions.Take(8).ToList());
+        WriteMessages("Warnings", snapshot.Warnings.Take(8).ToList());
+    }
+
+    private int ShowLegacyMasterStatus()
     {
         WriteHeader("Hermes Master Status");
         var storagePaths = BuildReadOnlyStoragePaths();
@@ -1091,6 +1166,7 @@ internal sealed class HermesCli
             }, cognitiveJobsEnabled, cognitiveSummary, cognitiveNightly.SummaryPath));
             WriteField("Status", state.Status);
             WriteField("Nightly State", DisplayPath(nightly.StatePath));
+            TryWriteMasterStatusSnapshot(storagePaths);
             Console.WriteLine();
             WriteSafety();
             return 0;
@@ -1363,6 +1439,7 @@ internal sealed class HermesCli
 
         WriteField("Nightly State", DisplayPath(nightly.StatePath));
         WriteNightlyState(finalState);
+        TryWriteMasterStatusSnapshot(storagePaths);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -1670,7 +1747,7 @@ internal sealed class HermesCli
     private ScheduledJobExecutionResult ExecuteScheduledJob(ScheduledJobDefinition job, SupervisorJobContext context)
     {
         var storagePaths = BuildStoragePaths();
-        return job.JobType.ToLowerInvariant() switch
+        var result = job.JobType.ToLowerInvariant() switch
         {
             "nightly_beta3_research" => ExecuteNightlyBeta3ScheduledJob(job, context),
             "storage_hygiene" => ExecuteStorageHygieneJob(storagePaths),
@@ -1704,7 +1781,22 @@ internal sealed class HermesCli
                 ReportPath: null,
                 Warnings: [$"Unsupported internal job type: {job.JobType}"])
         };
+
+        if (ShouldRefreshMasterStatusAfterScheduledJob(job.JobType))
+        {
+            TryWriteMasterStatusSnapshot(storagePaths, printPath: false);
+        }
+
+        return result;
     }
+
+    private static bool ShouldRefreshMasterStatusAfterScheduledJob(string jobType) =>
+        jobType.Equals("nightly_beta3_research", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("trading_nightly_beta3", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("run_autonomous_loop", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("run_planning_cycle", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("process_planned_tasks", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("evaluate_task_outcomes", StringComparison.OrdinalIgnoreCase);
 
     private ScheduledJobExecutionResult ExecuteNightlyBeta3ScheduledJob(ScheduledJobDefinition job, SupervisorJobContext context)
     {
@@ -3569,6 +3661,7 @@ internal sealed class HermesCli
         WriteField("Research Queue", DisplayPath(new ResearchQueueService(storagePaths).QueuePath));
         WriteField("Open Queue Items", queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)).ToString());
         WriteMessages("Top Reasons", decision.Explanations.Take(8).ToList());
+        TryWriteMasterStatusSnapshot(storagePaths);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -3596,6 +3689,7 @@ internal sealed class HermesCli
             WritePlannedTaskExecutionResult(result);
         }
 
+        TryWriteMasterStatusSnapshot(storagePaths);
         Console.WriteLine();
         WriteSafety();
         return results.Any(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)) ? 1 : 0;
@@ -3651,7 +3745,8 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Task Outcome Evaluation");
         var maxItems = ReadIntOption(_args, "--max-items", fallback: 50, min: 1, max: 500);
-        var evaluator = new TaskOutcomeEvaluator(BuildStoragePaths());
+        var storagePaths = BuildStoragePaths();
+        var evaluator = new TaskOutcomeEvaluator(storagePaths);
         var outcomes = evaluator.Evaluate(maxItems);
         var status = evaluator.BuildStatus();
 
@@ -3665,6 +3760,7 @@ internal sealed class HermesCli
             WriteTaskOutcome(outcome);
         }
 
+        TryWriteMasterStatusSnapshot(storagePaths);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -3734,7 +3830,8 @@ internal sealed class HermesCli
     private int RunAutonomousLoop()
     {
         WriteHeader("Hermes Autonomous Learning Loop");
-        var loop = BuildAutonomousLearningLoop();
+        var storagePaths = BuildStoragePaths();
+        var loop = new AutonomousLearningLoop(storagePaths, Path.Combine(_runtimeRoot, "config", "autonomous.loop.json"));
         var config = loop.LoadConfig();
         var maxIterations = ReadIntOption(
             _args,
@@ -3747,6 +3844,7 @@ internal sealed class HermesCli
 
         WriteField("Config", DisplayPath(Path.Combine(_runtimeRoot, "config", "autonomous.loop.json")));
         WriteAutonomousLoopSummary(summary);
+        TryWriteMasterStatusSnapshot(storagePaths);
         Console.WriteLine();
         WriteSafety();
         return 0;
