@@ -17,6 +17,11 @@ function bridgeUrl(endpoint) {
 }
 
 const operatorReports = {
+  masterStatus: {
+    label: 'Hermes Master Status',
+    url: bridgeUrl('/reports/master-status'),
+    path: 'read-only bridge:/reports/master-status',
+  },
   researchInsights: {
     label: 'Research Insights',
     url: bridgeUrl('/reports/research-insights'),

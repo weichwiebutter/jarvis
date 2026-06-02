@@ -7,6 +7,7 @@ import { runtimeOutcomeReportsMock } from '../fixtures/runtimeOutcomeReportsMock
 import { runtimeStorageMock } from '../fixtures/runtimeStorageMock';
 import { setupWatchMock } from '../fixtures/setupWatchMock';
 import { operatorDashboardMock } from '../fixtures/operatorDashboardMock';
+import { runtimeMasterStatusMock } from '../fixtures/runtimeMasterStatusMock';
 import { runtimeEvents } from '../fixtures/controlCenterMockData';
 import { de } from '../i18n/de';
 
@@ -1285,6 +1286,8 @@ function normalizeReportEntry(key, config, raw, dataSource, warning = '') {
 
 function reportFixtureRaw(key) {
   switch (key) {
+    case 'masterStatus':
+      return runtimeMasterStatusMock;
     case 'researchInsights':
       return operatorDashboardMock.researchInsights;
     case 'regimeSummary':
@@ -1322,6 +1325,75 @@ function reportFixtureRaw(key) {
     default:
       return {};
   }
+}
+
+export function normalizeMasterStatus(raw = {}) {
+  const supervisor = raw.supervisor || raw.supervisor_status || raw.supervisorStatus || {};
+  const scheduler = raw.scheduler || raw.scheduler_status || raw.schedulerStatus || {};
+  const resource = raw.resource_status || raw.resourceStatus || {};
+  const storage = raw.storage_status || raw.storageStatus || {};
+  const trading = raw.trading_domain || raw.tradingDomain || {};
+
+  return {
+    overall_status: asString(firstDefined(raw.overall_status, raw.overallStatus), 'unknown'),
+    current_focus: asString(firstDefined(raw.current_focus, raw.currentFocus), '-'),
+    active_domains: asArray(firstDefined(raw.active_domains, raw.activeDomains)).map(String),
+    queued_tasks: asNumber(firstDefined(raw.queued_tasks, raw.queuedTasks), 0),
+    last_nightly_run: firstDefined(raw.last_nightly_run, raw.lastNightlyRun, null),
+    last_autonomous_loop: firstDefined(raw.last_autonomous_loop, raw.lastAutonomousLoop, null),
+    last_meta_review: firstDefined(raw.last_meta_review, raw.lastMetaReview, null),
+    learning_strategy: asString(firstDefined(raw.learning_strategy, raw.learningStrategy), '-'),
+    supervisor_running: asBoolean(
+      firstDefined(raw.supervisor_running, raw.supervisorRunning, supervisor.running),
+      false,
+    ),
+    scheduler_enabled: asNumber(
+      firstDefined(raw.scheduler_enabled, raw.schedulerEnabled, scheduler.enabled_jobs, scheduler.enabledJobs),
+      0,
+    ),
+    resource_action: asString(
+      firstDefined(raw.resource_action, raw.resourceAction, resource.action),
+      '-',
+    ),
+    storage_cleanup: asNumber(
+      firstDefined(
+        raw.storage_cleanup,
+        raw.storageCleanup,
+        storage.cleanup_candidates,
+        storage.cleanupCandidates,
+      ),
+      0,
+    ),
+    robust_strategies: asNumber(
+      firstDefined(
+        raw.robust_strategies,
+        raw.robustStrategies,
+        trading.robust_strategies,
+        trading.robustStrategies,
+      ),
+      0,
+    ),
+    demo_bot_candidates: asNumber(
+      firstDefined(
+        raw.demo_bot_candidates,
+        raw.demoBotCandidates,
+        trading.demo_bot_candidates,
+        trading.demoBotCandidates,
+      ),
+      0,
+    ),
+    no_auto_trading: asBoolean(firstDefined(raw.no_auto_trading, raw.noAutoTrading), true),
+    human_review_required: asBoolean(
+      firstDefined(raw.human_review_required, raw.humanReviewRequired),
+      true,
+    ),
+    top_blockers: asArray(firstDefined(raw.top_blockers, raw.topBlockers)).map(String),
+    next_recommended_actions: asArray(
+      firstDefined(raw.next_recommended_actions, raw.nextRecommendedActions),
+    ).map(String),
+    updated_at_utc: firstDefined(raw.updated_at_utc, raw.updatedAtUtc, null),
+    data_root: asString(firstDefined(raw.data_root, raw.dataRoot), hermesDataRoot),
+  };
 }
 
 export function normalizeSupervisorState(raw = {}) {
@@ -1543,6 +1615,7 @@ export function normalizeCleanupPlan(raw = {}) {
 }
 
 function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warnings = []) {
+  const masterRaw = rawReports.masterStatus || runtimeMasterStatusMock;
   const supervisorRaw = rawReports.supervisorState || operatorDashboardMock.supervisorState;
   const schedulerRaw = rawReports.schedulerState || operatorDashboardMock.schedulerState;
   const resourceRaw = rawReports.resourceStatus || operatorDashboardMock.resourceStatus;
@@ -1576,8 +1649,12 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
   const liveReportCount = reports.filter((report) => report.dataSource === DATA_SOURCE.LIVE_FILE)
     .length;
   const fixtureReportCount = reports.length - liveReportCount;
+  const masterStatusReport = reports.find((report) => report.key === 'masterStatus');
 
   return {
+    masterStatus: normalizeMasterStatus(masterRaw),
+    masterStatusSource: masterStatusReport?.dataSource || (rawReports.masterStatus ? dataSource : DATA_SOURCE.FIXTURE),
+    masterStatusWarning: masterStatusReport?.warning || '',
     supervisor: normalizeSupervisorState(supervisorRaw),
     schedulerJobs: normalizeSchedulerJobs(schedulerRaw),
     resource,
@@ -1633,6 +1710,7 @@ export function createOperatorDashboardFallback(loadError = '') {
 
   return buildOperatorDashboard(
     {
+      masterStatus: runtimeMasterStatusMock,
       supervisorState: operatorDashboardMock.supervisorState,
       schedulerState: operatorDashboardMock.schedulerState,
       resourceStatus: operatorDashboardMock.resourceStatus,
@@ -1676,6 +1754,7 @@ export async function loadOperatorDashboard() {
       const dashboard = unwrapBridgeResponse(response) || {};
       const warnings = bridgeResponseWarnings(response);
       const rawReports = {
+        masterStatus: dashboard.masterStatus,
         supervisorState: dashboard.supervisorState,
         schedulerState: dashboard.schedulerState,
         resourceStatus: dashboard.resourceStatus,

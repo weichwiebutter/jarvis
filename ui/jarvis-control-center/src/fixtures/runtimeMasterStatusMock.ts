@@ -1,0 +1,51 @@
+export const runtimeMasterStatusMock = {
+  report_version: 'master_status_v1',
+  updated_at_utc: '2026-06-01T18:57:58.1083112+00:00',
+  data_root: '/mnt/d/HermesData',
+  overall_status: 'warning',
+  current_focus: 'consolidation: balanced, trading, documentation, process, software',
+  active_domains: ['documentation', 'process', 'research', 'software', 'trading'],
+  queued_tasks: 4,
+  last_nightly_run: '2026-05-31T21:00:02.0816608+00:00',
+  last_autonomous_loop: '2026-06-01T15:18:36.3732613+00:00',
+  last_meta_review: '2026-06-01T15:18:35.7665691+00:00',
+  learning_strategy: 'consolidation',
+  top_blockers: [
+    'high:quality_risk:no_robust_strategies',
+    'high:data_gap:oos_data_missing',
+    'high:maintenance:storage_cleanup_candidates',
+    'medium:knowledge_gap:documentation_gaps',
+  ],
+  next_recommended_actions: [
+    'run_overfit_report:0.7762:planned_run_overfit_report_c08cf73f9dc7',
+    'run_strategy_research:0.6722:planned_run_strategy_research_04e1b9ac087d',
+    'run_storage_hygiene:0.6098:planned_run_storage_hygiene_ad2f1cea368c',
+    'scan_documentation_domain:0.5648:planned_scan_documentation_domain_6fc492c10390',
+  ],
+  supervisor: {
+    running: false,
+    status: 'stopped_by_stop_request',
+    next_action: 'safe_stop_requested',
+  },
+  scheduler: {
+    enabled_jobs: 18,
+    active_jobs: 0,
+    failed_jobs: 0,
+    next_job: 'health_snapshot',
+  },
+  resource_status: {
+    action: 'continue',
+  },
+  storage_status: {
+    cleanup_candidates: 77202,
+    storage_root: '/mnt/d/HermesData',
+  },
+  trading_domain: {
+    robust_strategies: 0,
+    demo_bot_candidates: 0,
+    rejected_candidates: 14720,
+    high_risk_strategies: 14848,
+  },
+  no_auto_trading: true,
+  human_review_required: true,
+};

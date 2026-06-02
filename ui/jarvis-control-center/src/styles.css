@@ -498,6 +498,63 @@ h2 {
   line-height: 1.35;
 }
 
+.cockpit-master-status {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(132, 204, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.58);
+}
+
+.cockpit-master-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cockpit-master-head span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cockpit-master-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.cockpit-master-source-warning {
+  margin: 0;
+  color: var(--amber);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.cockpit-master-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cockpit-master-grid .cockpit-detail-metric {
+  min-height: 58px;
+  padding: 8px 9px;
+}
+
+.cockpit-master-grid .cockpit-detail-metric span {
+  font-size: 0.68rem;
+}
+
+.cockpit-master-grid .cockpit-detail-metric strong {
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
 .cockpit-layout {
   display: grid;
   grid-template-columns: minmax(220px, 0.82fr) minmax(380px, 1.34fr) minmax(220px, 0.82fr);
@@ -2811,6 +2868,12 @@ h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.operator-master-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .operator-mini-metric {
   display: grid;
   gap: 5px;
@@ -3074,6 +3137,7 @@ h2 {
   .operator-top-grid,
   .operator-middle-grid,
   .operator-bottom-grid,
+  .operator-master-grid,
   .operator-report-viewer {
     grid-template-columns: 1fr;
   }
@@ -3144,6 +3208,10 @@ h2 {
   .cockpit-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .cockpit-master-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -3208,6 +3276,8 @@ h2 {
   .operator-metric-grid,
   .operator-research-grid,
   .operator-safety-grid,
+  .operator-master-grid,
+  .cockpit-master-grid,
   .operator-storage-card {
     grid-template-columns: 1fr;
   }

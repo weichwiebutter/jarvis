@@ -240,6 +240,42 @@ function OrbitPanel({ module, onOpen }) {
   );
 }
 
+function MasterStatusOverview({ masterStatus, source }) {
+  const statusTone = toneFromStatus(masterStatus.overall_status);
+
+  return (
+    <section className="cockpit-master-status" aria-label="Hermes Master Status">
+      <div className="cockpit-master-head">
+        <span>Hermes Master Status</span>
+        <div className="cockpit-master-badges">
+          <StatusPill tone={statusTone}>{masterStatus.overall_status}</StatusPill>
+          <StatusPill tone={sourceTone(source)}>{sourceModeLabel(source)}</StatusPill>
+        </div>
+      </div>
+      {source !== DATA_SOURCE.LIVE_FILE ? (
+        <p className="cockpit-master-source-warning">Demo-/Snapshot-Daten aktiv</p>
+      ) : null}
+      <div className="cockpit-master-grid">
+        <Metric label="Fokus" value={masterStatus.current_focus} tone="info" />
+        <Metric label="Domaenen" value={masterStatus.active_domains.join(', ') || '-'} tone="info" />
+        <Metric label="Queue" value={formatNumber(masterStatus.queued_tasks)} tone={masterStatus.queued_tasks ? 'warn' : 'good'} />
+        <Metric label="Nightly" value={shortDateTime(masterStatus.last_nightly_run)} />
+        <Metric label="Autonomer Loop" value={shortDateTime(masterStatus.last_autonomous_loop)} />
+        <Metric label="Meta Review" value={shortDateTime(masterStatus.last_meta_review)} />
+        <Metric label="Lernstrategie" value={masterStatus.learning_strategy} />
+        <Metric label="Supervisor" value={masterStatus.supervisor_running ? 'running' : 'stopped'} tone={masterStatus.supervisor_running ? 'good' : 'warn'} />
+        <Metric label="Scheduler" value={`${formatNumber(masterStatus.scheduler_enabled)} aktiv`} />
+        <Metric label="Ressourcen" value={masterStatus.resource_action} tone={toneFromStatus(masterStatus.resource_action)} />
+        <Metric label="Storage Cleanup" value={formatNumber(masterStatus.storage_cleanup)} tone={masterStatus.storage_cleanup ? 'warn' : 'good'} />
+        <Metric label="Robust" value={formatNumber(masterStatus.robust_strategies)} tone={masterStatus.robust_strategies ? 'good' : 'warn'} />
+        <Metric label="Demo-Kandidaten" value={formatNumber(masterStatus.demo_bot_candidates)} tone={masterStatus.demo_bot_candidates ? 'good' : 'warn'} />
+        <Metric label="no_auto_trading" value={String(masterStatus.no_auto_trading)} tone={masterStatus.no_auto_trading ? 'good' : 'danger'} />
+        <Metric label="human_review" value={String(masterStatus.human_review_required)} tone={masterStatus.human_review_required ? 'good' : 'danger'} />
+      </div>
+    </section>
+  );
+}
+
 function DetailOverlay({ moduleId, modules, operatorState, onClose }) {
   const module = modules.find((item) => item.id === moduleId);
 
@@ -433,6 +469,11 @@ export function CockpitShell() {
           Read-only Bridge nicht vollstaendig verfuegbar. Die Cockpit-Ansicht nutzt stabile Fixture-/Demo-Daten.
         </p>
       ) : null}
+
+      <MasterStatusOverview
+        masterStatus={operatorState.masterStatus}
+        source={operatorState.masterStatusSource}
+      />
 
       <div className="cockpit-layout">
         <div className="orbit-column orbit-column-left">

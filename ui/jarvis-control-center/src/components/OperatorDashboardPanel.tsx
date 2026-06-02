@@ -4,6 +4,7 @@ import {
   loadOperatorDashboard,
   DATA_SOURCE,
 } from '../data/runtimeDataAdapter';
+import { sourceModeLabel, sourceTone } from '../utils/controlCenterFormatters';
 import { Panel, StatusPill, toneClass } from './StatusCard';
 
 const OPERATOR_REFRESH_SECONDS = 45;
@@ -229,6 +230,43 @@ export function OperatorDashboardPanel() {
       eyebrow="Beta 3 Operator"
       title="Operator Dashboard"
     >
+      <OperatorCard
+        badge={operatorState.masterStatus.overall_status}
+        title="Hermes Master Status"
+        tone={statusTone(operatorState.masterStatus.overall_status)}
+      >
+        <div className="operator-safety-flags">
+          <StatusPill tone={sourceTone(operatorState.masterStatusSource)}>
+            {sourceModeLabel(operatorState.masterStatusSource)}
+          </StatusPill>
+          {operatorState.masterStatusWarning ? (
+            <StatusPill tone="warn">Demo-/Snapshot-Daten aktiv</StatusPill>
+          ) : null}
+        </div>
+        <div className="operator-master-grid">
+          <MiniMetric label="Fokus" value={operatorState.masterStatus.current_focus} tone="info" />
+          <MiniMetric label="Aktive Domaenen" value={operatorState.masterStatus.active_domains.join(', ') || '-'} tone="info" />
+          <MiniMetric label="Geplante Aufgaben" value={formatNumber(operatorState.masterStatus.queued_tasks)} tone={operatorState.masterStatus.queued_tasks ? 'warn' : 'good'} />
+          <MiniMetric label="Letzter Nightly" value={shortDateTime(operatorState.masterStatus.last_nightly_run)} />
+          <MiniMetric label="Autonomer Loop" value={shortDateTime(operatorState.masterStatus.last_autonomous_loop)} />
+          <MiniMetric label="Meta Review" value={shortDateTime(operatorState.masterStatus.last_meta_review)} />
+          <MiniMetric label="Lernstrategie" value={operatorState.masterStatus.learning_strategy} />
+          <MiniMetric label="Supervisor" value={operatorState.masterStatus.supervisor_running ? 'running' : 'stopped'} tone={operatorState.masterStatus.supervisor_running ? 'good' : 'warn'} />
+          <MiniMetric label="Scheduler Jobs" value={formatNumber(operatorState.masterStatus.scheduler_enabled)} />
+          <MiniMetric label="Resource Action" value={operatorState.masterStatus.resource_action} tone={statusTone(operatorState.masterStatus.resource_action)} />
+          <MiniMetric label="Storage Cleanup" value={formatNumber(operatorState.masterStatus.storage_cleanup)} tone={operatorState.masterStatus.storage_cleanup ? 'warn' : 'good'} />
+          <MiniMetric label="Robuste Strategien" value={formatNumber(operatorState.masterStatus.robust_strategies)} tone={operatorState.masterStatus.robust_strategies ? 'good' : 'warn'} />
+          <MiniMetric label="Demo-Bot-Kandidaten" value={formatNumber(operatorState.masterStatus.demo_bot_candidates)} tone={operatorState.masterStatus.demo_bot_candidates ? 'good' : 'warn'} />
+          <MiniMetric label="no_auto_trading" value={String(operatorState.masterStatus.no_auto_trading)} tone={operatorState.masterStatus.no_auto_trading ? 'good' : 'danger'} />
+          <MiniMetric label="human_review_required" value={String(operatorState.masterStatus.human_review_required)} tone={operatorState.masterStatus.human_review_required ? 'good' : 'danger'} />
+        </div>
+        <div className="operator-token-list">
+          {operatorState.masterStatus.top_blockers.slice(0, 6).map((blocker) => (
+            <span key={blocker}>{blocker}</span>
+          ))}
+        </div>
+      </OperatorCard>
+
       <div className="operator-top-grid">
         <OperatorCard
           badge={operatorState.supervisor.running ? 'running' : 'stopped'}
