@@ -1,0 +1,9 @@
+{
+  "start_supervisor": true,
+  "start_bridge": true,
+  "start_control_center": true,
+  "control_center_mode": "dev",
+  "bridge_port": 8787,
+  "write_master_status_on_start": true,
+  "log_path": "/mnt/d/HermesData/logs/jarvis_startup.log"
+}

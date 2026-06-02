@@ -127,6 +127,38 @@ http://127.0.0.1:5173
 
 Falls Port `5173` belegt ist, zeigt Vite die tatsaechliche URL im Terminal.
 
+### E. Jarvis Startup Orchestrator
+
+Rolle: Der Startup Orchestrator startet beim PC-/Jarvis-Start kontrolliert die
+benoetigten lokalen Komponenten: Hermes Supervisor, Hermes Read-only Bridge,
+initialen Master-Status-Snapshot und optional das React Control Center im
+Dev-Modus. Die UI bleibt read-only; Trading- oder Broker-Kommandos werden nicht
+gestartet.
+
+```bash
+cd ~/jarvis
+bash ./scripts/startup/start_jarvis.sh
+bash ./scripts/startup/status_jarvis.sh
+bash ./scripts/startup/stop_jarvis.sh
+```
+
+Konfiguration:
+
+```text
+config/jarvis.startup.json
+```
+
+Windows Autostart installiert genau einen Task:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/windows/install_jarvis_startup_task.ps1
+```
+
+Der Windows Task startet nur `scripts/startup/start_jarvis.sh` in WSL. Weitere
+Nightly- oder Research-Zeitplaene werden nicht als Windows Tasks angelegt,
+sondern bleiben im internen Hermes Scheduler unter
+`HermesRuntime/config/schedules.json`.
+
 ## Sicherheitsprinzipien
 
 - Human-in-the-loop fuer riskante Aktionen und Ausfuehrungsschritte.
