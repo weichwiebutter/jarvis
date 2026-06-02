@@ -1243,6 +1243,50 @@ function firstDefined(...values) {
   return values.find((value) => value !== undefined && value !== null);
 }
 
+function normalizeGoalProgressSummary(value) {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item, index) => {
+        if (typeof item === 'string') {
+          return {
+            goal_id: item,
+            progress: 0,
+          };
+        }
+
+        return {
+          goal_id: asString(
+            firstDefined(item.goal_id, item.goalId, item.id, item.key),
+            `goal_${index}`,
+          ),
+          progress: clampNumber(
+            firstDefined(item.progress, item.progress_score, item.progressScore, item.value),
+            0,
+            1,
+          ),
+          current_state: asString(firstDefined(item.current_state, item.currentState), ''),
+          blocker_count: asNumber(firstDefined(item.blocker_count, item.blockerCount), 0),
+        };
+      })
+      .filter((item) => item.goal_id);
+  }
+
+  if (typeof value === 'object') {
+    return Object.entries(value)
+      .map(([goalId, progress]) => ({
+        goal_id: goalId,
+        progress: clampNumber(progress, 0, 1),
+      }))
+      .sort((left, right) => right.progress - left.progress);
+  }
+
+  return [];
+}
+
 function formatHeartbeatAgeSeconds(timestampUtc) {
   if (!timestampUtc) {
     return null;
@@ -1334,11 +1378,33 @@ export function normalizeMasterStatus(raw = {}) {
   const storage = raw.storage_status || raw.storageStatus || {};
   const trading = raw.trading_domain || raw.tradingDomain || {};
   const safety = raw.safety_flags || raw.safetyFlags || {};
+  const goalProgress = normalizeGoalProgressSummary(
+    firstDefined(raw.goal_progress_summary, raw.goalProgressSummary),
+  );
+  const activeGoals = asArray(firstDefined(raw.active_goals, raw.activeGoals)).map(String);
+  const blockedGoals = asArray(firstDefined(raw.blocked_goals, raw.blockedGoals)).map(String);
+  const topBlockers = asArray(firstDefined(raw.top_blockers, raw.topBlockers)).map(String);
+  const rawWarnings = asArray(firstDefined(raw.warnings, raw.Warnings)).map(String);
+  const goalWarnings = [
+    ...asArray(firstDefined(raw.goal_warnings, raw.goalWarnings, raw.goal_blockers, raw.goalBlockers)).map(String),
+    ...topBlockers.filter((item) => item.includes('goal') || item.includes('blocked_goal')),
+    ...rawWarnings.filter((item) => item.includes('goal') || item.includes('blocked_goal')),
+  ].filter(Boolean);
+  const topGoal = asString(firstDefined(raw.top_goal, raw.topGoal), '');
+  const goalSystemAvailable = Boolean(
+    topGoal || activeGoals.length || blockedGoals.length || goalProgress.length,
+  );
 
   return {
     overall_status: asString(firstDefined(raw.overall_status, raw.overallStatus), 'unknown'),
     current_focus: asString(firstDefined(raw.current_focus, raw.currentFocus), '-'),
     active_domains: asArray(firstDefined(raw.active_domains, raw.activeDomains)).map(String),
+    goal_system_available: goalSystemAvailable,
+    top_goal: topGoal || 'Goal-System noch nicht verfügbar',
+    active_goals: activeGoals,
+    blocked_goals: blockedGoals,
+    goal_progress_summary: goalProgress,
+    goal_warnings: goalWarnings,
     queued_tasks: asNumber(firstDefined(raw.queued_tasks, raw.queuedTasks), 0),
     last_nightly_run: firstDefined(raw.last_nightly_run, raw.lastNightlyRun, null),
     last_autonomous_loop: firstDefined(raw.last_autonomous_loop, raw.lastAutonomousLoop, null),
@@ -1396,7 +1462,7 @@ export function normalizeMasterStatus(raw = {}) {
       firstDefined(raw.live_trading_enabled, raw.liveTradingEnabled, safety.live_trading_enabled, safety.liveTradingEnabled),
       false,
     ),
-    top_blockers: asArray(firstDefined(raw.top_blockers, raw.topBlockers)).map(String),
+    top_blockers: topBlockers,
     next_recommended_actions: asArray(
       firstDefined(raw.next_recommended_actions, raw.nextRecommendedActions),
     ).map(String),

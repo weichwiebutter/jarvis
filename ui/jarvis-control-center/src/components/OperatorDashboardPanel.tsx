@@ -99,6 +99,79 @@ function MiniMetric({ label, value, tone = 'info' }) {
   );
 }
 
+function goalLabel(goalId) {
+  return String(goalId || '-')
+    .replace(/^improve_/, '')
+    .replace(/_/g, ' ');
+}
+
+function goalProgressPercent(progress) {
+  return `${Math.round(Number(progress || 0) * 100)}%`;
+}
+
+function GoalSystemCard({ masterStatus }) {
+  const goalAvailable = masterStatus.goal_system_available;
+  const progressItems = masterStatus.goal_progress_summary || [];
+  const blockedGoals = masterStatus.blocked_goals || [];
+  const activeGoals = masterStatus.active_goals || [];
+  const warnings = masterStatus.goal_warnings?.length
+    ? masterStatus.goal_warnings
+    : masterStatus.top_blockers.filter((item) => item.includes('goal') || item.includes('blocked_goal'));
+
+  return (
+    <details className="goal-system-card operator-goal-card" open>
+      <summary>
+        <span>Hermes Ziele</span>
+        <strong>{goalAvailable ? goalLabel(masterStatus.top_goal) : 'nicht verfuegbar'}</strong>
+        <StatusPill tone={blockedGoals.length ? 'warn' : goalAvailable ? 'good' : 'info'}>
+          {goalAvailable ? `${blockedGoals.length} blockiert` : 'offline'}
+        </StatusPill>
+      </summary>
+
+      {goalAvailable ? (
+        <>
+          <div className="goal-system-metrics">
+            <MiniMetric label="Hauptziel" value={goalLabel(masterStatus.top_goal)} tone={blockedGoals.includes(masterStatus.top_goal) ? 'warn' : 'info'} />
+            <MiniMetric label="Aktive Ziele" value={formatNumber(activeGoals.length)} tone="info" />
+            <MiniMetric label="Blockiert" value={formatNumber(blockedGoals.length)} tone={blockedGoals.length ? 'warn' : 'good'} />
+            <MiniMetric label="Letzte Bewertung" value={shortDateTime(masterStatus.updated_at_utc)} />
+          </div>
+
+          <div className="goal-progress-list" aria-label="Fortschritt je Ziel">
+            {progressItems.slice(0, 8).map((goal) => (
+              <div className="goal-progress-row" key={goal.goal_id}>
+                <div>
+                  <span>{goalLabel(goal.goal_id)}</span>
+                  <strong>{goalProgressPercent(goal.progress)}</strong>
+                </div>
+                <i style={{ width: goalProgressPercent(goal.progress) }} />
+              </div>
+            ))}
+          </div>
+
+          {blockedGoals.length ? (
+            <div className="goal-token-list" aria-label="Blockierte Ziele">
+              {blockedGoals.slice(0, 8).map((goal) => (
+                <span key={goal}>{goalLabel(goal)}</span>
+              ))}
+            </div>
+          ) : null}
+
+          {warnings.length ? (
+            <div className="goal-warning-list" aria-label="Goal-Blocker">
+              {warnings.slice(0, 6).map((warning) => (
+                <span key={warning}>{warning}</span>
+              ))}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <p>Goal-System noch nicht verfuegbar.</p>
+      )}
+    </details>
+  );
+}
+
 function OperatorCard({ title, badge, tone = 'info', children }) {
   return (
     <article className={`operator-card ${toneClass(tone)}`}>
@@ -269,6 +342,7 @@ export function OperatorDashboardPanel() {
             <span key={blocker}>{blocker}</span>
           ))}
         </div>
+        <GoalSystemCard masterStatus={operatorState.masterStatus} />
       </OperatorCard>
 
       <div className="operator-top-grid">

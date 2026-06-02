@@ -555,6 +555,129 @@ h2 {
   line-height: 1.25;
 }
 
+.goal-system-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(248, 193, 74, 0.18);
+  border-radius: 8px;
+  background: rgba(248, 193, 74, 0.055);
+}
+
+.goal-system-card summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.goal-system-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.goal-system-card summary span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.goal-system-card summary strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goal-system-card p {
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.82rem;
+}
+
+.goal-system-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.goal-system-metrics .cockpit-detail-metric,
+.goal-system-metrics .operator-mini-metric {
+  min-height: 54px;
+  padding: 8px;
+}
+
+.goal-progress-list {
+  display: grid;
+  gap: 7px;
+}
+
+.goal-progress-row {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.goal-progress-row div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.goal-progress-row span {
+  overflow: hidden;
+  color: var(--soft);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goal-progress-row strong {
+  color: var(--amber);
+  font-size: 0.76rem;
+}
+
+.goal-progress-row i {
+  display: block;
+  max-width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--cyan), var(--amber));
+  box-shadow: 0 0 14px rgba(132, 204, 255, 0.34);
+}
+
+.goal-token-list,
+.goal-warning-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.goal-token-list span,
+.goal-warning-list span {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(132, 204, 255, 0.14);
+  border-radius: 999px;
+  color: var(--soft);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+.goal-warning-list span {
+  border-color: rgba(248, 193, 74, 0.26);
+  color: var(--amber);
+  background: rgba(248, 193, 74, 0.06);
+}
+
 .cockpit-layout {
   display: grid;
   grid-template-columns: minmax(220px, 0.82fr) minmax(380px, 1.34fr) minmax(220px, 0.82fr);
