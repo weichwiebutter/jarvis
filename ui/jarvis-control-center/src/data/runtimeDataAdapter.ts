@@ -1333,6 +1333,7 @@ export function normalizeMasterStatus(raw = {}) {
   const resource = raw.resource_status || raw.resourceStatus || {};
   const storage = raw.storage_status || raw.storageStatus || {};
   const trading = raw.trading_domain || raw.tradingDomain || {};
+  const safety = raw.safety_flags || raw.safetyFlags || {};
 
   return {
     overall_status: asString(firstDefined(raw.overall_status, raw.overallStatus), 'unknown'),
@@ -1387,11 +1388,19 @@ export function normalizeMasterStatus(raw = {}) {
       firstDefined(raw.human_review_required, raw.humanReviewRequired),
       true,
     ),
+    broker_orders_enabled: asBoolean(
+      firstDefined(raw.broker_orders_enabled, raw.brokerOrdersEnabled, safety.broker_orders_enabled, safety.brokerOrdersEnabled),
+      false,
+    ),
+    live_trading_enabled: asBoolean(
+      firstDefined(raw.live_trading_enabled, raw.liveTradingEnabled, safety.live_trading_enabled, safety.liveTradingEnabled),
+      false,
+    ),
     top_blockers: asArray(firstDefined(raw.top_blockers, raw.topBlockers)).map(String),
     next_recommended_actions: asArray(
       firstDefined(raw.next_recommended_actions, raw.nextRecommendedActions),
     ).map(String),
-    updated_at_utc: firstDefined(raw.updated_at_utc, raw.updatedAtUtc, null),
+    updated_at_utc: firstDefined(raw.updated_at_utc, raw.updatedAtUtc, raw.last_updated_utc, raw.lastUpdatedUtc, null),
     data_root: asString(firstDefined(raw.data_root, raw.dataRoot), hermesDataRoot),
   };
 }
@@ -1747,6 +1756,11 @@ async function loadOperatorReport(key, config) {
 
 export async function loadOperatorDashboard() {
   let bridgeDashboardWarning = '';
+  const configs = operatorReportsConfig || {};
+  const masterStatusConfig = configs.masterStatus;
+  const masterStatusEntry = masterStatusConfig
+    ? await loadOperatorReport('masterStatus', masterStatusConfig)
+    : null;
 
   if (operatorDashboardUrl) {
     try {
@@ -1754,7 +1768,7 @@ export async function loadOperatorDashboard() {
       const dashboard = unwrapBridgeResponse(response) || {};
       const warnings = bridgeResponseWarnings(response);
       const rawReports = {
-        masterStatus: dashboard.masterStatus,
+        masterStatus: masterStatusEntry?.raw,
         supervisorState: dashboard.supervisorState,
         schedulerState: dashboard.schedulerState,
         resourceStatus: dashboard.resourceStatus,
@@ -1770,6 +1784,10 @@ export async function loadOperatorDashboard() {
       };
       const reportIndex = dashboard.reportIndex?.reports || [];
       const reports = Object.entries(operatorReportsConfig || {}).map(([key, config]) => {
+        if (key === 'masterStatus' && masterStatusEntry) {
+          return masterStatusEntry;
+        }
+
         const indexEntry = reportIndex.find((entry) => entry.key === key);
         const raw = rawReports[key] || reportFixtureRaw(key);
         const available = Boolean(indexEntry?.available && rawReports[key]);
@@ -1801,18 +1819,23 @@ export async function loadOperatorDashboard() {
     }
   }
 
-  const configs = operatorReportsConfig || {};
   const reportEntries = await Promise.all(
-    Object.entries(configs).map(([key, config]) => loadOperatorReport(key, config)),
+    Object.entries(configs)
+      .filter(([key]) => key !== 'masterStatus')
+      .map(([key, config]) => loadOperatorReport(key, config)),
   );
+  const allReportEntries = masterStatusEntry ? [masterStatusEntry, ...reportEntries] : reportEntries;
   const rawReports = reportEntries.reduce((next, report) => {
     next[report.key] = report.raw;
     return next;
   }, {});
+  if (masterStatusEntry) {
+    rawReports.masterStatus = masterStatusEntry.raw;
+  }
   let logLines = [...operatorDashboardMock.logLines];
   const warnings = [
     bridgeDashboardWarning,
-    ...reportEntries.flatMap((report) => (report.warning ? [report.warning] : [])),
+    ...allReportEntries.flatMap((report) => (report.warning ? [report.warning] : [])),
   ].filter(Boolean);
 
   if (supervisorLogUrl) {
@@ -1828,13 +1851,13 @@ export async function loadOperatorDashboard() {
     }
   }
 
-  const dataSource = reportEntries.some((report) => report.dataSource === DATA_SOURCE.LIVE_FILE)
-    ? reportEntries.every((report) => report.dataSource === DATA_SOURCE.LIVE_FILE)
+  const dataSource = allReportEntries.some((report) => report.dataSource === DATA_SOURCE.LIVE_FILE)
+    ? allReportEntries.every((report) => report.dataSource === DATA_SOURCE.LIVE_FILE)
       ? DATA_SOURCE.LIVE_FILE
       : DATA_SOURCE.FIXTURE
     : DATA_SOURCE.FIXTURE;
 
-  return buildOperatorDashboard(rawReports, reportEntries, logLines, dataSource, warnings);
+  return buildOperatorDashboard(rawReports, allReportEntries, logLines, dataSource, warnings);
 }
 
 export const runtimeDataAdapter = {

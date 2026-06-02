@@ -237,7 +237,9 @@ export function OperatorDashboardPanel() {
       >
         <div className="operator-safety-flags">
           <StatusPill tone={sourceTone(operatorState.masterStatusSource)}>
-            {sourceModeLabel(operatorState.masterStatusSource)}
+            {operatorState.masterStatusSource === DATA_SOURCE.LIVE_FILE
+              ? 'Live Snapshot aktiv'
+              : sourceModeLabel(operatorState.masterStatusSource)}
           </StatusPill>
           {operatorState.masterStatusWarning ? (
             <StatusPill tone="warn">Demo-/Snapshot-Daten aktiv</StatusPill>
@@ -259,6 +261,8 @@ export function OperatorDashboardPanel() {
           <MiniMetric label="Demo-Bot-Kandidaten" value={formatNumber(operatorState.masterStatus.demo_bot_candidates)} tone={operatorState.masterStatus.demo_bot_candidates ? 'good' : 'warn'} />
           <MiniMetric label="no_auto_trading" value={String(operatorState.masterStatus.no_auto_trading)} tone={operatorState.masterStatus.no_auto_trading ? 'good' : 'danger'} />
           <MiniMetric label="human_review_required" value={String(operatorState.masterStatus.human_review_required)} tone={operatorState.masterStatus.human_review_required ? 'good' : 'danger'} />
+          <MiniMetric label="broker_orders_enabled" value={String(operatorState.masterStatus.broker_orders_enabled)} tone={operatorState.masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
+          <MiniMetric label="live_trading_enabled" value={String(operatorState.masterStatus.live_trading_enabled)} tone={operatorState.masterStatus.live_trading_enabled ? 'danger' : 'good'} />
         </div>
         <div className="operator-token-list">
           {operatorState.masterStatus.top_blockers.slice(0, 6).map((blocker) => (

@@ -12,6 +12,7 @@ Start the read-only Bridge from `HermesRuntime` in one terminal:
 
 ```bash
 cd HermesRuntime
+dotnet run --project ./cli/Hermes.Cli.csproj -- write-master-status
 dotnet run --project ./cli/Hermes.Cli.csproj -- readonly-bridge
 ```
 
@@ -71,6 +72,7 @@ Primary Bridge endpoints used by the prototype:
 - `GET /runtime/storage`
 - `GET /runtime/cleanup-plan`
 - `GET /runtime/nightly`
+- `GET /reports/master-status`
 - `GET /reports/research-insights`
 - `GET /reports/robust-strategies`
 - `GET /reports/overfit-report`

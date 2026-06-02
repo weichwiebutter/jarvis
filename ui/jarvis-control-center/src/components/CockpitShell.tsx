@@ -249,7 +249,9 @@ function MasterStatusOverview({ masterStatus, source }) {
         <span>Hermes Master Status</span>
         <div className="cockpit-master-badges">
           <StatusPill tone={statusTone}>{masterStatus.overall_status}</StatusPill>
-          <StatusPill tone={sourceTone(source)}>{sourceModeLabel(source)}</StatusPill>
+          <StatusPill tone={sourceTone(source)}>
+            {source === DATA_SOURCE.LIVE_FILE ? 'Live Snapshot aktiv' : sourceModeLabel(source)}
+          </StatusPill>
         </div>
       </div>
       {source !== DATA_SOURCE.LIVE_FILE ? (
@@ -271,6 +273,8 @@ function MasterStatusOverview({ masterStatus, source }) {
         <Metric label="Demo-Kandidaten" value={formatNumber(masterStatus.demo_bot_candidates)} tone={masterStatus.demo_bot_candidates ? 'good' : 'warn'} />
         <Metric label="no_auto_trading" value={String(masterStatus.no_auto_trading)} tone={masterStatus.no_auto_trading ? 'good' : 'danger'} />
         <Metric label="human_review" value={String(masterStatus.human_review_required)} tone={masterStatus.human_review_required ? 'good' : 'danger'} />
+        <Metric label="broker_orders" value={String(masterStatus.broker_orders_enabled)} tone={masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
+        <Metric label="live_trading" value={String(masterStatus.live_trading_enabled)} tone={masterStatus.live_trading_enabled ? 'danger' : 'good'} />
       </div>
     </section>
   );

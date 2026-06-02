@@ -48,4 +48,6 @@ export const runtimeMasterStatusMock = {
   },
   no_auto_trading: true,
   human_review_required: true,
+  broker_orders_enabled: false,
+  live_trading_enabled: false,
 };
