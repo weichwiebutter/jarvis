@@ -69,6 +69,7 @@ public sealed class MasterStatusService
         var botCandidateReport = LoadOrDefault(botCandidatePath);
         var knowledgeQuality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
         var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
+        var domainValidation = new DomainKnowledgeValidationService(_storagePaths).BuildStatus();
 
         var activeDomains = CombineStringLists(
             GetStringArray(domainStatus, "active_domains", "activeDomains"),
@@ -89,9 +90,16 @@ public sealed class MasterStatusService
             GetStringArray(domainStatus, "weak_domains", "weakDomains").Select(item => $"weak_domain:{item}"),
             knowledgeQuality.WeakKnowledge > 0 ? [$"weak_knowledge:{knowledgeQuality.WeakKnowledge}"] : [],
             knowledgeQuality.DeprecatedKnowledge > 0 ? [$"deprecated_knowledge:{knowledgeQuality.DeprecatedKnowledge}"] : [],
+            knowledgeQuality.EvidenceCoverage < 0.55 ? [$"evidence_gap:{knowledgeQuality.EvidenceCoverage:0.####}"] : [],
+            knowledgeQuality.ContradictionCount > 0 ? [$"contradictions:{knowledgeQuality.ContradictionCount}"] : [],
+            knowledgeQuality.AverageTrustScore < 0.55 ? [$"trust_gap:{knowledgeQuality.AverageTrustScore:0.####}"] : [],
             knowledgeValidation?.ValidationPlansOpen > 0 ? [$"validation_plans_open:{knowledgeValidation.ValidationPlansOpen}"] : [],
             knowledgeValidation?.KnowledgeItemsNeedingOos > 0 ? [$"knowledge_needs_oos:{knowledgeValidation.KnowledgeItemsNeedingOos}"] : [],
             knowledgeValidation?.InvalidValidationTasks > 0 ? [$"invalid_validation_tasks:{knowledgeValidation.InvalidValidationTasks}"] : [],
+            domainValidation.DocumentationValidationPending > 0 ? [$"documentation_validation_pending:{domainValidation.DocumentationValidationPending}"] : [],
+            domainValidation.SoftwareValidationPending > 0 ? [$"software_validation_pending:{domainValidation.SoftwareValidationPending}"] : [],
+            domainValidation.ProcessValidationPending > 0 ? [$"process_validation_pending:{domainValidation.ProcessValidationPending}"] : [],
+            domainValidation.ResearchValidationPending > 0 ? [$"research_validation_pending:{domainValidation.ResearchValidationPending}"] : [],
             goalState.BlockedGoals.Select(item => $"blocked_goal:{item}"))
             .Take(10)
             .ToList();
@@ -102,6 +110,7 @@ public sealed class MasterStatusService
             GetStringArray(researchInsights, "recommended_next_experiments", "recommendedNextExperiments"),
             GetStringArray(researchInsights, "next_validation_recommendations", "nextValidationRecommendations"),
             knowledgeValidation?.InvalidValidationTasks > 0 ? ["cleanup-invalid-validation-tasks"] : [],
+            domainValidation.DomainValidationHealth is "pending" or "needs_attention" ? ["validate-domain-knowledge"] : [],
             goalState.Goals
                 .OrderBy(goal => goal.Priority)
                 .SelectMany(goal => goal.NextRecommendedActions.Select(action => $"{goal.GoalId}:{action}")),
@@ -270,6 +279,11 @@ public sealed class MasterStatusService
                     ["average_quality_score"] = knowledgeQuality.AverageQualityScore,
                     ["average_trust_score"] = knowledgeQuality.AverageTrustScore,
                     ["knowledge_health"] = knowledgeQuality.KnowledgeHealth,
+                    ["evidence_coverage"] = knowledgeQuality.EvidenceCoverage,
+                    ["contradiction_count"] = knowledgeQuality.ContradictionCount,
+                    ["human_reviewed_items"] = knowledgeQuality.HumanReviewedItems,
+                    ["validation_coverage"] = knowledgeQuality.ValidationCoverage,
+                    ["trust_distribution"] = knowledgeQuality.TrustDistribution ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                     ["validation_plans_open"] = knowledgeValidation?.ValidationPlansOpen ?? 0,
                     ["validation_tasks_pending"] = knowledgeValidation?.ValidationTasksPending ?? 0,
                     ["trusted_candidate_count"] = knowledgeValidation?.TrustedCandidateCount ?? 0,
@@ -278,6 +292,11 @@ public sealed class MasterStatusService
                     ["invalid_validation_tasks"] = knowledgeValidation?.InvalidValidationTasks ?? 0,
                     ["validation_tasks_cleaned"] = knowledgeValidation?.ValidationTasksCleaned ?? 0,
                     ["validation_routing_health"] = knowledgeValidation?.ValidationRoutingHealth ?? "unknown",
+                    ["domain_validation_health"] = domainValidation.DomainValidationHealth,
+                    ["documentation_validation_pending"] = domainValidation.DocumentationValidationPending,
+                    ["software_validation_pending"] = domainValidation.SoftwareValidationPending,
+                    ["process_validation_pending"] = domainValidation.ProcessValidationPending,
+                    ["research_validation_pending"] = domainValidation.ResearchValidationPending,
                     ["queue_items"] = FirstPositive(GetInt(cognitiveStatus, "queue_item_count", "queueItemCount"), queuedTasks),
                     ["insights"] = GetInt(cognitiveStatus, "insight_count", "insightCount"),
                     ["active_domains"] = activeDomains
@@ -285,6 +304,7 @@ public sealed class MasterStatusService
                 Warnings: CombineStringLists(
                     GetStringArray(cognitiveStatus, "warnings"),
                     knowledgeQuality.Warnings,
+                    domainValidation.DomainValidationWarnings,
                     knowledgeQuality.KnowledgeHealth is "critical" or "needs_consolidation" ? [$"knowledge_health:{knowledgeQuality.KnowledgeHealth}"] : [])),
             ResearchQueueStatus: new MasterStatusSection(
                 Status: queuedTasks > 0 ? "open_items" : "empty_or_idle",
@@ -430,6 +450,11 @@ public sealed class MasterStatusService
             AverageTrustScore: knowledgeQuality.AverageTrustScore,
             KnowledgeHealth: knowledgeQuality.KnowledgeHealth,
             KnowledgeTrend: knowledgeQuality.KnowledgeTrend,
+            EvidenceCoverage: knowledgeQuality.EvidenceCoverage,
+            ContradictionCount: knowledgeQuality.ContradictionCount,
+            HumanReviewedItems: knowledgeQuality.HumanReviewedItems,
+            ValidationCoverage: knowledgeQuality.ValidationCoverage,
+            TrustDistribution: knowledgeQuality.TrustDistribution ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
             ValidationPlansOpen: knowledgeValidation?.ValidationPlansOpen ?? 0,
             ValidationTasksPending: knowledgeValidation?.ValidationTasksPending ?? 0,
             TrustedCandidateCount: knowledgeValidation?.TrustedCandidateCount ?? 0,
@@ -438,6 +463,12 @@ public sealed class MasterStatusService
             InvalidValidationTasks: knowledgeValidation?.InvalidValidationTasks ?? 0,
             ValidationTasksCleaned: knowledgeValidation?.ValidationTasksCleaned ?? 0,
             ValidationRoutingHealth: knowledgeValidation?.ValidationRoutingHealth ?? "unknown",
+            DomainValidationHealth: domainValidation.DomainValidationHealth,
+            DocumentationValidationPending: domainValidation.DocumentationValidationPending,
+            SoftwareValidationPending: domainValidation.SoftwareValidationPending,
+            ProcessValidationPending: domainValidation.ProcessValidationPending,
+            ResearchValidationPending: domainValidation.ResearchValidationPending,
+            DomainValidationWarnings: domainValidation.DomainValidationWarnings,
             ActiveGoals: goalState.Goals.Where(goal => goal.Active).Select(goal => goal.GoalId).ToList(),
             TopGoal: goalState.TopGoalId,
             BlockedGoals: goalState.BlockedGoals,

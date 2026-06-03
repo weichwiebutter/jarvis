@@ -16,7 +16,11 @@ public enum NeedCategory
     quality_risk,
     resource_risk,
     domain_gap,
-    maintenance
+    maintenance,
+    evidence_gap,
+    contradiction_risk,
+    trust_gap,
+    stale_knowledge
 }
 
 public sealed record DetectedNeed(

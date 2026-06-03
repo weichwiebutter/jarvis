@@ -201,6 +201,18 @@
       "every_minutes": 120
     },
     {
+      "job_id": "domain_knowledge_validation",
+      "job_type": "validate_domain_knowledge",
+      "enabled": true,
+      "schedule_type": "interval",
+      "command": "validate-domain-knowledge",
+      "every_minutes": 180,
+      "parameters": {
+        "domain": "documentation",
+        "max_items": "20"
+      }
+    },
+    {
       "job_id": "memory_consolidation_daily",
       "job_type": "consolidate_memory",
       "enabled": true,

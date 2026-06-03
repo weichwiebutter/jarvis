@@ -31,7 +31,8 @@ public sealed class HermesInternalScheduler
         "review_goals",
         "evaluate_knowledge_quality",
         "consolidate_memory",
-        "execute_validation_tasks"
+        "execute_validation_tasks",
+        "validate_domain_knowledge"
     };
 
     private readonly StoragePaths _storagePaths;
@@ -296,6 +297,7 @@ public sealed class HermesInternalScheduler
             "evaluate_knowledge_quality" => job.Command.Equals("knowledge-health", StringComparison.OrdinalIgnoreCase),
             "consolidate_memory" => job.Command.Equals("consolidate-memory", StringComparison.OrdinalIgnoreCase),
             "execute_validation_tasks" => job.Command.Equals("execute-validation-tasks", StringComparison.OrdinalIgnoreCase),
+            "validate_domain_knowledge" => job.Command.Equals("validate-domain-knowledge", StringComparison.OrdinalIgnoreCase),
             _ => false
         };
     }

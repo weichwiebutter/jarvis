@@ -101,7 +101,7 @@ public sealed class NeedDetectionEngine
                     "Zu viele schwache Knowledge Items",
                     $"Weak={knowledgeQuality.WeakKnowledge}, total={knowledgeQuality.TotalKnowledgeItems}, average_quality={knowledgeQuality.AverageQualityScore:0.####}.",
                     [new KnowledgeQualityEngine(_storagePaths).QualityPath],
-                    ["generate_validation_plans", "validate_knowledge_items", "execute_validation_tasks", "consolidate_memory", "evaluate_knowledge_quality"]));
+                    ["generate_validation_plans", "validate_knowledge_items", "validate_domain_knowledge", "documentation_consistency_check", "software_static_analysis", "process_review_stub", "research_citation_check", "execute_validation_tasks", "consolidate_memory", "evaluate_knowledge_quality"]));
             }
 
             if (knowledgeQuality.DeprecatedKnowledge > 0)
@@ -115,6 +115,59 @@ public sealed class NeedDetectionEngine
                     $"{knowledgeQuality.DeprecatedKnowledge} Knowledge Items sind veraltet oder retention-deprecated.",
                     [new KnowledgeQualityEngine(_storagePaths).QualityPath, new MemoryConsolidationService(_storagePaths).ConsolidationPath],
                     ["consolidate_memory", "evaluate_knowledge_quality"]));
+            }
+
+            if (knowledgeQuality.EvidenceCoverage < 0.55 && knowledgeQuality.TotalKnowledgeItems > 0)
+            {
+                needs.Add(Need(
+                    "evidence_gap",
+                    NeedCategory.evidence_gap,
+                    NeedSeverity.high,
+                    "research",
+                    "Evidence Coverage zu niedrig",
+                    $"Evidence coverage={knowledgeQuality.EvidenceCoverage:0.####}; Wissen braucht verknuepfte Quellen-, Validation- oder Human-Review-Evidenz.",
+                    [new KnowledgeQualityEngine(_storagePaths).QualityPath, knowledgeQuality.EvidenceGraphPath],
+                    ["collect_evidence", "generate_validation_plans", "validate_knowledge_items", "execute_validation_tasks"]));
+            }
+
+            if (knowledgeQuality.ContradictionCount > 0)
+            {
+                needs.Add(Need(
+                    "contradiction_risk",
+                    NeedCategory.contradiction_risk,
+                    knowledgeQuality.ContradictionCount > 10 ? NeedSeverity.high : NeedSeverity.medium,
+                    "research",
+                    "Knowledge Contradictions erkannt",
+                    $"{knowledgeQuality.ContradictionCount} Widersprueche blockieren hoeheres Trust-Scoring.",
+                    [knowledgeQuality.ContradictionsPath],
+                    ["resolve_contradictions", "request_human_review", "collect_evidence"]));
+            }
+
+            if (knowledgeQuality.TrustedKnowledge == 0 || knowledgeQuality.AverageTrustScore < 0.55)
+            {
+                needs.Add(Need(
+                    "trust_gap",
+                    NeedCategory.trust_gap,
+                    NeedSeverity.high,
+                    "research",
+                    "Knowledge Trust Gap",
+                    $"Trusted={knowledgeQuality.TrustedKnowledge}, average_trust={knowledgeQuality.AverageTrustScore:0.####}; Trust-Gaps werden vor neuen Hypothesen priorisiert.",
+                    [new KnowledgeQualityEngine(_storagePaths).QualityPath, new HumanReviewEvidenceStore(_storagePaths).ReviewPath],
+                    ["collect_evidence", "request_human_review", "execute_validation_tasks", "evaluate_knowledge_quality"]));
+            }
+
+            if (knowledgeQuality.Items.Count(item => item.AgeScore < 0.35 || item.RetentionState.Equals("deprecated", StringComparison.OrdinalIgnoreCase)) > 0)
+            {
+                var stale = knowledgeQuality.Items.Count(item => item.AgeScore < 0.35 || item.RetentionState.Equals("deprecated", StringComparison.OrdinalIgnoreCase));
+                needs.Add(Need(
+                    "stale_knowledge",
+                    NeedCategory.stale_knowledge,
+                    stale > 20 ? NeedSeverity.medium : NeedSeverity.low,
+                    "research",
+                    "Stale Knowledge pruefen",
+                    $"{stale} Knowledge Items sind alt, deprecated oder brauchen frische Evidenz.",
+                    [new KnowledgeQualityEngine(_storagePaths).QualityPath],
+                    ["revalidate_stale_knowledge", "generate_validation_plans", "execute_validation_tasks"]));
             }
         }
 
@@ -143,7 +196,7 @@ public sealed class NeedDetectionEngine
                     "Validation Tasks warten auf Ausfuehrung",
                     $"{validationStatus.ValidationTasksPending} Knowledge Validation Tasks sind gequeued und muessen kontrolliert ausgefuehrt werden.",
                     [validationStatus.ResearchQueuePath, validationStatus.PlansPath],
-                    ["execute_validation_tasks", "evaluate_knowledge_quality"]));
+                    ["execute_validation_tasks", "validate_domain_knowledge", "evaluate_knowledge_quality"]));
             }
 
             if (validationStatus.ValidationPlansOpen > 0 && validationStatus.ValidationTasksPending == 0)
@@ -434,7 +487,7 @@ public sealed class NeedDetectionEngine
                     "Knowledge Quality unter Zielwert",
                     $"Das aktive Ziel improve_knowledge_quality priorisiert Konsolidierung; average_quality={knowledgeQuality.AverageQualityScore:0.####}.",
                     [new KnowledgeQualityEngine(_storagePaths).QualityPath],
-                    ["generate_validation_plans", "validate_knowledge_items", "execute_validation_tasks", "consolidate_memory", "evaluate_knowledge_quality"]));
+                    ["generate_validation_plans", "validate_knowledge_items", "validate_domain_knowledge", "documentation_consistency_check", "software_static_analysis", "process_review_stub", "research_citation_check", "execute_validation_tasks", "consolidate_memory", "evaluate_knowledge_quality"]));
             }
 
             if (activeGoalIds.Contains("reduce_low_confidence_knowledge") && knowledgeQuality is not null && knowledgeQuality.WeakKnowledge > 0)
@@ -447,7 +500,7 @@ public sealed class NeedDetectionEngine
                     "Low-Confidence Knowledge reduzieren",
                     $"{knowledgeQuality.WeakKnowledge} Knowledge Items benoetigen bessere Evidenz, Validierung oder Deprecation-Markierung.",
                     [new KnowledgeQualityEngine(_storagePaths).QualityPath, new KnowledgeQualityEngine(_storagePaths).EvidencePath],
-                    ["generate_validation_plans", "validate_knowledge_items", "execute_validation_tasks", "consolidate_memory", "evaluate_knowledge_quality"]));
+                    ["generate_validation_plans", "validate_knowledge_items", "validate_domain_knowledge", "documentation_consistency_check", "software_static_analysis", "process_review_stub", "research_citation_check", "execute_validation_tasks", "consolidate_memory", "evaluate_knowledge_quality"]));
             }
         }
 
@@ -708,14 +761,14 @@ public sealed class GoalManager
         {
             "improve_trading_robustness" => NeedIds(needs, NeedCategory.quality_risk, NeedCategory.data_gap, NeedCategory.validation_gap),
             "reduce_overfit_risk" => NeedIds(needs, NeedCategory.quality_risk, NeedCategory.validation_gap),
-            "expand_knowledge_sources" => NeedIds(needs, NeedCategory.knowledge_gap, NeedCategory.domain_gap),
-            "improve_cognitive_memory_quality" => NeedIds(needs, NeedCategory.validation_gap, NeedCategory.knowledge_gap),
+            "expand_knowledge_sources" => NeedIds(needs, NeedCategory.knowledge_gap, NeedCategory.domain_gap, NeedCategory.evidence_gap),
+            "improve_cognitive_memory_quality" => NeedIds(needs, NeedCategory.validation_gap, NeedCategory.knowledge_gap, NeedCategory.evidence_gap, NeedCategory.trust_gap),
             "maintain_storage_health" => NeedIds(needs, NeedCategory.resource_risk, NeedCategory.maintenance),
             "prepare_multi_domain_learning" => NeedIds(needs, NeedCategory.domain_gap, NeedCategory.knowledge_gap),
-            "improve_autonomous_planning_quality" => NeedIds(needs, NeedCategory.validation_gap, NeedCategory.domain_gap, NeedCategory.quality_risk),
+            "improve_autonomous_planning_quality" => NeedIds(needs, NeedCategory.validation_gap, NeedCategory.domain_gap, NeedCategory.quality_risk, NeedCategory.trust_gap),
             "improve_research_efficiency" => NeedIds(needs, NeedCategory.maintenance, NeedCategory.validation_gap, NeedCategory.resource_risk),
-            "improve_knowledge_quality" => NeedIds(needs, NeedCategory.knowledge_gap, NeedCategory.quality_risk, NeedCategory.validation_gap),
-            "reduce_low_confidence_knowledge" => NeedIds(needs, NeedCategory.quality_risk, NeedCategory.knowledge_gap, NeedCategory.maintenance),
+            "improve_knowledge_quality" => NeedIds(needs, NeedCategory.knowledge_gap, NeedCategory.quality_risk, NeedCategory.validation_gap, NeedCategory.evidence_gap, NeedCategory.contradiction_risk, NeedCategory.trust_gap, NeedCategory.stale_knowledge),
+            "reduce_low_confidence_knowledge" => NeedIds(needs, NeedCategory.quality_risk, NeedCategory.knowledge_gap, NeedCategory.maintenance, NeedCategory.evidence_gap, NeedCategory.trust_gap, NeedCategory.stale_knowledge),
             _ => []
         };
 
@@ -966,7 +1019,16 @@ public sealed class AutonomousTaskPlanner
         "consolidate_memory",
         "generate_validation_plans",
         "validate_knowledge_items",
-        "execute_validation_tasks"
+        "execute_validation_tasks",
+        "validate_domain_knowledge",
+        "documentation_consistency_check",
+        "software_static_analysis",
+        "process_review_stub",
+        "research_citation_check",
+        "collect_evidence",
+        "resolve_contradictions",
+        "request_human_review",
+        "revalidate_stale_knowledge"
     };
 
     public PlanningDecision Plan(IReadOnlyList<DetectedNeed> needs, IReadOnlyList<HermesGoal> goals, int maxItems)
@@ -1053,6 +1115,10 @@ public sealed class AutonomousTaskPlanner
             NeedCategory.quality_risk => ["run_overfit_report", "run_realism_report"],
             NeedCategory.resource_risk or NeedCategory.maintenance => ["run_storage_hygiene"],
             NeedCategory.domain_gap => ["scan_knowledge_sources", "generate_domain_insights"],
+            NeedCategory.evidence_gap => ["collect_evidence", "generate_validation_plans"],
+            NeedCategory.contradiction_risk => ["resolve_contradictions", "request_human_review"],
+            NeedCategory.trust_gap => ["collect_evidence", "request_human_review", "execute_validation_tasks"],
+            NeedCategory.stale_knowledge => ["revalidate_stale_knowledge", "generate_validation_plans"],
             _ => ["generate_cognitive_insights"]
         };
     }
@@ -1065,7 +1131,14 @@ public sealed class AutonomousTaskPlanner
         var confidence = taskType is "download_missing_market_data" ? 0.55 : 0.72;
         var cost = taskType is "run_strategy_research" or "run_walkforward_validation" ? 0.55 : 0.25;
         var risk = taskType is "download_missing_market_data" ? 0.35 : 0.12;
-        var learning = need.Category is NeedCategory.quality_risk or NeedCategory.validation_gap ? 0.82 : 0.58;
+        var learning = need.Category is NeedCategory.quality_risk
+            or NeedCategory.validation_gap
+            or NeedCategory.evidence_gap
+            or NeedCategory.contradiction_risk
+            or NeedCategory.trust_gap
+            or NeedCategory.stale_knowledge
+            ? 0.86
+            : 0.58;
         var goalPriority = Math.Clamp(1 - ((goal.Priority - 1) / 100.0), 0.05, 1);
         const double redundancyPenalty = 0;
         var total = impact * 0.22
@@ -1145,6 +1218,15 @@ public sealed class AutonomousTaskPlanner
             "generate_validation_plans" => "review",
             "validate_knowledge_items" => "validation",
             "execute_validation_tasks" => "validation",
+            "validate_domain_knowledge" => "validation",
+            "documentation_consistency_check" => "validation",
+            "software_static_analysis" => "validation",
+            "process_review_stub" => "validation",
+            "research_citation_check" => "validation",
+            "collect_evidence" => "review",
+            "resolve_contradictions" => "review",
+            "request_human_review" => "review",
+            "revalidate_stale_knowledge" => "validation",
             "process_research_queue" => "validation",
             "run_walkforward_validation" => "validation",
             "run_strategy_research" => "simulation",
@@ -1178,6 +1260,15 @@ public sealed class AutonomousTaskPlanner
             "generate_validation_plans" => "knowledge_validation_plans_created",
             "validate_knowledge_items" => "knowledge_validation_tasks_queued",
             "execute_validation_tasks" => "knowledge_validation_evidence_written",
+            "validate_domain_knowledge" => "domain_specific_knowledge_validation_executed",
+            "documentation_consistency_check" => "documentation_consistency_evidence_written",
+            "software_static_analysis" => "software_static_metadata_validation_written",
+            "process_review_stub" => "process_review_stub_evidence_written",
+            "research_citation_check" => "research_citation_evidence_written",
+            "collect_evidence" => "evidence_graph_and_source_confirmation_updated",
+            "resolve_contradictions" => "contradiction_report_updated",
+            "request_human_review" => "human_review_queue_status_updated",
+            "revalidate_stale_knowledge" => "stale_knowledge_validation_plans_refreshed",
             _ => "structured_research_progress"
         };
 

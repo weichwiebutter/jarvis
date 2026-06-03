@@ -29,6 +29,7 @@ public sealed class MetaReviewEngine
         var goalProgress = LoadGoalProgress();
         var sources = new KnowledgeSourceRegistry(_storagePaths).LoadOrCreateSources();
         var catalog = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
+        var knowledgeQuality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
         var queue = new ResearchQueueService(_storagePaths).LoadOrCreateQueue();
         var needs = new NeedDetectionEngine(_storagePaths).LoadNeeds();
         var domains = BuildDomainHealth(sources, catalog, queue, outcomes, plannerFeedback, needs);
@@ -48,6 +49,7 @@ public sealed class MetaReviewEngine
             sources,
             catalog,
             queue,
+            knowledgeQuality,
             domains,
             decisions,
             needs);
@@ -329,6 +331,7 @@ public sealed class MetaReviewEngine
         IReadOnlyList<CognitiveSource> sources,
         IReadOnlyList<KnowledgeCatalogItem> catalog,
         ResearchQueue queue,
+        KnowledgeQualityReport knowledgeQuality,
         IReadOnlyList<DomainHealth> domains,
         IReadOnlyList<GovernanceDecision> decisions,
         IReadOnlyList<DetectedNeed> needs)
@@ -379,6 +382,51 @@ public sealed class MetaReviewEngine
             $"sources={sources.Count}, knowledge_items={catalog.Count}, outcomes={outcomes.Count}.",
             [new KnowledgeCatalog(_storagePaths).CatalogPath],
             catalog.Count == 0 ? ["scan_knowledge_sources"] : ["validate_existing_knowledge"]));
+        if (knowledgeQuality.EvidenceCoverage < 0.55 && knowledgeQuality.TotalKnowledgeItems > 0)
+        {
+            observations.Add(Observation(
+                "knowledge_evidence_gap",
+                "warning",
+                "Knowledge Evidence Coverage ist niedrig",
+                $"evidence_coverage={knowledgeQuality.EvidenceCoverage:0.####}; weak={knowledgeQuality.WeakKnowledge}; trusted={knowledgeQuality.TrustedKnowledge}.",
+                [knowledgeQuality.EvidenceGraphPath, knowledgeQuality.EvidencePath],
+                ["collect_evidence", "generate_validation_plans"]));
+        }
+
+        if (knowledgeQuality.ContradictionCount > 0)
+        {
+            observations.Add(Observation(
+                "knowledge_contradiction_risk",
+                "warning",
+                "Knowledge Contradictions blockieren Trust",
+                $"contradictions={knowledgeQuality.ContradictionCount}.",
+                [knowledgeQuality.ContradictionsPath],
+                ["resolve_contradictions", "request_human_review"]));
+        }
+
+        if (knowledgeQuality.AverageTrustScore < 0.55 || knowledgeQuality.TrustedKnowledge == 0)
+        {
+            observations.Add(Observation(
+                "knowledge_trust_gap",
+                "warning",
+                "Knowledge Trust Gap",
+                $"average_trust={knowledgeQuality.AverageTrustScore:0.####}; trusted={knowledgeQuality.TrustedKnowledge}.",
+                [new KnowledgeQualityEngine(_storagePaths).QualityPath],
+                ["collect_evidence", "execute_validation_tasks", "request_human_review"]));
+        }
+
+        if (knowledgeQuality.DeprecatedKnowledge > 0
+            || knowledgeQuality.Items.Count(item => item.AgeScore < 0.35) > 0)
+        {
+            observations.Add(Observation(
+                "stale_knowledge",
+                "info",
+                "Stale Knowledge braucht Revalidation",
+                $"deprecated={knowledgeQuality.DeprecatedKnowledge}; stale={knowledgeQuality.Items.Count(item => item.AgeScore < 0.35)}.",
+                [new KnowledgeQualityEngine(_storagePaths).QualityPath],
+                ["revalidate_stale_knowledge", "consolidate_memory"]));
+        }
+
         observations.AddRange(domains
             .Where(domain => domain.Score.Classification is "weak" or "needs_more_data")
             .Select(domain => Observation(

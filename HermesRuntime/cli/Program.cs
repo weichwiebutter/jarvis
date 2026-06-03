@@ -94,11 +94,17 @@ internal sealed class HermesCli
             "knowledge-catalog" => ShowKnowledgeCatalog(),
             "knowledge-item" => ShowKnowledgeItem(),
             "knowledge-health" => ShowKnowledgeHealth(),
+            "contradictions" => ShowContradictions(),
+            "contradiction-status" => ShowContradictionStatus(),
+            "review-knowledge" => ReviewKnowledge(),
+            "review-status" => ShowReviewStatus(),
             "consolidate-memory" => ConsolidateMemory(),
             "validation-plans" => ShowValidationPlans(),
             "generate-validation-plans" => GenerateValidationPlans(),
             "validate-knowledge" => ValidateKnowledge(),
             "execute-validation-tasks" => ExecuteValidationTasks(),
+            "validate-domain-knowledge" => ValidateDomainKnowledge(),
+            "domain-validation-status" => ShowDomainValidationStatus(),
             "validation-execution-log" => ShowValidationExecutionLog(),
             "validation-routing-status" => ShowValidationRoutingStatus(),
             "cleanup-invalid-validation-tasks" => CleanupInvalidValidationTasks(),
@@ -231,11 +237,17 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-catalog  allgemeinen Cognitive Knowledge Catalog anzeigen");
         Console.WriteLine("  hermes knowledge-item --id <ID> einzelnes Knowledge Item anzeigen");
         Console.WriteLine("  hermes knowledge-health   Knowledge Trust/Quality Scores erzeugen und anzeigen");
+        Console.WriteLine("  hermes contradictions     Knowledge Contradiction Report erzeugen/anzeigen");
+        Console.WriteLine("  hermes contradiction-status Widerspruchsstatus kompakt anzeigen");
+        Console.WriteLine("  hermes review-knowledge --id <ID> [--result approved|rejected|needs_review] Human Review Evidence speichern");
+        Console.WriteLine("  hermes review-status      Human Review Evidence Status anzeigen");
         Console.WriteLine("  hermes consolidate-memory Cognitive Memory markieren/konsolidieren, ohne Wissen zu loeschen");
         Console.WriteLine("  hermes generate-validation-plans --max-items 50 Plaene fuer weak Knowledge erzeugen");
         Console.WriteLine("  hermes validation-plans   Knowledge Validation Plans anzeigen");
         Console.WriteLine("  hermes validate-knowledge --max-items 20 Validation Tasks in Research Queue einreihen");
         Console.WriteLine("  hermes execute-validation-tasks --max-items 20 Validation Tasks kontrolliert ausfuehren");
+        Console.WriteLine("  hermes validate-domain-knowledge --domain documentation --max-items 20 Domain-spezifische Knowledge Validation ausfuehren");
+        Console.WriteLine("  hermes domain-validation-status Domain-spezifischen Validation Status anzeigen");
         Console.WriteLine("  hermes validation-execution-log Validation Execution Log anzeigen");
         Console.WriteLine("  hermes validation-routing-status Domain Validation Router anzeigen");
         Console.WriteLine("  hermes cleanup-invalid-validation-tasks unpassende Validation Tasks bereinigen");
@@ -376,6 +388,17 @@ internal sealed class HermesCli
         WriteField("average_trust_score", $"{snapshot.AverageTrustScore:0.####}");
         WriteField("knowledge_health", snapshot.KnowledgeHealth);
         WriteField("knowledge_trend", snapshot.KnowledgeTrend);
+        WriteField("evidence_coverage", $"{snapshot.EvidenceCoverage:0.####}");
+        WriteField("validation_coverage", $"{snapshot.ValidationCoverage:0.####}");
+        WriteField("contradiction_count", snapshot.ContradictionCount.ToString());
+        WriteField("human_reviewed_items", snapshot.HumanReviewedItems.ToString());
+        WriteMessages(
+            "trust_distribution",
+            snapshot.TrustDistribution
+                .OrderByDescending(item => item.Value)
+                .ThenBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => $"{item.Key}: {item.Value}")
+                .ToList());
         WriteField("validation_plans_open", snapshot.ValidationPlansOpen.ToString());
         WriteField("validation_tasks_pending", snapshot.ValidationTasksPending.ToString());
         WriteField("trusted_candidate_count", snapshot.TrustedCandidateCount.ToString());
@@ -384,6 +407,12 @@ internal sealed class HermesCli
         WriteField("invalid_validation_tasks", snapshot.InvalidValidationTasks.ToString());
         WriteField("validation_tasks_cleaned", snapshot.ValidationTasksCleaned.ToString());
         WriteField("validation_routing_health", snapshot.ValidationRoutingHealth);
+        WriteField("domain_validation_health", snapshot.DomainValidationHealth);
+        WriteField("documentation_validation_pending", snapshot.DocumentationValidationPending.ToString());
+        WriteField("software_validation_pending", snapshot.SoftwareValidationPending.ToString());
+        WriteField("process_validation_pending", snapshot.ProcessValidationPending.ToString());
+        WriteField("research_validation_pending", snapshot.ResearchValidationPending.ToString());
+        WriteMessages("domain_validation_warnings", snapshot.DomainValidationWarnings.Take(8).ToList());
         WriteField("top_goal", string.IsNullOrWhiteSpace(snapshot.TopGoal) ? "-" : snapshot.TopGoal);
         WriteMessages("active_goals", snapshot.ActiveGoals);
         WriteMessages("blocked_goals", snapshot.BlockedGoals);
@@ -1830,6 +1859,7 @@ internal sealed class HermesCli
             "evaluate_knowledge_quality" => ExecuteKnowledgeQualityJob(storagePaths),
             "consolidate_memory" => ExecuteConsolidateMemoryJob(storagePaths),
             "execute_validation_tasks" => ExecuteValidationTasksJob(storagePaths, job),
+            "validate_domain_knowledge" => ExecuteDomainKnowledgeValidationJob(storagePaths, job),
             "market_data_refresh" => new ScheduledJobExecutionResult(
                 Status: "skipped",
                 WorkPerformed: false,
@@ -1862,7 +1892,8 @@ internal sealed class HermesCli
         || jobType.Equals("update_goal_progress", StringComparison.OrdinalIgnoreCase)
         || jobType.Equals("review_goals", StringComparison.OrdinalIgnoreCase)
         || jobType.Equals("evaluate_knowledge_quality", StringComparison.OrdinalIgnoreCase)
-        || jobType.Equals("consolidate_memory", StringComparison.OrdinalIgnoreCase);
+        || jobType.Equals("consolidate_memory", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("validate_domain_knowledge", StringComparison.OrdinalIgnoreCase);
 
     private ScheduledJobExecutionResult ExecuteNightlyBeta3ScheduledJob(ScheduledJobDefinition job, SupervisorJobContext context)
     {
@@ -2162,6 +2193,28 @@ internal sealed class HermesCli
             Action: $"execute_validation_tasks completed={completed}; needs_more_data={needsMoreData}; failed={failed}",
             ReportPath: executor.ExecutionLogPath,
             Warnings: results.SelectMany(result => result.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
+    }
+
+    private static ScheduledJobExecutionResult ExecuteDomainKnowledgeValidationJob(StoragePaths storagePaths, ScheduledJobDefinition job)
+    {
+        var maxItems = ReadMaxItems(job, fallback: 20);
+        var domain = job.Parameters is not null
+            && job.Parameters.TryGetValue("domain", out var configuredDomain)
+            && !string.IsNullOrWhiteSpace(configuredDomain)
+                ? configuredDomain
+                : "documentation";
+        var executor = new KnowledgeValidationExecutor(storagePaths);
+        var results = executor.ExecuteDomain(domain, maxItems);
+        var status = new DomainKnowledgeValidationService(storagePaths).BuildStatus();
+        var completed = results.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase));
+        var needsMoreData = results.Count(result => result.Status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase));
+        var failed = results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase));
+        return new ScheduledJobExecutionResult(
+            Status: failed > 0 ? "failed" : "completed",
+            WorkPerformed: results.Count > 0,
+            Action: $"validate_domain_knowledge domain={domain}; completed={completed}; needs_more_data={needsMoreData}; failed={failed}; health={status.DomainValidationHealth}",
+            ReportPath: status.ExecutionLogPath,
+            Warnings: results.SelectMany(result => result.Warnings).Concat(status.DomainValidationWarnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
     }
 
     private static int ReadMaxItems(ScheduledJobDefinition job, int fallback) =>
@@ -3623,6 +3676,82 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowContradictions()
+    {
+        WriteHeader("Hermes Knowledge Contradictions");
+        var storagePaths = BuildStoragePaths();
+        var detector = new ContradictionDetector(storagePaths);
+        var report = detector.Run();
+
+        WriteContradictionReport(report, detector.ContradictionsPath, detailed: true);
+        TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowContradictionStatus()
+    {
+        WriteHeader("Hermes Contradiction Status");
+        var storagePaths = BuildStoragePaths();
+        var detector = new ContradictionDetector(storagePaths);
+        var report = detector.LoadOrRun();
+
+        WriteContradictionReport(report, detector.ContradictionsPath, detailed: false);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ReviewKnowledge()
+    {
+        WriteHeader("Hermes Human Knowledge Review");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteWarning("Bitte --id <KNOWLEDGE_ITEM_ID> angeben.");
+            WriteSafety();
+            return 1;
+        }
+
+        var result = ReadOption(_args, "--result") ?? "needs_review";
+        var notes = ReadOption(_args, "--notes") ?? "cli_review_recorded";
+        var reviewer = ReadOption(_args, "--reviewer") ?? "human";
+        var storagePaths = BuildStoragePaths();
+        var store = new HumanReviewEvidenceStore(storagePaths);
+        var report = store.AddReview(id, result, reviewer, notes);
+        var quality = new KnowledgeQualityEngine(storagePaths).Run();
+
+        WriteHumanReviewReport(report, store.ReviewPath, detailed: true);
+        var item = quality.Items.FirstOrDefault(item => item.KnowledgeId.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (item is not null)
+        {
+            WriteSubHeader("Updated Trust");
+            WriteField("Knowledge ID", item.KnowledgeId);
+            WriteField("Lifecycle", item.LifecycleStatus);
+            WriteField("Trust Score", $"{item.TrustScore:0.####}");
+            WriteField("Quality Score", $"{item.QualityScore:0.####}");
+            WriteMessages("Reasons", item.Reasons);
+        }
+
+        TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowReviewStatus()
+    {
+        WriteHeader("Hermes Human Review Status");
+        var store = new HumanReviewEvidenceStore(BuildStoragePaths());
+        var report = store.LoadOrCreateReport();
+
+        WriteHumanReviewReport(report, store.ReviewPath, detailed: true);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ConsolidateMemory()
     {
         WriteHeader("Hermes Memory Consolidation");
@@ -3707,6 +3836,37 @@ internal sealed class HermesCli
 
         WriteValidationExecutionSummary(results, executor.ExecutionLogPath);
         TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ValidateDomainKnowledge()
+    {
+        WriteHeader("Hermes Domain-specific Knowledge Validation");
+        var domain = ReadOption(_args, "--domain") ?? "documentation";
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 20, min: 1, max: 200);
+        var storagePaths = BuildStoragePaths();
+        var executor = new KnowledgeValidationExecutor(storagePaths);
+        var results = executor.ExecuteDomain(domain, maxItems);
+        var status = new DomainKnowledgeValidationService(storagePaths).BuildStatus();
+
+        WriteField("Domain", domain);
+        WriteValidationExecutionSummary(results, executor.ExecutionLogPath);
+        WriteDomainValidationStatus(status);
+        TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowDomainValidationStatus()
+    {
+        WriteHeader("Hermes Domain Validation Status");
+        var service = new DomainKnowledgeValidationService(BuildStoragePaths());
+        var status = service.BuildStatus();
+
+        WriteDomainValidationStatus(status);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -5382,6 +5542,22 @@ internal sealed class HermesCli
         WriteField("Average Trust Score", $"{report.AverageTrustScore:0.####}");
         WriteField("Knowledge Health", report.KnowledgeHealth);
         WriteField("Knowledge Trend", report.KnowledgeTrend);
+        WriteField("Evidence Coverage", $"{report.EvidenceCoverage:0.####}");
+        WriteField("Validation Coverage", $"{report.ValidationCoverage:0.####}");
+        WriteField("Contradictions", report.ContradictionCount.ToString());
+        WriteField("Human Reviewed Items", report.HumanReviewedItems.ToString());
+        WriteField("Evidence Graph", string.IsNullOrWhiteSpace(report.EvidenceGraphPath) ? "-" : DisplayPath(report.EvidenceGraphPath));
+        WriteField("Evidence Graph Nodes", report.EvidenceGraphNodes.ToString());
+        WriteField("Evidence Graph Links", report.EvidenceGraphLinks.ToString());
+        WriteField("Contradiction Report", string.IsNullOrWhiteSpace(report.ContradictionsPath) ? "-" : DisplayPath(report.ContradictionsPath));
+        WriteField("Human Review Evidence", string.IsNullOrWhiteSpace(report.HumanReviewPath) ? "-" : DisplayPath(report.HumanReviewPath));
+        WriteMessages(
+            "Trust Distribution",
+            (report.TrustDistribution ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase))
+                .OrderByDescending(item => item.Value)
+                .ThenBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => $"{item.Key}: {item.Value}")
+                .ToList());
         foreach (var item in report.Items.Take(20))
         {
             WriteSubHeader($"{item.Title} / {item.KnowledgeId}");
@@ -5396,6 +5572,56 @@ internal sealed class HermesCli
             WriteField("age_score", $"{item.AgeScore:0.####}");
             WriteMessages("Evidence", item.EvidenceRefs.Take(8).ToList());
             WriteMessages("Reasons", item.Reasons);
+        }
+
+        WriteMessages("Warnings", report.Warnings);
+    }
+
+    private void WriteContradictionReport(ContradictionReport report, string reportPath, bool detailed)
+    {
+        WriteField("Contradiction Report", DisplayPath(reportPath));
+        WriteField("Contradictions", report.ContradictionCount.ToString());
+        WriteMessages(
+            "By Severity",
+            report.ContradictionsBySeverity
+                .OrderByDescending(item => item.Value)
+                .ThenBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => $"{item.Key}: {item.Value}")
+                .ToList());
+        if (detailed)
+        {
+            foreach (var record in report.Contradictions.Take(20))
+            {
+                WriteSubHeader($"{record.Severity} / {record.ContradictionType} / {record.KnowledgeId}");
+                WriteField("Domain", record.Domain);
+                WriteField("Title", record.Title);
+                WriteField("Recommendation", record.Recommendation);
+                WriteMessages("Conflicting Values", record.ConflictingValues.Take(8).ToList());
+                WriteMessages("Evidence", record.EvidenceRefs.Take(8).ToList());
+            }
+        }
+
+        WriteMessages("Warnings", report.Warnings);
+    }
+
+    private void WriteHumanReviewReport(HumanReviewResult report, string reportPath, bool detailed)
+    {
+        WriteField("Human Review Evidence", DisplayPath(reportPath));
+        WriteField("Total Reviews", report.TotalReviews.ToString());
+        WriteField("Reviewed Knowledge Items", report.ReviewedKnowledgeItems.ToString());
+        WriteField("Approved", report.Approved.ToString());
+        WriteField("Rejected", report.Rejected.ToString());
+        WriteField("Needs Review", report.NeedsReview.ToString());
+        if (detailed)
+        {
+            foreach (var review in report.Reviews.Take(20))
+            {
+                WriteSubHeader($"{review.Result} / {review.KnowledgeId}");
+                WriteField("Domain", review.Domain);
+                WriteField("Reviewer", review.Reviewer);
+                WriteField("Reviewed UTC", review.ReviewedAtUtc.ToString("O"));
+                WriteField("Notes", review.Notes);
+            }
         }
 
         WriteMessages("Warnings", report.Warnings);
@@ -5496,6 +5722,18 @@ internal sealed class HermesCli
             WriteMessages("Evidence Refs", result.EvidenceRefs.Take(8).ToList());
             WriteMessages("Warnings", result.Warnings);
         }
+    }
+
+    private void WriteDomainValidationStatus(DomainValidationStatusReport status)
+    {
+        WriteField("Domain Validation Health", status.DomainValidationHealth);
+        WriteField("Documentation Pending", status.DocumentationValidationPending.ToString());
+        WriteField("Software Pending", status.SoftwareValidationPending.ToString());
+        WriteField("Process Pending", status.ProcessValidationPending.ToString());
+        WriteField("Research Pending", status.ResearchValidationPending.ToString());
+        WriteField("Plans", DisplayPath(status.PlansPath));
+        WriteField("Execution Log", DisplayPath(status.ExecutionLogPath));
+        WriteMessages("Domain Validation Warnings", status.DomainValidationWarnings);
     }
 
     private void WriteValidationRoutingStatus(DomainValidationRoutingStatus status)

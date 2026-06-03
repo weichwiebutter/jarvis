@@ -186,6 +186,73 @@ public sealed class KnowledgeValidationExecutor
         return results;
     }
 
+    public IReadOnlyList<KnowledgeValidationExecutionResult> ExecuteDomain(string domain, int maxItems)
+    {
+        maxItems = Math.Clamp(maxItems, 1, 200);
+        Directory.CreateDirectory(Root);
+        var normalizedDomain = string.IsNullOrWhiteSpace(domain) ? "documentation" : domain.Trim().ToLowerInvariant();
+        var strategy = new KnowledgeValidationStrategy(_storagePaths);
+        var report = strategy.LoadPlanReport() ?? strategy.GeneratePlans(Math.Max(maxItems, 50));
+        var router = new DomainValidationRouter(_storagePaths);
+        var catalog = new KnowledgeCatalog(_storagePaths);
+        var results = new List<KnowledgeValidationExecutionResult>();
+        var selected = report.Plans
+            .Where(plan => plan.Domain.Equals(normalizedDomain, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(plan => plan.Requirements
+                .Where(requirement => !requirement.Status.Equals("satisfied", StringComparison.OrdinalIgnoreCase))
+                .Where(requirement => router.IsAllowed(plan.Domain, requirement.RequirementType))
+                .Select(requirement => new
+                {
+                    Plan = plan,
+                    Requirement = requirement,
+                    Task = plan.RequiredTasks.FirstOrDefault(task =>
+                        task.RequirementType.Equals(requirement.RequirementType, StringComparison.OrdinalIgnoreCase))
+                }))
+            .Where(item => item.Task is not null)
+            .OrderByDescending(item => item.Requirement.Priority)
+            .ThenBy(item => item.Plan.KnowledgeItemId, StringComparer.Ordinal)
+            .Take(maxItems)
+            .ToList();
+
+        foreach (var item in selected)
+        {
+            var queueItem = new ResearchQueueItem(
+                QueueItemId: $"domain_validation_{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
+                Domain: item.Plan.Domain,
+                Queue: "validation",
+                Type: item.Requirement.RequiredTaskType,
+                Priority: ResearchPriority.High,
+                Status: "open",
+                SourceRefs: [item.Plan.KnowledgeItemId, item.Plan.PlanId, item.Requirement.RequirementId],
+                RequestedBy: "domain_knowledge_validation",
+                CreatedAtUtc: DateTimeOffset.UtcNow,
+                UpdatedAtUtc: null,
+                Notes:
+                [
+                    $"validation_plan:{item.Plan.PlanId}",
+                    $"validation_task:{item.Task!.TaskId}",
+                    $"knowledge_item:{item.Plan.KnowledgeItemId}",
+                    $"requirement:{item.Requirement.RequirementType}",
+                    $"domain_validation:{normalizedDomain}"
+                ],
+                NoTradingExecution: true,
+                HumanReviewRequired: true);
+            var result = ExecuteRequirement(queueItem, item.Plan, item.Requirement, item.Task!);
+            results.Add(result);
+            File.AppendAllText(ExecutionLogPath, JsonSerializer.Serialize(result, JsonDefaults.WriteOptions) + Environment.NewLine);
+        }
+
+        UpdatePlanReport(report, results);
+        new KnowledgeValidationEvidenceWriter(_storagePaths).MergeExecutionEvidence(results);
+        new KnowledgeQualityEngine(_storagePaths).Run();
+        new KnowledgeValidationStrategy(_storagePaths).BuildStatus();
+        new DomainKnowledgeValidationService(_storagePaths).BuildStatus();
+        new GoalProgressTracker(_storagePaths).Update();
+        new CognitiveCoreService(_storagePaths).BuildStatus();
+        new MasterStatusWriter(new MasterStatusService(_storagePaths, Directory.GetCurrentDirectory())).WriteSnapshot();
+        return results;
+    }
+
     public IReadOnlyList<KnowledgeValidationExecutionResult> LoadResults(int limit = 200)
     {
         if (!File.Exists(ExecutionLogPath))
@@ -272,8 +339,9 @@ public sealed class KnowledgeValidationExecutor
         KnowledgeValidationPlan plan,
         KnowledgeValidationRequirement requirement,
         KnowledgeValidationTask task,
-        DateTimeOffset started)
+        DateTimeOffset? startedAtUtc = null)
     {
+        var started = startedAtUtc ?? DateTimeOffset.UtcNow;
         var router = new DomainValidationRouter(_storagePaths);
         if (!router.IsAllowed(plan.Domain, requirement.RequirementType))
         {
@@ -305,20 +373,27 @@ public sealed class KnowledgeValidationExecutor
             "monte_carlo_test" => ExecuteMonteCarloTest(item, plan, requirement, task, started),
             "domain_review" => ExecuteDomainReview(item, plan, requirement, task, started),
             "stale_check" => ExecuteStaleCheck(item, plan, requirement, task, started),
-            "consistency_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "consistency_check"),
-            "reference_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "reference_check"),
-            "static_analysis" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "static_analysis"),
-            "test_presence_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "test_presence_check"),
-            "build_reference_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "build_reference_check"),
-            "process_owner_review_stub" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "process_owner_review_stub"),
-            "citation_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "citation_check"),
-            "reproducibility_check" => ExecuteStructuredNonTradingCheck(item, plan, requirement, task, started, "reproducibility_check"),
+            "consistency_check" => ExecuteDomainSpecificCheck(item, plan, requirement, task, started),
+            "reference_check" => ExecuteDomainSpecificCheck(item, plan, requirement, task, started),
+            "static_analysis" => ExecuteDomainSpecificCheck(item, plan, requirement, task, started),
+            "test_presence_check" => ExecuteDomainSpecificCheck(item, plan, requirement, task, started),
+            "build_reference_check" => ExecuteDomainSpecificCheck(item, plan, requirement, task, started),
+            "process_owner_review_stub" => ExecuteDomainSpecificCheck(item, plan, requirement, task, started),
+            "citation_check" => ExecuteDomainSpecificCheck(item, plan, requirement, task, started),
+            "reproducibility_check" => ExecuteDomainSpecificCheck(item, plan, requirement, task, started),
             _ => BuildResult(item, task.TaskId, plan.PlanId, requirement.RequirementId, plan.KnowledgeItemId, plan.Domain, requirement.RequirementType, "skipped", "unsupported_requirement_type", "Unsupported validation requirement type.", [], [], [$"unsupported_requirement_type:{requirement.RequirementType}"], started)
         };
     }
 
     private KnowledgeValidationExecutionResult ExecuteSourceVerification(ResearchQueueItem item, KnowledgeValidationPlan plan, KnowledgeValidationRequirement requirement, KnowledgeValidationTask task, DateTimeOffset started)
     {
+        var adapter = AdapterFor(plan.Domain);
+        if (!plan.Domain.Equals("trading", StringComparison.OrdinalIgnoreCase)
+            && adapter?.Supports(requirement.RequirementType) == true)
+        {
+            return ExecuteDomainSpecificCheck(item, plan, requirement, task, started);
+        }
+
         var catalogItem = new KnowledgeCatalog(_storagePaths).FindById(plan.KnowledgeItemId);
         var sources = new KnowledgeSourceRegistry(_storagePaths).LoadOrCreateSources();
         var matched = catalogItem?.SourceIds
@@ -393,20 +468,48 @@ public sealed class KnowledgeValidationExecutor
 
     private KnowledgeValidationExecutionResult ExecuteDomainReview(ResearchQueueItem item, KnowledgeValidationPlan plan, KnowledgeValidationRequirement requirement, KnowledgeValidationTask task, DateTimeOffset started)
     {
+        var adapter = AdapterFor(plan.Domain);
+        if (!plan.Domain.Equals("trading", StringComparison.OrdinalIgnoreCase)
+            && adapter?.Supports(requirement.RequirementType) == true)
+        {
+            return ExecuteDomainSpecificCheck(item, plan, requirement, task, started);
+        }
+
         var service = new DomainCognitiveService(_storagePaths);
         var status = service.BuildStatus();
         var insights = service.BuildInsights(status);
         return BuildResult(item, task.TaskId, plan.PlanId, requirement.RequirementId, plan.KnowledgeItemId, plan.Domain, requirement.RequirementType, "completed", "structured_domain_review_stub", $"Structured domain review evidence written; active_domains={status.ActiveDomains.Count}; insights={insights.Insights.Count}.", [$"domain_review:{plan.Domain}", $"domain_insights:{service.DomainInsightsPath}"], [service.DomainStatusPath, service.DomainInsightsPath], [], started);
     }
 
-    private KnowledgeValidationExecutionResult ExecuteStructuredNonTradingCheck(ResearchQueueItem item, KnowledgeValidationPlan plan, KnowledgeValidationRequirement requirement, KnowledgeValidationTask task, DateTimeOffset started, string checkType)
+    private KnowledgeValidationExecutionResult ExecuteDomainSpecificCheck(ResearchQueueItem item, KnowledgeValidationPlan plan, KnowledgeValidationRequirement requirement, KnowledgeValidationTask task, DateTimeOffset started)
     {
-        var service = new DomainCognitiveService(_storagePaths);
-        var status = service.BuildStatus();
-        var insights = service.BuildInsights(status);
-        var warning = checkType is "process_owner_review_stub"
-            ? "human_or_process_owner_review_still_required"
-            : "structured_stub_no_external_execution";
+        var catalogItem = new KnowledgeCatalog(_storagePaths).FindById(plan.KnowledgeItemId);
+        var adapter = AdapterFor(plan.Domain);
+        if (catalogItem is null || adapter is null || !adapter.Supports(requirement.RequirementType))
+        {
+            return BuildResult(
+                item,
+                task.TaskId,
+                plan.PlanId,
+                requirement.RequirementId,
+                plan.KnowledgeItemId,
+                plan.Domain,
+                requirement.RequirementType,
+                "needs_more_data",
+                "domain_validation_metadata_missing",
+                "Domain-specific validation requires a catalog item and supported adapter.",
+                [],
+                [new KnowledgeCatalog(_storagePaths).CatalogPath],
+                ["domain_validation_metadata_missing"],
+                started);
+        }
+
+        var result = adapter.Validate(catalogItem, plan, requirement);
+        var status = result.ValidationStatus.Equals("validated", StringComparison.OrdinalIgnoreCase)
+            ? "completed"
+            : result.Recommendation.Equals("reject", StringComparison.OrdinalIgnoreCase)
+                ? "failed"
+                : "needs_more_data";
         return BuildResult(
             item,
             task.TaskId,
@@ -415,17 +518,24 @@ public sealed class KnowledgeValidationExecutor
             plan.KnowledgeItemId,
             plan.Domain,
             requirement.RequirementType,
-            "completed",
-            $"{checkType}_structured_stub",
-            $"Structured {checkType} evidence written from local metadata only; no external execution was performed.",
-            [$"{checkType}:{plan.Domain}", $"domain_insights:{service.DomainInsightsPath}"],
-            [service.DomainStatusPath, service.DomainInsightsPath],
-            [warning],
+            status,
+            $"domain_validation_{requirement.RequirementType}_{result.ValidationStatus}",
+            result.Summary,
+            result.EvidenceRefs,
+            result.OutputPaths,
+            result.Warnings.Concat(result.MissingEvidence.Select(missing => $"missing_evidence:{missing}")).ToList(),
             started);
     }
 
     private KnowledgeValidationExecutionResult ExecuteStaleCheck(ResearchQueueItem item, KnowledgeValidationPlan plan, KnowledgeValidationRequirement requirement, KnowledgeValidationTask task, DateTimeOffset started)
     {
+        var adapter = AdapterFor(plan.Domain);
+        if (!plan.Domain.Equals("trading", StringComparison.OrdinalIgnoreCase)
+            && adapter?.Supports(requirement.RequirementType) == true)
+        {
+            return ExecuteDomainSpecificCheck(item, plan, requirement, task, started);
+        }
+
         var catalogItem = new KnowledgeCatalog(_storagePaths).FindById(plan.KnowledgeItemId);
         var outcome = catalogItem?.LastValidatedUtc is null
             ? "last_validated_missing"
@@ -436,6 +546,16 @@ public sealed class KnowledgeValidationExecutor
         var warnings = status == "completed" ? Array.Empty<string>() : [$"{outcome}_requires_validation_refresh"];
         return BuildResult(item, task.TaskId, plan.PlanId, requirement.RequirementId, plan.KnowledgeItemId, plan.Domain, requirement.RequirementType, status, outcome, $"Stale check completed; outcome={outcome}.", [$"stale_check:{outcome}"], [new KnowledgeCatalog(_storagePaths).CatalogPath], warnings, started);
     }
+
+    private IDomainKnowledgeValidationAdapter? AdapterFor(string domain) =>
+        domain.ToLowerInvariant() switch
+        {
+            "documentation" => new DocumentationValidationAdapter(_storagePaths),
+            "software" => new SoftwareValidationAdapter(_storagePaths),
+            "process" => new ProcessValidationAdapter(_storagePaths),
+            "research" => new ResearchValidationAdapter(_storagePaths),
+            _ => null
+        };
 
     private void UpdatePlanReport(KnowledgeValidationPlanReport report, IReadOnlyList<KnowledgeValidationExecutionResult> results)
     {

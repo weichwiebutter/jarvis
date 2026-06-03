@@ -63,7 +63,17 @@ public sealed record KnowledgeQualityReport(
     bool NoTradingExecution,
     bool NoBrokerAction,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
+    bool HumanReviewRequired,
+    double EvidenceCoverage = 0,
+    int ContradictionCount = 0,
+    int HumanReviewedItems = 0,
+    double ValidationCoverage = 0,
+    IReadOnlyDictionary<string, int>? TrustDistribution = null,
+    string EvidenceGraphPath = "",
+    string ContradictionsPath = "",
+    string HumanReviewPath = "",
+    int EvidenceGraphNodes = 0,
+    int EvidenceGraphLinks = 0);
 
 public sealed record KnowledgeEvidenceEntry(
     string KnowledgeId,
@@ -159,9 +169,20 @@ public sealed class KnowledgeQualityEngine
         var validationExecutions = new KnowledgeValidationExecutor(_storagePaths).LoadResults(5000);
         var goals = LoadGoalState()?.Goals ?? [];
         var insights = new HypothesisGenerator(_storagePaths).LoadInsights();
+        var graph = new EvidenceGraphBuilder(_storagePaths).Build();
+        var confirmations = new SourceConfirmationEngine(_storagePaths).Build();
+        var confirmationById = confirmations.Results.ToDictionary(item => item.KnowledgeId, StringComparer.OrdinalIgnoreCase);
+        var contradictions = new ContradictionDetector(_storagePaths).Run();
+        var contradictionsById = contradictions.Contradictions
+            .GroupBy(item => item.KnowledgeId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+        var reviews = new HumanReviewEvidenceStore(_storagePaths).LoadOrCreateReport();
+        var reviewsById = reviews.Reviews
+            .GroupBy(item => item.KnowledgeId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.ReviewedAtUtc).First(), StringComparer.OrdinalIgnoreCase);
         var warnings = new List<string>();
         var items = catalog
-            .Select(item => ScoreItem(item, sourcesById, queue, outcomes, validationExecutions, goals, insights, now))
+            .Select(item => ScoreItem(item, sourcesById, queue, outcomes, validationExecutions, goals, insights, confirmationById, contradictionsById, reviewsById, now))
             .OrderByDescending(item => item.QualityScore)
             .ThenBy(item => item.Domain, StringComparer.Ordinal)
             .ThenBy(item => item.KnowledgeId, StringComparer.Ordinal)
@@ -179,10 +200,33 @@ public sealed class KnowledgeQualityEngine
             || item.LifecycleStatus is "untested" or "experimental" or "rejected");
         var deprecated = items.Count(item => item.LifecycleStatus.Equals("deprecated", StringComparison.OrdinalIgnoreCase)
             || item.RetentionState.Equals("deprecated", StringComparison.OrdinalIgnoreCase));
+        var evidenceCoverage = Math.Round(items.Count == 0
+            ? 0
+            : items.Count(item => item.EvidenceRefs.Count(reference =>
+                reference.StartsWith("source:", StringComparison.OrdinalIgnoreCase)
+                || reference.StartsWith("validation:", StringComparison.OrdinalIgnoreCase)
+                || reference.StartsWith("human_review:", StringComparison.OrdinalIgnoreCase)) >= 2) / (double)items.Count, 4);
+        var validationCoverage = Math.Round(items.Count == 0
+            ? 0
+            : items.Count(item => item.ValidationScore >= 0.45
+                || item.EvidenceRefs.Any(reference => reference.StartsWith("validation:", StringComparison.OrdinalIgnoreCase))) / (double)items.Count, 4);
+        var trustDistribution = items
+            .Select(item => item.Reasons.FirstOrDefault(reason => reason.StartsWith("trust_v2:", StringComparison.OrdinalIgnoreCase))?["trust_v2:".Length..] ?? "unknown")
+            .GroupBy(item => item, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
         var health = KnowledgeHealth(items.Count, trusted, weak, deprecated, averageQuality, averageTrust);
+        if (contradictions.ContradictionCount > Math.Max(3, items.Count / 10))
+        {
+            health = "critical";
+        }
+        else if (items.Count > 0 && (evidenceCoverage < 0.35 || validationCoverage < 0.35))
+        {
+            health = health.Equals("critical", StringComparison.OrdinalIgnoreCase) ? health : "needs_consolidation";
+        }
+
         var trend = KnowledgeTrend(LoadReport(), averageQuality, averageTrust, weak, deprecated);
         var report = new KnowledgeQualityReport(
-            ReportVersion: "knowledge_quality_v1",
+            ReportVersion: "knowledge_quality_v2",
             UpdatedAtUtc: now,
             TotalKnowledgeItems: items.Count,
             TrustedKnowledge: trusted,
@@ -198,7 +242,17 @@ public sealed class KnowledgeQualityEngine
             NoTradingExecution: true,
             NoBrokerAction: true,
             NoAutoTrading: true,
-            HumanReviewRequired: true);
+            HumanReviewRequired: true,
+            EvidenceCoverage: evidenceCoverage,
+            ContradictionCount: contradictions.ContradictionCount,
+            HumanReviewedItems: reviews.ReviewedKnowledgeItems,
+            ValidationCoverage: validationCoverage,
+            TrustDistribution: trustDistribution,
+            EvidenceGraphPath: new EvidenceGraphBuilder(_storagePaths).GraphPath,
+            ContradictionsPath: new ContradictionDetector(_storagePaths).ContradictionsPath,
+            HumanReviewPath: new HumanReviewEvidenceStore(_storagePaths).ReviewPath,
+            EvidenceGraphNodes: graph.Nodes,
+            EvidenceGraphLinks: graph.Links);
 
         var evidence = new KnowledgeEvidenceReport(
             ReportVersion: "knowledge_evidence_v1",
@@ -256,6 +310,9 @@ public sealed class KnowledgeQualityEngine
         IReadOnlyList<KnowledgeValidationExecutionResult> validationExecutions,
         IReadOnlyList<HermesGoal> goals,
         IReadOnlyList<CognitiveInsight> insights,
+        IReadOnlyDictionary<string, ConfirmationResult> confirmationsById,
+        IReadOnlyDictionary<string, List<ContradictionRecord>> contradictionsById,
+        IReadOnlyDictionary<string, HumanReviewEvidence> reviewsById,
         DateTimeOffset now)
     {
         var sourceScores = item.SourceIds
@@ -309,19 +366,140 @@ public sealed class KnowledgeQualityEngine
             .Take(8)
             .ToList();
 
+        var domainEvidenceStrength = DomainEvidenceStrength(relatedValidationExecutions);
         var validation = ValidationScoreFor(item, relatedOutcomes, queueRefs, relatedValidationExecutions, validationExecutionRefs);
         var evidence = EvidenceScoreFor(item, sourceRefs, queueRefs, supportingOutcomes, supportingGoals, insightRefs);
+        var confirmation = confirmationsById.GetValueOrDefault(item.Id);
+        if (confirmation is not null)
+        {
+            var confirmationBoost = confirmation.ConfirmationLevel switch
+            {
+                "trusted" => 0.16,
+                "validated" => 0.12,
+                "cross_source" => 0.09,
+                "multi_source" => 0.05,
+                _ => 0.01
+            };
+            var boostedEvidence = Math.Round(Math.Clamp(evidence.Value + confirmationBoost, 0, 1), 4);
+            evidence = evidence with
+            {
+                Value = boostedEvidence,
+                Classification = boostedEvidence >= 0.75 ? "strong" : boostedEvidence >= 0.48 ? "moderate" : "weak",
+                EvidenceRefs = evidence.EvidenceRefs
+                    .Concat(confirmation.EvidenceRefs)
+                    .Concat([$"confirmation:{confirmation.ConfirmationLevel}:{confirmation.ConfirmationScore:0.####}"])
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList()
+            };
+        }
+
+        if (domainEvidenceStrength > 0)
+        {
+            var boostedEvidence = Math.Round(Math.Clamp(evidence.Value + Math.Min(0.14, domainEvidenceStrength * 0.14), 0, 1), 4);
+            evidence = evidence with
+            {
+                Value = boostedEvidence,
+                Classification = boostedEvidence >= 0.75 ? "strong" : boostedEvidence >= 0.48 ? "moderate" : "weak",
+                EvidenceRefs = evidence.EvidenceRefs
+                    .Concat([$"domain_evidence_strength:{domainEvidenceStrength:0.####}"])
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList()
+            };
+        }
+
         var reuse = ReuseScoreFor(item, queueRefs, supportingOutcomes, insightRefs);
         var age = LifetimeScoreFor(item, now);
-        var trust = Math.Round(Math.Clamp(sourceTrust * 0.45 + evidence.Value * 0.25 + validation.Value * 0.25 + age.Value * 0.05, 0, 1), 4);
+        var missingSecondSource = item.SourceIds.Count < 2;
+        var staleWarning = relatedValidationExecutions.Any(result =>
+            result.EvidenceRefs.Any(reference => reference.Contains("fresh_validation_timestamp_missing", StringComparison.OrdinalIgnoreCase))
+            || result.Warnings.Any(warning => warning.Contains("fresh_validation_timestamp_missing", StringComparison.OrdinalIgnoreCase)));
+        var riskFlags = item.SourceIds
+            .Select(sourceId => sourcesById.TryGetValue(sourceId, out var source) ? source : null)
+            .Where(source => source is not null)
+            .Cast<CognitiveSource>()
+            .Sum(source => source.RiskFlags.Count + source.TrustProfile.RiskFlags.Count)
+            + item.Tags.Count(tag => tag.Contains("risk", StringComparison.OrdinalIgnoreCase));
+        var onlyDomainReviewEvidence = relatedValidationExecutions.Count > 0
+            && relatedValidationExecutions.All(result => result.RequirementType.Equals("domain_review", StringComparison.OrdinalIgnoreCase)
+                || result.OutcomeStatus.Contains("domain_review", StringComparison.OrdinalIgnoreCase));
+        var effectiveAge = staleWarning ? Math.Min(age.Value, 0.34) : age.Value;
+        var itemContradictions = contradictionsById.GetValueOrDefault(item.Id) ?? [];
+        var latestReview = reviewsById.GetValueOrDefault(item.Id);
+        var contradictionPenalty = Math.Min(0.22, itemContradictions.Count * 0.08);
+        var humanReviewBonus = latestReview?.Result.Equals("approved", StringComparison.OrdinalIgnoreCase) == true
+            ? 0.09
+            : latestReview?.Result.Equals("rejected", StringComparison.OrdinalIgnoreCase) == true
+                ? -0.18
+                : latestReview?.Result.Equals("needs_review", StringComparison.OrdinalIgnoreCase) == true
+                    ? -0.02
+                    : 0;
+        var validationHistoryBoost = Math.Min(0.08, relatedValidationExecutions.Count(result =>
+            result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)
+            || result.Status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase)) * 0.012);
+        var stalenessPenalty = staleWarning || age.Classification.Equals("aging", StringComparison.OrdinalIgnoreCase) ? 0.06 : 0;
+        var sourceDiversityBoost = confirmation is null ? 0 : Math.Min(0.08, confirmation.SourceTypeCount * 0.025 + confirmation.SourceTimeBucketCount * 0.015);
+        var trust = Math.Round(Math.Clamp(
+            sourceTrust * 0.38
+            + evidence.Value * 0.25
+            + validation.Value * 0.22
+            + effectiveAge * 0.05
+            + sourceDiversityBoost
+            + validationHistoryBoost
+            + humanReviewBonus
+            - contradictionPenalty
+            - stalenessPenalty,
+            0,
+            1), 4);
+        if (missingSecondSource)
+        {
+            trust = Math.Min(trust, 0.72);
+        }
+
+        if (itemContradictions.Count > 0)
+        {
+            trust = Math.Min(trust, 0.66);
+        }
+
+        if (latestReview?.Result.Equals("rejected", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            trust = Math.Min(trust, 0.32);
+        }
+
+        if (onlyDomainReviewEvidence)
+        {
+            trust = Math.Min(trust, 0.74);
+        }
+
         var quality = Math.Round(Math.Clamp(
             trust * 0.25
             + evidence.Value * 0.22
             + reuse.Value * 0.12
             + validation.Value * 0.25
-            + age.Value * 0.16,
+            + effectiveAge * 0.16
+            - Math.Min(0.1, riskFlags * 0.025),
             0,
             1), 4);
+        quality = Math.Round(Math.Clamp(quality + humanReviewBonus * 0.4 - contradictionPenalty * 0.45 - stalenessPenalty * 0.35, 0, 1), 4);
+        if (missingSecondSource)
+        {
+            quality = Math.Min(quality, 0.76);
+        }
+
+        if (itemContradictions.Count > 0)
+        {
+            quality = Math.Min(quality, 0.68);
+        }
+
+        if (latestReview?.Result.Equals("rejected", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            quality = Math.Min(quality, 0.32);
+        }
+
+        if (onlyDomainReviewEvidence)
+        {
+            quality = Math.Min(quality, 0.78);
+        }
+
         var lifecycle = LifecycleStatus(item, quality, trust, validation.Value, age.Value);
         var retention = RetentionState(lifecycle, quality, age.Value);
         var reasons = new List<string>
@@ -330,8 +508,49 @@ public sealed class KnowledgeQualityEngine
             $"validation:{validation.Status}:{validation.Value:0.####}",
             $"evidence:{evidence.Classification}:{evidence.Value:0.####}",
             $"reuse:{reuse.Classification}:{reuse.Value:0.####}",
-            $"age:{age.Classification}:{age.Value:0.####}"
+            $"age:{age.Classification}:{effectiveAge:0.####}",
+            $"trust_v2:{TrustLevelFor(trust, validation.Value, itemContradictions.Count, latestReview)}",
+            $"evidence_count:{evidence.EvidenceRefs.Count}",
+            $"source_diversity:{confirmation?.SourceTypeCount ?? 0}",
+            $"validation_history:{relatedValidationExecutions.Count}",
+            $"contradiction_penalty:{contradictionPenalty:0.####}",
+            $"human_review_bonus:{humanReviewBonus:0.####}",
+            $"staleness_penalty:{stalenessPenalty:0.####}"
         };
+        if (confirmation is not null)
+        {
+            reasons.Add($"confirmation:{confirmation.ConfirmationLevel}:{confirmation.ConfirmationScore:0.####}");
+        }
+
+        if (latestReview is not null)
+        {
+            reasons.Add($"human_review:{latestReview.Result}:{latestReview.ReviewedAtUtc:O}");
+        }
+
+        if (itemContradictions.Count > 0)
+        {
+            reasons.Add($"contradictions:{itemContradictions.Count}");
+        }
+
+        if (domainEvidenceStrength > 0)
+        {
+            reasons.Add($"domain_evidence_strength:{domainEvidenceStrength:0.####}");
+        }
+
+        if (missingSecondSource)
+        {
+            reasons.Add("trust_limited:second_independent_source_missing");
+        }
+
+        if (staleWarning)
+        {
+            reasons.Add("age_limited:stale_check_failed");
+        }
+
+        if (riskFlags > 0)
+        {
+            reasons.Add($"quality_reduced:risk_flags:{riskFlags}");
+        }
 
         return new KnowledgeQualityItem(
             KnowledgeId: item.Id,
@@ -343,7 +562,7 @@ public sealed class KnowledgeQualityEngine
             EvidenceScore: evidence.Value,
             ReuseScore: reuse.Value,
             ValidationScore: validation.Value,
-            AgeScore: age.Value,
+            AgeScore: effectiveAge,
             QualityScore: quality,
             EvidenceRefs: sourceRefs
                 .Concat(validation.ValidationRefs)
@@ -352,6 +571,9 @@ public sealed class KnowledgeQualityEngine
                 .Concat(supportingOutcomes)
                 .Concat(supportingGoals)
                 .Concat(insightRefs)
+                .Concat(confirmation?.EvidenceRefs ?? [])
+                .Concat(latestReview is null ? [] : [$"human_review:{latestReview.ReviewId}:{latestReview.Result}"])
+                .Concat(itemContradictions.Select(contradiction => $"contradiction:{contradiction.ContradictionId}:{contradiction.Severity}"))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Take(40)
                 .ToList(),
@@ -359,6 +581,53 @@ public sealed class KnowledgeQualityEngine
             SupportingOutcomes: supportingOutcomes,
             Reasons: reasons,
             LastValidatedUtc: item.LastValidatedUtc);
+    }
+
+    private static double DomainEvidenceStrength(IReadOnlyList<KnowledgeValidationExecutionResult> validationExecutions)
+    {
+        var strengths = validationExecutions
+            .SelectMany(result => result.EvidenceRefs)
+            .Where(reference => reference.StartsWith("domain_evidence_strength:", StringComparison.OrdinalIgnoreCase))
+            .Select(reference => reference["domain_evidence_strength:".Length..])
+            .Select(value => double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : 0)
+            .Where(value => value > 0)
+            .ToList();
+        return strengths.Count == 0 ? 0 : Math.Round(Math.Clamp(strengths.Average(), 0, 1), 4);
+    }
+
+    private static string TrustLevelFor(
+        double trust,
+        double validation,
+        int contradictionCount,
+        HumanReviewEvidence? review)
+    {
+        if (review?.Result.Equals("rejected", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return "weak";
+        }
+
+        if (contradictionCount > 0)
+        {
+            return trust >= 0.58 ? "promising" : "weak";
+        }
+
+        if (trust >= 0.82 && validation >= 0.68
+            && review?.Result.Equals("approved", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return "trusted";
+        }
+
+        if (trust >= 0.68 && validation >= 0.52)
+        {
+            return "validated";
+        }
+
+        if (trust >= 0.54)
+        {
+            return "promising";
+        }
+
+        return trust <= 0.24 ? "unknown" : "weak";
     }
 
     private static KnowledgeEvidenceScore EvidenceScoreFor(

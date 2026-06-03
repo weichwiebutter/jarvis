@@ -165,6 +165,18 @@ public sealed record ScheduleConfig(
                 Command: "knowledge-health",
                 EveryMinutes: 120),
             new(
+                JobId: "domain_knowledge_validation",
+                JobType: "validate_domain_knowledge",
+                Enabled: true,
+                ScheduleType: "interval",
+                Command: "validate-domain-knowledge",
+                EveryMinutes: 180,
+                Parameters: new Dictionary<string, string>
+                {
+                    ["domain"] = "documentation",
+                    ["max_items"] = "20"
+                }),
+            new(
                 JobId: "memory_consolidation_daily",
                 JobType: "consolidate_memory",
                 Enabled: true,

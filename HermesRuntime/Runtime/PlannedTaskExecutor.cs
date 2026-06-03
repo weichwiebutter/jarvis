@@ -294,6 +294,15 @@ public sealed class PlannedTaskExecutor
             "generate_validation_plans" => ExecuteGenerateValidationPlans(task),
             "validate_knowledge_items" => ExecuteValidateKnowledgeItems(task),
             "execute_validation_tasks" => ExecuteValidationTasks(task),
+            "validate_domain_knowledge" => ExecuteDomainKnowledgeValidation(task, task.Domain),
+            "documentation_consistency_check" => ExecuteDomainKnowledgeValidation(task, "documentation"),
+            "software_static_analysis" => ExecuteDomainKnowledgeValidation(task, "software"),
+            "process_review_stub" => ExecuteDomainKnowledgeValidation(task, "process"),
+            "research_citation_check" => ExecuteDomainKnowledgeValidation(task, "research"),
+            "collect_evidence" => ExecuteCollectEvidence(task),
+            "resolve_contradictions" => ExecuteResolveContradictions(task),
+            "request_human_review" => ExecuteRequestHumanReview(task),
+            "revalidate_stale_knowledge" => ExecuteRevalidateStaleKnowledge(task),
             _ => BuildResult(
                 task,
                 "skipped",
@@ -562,6 +571,93 @@ public sealed class PlannedTaskExecutor
                 new KnowledgeQualityEngine(_storagePaths).EvidencePath
             ],
             results.SelectMany(result => result.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
+    }
+
+    private PlannedTaskExecutionResult ExecuteDomainKnowledgeValidation(PlannedTask task, string domain)
+    {
+        var normalizedDomain = string.IsNullOrWhiteSpace(domain) || domain.Equals("trading", StringComparison.OrdinalIgnoreCase)
+            ? "documentation"
+            : domain;
+        var executor = new KnowledgeValidationExecutor(_storagePaths);
+        var results = executor.ExecuteDomain(normalizedDomain, 20);
+        var completed = results.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase));
+        var needsMoreData = results.Count(result => result.Status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase));
+        var failed = results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase));
+        var domainStatus = new DomainKnowledgeValidationService(_storagePaths).BuildStatus();
+        return BuildResult(
+            task,
+            failed > 0 ? "failed" : "completed",
+            $"Domain knowledge validation executed for '{normalizedDomain}'; completed={completed}; needs_more_data={needsMoreData}; failed={failed}.",
+            [
+                executor.ExecutionLogPath,
+                domainStatus.PlansPath,
+                domainStatus.ExecutionLogPath,
+                new KnowledgeQualityEngine(_storagePaths).QualityPath,
+                new KnowledgeQualityEngine(_storagePaths).EvidencePath
+            ],
+            results.SelectMany(result => result.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
+    }
+
+    private PlannedTaskExecutionResult ExecuteCollectEvidence(PlannedTask task)
+    {
+        var graph = new EvidenceGraphBuilder(_storagePaths).Build();
+        var confirmations = new SourceConfirmationEngine(_storagePaths).Build();
+        var quality = new KnowledgeQualityEngine(_storagePaths).Run();
+        return BuildResult(
+            task,
+            "completed",
+            $"Evidence graph updated; nodes={graph.Nodes}; links={graph.Links}; confirmation_items={confirmations.ItemsAnalyzed}; evidence_coverage={quality.EvidenceCoverage:0.####}.",
+            [
+                new EvidenceGraphBuilder(_storagePaths).GraphPath,
+                new SourceConfirmationEngine(_storagePaths).ReportPath,
+                new KnowledgeQualityEngine(_storagePaths).QualityPath,
+                new KnowledgeQualityEngine(_storagePaths).EvidencePath
+            ],
+            graph.Warnings.Concat(confirmations.Warnings).Concat(quality.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
+    }
+
+    private PlannedTaskExecutionResult ExecuteResolveContradictions(PlannedTask task)
+    {
+        var report = new ContradictionDetector(_storagePaths).Run();
+        new KnowledgeQualityEngine(_storagePaths).Run();
+        return BuildResult(
+            task,
+            "completed",
+            $"Contradiction report updated; contradictions={report.ContradictionCount}.",
+            [new ContradictionDetector(_storagePaths).ContradictionsPath, new KnowledgeQualityEngine(_storagePaths).QualityPath],
+            report.Warnings);
+    }
+
+    private PlannedTaskExecutionResult ExecuteRequestHumanReview(PlannedTask task)
+    {
+        var reviews = new HumanReviewEvidenceStore(_storagePaths).LoadOrCreateReport();
+        var contradictions = new ContradictionDetector(_storagePaths).LoadOrRun();
+        var quality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
+        var reviewCandidates = quality.Items
+            .Where(item => item.QualityScore < 0.58
+                || contradictions.Contradictions.Any(contradiction => contradiction.KnowledgeId.Equals(item.KnowledgeId, StringComparison.OrdinalIgnoreCase)))
+            .Take(20)
+            .Select(item => $"review_candidate:{item.Domain}:{item.KnowledgeId}:trust={item.TrustScore:0.####}")
+            .ToList();
+        return BuildResult(
+            task,
+            "completed",
+            $"Human review status updated; reviewed_items={reviews.ReviewedKnowledgeItems}; suggested_review_candidates={reviewCandidates.Count}.",
+            [new HumanReviewEvidenceStore(_storagePaths).ReviewPath, new ContradictionDetector(_storagePaths).ContradictionsPath],
+            reviewCandidates.Count == 0 ? ["no_human_review_candidates_detected"] : reviewCandidates);
+    }
+
+    private PlannedTaskExecutionResult ExecuteRevalidateStaleKnowledge(PlannedTask task)
+    {
+        var strategy = new KnowledgeValidationStrategy(_storagePaths);
+        var report = strategy.GeneratePlans(50);
+        var status = strategy.ValidateKnowledge(20);
+        return BuildResult(
+            task,
+            "completed",
+            $"Stale knowledge revalidation refreshed; open_plans={report.OpenPlans}; pending_validation_tasks={status.ValidationTasksPending}.",
+            [strategy.PlansPath, strategy.RequirementsPath, strategy.StatusPath],
+            report.Warnings.Concat(status.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
     }
 
     private void RefreshCognitivePlanningOutputs()
