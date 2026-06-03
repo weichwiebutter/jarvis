@@ -156,6 +156,32 @@ public sealed class NeedDetectionEngine
                     ["collect_evidence", "request_human_review", "execute_validation_tasks", "evaluate_knowledge_quality"]));
             }
 
+            if (knowledgeQuality.NeedsMoreEvidenceReviews > 0)
+            {
+                needs.Add(Need(
+                    "human_review_needs_more_evidence",
+                    NeedCategory.evidence_gap,
+                    NeedSeverity.high,
+                    "research",
+                    "Human Review fordert mehr Evidenz",
+                    $"{knowledgeQuality.NeedsMoreEvidenceReviews} Review Items wurden als needs_more_evidence markiert.",
+                    [new HumanReviewWorkflow(_storagePaths).QueuePath, new HumanReviewWorkflow(_storagePaths).DecisionsPath],
+                    ["collect_evidence", "generate_validation_plans", "execute_validation_tasks"]));
+            }
+
+            if (knowledgeQuality.PendingReviews == 0 && knowledgeQuality.TrustedKnowledge == 0 && knowledgeQuality.TotalKnowledgeItems > 0)
+            {
+                needs.Add(Need(
+                    "human_review_queue_missing",
+                    NeedCategory.trust_gap,
+                    NeedSeverity.medium,
+                    "research",
+                    "Human Review Queue fehlt",
+                    "Trust kann ohne menschliche Review-Evidence nicht weiter steigen, aber es sind keine Pending Reviews vorhanden.",
+                    [new HumanReviewWorkflow(_storagePaths).QueuePath],
+                    ["request_human_review"]));
+            }
+
             if (knowledgeQuality.Items.Count(item => item.AgeScore < 0.35 || item.RetentionState.Equals("deprecated", StringComparison.OrdinalIgnoreCase)) > 0)
             {
                 var stale = knowledgeQuality.Items.Count(item => item.AgeScore < 0.35 || item.RetentionState.Equals("deprecated", StringComparison.OrdinalIgnoreCase));

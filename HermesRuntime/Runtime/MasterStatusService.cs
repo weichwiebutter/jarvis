@@ -70,6 +70,7 @@ public sealed class MasterStatusService
         var knowledgeQuality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
         var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
         var domainValidation = new DomainKnowledgeValidationService(_storagePaths).BuildStatus();
+        var humanReview = new HumanReviewWorkflow(_storagePaths).BuildSummary();
 
         var activeDomains = CombineStringLists(
             GetStringArray(domainStatus, "active_domains", "activeDomains"),
@@ -93,6 +94,8 @@ public sealed class MasterStatusService
             knowledgeQuality.EvidenceCoverage < 0.55 ? [$"evidence_gap:{knowledgeQuality.EvidenceCoverage:0.####}"] : [],
             knowledgeQuality.ContradictionCount > 0 ? [$"contradictions:{knowledgeQuality.ContradictionCount}"] : [],
             knowledgeQuality.AverageTrustScore < 0.55 ? [$"trust_gap:{knowledgeQuality.AverageTrustScore:0.####}"] : [],
+            humanReview.PendingReviews > 0 ? [$"pending_human_reviews:{humanReview.PendingReviews}"] : [],
+            humanReview.NeedsMoreEvidenceReviews > 0 ? [$"review_needs_more_evidence:{humanReview.NeedsMoreEvidenceReviews}"] : [],
             knowledgeValidation?.ValidationPlansOpen > 0 ? [$"validation_plans_open:{knowledgeValidation.ValidationPlansOpen}"] : [],
             knowledgeValidation?.KnowledgeItemsNeedingOos > 0 ? [$"knowledge_needs_oos:{knowledgeValidation.KnowledgeItemsNeedingOos}"] : [],
             knowledgeValidation?.InvalidValidationTasks > 0 ? [$"invalid_validation_tasks:{knowledgeValidation.InvalidValidationTasks}"] : [],
@@ -284,6 +287,13 @@ public sealed class MasterStatusService
                     ["human_reviewed_items"] = knowledgeQuality.HumanReviewedItems,
                     ["validation_coverage"] = knowledgeQuality.ValidationCoverage,
                     ["trust_distribution"] = knowledgeQuality.TrustDistribution ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
+                    ["pending_reviews"] = humanReview.PendingReviews,
+                    ["approved_reviews"] = humanReview.ApprovedReviews,
+                    ["rejected_reviews"] = humanReview.RejectedReviews,
+                    ["needs_more_evidence"] = humanReview.NeedsMoreEvidenceReviews,
+                    ["deferred_reviews"] = humanReview.DeferredReviews,
+                    ["review_coverage"] = humanReview.ReviewCoverage,
+                    ["top_review_priorities"] = humanReview.TopReviewPriorities,
                     ["validation_plans_open"] = knowledgeValidation?.ValidationPlansOpen ?? 0,
                     ["validation_tasks_pending"] = knowledgeValidation?.ValidationTasksPending ?? 0,
                     ["trusted_candidate_count"] = knowledgeValidation?.TrustedCandidateCount ?? 0,
@@ -455,6 +465,13 @@ public sealed class MasterStatusService
             HumanReviewedItems: knowledgeQuality.HumanReviewedItems,
             ValidationCoverage: knowledgeQuality.ValidationCoverage,
             TrustDistribution: knowledgeQuality.TrustDistribution ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
+            PendingReviews: humanReview.PendingReviews,
+            ApprovedReviews: humanReview.ApprovedReviews,
+            RejectedReviews: humanReview.RejectedReviews,
+            NeedsMoreEvidenceReviews: humanReview.NeedsMoreEvidenceReviews,
+            DeferredReviews: humanReview.DeferredReviews,
+            ReviewCoverage: humanReview.ReviewCoverage,
+            TopReviewPriorities: humanReview.TopReviewPriorities,
             ValidationPlansOpen: knowledgeValidation?.ValidationPlansOpen ?? 0,
             ValidationTasksPending: knowledgeValidation?.ValidationTasksPending ?? 0,
             TrustedCandidateCount: knowledgeValidation?.TrustedCandidateCount ?? 0,

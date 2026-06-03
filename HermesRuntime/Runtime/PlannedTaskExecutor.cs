@@ -630,21 +630,15 @@ public sealed class PlannedTaskExecutor
 
     private PlannedTaskExecutionResult ExecuteRequestHumanReview(PlannedTask task)
     {
-        var reviews = new HumanReviewEvidenceStore(_storagePaths).LoadOrCreateReport();
-        var contradictions = new ContradictionDetector(_storagePaths).LoadOrRun();
-        var quality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
-        var reviewCandidates = quality.Items
-            .Where(item => item.QualityScore < 0.58
-                || contradictions.Contradictions.Any(contradiction => contradiction.KnowledgeId.Equals(item.KnowledgeId, StringComparison.OrdinalIgnoreCase)))
-            .Take(20)
-            .Select(item => $"review_candidate:{item.Domain}:{item.KnowledgeId}:trust={item.TrustScore:0.####}")
-            .ToList();
+        var workflow = new HumanReviewWorkflow(_storagePaths);
+        var queue = workflow.GenerateQueue(task.TaskId, 20);
+        var summary = workflow.BuildSummary();
         return BuildResult(
             task,
             "completed",
-            $"Human review status updated; reviewed_items={reviews.ReviewedKnowledgeItems}; suggested_review_candidates={reviewCandidates.Count}.",
-            [new HumanReviewEvidenceStore(_storagePaths).ReviewPath, new ContradictionDetector(_storagePaths).ContradictionsPath],
-            reviewCandidates.Count == 0 ? ["no_human_review_candidates_detected"] : reviewCandidates);
+            $"Human review queue updated; pending={queue.PendingReviews}; approved={queue.ApprovedReviews}; rejected={queue.RejectedReviews}; review_coverage={summary.ReviewCoverage:0.####}.",
+            [workflow.QueuePath, workflow.DecisionsPath, new HumanReviewEvidenceStore(_storagePaths).ReviewPath],
+            queue.Warnings.Concat(summary.TopReviewPriorities.Select(item => $"review_priority:{item}")).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
     }
 
     private PlannedTaskExecutionResult ExecuteRevalidateStaleKnowledge(PlannedTask task)

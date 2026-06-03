@@ -73,7 +73,14 @@ public sealed record KnowledgeQualityReport(
     string ContradictionsPath = "",
     string HumanReviewPath = "",
     int EvidenceGraphNodes = 0,
-    int EvidenceGraphLinks = 0);
+    int EvidenceGraphLinks = 0,
+    int PendingReviews = 0,
+    int ApprovedReviews = 0,
+    int RejectedReviews = 0,
+    int NeedsMoreEvidenceReviews = 0,
+    int DeferredReviews = 0,
+    double ReviewCoverage = 0,
+    IReadOnlyList<string>? TopReviewPriorities = null);
 
 public sealed record KnowledgeEvidenceEntry(
     string KnowledgeId,
@@ -177,6 +184,7 @@ public sealed class KnowledgeQualityEngine
             .GroupBy(item => item.KnowledgeId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
         var reviews = new HumanReviewEvidenceStore(_storagePaths).LoadOrCreateReport();
+        var reviewSummary = new HumanReviewWorkflow(_storagePaths).BuildSummary();
         var reviewsById = reviews.Reviews
             .GroupBy(item => item.KnowledgeId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.ReviewedAtUtc).First(), StringComparer.OrdinalIgnoreCase);
@@ -252,7 +260,14 @@ public sealed class KnowledgeQualityEngine
             ContradictionsPath: new ContradictionDetector(_storagePaths).ContradictionsPath,
             HumanReviewPath: new HumanReviewEvidenceStore(_storagePaths).ReviewPath,
             EvidenceGraphNodes: graph.Nodes,
-            EvidenceGraphLinks: graph.Links);
+            EvidenceGraphLinks: graph.Links,
+            PendingReviews: reviewSummary.PendingReviews,
+            ApprovedReviews: reviewSummary.ApprovedReviews,
+            RejectedReviews: reviewSummary.RejectedReviews,
+            NeedsMoreEvidenceReviews: reviewSummary.NeedsMoreEvidenceReviews,
+            DeferredReviews: reviewSummary.DeferredReviews,
+            ReviewCoverage: reviewSummary.ReviewCoverage,
+            TopReviewPriorities: reviewSummary.TopReviewPriorities);
 
         var evidence = new KnowledgeEvidenceReport(
             ReportVersion: "knowledge_evidence_v1",
@@ -425,6 +440,21 @@ public sealed class KnowledgeQualityEngine
         var effectiveAge = staleWarning ? Math.Min(age.Value, 0.34) : age.Value;
         var itemContradictions = contradictionsById.GetValueOrDefault(item.Id) ?? [];
         var latestReview = reviewsById.GetValueOrDefault(item.Id);
+        if (latestReview?.Result.Equals("approved", StringComparison.OrdinalIgnoreCase) == true
+            && itemContradictions.Count == 0
+            && validation.Value < 0.68)
+        {
+            validation = validation with
+            {
+                Value = 0.68,
+                Status = "validated",
+                ValidationRefs = validation.ValidationRefs
+                    .Concat([$"human_review:{latestReview.ReviewId}:approved"])
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList()
+            };
+        }
+
         var contradictionPenalty = Math.Min(0.22, itemContradictions.Count * 0.08);
         var humanReviewBonus = latestReview?.Result.Equals("approved", StringComparison.OrdinalIgnoreCase) == true
             ? 0.09
@@ -500,7 +530,9 @@ public sealed class KnowledgeQualityEngine
             quality = Math.Min(quality, 0.78);
         }
 
-        var lifecycle = LifecycleStatus(item, quality, trust, validation.Value, age.Value);
+        var lifecycle = latestReview?.Result.Equals("rejected", StringComparison.OrdinalIgnoreCase) == true
+            ? "rejected"
+            : LifecycleStatus(item, quality, trust, validation.Value, age.Value);
         var retention = RetentionState(lifecycle, quality, age.Value);
         var reasons = new List<string>
         {

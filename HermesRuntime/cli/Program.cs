@@ -98,6 +98,13 @@ internal sealed class HermesCli
             "contradiction-status" => ShowContradictionStatus(),
             "review-knowledge" => ReviewKnowledge(),
             "review-status" => ShowReviewStatus(),
+            "review-queue" => ShowReviewQueue(),
+            "review-item" => ShowReviewItem(),
+            "approve-review" => DecideReview("approved"),
+            "reject-review" => DecideReview("rejected"),
+            "request-more-evidence" => DecideReview("needs_more_evidence"),
+            "defer-review" => DecideReview("deferred"),
+            "review-summary" => ShowReviewSummary(),
             "consolidate-memory" => ConsolidateMemory(),
             "validation-plans" => ShowValidationPlans(),
             "generate-validation-plans" => GenerateValidationPlans(),
@@ -241,6 +248,13 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes contradiction-status Widerspruchsstatus kompakt anzeigen");
         Console.WriteLine("  hermes review-knowledge --id <ID> [--result approved|rejected|needs_review] Human Review Evidence speichern");
         Console.WriteLine("  hermes review-status      Human Review Evidence Status anzeigen");
+        Console.WriteLine("  hermes review-queue       offene Human Review Queue anzeigen");
+        Console.WriteLine("  hermes review-item --id <REVIEW_ID> einzelnes Review Item anzeigen");
+        Console.WriteLine("  hermes approve-review --id <REVIEW_ID> --note \"...\" Review approven");
+        Console.WriteLine("  hermes reject-review --id <REVIEW_ID> --note \"...\" Review ablehnen");
+        Console.WriteLine("  hermes request-more-evidence --id <REVIEW_ID> --note \"...\" mehr Evidenz anfordern");
+        Console.WriteLine("  hermes defer-review --id <REVIEW_ID> --note \"...\" Review zurueckstellen");
+        Console.WriteLine("  hermes review-summary     Human Review Workflow Summary anzeigen");
         Console.WriteLine("  hermes consolidate-memory Cognitive Memory markieren/konsolidieren, ohne Wissen zu loeschen");
         Console.WriteLine("  hermes generate-validation-plans --max-items 50 Plaene fuer weak Knowledge erzeugen");
         Console.WriteLine("  hermes validation-plans   Knowledge Validation Plans anzeigen");
@@ -399,6 +413,13 @@ internal sealed class HermesCli
                 .ThenBy(item => item.Key, StringComparer.Ordinal)
                 .Select(item => $"{item.Key}: {item.Value}")
                 .ToList());
+        WriteField("pending_reviews", snapshot.PendingReviews.ToString());
+        WriteField("approved_reviews", snapshot.ApprovedReviews.ToString());
+        WriteField("rejected_reviews", snapshot.RejectedReviews.ToString());
+        WriteField("needs_more_evidence", snapshot.NeedsMoreEvidenceReviews.ToString());
+        WriteField("deferred_reviews", snapshot.DeferredReviews.ToString());
+        WriteField("review_coverage", $"{snapshot.ReviewCoverage:0.####}");
+        WriteMessages("top_review_priorities", snapshot.TopReviewPriorities.Take(8).ToList());
         WriteField("validation_plans_open", snapshot.ValidationPlansOpen.ToString());
         WriteField("validation_tasks_pending", snapshot.ValidationTasksPending.ToString());
         WriteField("trusted_candidate_count", snapshot.TrustedCandidateCount.ToString());
@@ -3743,10 +3764,98 @@ internal sealed class HermesCli
     private int ShowReviewStatus()
     {
         WriteHeader("Hermes Human Review Status");
-        var store = new HumanReviewEvidenceStore(BuildStoragePaths());
+        var storagePaths = BuildStoragePaths();
+        var store = new HumanReviewEvidenceStore(storagePaths);
         var report = store.LoadOrCreateReport();
+        var workflow = new HumanReviewWorkflow(storagePaths);
 
         WriteHumanReviewReport(report, store.ReviewPath, detailed: true);
+        WriteHumanReviewSummary(workflow.BuildSummary());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowReviewQueue()
+    {
+        WriteHeader("Hermes Human Review Queue");
+        var storagePaths = BuildStoragePaths();
+        var workflow = new HumanReviewWorkflow(storagePaths);
+        var queue = workflow.LoadOrCreateQueue();
+
+        WriteHumanReviewQueue(queue, workflow.QueuePath);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowReviewItem()
+    {
+        WriteHeader("Hermes Human Review Item");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteWarning("Bitte --id <REVIEW_ID> angeben.");
+            WriteSafety();
+            return 1;
+        }
+
+        var workflow = new HumanReviewWorkflow(BuildStoragePaths());
+        var item = workflow.FindItem(id);
+        if (item is null)
+        {
+            WriteWarning($"Kein Review Item gefunden: {id}");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteHumanReviewItem(item);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int DecideReview(string decision)
+    {
+        WriteHeader($"Hermes Human Review Decision: {decision}");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteWarning("Bitte --id <REVIEW_ID> angeben.");
+            WriteSafety();
+            return 1;
+        }
+
+        var note = ReadOption(_args, "--note") ?? "cli_review_decision";
+        var reviewer = ReadOption(_args, "--reviewer") ?? "human";
+        var storagePaths = BuildStoragePaths();
+        var workflow = new HumanReviewWorkflow(storagePaths);
+        HumanReviewDecision result;
+        try
+        {
+            result = workflow.Decide(id, decision, note, reviewer);
+        }
+        catch (InvalidOperationException ex)
+        {
+            WriteWarning(ex.Message);
+            WriteSafety();
+            return 1;
+        }
+
+        WriteHumanReviewDecision(result);
+        WriteHumanReviewSummary(workflow.BuildSummary());
+        TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowReviewSummary()
+    {
+        WriteHeader("Hermes Human Review Summary");
+        var workflow = new HumanReviewWorkflow(BuildStoragePaths());
+
+        WriteHumanReviewSummary(workflow.BuildSummary());
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -5558,6 +5667,13 @@ internal sealed class HermesCli
                 .ThenBy(item => item.Key, StringComparer.Ordinal)
                 .Select(item => $"{item.Key}: {item.Value}")
                 .ToList());
+        WriteField("Pending Reviews", report.PendingReviews.ToString());
+        WriteField("Approved Reviews", report.ApprovedReviews.ToString());
+        WriteField("Rejected Reviews", report.RejectedReviews.ToString());
+        WriteField("Needs More Evidence", report.NeedsMoreEvidenceReviews.ToString());
+        WriteField("Deferred Reviews", report.DeferredReviews.ToString());
+        WriteField("Review Coverage", $"{report.ReviewCoverage:0.####}");
+        WriteMessages("Top Review Priorities", report.TopReviewPriorities ?? []);
         foreach (var item in report.Items.Take(20))
         {
             WriteSubHeader($"{item.Title} / {item.KnowledgeId}");
@@ -5575,6 +5691,72 @@ internal sealed class HermesCli
         }
 
         WriteMessages("Warnings", report.Warnings);
+    }
+
+    private void WriteHumanReviewQueue(HumanReviewQueue queue, string queuePath)
+    {
+        WriteField("Review Queue", DisplayPath(queuePath));
+        WriteField("Pending Reviews", queue.PendingReviews.ToString());
+        WriteField("Approved Reviews", queue.ApprovedReviews.ToString());
+        WriteField("Rejected Reviews", queue.RejectedReviews.ToString());
+        WriteField("Needs More Evidence", queue.NeedsMoreEvidenceReviews.ToString());
+        WriteField("Deferred Reviews", queue.DeferredReviews.ToString());
+        foreach (var item in queue.Items
+            .OrderByDescending(item => item.Status.Equals("pending", StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(item => item.Priority)
+            .Take(20))
+        {
+            WriteHumanReviewItem(item);
+        }
+
+        WriteMessages("Warnings", queue.Warnings);
+    }
+
+    private void WriteHumanReviewItem(HumanReviewItem item)
+    {
+        WriteSubHeader($"{item.Priority} / {item.Status} / {item.ReviewId}");
+        WriteField("Knowledge Item", item.KnowledgeItemId);
+        WriteField("Domain", item.Domain);
+        WriteField("Title", item.Title);
+        WriteField("Reason", item.Reason);
+        WriteField("Evidence Summary", item.EvidenceSummary);
+        WriteField("Trust Before", $"{item.TrustBefore:0.####}");
+        WriteField("Recommendation", item.Recommendation);
+        WriteField("Requested By Task", item.RequestedByTaskId);
+        WriteField("Created UTC", item.CreatedAtUtc.ToString("O"));
+        WriteField("Updated UTC", item.UpdatedAtUtc?.ToString("O") ?? "-");
+        WriteMessages("Evidence", item.EvidenceRefs.Take(8).ToList());
+    }
+
+    private void WriteHumanReviewDecision(HumanReviewDecision decision)
+    {
+        WriteField("Decision ID", decision.DecisionId);
+        WriteField("Review ID", decision.ReviewId);
+        WriteField("Knowledge Item", decision.KnowledgeItemId);
+        WriteField("Domain", decision.Domain);
+        WriteField("Decision", decision.Decision);
+        WriteField("Decided By", decision.DecidedBy);
+        WriteField("Decided UTC", decision.DecidedAtUtc.ToString("O"));
+        WriteField("Note", decision.Note);
+        WriteMessages("Followup Tasks", decision.FollowupTasks);
+        WriteMessages("Evidence", decision.EvidenceRefs.Take(8).ToList());
+    }
+
+    private void WriteHumanReviewSummary(HumanReviewSummary summary)
+    {
+        WriteField("Review Queue", DisplayPath(summary.QueuePath));
+        WriteField("Review Decisions", DisplayPath(summary.DecisionsPath));
+        WriteField("Review Evidence", DisplayPath(summary.EvidencePath));
+        WriteField("Total Review Items", summary.TotalReviewItems.ToString());
+        WriteField("Pending Reviews", summary.PendingReviews.ToString());
+        WriteField("Approved Reviews", summary.ApprovedReviews.ToString());
+        WriteField("Rejected Reviews", summary.RejectedReviews.ToString());
+        WriteField("Needs More Evidence", summary.NeedsMoreEvidenceReviews.ToString());
+        WriteField("Deferred Reviews", summary.DeferredReviews.ToString());
+        WriteField("Human Reviewed Items", summary.HumanReviewedItems.ToString());
+        WriteField("Review Coverage", $"{summary.ReviewCoverage:0.####}");
+        WriteMessages("Top Review Priorities", summary.TopReviewPriorities);
+        WriteMessages("Warnings", summary.Warnings);
     }
 
     private void WriteContradictionReport(ContradictionReport report, string reportPath, bool detailed)
