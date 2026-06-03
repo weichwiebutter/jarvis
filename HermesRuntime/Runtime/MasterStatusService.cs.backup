@@ -71,7 +71,6 @@ public sealed class MasterStatusService
         var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
         var domainValidation = new DomainKnowledgeValidationService(_storagePaths).BuildStatus();
         var humanReview = new HumanReviewWorkflow(_storagePaths).BuildSummary();
-        var promotionStatus = new KnowledgePromotionEngine(_storagePaths).BuildStatus();
 
         var activeDomains = CombineStringLists(
             GetStringArray(domainStatus, "active_domains", "activeDomains"),
@@ -97,7 +96,6 @@ public sealed class MasterStatusService
             knowledgeQuality.AverageTrustScore < 0.55 ? [$"trust_gap:{knowledgeQuality.AverageTrustScore:0.####}"] : [],
             humanReview.PendingReviews > 0 ? [$"pending_human_reviews:{humanReview.PendingReviews}"] : [],
             humanReview.NeedsMoreEvidenceReviews > 0 ? [$"review_needs_more_evidence:{humanReview.NeedsMoreEvidenceReviews}"] : [],
-            promotionStatus.PromotionBlockers,
             knowledgeValidation?.ValidationPlansOpen > 0 ? [$"validation_plans_open:{knowledgeValidation.ValidationPlansOpen}"] : [],
             knowledgeValidation?.KnowledgeItemsNeedingOos > 0 ? [$"knowledge_needs_oos:{knowledgeValidation.KnowledgeItemsNeedingOos}"] : [],
             knowledgeValidation?.InvalidValidationTasks > 0 ? [$"invalid_validation_tasks:{knowledgeValidation.InvalidValidationTasks}"] : [],
@@ -281,12 +279,6 @@ public sealed class MasterStatusService
                     ["trusted_knowledge"] = knowledgeQuality.TrustedKnowledge,
                     ["weak_knowledge"] = knowledgeQuality.WeakKnowledge,
                     ["deprecated_knowledge"] = knowledgeQuality.DeprecatedKnowledge,
-                    ["promising_knowledge"] = promotionStatus.PromisingKnowledge,
-                    ["robust_knowledge"] = promotionStatus.RobustKnowledge,
-                    ["trusted_candidates"] = promotionStatus.TrustedCandidates.TotalCandidates,
-                    ["ready_for_promotion"] = promotionStatus.TrustedCandidates.ReadyForPromotion,
-                    ["awaiting_human_review"] = promotionStatus.TrustedCandidates.AwaitingHumanReview,
-                    ["promotion_health"] = promotionStatus.PromotionHealth,
                     ["average_quality_score"] = knowledgeQuality.AverageQualityScore,
                     ["average_trust_score"] = knowledgeQuality.AverageTrustScore,
                     ["knowledge_health"] = knowledgeQuality.KnowledgeHealth,

@@ -94,6 +94,10 @@ internal sealed class HermesCli
             "knowledge-catalog" => ShowKnowledgeCatalog(),
             "knowledge-item" => ShowKnowledgeItem(),
             "knowledge-health" => ShowKnowledgeHealth(),
+            "promotion-status" => ShowPromotionStatus(),
+            "trusted-candidates" => ShowTrustedCandidates(),
+            "review-promotion-candidates" => ReviewPromotionCandidates(),
+            "explain-promotion" => ExplainPromotion(),
             "contradictions" => ShowContradictions(),
             "contradiction-status" => ShowContradictionStatus(),
             "review-knowledge" => ReviewKnowledge(),
@@ -244,6 +248,10 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-catalog  allgemeinen Cognitive Knowledge Catalog anzeigen");
         Console.WriteLine("  hermes knowledge-item --id <ID> einzelnes Knowledge Item anzeigen");
         Console.WriteLine("  hermes knowledge-health   Knowledge Trust/Quality Scores erzeugen und anzeigen");
+        Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
+        Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
+        Console.WriteLine("  hermes review-promotion-candidates Promotion Kandidaten reviewen");
+        Console.WriteLine("  hermes explain-promotion --id <ID> Promotion Entscheidung erklaeren");
         Console.WriteLine("  hermes contradictions     Knowledge Contradiction Report erzeugen/anzeigen");
         Console.WriteLine("  hermes contradiction-status Widerspruchsstatus kompakt anzeigen");
         Console.WriteLine("  hermes review-knowledge --id <ID> [--result approved|rejected|needs_review] Human Review Evidence speichern");
@@ -8152,5 +8160,256 @@ internal sealed class HermesCli
         }
 
         Console.ForegroundColor = previous;
+    }
+    private int ShowPromotionStatus()
+    {
+        WriteHeader("Hermes Knowledge Promotion Status");
+        var storagePaths = BuildStoragePaths();
+        var engine = new KnowledgePromotionEngine(storagePaths);
+        var status = engine.BuildStatus();
+
+        WriteField("Promotion Health", status.PromotionHealth);
+        Console.WriteLine();
+
+        Console.WriteLine();
+        Console.WriteLine("Knowledge Distribution:");;
+        WriteField("Weak", status.WeakKnowledge.ToString());
+        WriteField("Promising", status.PromisingKnowledge.ToString());
+        WriteField("Robust", status.RobustKnowledge.ToString());
+        WriteField("Trusted", status.TrustedKnowledge.ToString());
+        WriteField("Deprecated", status.DeprecatedKnowledge.ToString());
+        WriteField("Rejected", status.RejectedKnowledge.ToString());
+        Console.WriteLine();
+
+        Console.WriteLine();
+        Console.WriteLine("Trusted Candidates:");;
+        WriteField("Total Candidates", status.TrustedCandidates.TotalCandidates.ToString());
+        WriteField("Ready for Promotion", status.TrustedCandidates.ReadyForPromotion.ToString());
+        WriteField("Awaiting Human Review", status.TrustedCandidates.AwaitingHumanReview.ToString());
+        WriteField("Blocked", status.TrustedCandidates.BlockedCandidates.ToString());
+        Console.WriteLine();
+
+        if (status.PromotionBlockers.Count > 0)
+        {
+            Console.WriteLine();
+        Console.WriteLine("Top Promotion Blockers:");;
+            foreach (var blocker in status.PromotionBlockers.Take(10))
+            {
+                Console.WriteLine($"  - {blocker}");
+            }
+            Console.WriteLine();
+        }
+
+        if (status.RecentPromotions.Count > 0)
+        {
+            Console.WriteLine();
+        Console.WriteLine("Recent Promotions:");;
+            foreach (var promo in status.RecentPromotions.Take(5))
+            {
+                Console.WriteLine($"  {promo.KnowledgeId}");
+                Console.WriteLine($"    {promo.CurrentStatus} → {promo.RecommendedStatus}");
+                Console.WriteLine($"    Trust: {promo.CurrentTrustScore:0.####}, Quality: {promo.CurrentQualityScore:0.####}");
+                Console.WriteLine($"    Reason: {promo.DecisionReason}");
+                Console.WriteLine();
+            }
+        }
+
+        WriteField("Promotion Log", status.PromotionLogPath);
+        WriteField("Status Path", engine.PromotionStatusPath);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowTrustedCandidates()
+    {
+        WriteHeader("Hermes Trusted Knowledge Candidates");
+        var storagePaths = BuildStoragePaths();
+        var engine = new KnowledgePromotionEngine(storagePaths);
+        var report = engine.BuildTrustedCandidates();
+
+        WriteField("Total Candidates", report.TotalCandidates.ToString());
+        WriteField("Ready for Promotion", report.ReadyForPromotion.ToString());
+        WriteField("Awaiting Human Review", report.AwaitingHumanReview.ToString());
+        WriteField("Blocked", report.BlockedCandidates.ToString());
+        Console.WriteLine();
+
+        if (report.TopBlockers.Count > 0)
+        {
+            Console.WriteLine();
+        Console.WriteLine("Top Blockers:");;
+            foreach (var blocker in report.TopBlockers.Take(10))
+            {
+                Console.WriteLine($"  - {blocker}");
+            }
+            Console.WriteLine();
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Candidates:");;
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            Console.WriteLine($"  {candidate.KnowledgeId}");
+            Console.WriteLine($"    Current: {candidate.CurrentStatus}");
+            Console.WriteLine($"    Recommended: {candidate.RecommendedStatus}");
+            Console.WriteLine($"    Trust: {candidate.CurrentTrustScore:0.####}, Quality: {candidate.CurrentQualityScore:0.####}");
+            Console.WriteLine($"    Expected Trust Delta: +{candidate.ExpectedTrustDelta:0.####}");
+            
+            if (candidate.HumanReviewRequired)
+            {
+                Console.WriteLine($"    ⚠ Human Review Required");
+            }
+
+            if (candidate.Blockers.Count > 0)
+            {
+                Console.WriteLine($"    Blockers: {string.Join(", ", candidate.Blockers.Take(3))}");
+            }
+            else if (candidate.UnsatisfiedConditions.Count > 0)
+            {
+                Console.WriteLine($"    Missing: {string.Join(", ", candidate.UnsatisfiedConditions.Take(3))}");
+            }
+
+            Console.WriteLine();
+        }
+
+        WriteField("Candidates Path", report.CandidatesPath);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ReviewPromotionCandidates()
+    {
+        WriteHeader("Hermes Review Promotion Candidates");
+        var storagePaths = BuildStoragePaths();
+        var engine = new KnowledgePromotionEngine(storagePaths);
+        var report = engine.BuildTrustedCandidates();
+
+        var readyCandidates = report.Candidates
+            .Where(c => c.Blockers.Count == 0 && !c.HumanReviewRequired)
+            .ToList();
+
+        if (readyCandidates.Count == 0)
+        {
+            Console.WriteLine("No candidates ready for automatic promotion.");
+            Console.WriteLine();
+            Console.WriteLine($"Awaiting Human Review: {report.AwaitingHumanReview}");
+            Console.WriteLine($"Blocked: {report.BlockedCandidates}");
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+
+        Console.WriteLine($"Found {readyCandidates.Count} candidates ready for promotion:");
+        Console.WriteLine();
+
+        foreach (var candidate in readyCandidates.Take(10))
+        {
+            Console.WriteLine($"  {candidate.KnowledgeId}");
+            Console.WriteLine($"    {candidate.CurrentStatus} → {candidate.RecommendedStatus}");
+            Console.WriteLine($"    Trust: {candidate.CurrentTrustScore:0.####}, Quality: {candidate.CurrentQualityScore:0.####}");
+            Console.WriteLine($"    Reason: {candidate.DecisionReason}");
+            Console.WriteLine();
+        }
+
+        Console.WriteLine("To apply promotions, use: ApplyPromotions(decisions, dryRun: false)");
+        Console.WriteLine("This is currently a review-only command.");
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainPromotion()
+    {
+        WriteHeader("Hermes Explain Promotion Decision");
+        var knowledgeItemId = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(knowledgeItemId))
+        {
+            Console.WriteLine("Error: --id <KNOWLEDGE_ITEM_ID> required");
+            return 1;
+        }
+
+        var storagePaths = BuildStoragePaths();
+        var qualityEngine = new KnowledgeQualityEngine(storagePaths);
+        var qualityReport = qualityEngine.LoadOrCreateReport();
+        var promotionEngine = new KnowledgePromotionEngine(storagePaths);
+        var humanReview = new HumanReviewWorkflow(storagePaths).BuildSummary();
+
+        var qualityItem = qualityReport.Items.FirstOrDefault(item =>
+            item.KnowledgeId.Equals(knowledgeItemId, StringComparison.OrdinalIgnoreCase));
+
+        if (qualityItem is null)
+        {
+            Console.WriteLine($"Knowledge item not found: {knowledgeItemId}");
+            return 1;
+        }
+
+        var catalog = new KnowledgeCatalog(storagePaths);
+        var catalogItem = catalog.FindById(knowledgeItemId);
+        var decision = promotionEngine.EvaluatePromotion(qualityItem, catalogItem, humanReview);
+
+        WriteField("Knowledge Item", decision.KnowledgeId);
+        WriteField("Current Status", decision.CurrentStatus);
+        WriteField("Recommended Status", decision.RecommendedStatus);
+        WriteField("Decision Reason", decision.DecisionReason);
+        WriteField("Decision Type", decision.DecisionType);
+        Console.WriteLine();
+
+        Console.WriteLine();
+        Console.WriteLine("Current Scores:");;
+        WriteField("Trust Score", decision.CurrentTrustScore.ToString("0.####"));
+        WriteField("Quality Score", decision.CurrentQualityScore.ToString("0.####"));
+        WriteField("Expected Trust Delta", decision.ExpectedTrustDelta.ToString("+0.####;-0.####"));
+        Console.WriteLine();
+
+        if (decision.SatisfiedConditions.Count > 0)
+        {
+            Console.WriteLine();
+        Console.WriteLine("Satisfied Conditions:");;
+            foreach (var condition in decision.SatisfiedConditions)
+            {
+                Console.WriteLine($"  ✓ {condition}");
+            }
+            Console.WriteLine();
+        }
+
+        if (decision.UnsatisfiedConditions.Count > 0)
+        {
+            Console.WriteLine();
+        Console.WriteLine("Unsatisfied Conditions:");;
+            foreach (var condition in decision.UnsatisfiedConditions)
+            {
+                Console.WriteLine($"  ✗ {condition}");
+            }
+            Console.WriteLine();
+        }
+
+        if (decision.Blockers.Count > 0)
+        {
+            Console.WriteLine();
+        Console.WriteLine("Blockers:");;
+            foreach (var blocker in decision.Blockers)
+            {
+                Console.WriteLine($"  ⚠ {blocker}");
+            }
+            Console.WriteLine();
+        }
+
+        if (decision.HumanReviewRequired)
+        {
+            Console.WriteLine("⚠ Human Review Required for promotion to trusted status");
+            Console.WriteLine();
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Quality Details:");;
+        WriteField("Trust Classification", KnowledgePromotionEngine.TrustClassification(qualityItem.TrustScore));
+        WriteField("Evidence Classification", KnowledgePromotionEngine.EvidenceClassification(qualityItem.EvidenceScore));
+        WriteField("Validation Score", qualityItem.ValidationScore.ToString("0.####"));
+        WriteField("Lifecycle Status", qualityItem.LifecycleStatus);
+        Console.WriteLine();
+
+        WriteSafety();
+        return 0;
     }
 }
