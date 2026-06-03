@@ -7,6 +7,7 @@ import { runtimeOutcomeReportsMock } from '../fixtures/runtimeOutcomeReportsMock
 import { runtimeStorageMock } from '../fixtures/runtimeStorageMock';
 import { setupWatchMock } from '../fixtures/setupWatchMock';
 import { operatorDashboardMock } from '../fixtures/operatorDashboardMock';
+import { runtimeHumanReviewMock } from '../fixtures/runtimeHumanReviewMock';
 import { runtimeMasterStatusMock } from '../fixtures/runtimeMasterStatusMock';
 import { runtimeEvents } from '../fixtures/controlCenterMockData';
 import { de } from '../i18n/de';
@@ -1287,6 +1288,57 @@ function normalizeGoalProgressSummary(value) {
   return [];
 }
 
+function normalizeDistribution(value) {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item, index) => {
+        if (typeof item === 'string') {
+          const [label, count] = item.split(':');
+          return {
+            label: asString(label, `verteilung_${index}`).trim(),
+            count: asNumber(count, 0),
+          };
+        }
+
+        return {
+          label: asString(firstDefined(item.label, item.key, item.status, item.name), `verteilung_${index}`),
+          count: asNumber(firstDefined(item.count, item.value, item.total), 0),
+        };
+      })
+      .filter((item) => item.label);
+  }
+
+  if (typeof value === 'object') {
+    return Object.entries(value).map(([label, count]) => ({
+      label,
+      count: asNumber(count, 0),
+    }));
+  }
+
+  return [];
+}
+
+function domainTitle(domain) {
+  switch (String(domain || '').toLowerCase()) {
+    case 'trading':
+      return 'Trading';
+    case 'software':
+      return 'Software';
+    case 'documentation':
+      return 'Dokumentation';
+    case 'process':
+      return 'Prozesse';
+    case 'research':
+      return 'Recherche';
+    default:
+      return asString(domain, 'Domäne');
+  }
+}
+
 function formatHeartbeatAgeSeconds(timestampUtc) {
   if (!timestampUtc) {
     return null;
@@ -1332,6 +1384,68 @@ function reportFixtureRaw(key) {
   switch (key) {
     case 'masterStatus':
       return runtimeMasterStatusMock;
+    case 'humanReviewQueue':
+      return runtimeHumanReviewMock;
+    case 'cognitiveStatus':
+      return {
+        status: runtimeMasterStatusMock.knowledge_health,
+        active_domains: runtimeMasterStatusMock.active_domains,
+        queued_research_items: runtimeMasterStatusMock.queued_tasks,
+        last_updated_utc: runtimeMasterStatusMock.updated_at_utc,
+        warnings: runtimeMasterStatusMock.top_blockers,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'planningStatus':
+      return {
+        status: 'needs_attention',
+        planned_tasks: runtimeMasterStatusMock.next_recommended_actions,
+        detected_needs: runtimeMasterStatusMock.top_blockers,
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'taskExecutionState':
+      return {
+        status: 'idle',
+        latest_results: [],
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        warnings: [],
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'autonomousLoopState':
+      return {
+        status: 'completed',
+        last_iteration_utc: runtimeMasterStatusMock.last_autonomous_loop,
+        next_action: 'plan_next_tasks',
+        warnings: runtimeMasterStatusMock.top_blockers,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'metaReview':
+      return {
+        status: 'completed',
+        learning_strategy: runtimeMasterStatusMock.learning_strategy,
+        updated_at_utc: runtimeMasterStatusMock.last_meta_review,
+        observations: runtimeMasterStatusMock.top_blockers,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'domainStatus':
+      return {
+        active_domains: runtimeMasterStatusMock.active_domains,
+        domains: runtimeMasterStatusMock.active_domains.map((domain) => ({
+          domain,
+          status: domain === 'trading' ? 'needs_validation' : 'prepared',
+          knowledge_items: domain === 'trading' ? 33 : 20,
+          open_needs: domain === 'trading' ? ['oos_data_missing'] : ['source_check_required'],
+          last_scan_utc: runtimeMasterStatusMock.updated_at_utc,
+          next_recommended_task: domain === 'trading' ? 'run_walkforward_validation' : `scan_${domain}_domain`,
+        })),
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'researchInsights':
       return operatorDashboardMock.researchInsights;
     case 'regimeSummary':
@@ -1477,6 +1591,52 @@ export function normalizeMasterStatus(raw = {}) {
       firstDefined(raw.knowledge_trend, raw.knowledgeTrend, raw.knowledge_health?.knowledge_trend, raw.knowledgeHealth?.knowledgeTrend),
       '-',
     ),
+    evidence_coverage: asNumber(
+      firstDefined(raw.evidence_coverage, raw.evidenceCoverage, raw.knowledge_health?.evidence_coverage, raw.knowledgeHealth?.evidenceCoverage),
+      0,
+    ),
+    validation_coverage: asNumber(
+      firstDefined(raw.validation_coverage, raw.validationCoverage, raw.knowledge_health?.validation_coverage, raw.knowledgeHealth?.validationCoverage),
+      0,
+    ),
+    contradiction_count: asNumber(
+      firstDefined(raw.contradiction_count, raw.contradictionCount, raw.contradictions, raw.knowledge_health?.contradiction_count, raw.knowledgeHealth?.contradictionCount),
+      0,
+    ),
+    human_reviewed_items: asNumber(
+      firstDefined(raw.human_reviewed_items, raw.humanReviewedItems, raw.knowledge_health?.human_reviewed_items, raw.knowledgeHealth?.humanReviewedItems),
+      0,
+    ),
+    trust_distribution: normalizeDistribution(
+      firstDefined(raw.trust_distribution, raw.trustDistribution, raw.knowledge_health?.trust_distribution, raw.knowledgeHealth?.trustDistribution),
+    ),
+    pending_reviews: asNumber(
+      firstDefined(raw.pending_reviews, raw.pendingReviews, raw.knowledge_health?.pending_reviews, raw.knowledgeHealth?.pendingReviews),
+      0,
+    ),
+    approved_reviews: asNumber(
+      firstDefined(raw.approved_reviews, raw.approvedReviews, raw.knowledge_health?.approved_reviews, raw.knowledgeHealth?.approvedReviews),
+      0,
+    ),
+    rejected_reviews: asNumber(
+      firstDefined(raw.rejected_reviews, raw.rejectedReviews, raw.knowledge_health?.rejected_reviews, raw.knowledgeHealth?.rejectedReviews),
+      0,
+    ),
+    needs_more_evidence_reviews: asNumber(
+      firstDefined(raw.needs_more_evidence_reviews, raw.needsMoreEvidenceReviews, raw.needs_more_evidence, raw.needsMoreEvidence, raw.knowledge_health?.needs_more_evidence_reviews, raw.knowledgeHealth?.needsMoreEvidenceReviews),
+      0,
+    ),
+    deferred_reviews: asNumber(
+      firstDefined(raw.deferred_reviews, raw.deferredReviews, raw.knowledge_health?.deferred_reviews, raw.knowledgeHealth?.deferredReviews),
+      0,
+    ),
+    review_coverage: asNumber(
+      firstDefined(raw.review_coverage, raw.reviewCoverage, raw.knowledge_health?.review_coverage, raw.knowledgeHealth?.reviewCoverage),
+      0,
+    ),
+    top_review_priorities: asArray(
+      firstDefined(raw.top_review_priorities, raw.topReviewPriorities, raw.knowledge_health?.top_review_priorities, raw.knowledgeHealth?.topReviewPriorities),
+    ).map(String),
     validation_plans_open: asNumber(
       firstDefined(raw.validation_plans_open, raw.validationPlansOpen, raw.knowledge_health?.validation_plans_open, raw.knowledgeHealth?.validationPlansOpen),
       0,
@@ -1517,6 +1677,227 @@ export function normalizeMasterStatus(raw = {}) {
     updated_at_utc: firstDefined(raw.updated_at_utc, raw.updatedAtUtc, raw.last_updated_utc, raw.lastUpdatedUtc, null),
     data_root: asString(firstDefined(raw.data_root, raw.dataRoot), hermesDataRoot),
   };
+}
+
+export function normalizeHumanReviewQueue(raw = {}, masterStatus = normalizeMasterStatus({})) {
+  const items = asArray(firstDefined(raw.items, raw.Items, raw.review_items, raw.reviewItems))
+    .map((item, index) => ({
+      review_id: asString(firstDefined(item.review_id, item.reviewId, item.ReviewId, item.id), `review_${index}`),
+      knowledge_item_id: asString(
+        firstDefined(item.knowledge_item_id, item.knowledgeItemId, item.KnowledgeItemId),
+        '-',
+      ),
+      domain: asString(firstDefined(item.domain, item.Domain), '-'),
+      title: asString(firstDefined(item.title, item.Title), '-'),
+      reason: asString(firstDefined(item.reason, item.Reason), '-'),
+      evidence_summary: asString(
+        firstDefined(item.evidence_summary, item.evidenceSummary, item.EvidenceSummary),
+        '-',
+      ),
+      trust_before: asNumber(firstDefined(item.trust_before, item.trustBefore, item.TrustBefore), 0),
+      recommendation: asString(firstDefined(item.recommendation, item.Recommendation), '-'),
+      requested_by_task_id: asString(
+        firstDefined(item.requested_by_task_id, item.requestedByTaskId, item.RequestedByTaskId),
+        '-',
+      ),
+      priority: asString(firstDefined(item.priority, item.Priority), 'low'),
+      created_at_utc: firstDefined(item.created_at_utc, item.createdAtUtc, item.CreatedAtUtc, null),
+      updated_at_utc: firstDefined(item.updated_at_utc, item.updatedAtUtc, item.UpdatedAtUtc, null),
+      status: asString(firstDefined(item.status, item.Status), 'pending'),
+      evidence_refs: asArray(firstDefined(item.evidence_refs, item.evidenceRefs, item.EvidenceRefs)).map(String),
+    }));
+  const pendingItems = items.filter((item) => item.status === 'pending');
+  const fallbackPriorities = masterStatus.top_review_priorities.map((entry, index) => {
+    const parts = entry.split(':');
+    const priority = parts[0] || 'medium';
+    const domain = parts[1] || '-';
+    const knowledgeId = parts.slice(2, -1).join(':') || entry;
+
+    return {
+      review_id: `master_status_priority_${index}`,
+      knowledge_item_id: knowledgeId,
+      domain,
+      title: knowledgeId.replace(/^.*:/, '').replace(/_/g, ' '),
+      reason: 'Master Status meldet ein Wissenselement mit offenem Human Review.',
+      evidence_summary: entry,
+      trust_before: asNumber((entry.match(/trust=([0-9.]+)/) || [])[1], 0),
+      recommendation: parts.at(-1) || 'review_required',
+      requested_by_task_id: 'master_status',
+      priority,
+      created_at_utc: masterStatus.updated_at_utc,
+      updated_at_utc: null,
+      status: 'pending',
+      evidence_refs: [],
+    };
+  });
+  const displayItems = items.length ? items : fallbackPriorities;
+
+  return {
+    updated_at_utc: firstDefined(raw.updated_at_utc, raw.updatedAtUtc, raw.UpdatedAtUtc, masterStatus.updated_at_utc),
+    pending_reviews: asNumber(firstDefined(raw.pending_reviews, raw.pendingReviews, raw.PendingReviews), masterStatus.pending_reviews || pendingItems.length),
+    approved_reviews: asNumber(firstDefined(raw.approved_reviews, raw.approvedReviews, raw.ApprovedReviews), masterStatus.approved_reviews),
+    rejected_reviews: asNumber(firstDefined(raw.rejected_reviews, raw.rejectedReviews, raw.RejectedReviews), masterStatus.rejected_reviews),
+    needs_more_evidence_reviews: asNumber(
+      firstDefined(raw.needs_more_evidence_reviews, raw.needsMoreEvidenceReviews, raw.NeedsMoreEvidenceReviews),
+      masterStatus.needs_more_evidence_reviews,
+    ),
+    deferred_reviews: asNumber(firstDefined(raw.deferred_reviews, raw.deferredReviews, raw.DeferredReviews), masterStatus.deferred_reviews),
+    items: displayItems,
+    warnings: asArray(firstDefined(raw.warnings, raw.Warnings)).map(String),
+    no_auto_trading: asBoolean(firstDefined(raw.no_auto_trading, raw.noAutoTrading, raw.NoAutoTrading), true),
+    human_review_required: asBoolean(
+      firstDefined(raw.human_review_required, raw.humanReviewRequired, raw.HumanReviewRequired),
+      true,
+    ),
+  };
+}
+
+function buildCognitiveControl(masterStatus, rawReports, reports) {
+  const reportSource = (key) => reports.find((report) => report.key === key);
+  const steps = [
+    {
+      id: 'need_detection',
+      title: 'Bedarfserkennung',
+      status: masterStatus.top_blockers.length ? 'Warnungen erkannt' : 'ruhig',
+      last_activity: masterStatus.updated_at_utc,
+      next_step: masterStatus.next_recommended_actions[0] || 'Keine Aktion gemeldet',
+      warnings: masterStatus.top_blockers.slice(0, 3),
+      report_key: 'planningStatus',
+    },
+    {
+      id: 'goal_planning',
+      title: 'Zielplanung',
+      status: masterStatus.top_goal || '-',
+      last_activity: masterStatus.updated_at_utc,
+      next_step: masterStatus.goal_progress_summary?.[0]?.goal_id || 'Goal Review',
+      warnings: masterStatus.goal_warnings || [],
+      report_key: 'masterStatus',
+    },
+    {
+      id: 'task_planning',
+      title: 'Aufgabenplanung',
+      status: `${masterStatus.queued_tasks} offene Aufgaben`,
+      last_activity: rawReports.planningStatus?.updated_at_utc || masterStatus.updated_at_utc,
+      next_step: masterStatus.next_recommended_actions[0] || 'Plan aktualisieren',
+      warnings: asArray(rawReports.planningStatus?.warnings).map(String),
+      report_key: 'planningStatus',
+    },
+    {
+      id: 'execution',
+      title: 'Ausführung',
+      status: asString(rawReports.taskExecutionState?.status, 'kontrolliert'),
+      last_activity: rawReports.taskExecutionState?.updated_at_utc || masterStatus.last_autonomous_loop,
+      next_step: 'Nur erlaubte interne Tasks',
+      warnings: asArray(rawReports.taskExecutionState?.warnings).map(String),
+      report_key: 'taskExecutionState',
+    },
+    {
+      id: 'outcome_feedback',
+      title: 'Ergebnisbewertung',
+      status: 'Feedback aktiv',
+      last_activity: masterStatus.last_autonomous_loop,
+      next_step: 'Planner Feedback einbeziehen',
+      warnings: [],
+      report_key: 'autonomousLoopState',
+    },
+    {
+      id: 'meta_review',
+      title: 'Lernanalyse',
+      status: asString(rawReports.metaReview?.status, masterStatus.learning_strategy),
+      last_activity: rawReports.metaReview?.updated_at_utc || masterStatus.last_meta_review,
+      next_step: masterStatus.learning_strategy,
+      warnings: asArray(firstDefined(rawReports.metaReview?.warnings, rawReports.metaReview?.observations)).map(String),
+      report_key: 'metaReview',
+    },
+    {
+      id: 'trust',
+      title: 'Wissensvertrauen',
+      status: masterStatus.knowledge_health,
+      last_activity: masterStatus.updated_at_utc,
+      next_step: masterStatus.pending_reviews ? 'Prüfungen bearbeiten' : 'Evidenz konsolidieren',
+      warnings: masterStatus.top_review_priorities.slice(0, 3),
+      report_key: 'masterStatus',
+    },
+  ];
+
+  return steps.map((step) => ({
+    ...step,
+    report_path: reportSource(step.report_key)?.path || 'read-only Bridge',
+    report_available: reportSource(step.report_key)?.available || false,
+  }));
+}
+
+function buildDomainOverview(masterStatus, rawDomainStatus = {}) {
+  const rawDomains = asArray(firstDefined(rawDomainStatus.domains, rawDomainStatus.domain_status, rawDomainStatus.domainStatus));
+  const byDomain = new Map(rawDomains.map((item) => [asString(firstDefined(item.domain, item.id), ''), item]));
+
+  return masterStatus.active_domains.map((domain) => {
+    const raw = byDomain.get(domain) || {};
+    const tradingPending =
+      domain === 'trading' ? masterStatus.knowledge_items_needing_oos + masterStatus.validation_tasks_pending : 0;
+
+    return {
+      domain,
+      title: domainTitle(domain),
+      status: asString(firstDefined(raw.status, raw.health), domain === 'trading' ? 'needs_validation' : 'prepared'),
+      knowledge_items: asNumber(firstDefined(raw.knowledge_items, raw.knowledgeItems, raw.items), domain === 'trading' ? 33 : 0),
+      open_needs: asArray(firstDefined(raw.open_needs, raw.openNeeds, raw.needs))
+        .map(String)
+        .concat(tradingPending ? ['OOS-/Validierungsbedarf'] : []),
+      last_check_utc: firstDefined(raw.last_check_utc, raw.lastCheckUtc, raw.last_scan_utc, raw.lastScanUtc, masterStatus.updated_at_utc),
+      next_recommended_task: asString(
+        firstDefined(raw.next_recommended_task, raw.nextRecommendedTask),
+        domain === 'trading' ? 'run_walkforward_validation' : `scan_${domain}_domain`,
+      ),
+    };
+  });
+}
+
+function buildRoleOverview(masterStatus, rawReports) {
+  return [
+    {
+      role: 'Aufklärer',
+      status: 'Quellen und Domänen prüfen',
+      last_work: rawReports.cognitiveStatus?.last_checked_utc || masterStatus.updated_at_utc,
+      result: `${masterStatus.active_domains.length} aktive Domänen`,
+      warnings: masterStatus.top_blockers.filter((item) => item.includes('knowledge') || item.includes('source')).slice(0, 2),
+    },
+    {
+      role: 'Analyst',
+      status: 'Wissen strukturieren',
+      last_work: masterStatus.updated_at_utc,
+      result: `${masterStatus.weak_knowledge} schwache Wissenselemente`,
+      warnings: masterStatus.weak_knowledge ? ['Wissensvertrauen niedrig'] : [],
+    },
+    {
+      role: 'Planer',
+      status: 'Tasks priorisieren',
+      last_work: rawReports.planningStatus?.updated_at_utc || masterStatus.updated_at_utc,
+      result: `${masterStatus.queued_tasks} offene Aufgaben`,
+      warnings: masterStatus.top_blockers.slice(0, 2),
+    },
+    {
+      role: 'Ausführer',
+      status: asString(rawReports.taskExecutionState?.status, 'wartet'),
+      last_work: rawReports.taskExecutionState?.updated_at_utc || masterStatus.last_autonomous_loop,
+      result: 'Nur interne erlaubte Tasktypen',
+      warnings: asArray(rawReports.taskExecutionState?.warnings).map(String),
+    },
+    {
+      role: 'Prüfer',
+      status: masterStatus.pending_reviews ? 'menschliche Prüfung offen' : 'keine offene Prüfung',
+      last_work: masterStatus.updated_at_utc,
+      result: `${masterStatus.pending_reviews} offene Prüfungen`,
+      warnings: masterStatus.pending_reviews ? ['Human Review erforderlich'] : [],
+    },
+    {
+      role: 'Lernanalyse',
+      status: masterStatus.learning_strategy,
+      last_work: masterStatus.last_meta_review,
+      result: masterStatus.current_focus,
+      warnings: masterStatus.top_blockers.filter((item) => item.includes('quality') || item.includes('trust')).slice(0, 2),
+    },
+  ];
 }
 
 export function normalizeSupervisorState(raw = {}) {
@@ -1751,9 +2132,11 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
   const regimePerformanceRaw =
     rawReports.strategyRegimePerformance || operatorDashboardMock.strategyRegimePerformance;
   const cleanupRaw = rawReports.cleanupPlan || operatorDashboardMock.cleanupPlan;
+  const humanReviewRaw = rawReports.humanReviewQueue || runtimeHumanReviewMock;
 
   const resource = normalizeResourceStatus(resourceRaw);
   const cleanup = normalizeCleanupPlan(cleanupRaw);
+  const masterStatus = normalizeMasterStatus(masterRaw);
   const storageRoot = asString(
     firstDefined(
       storageRaw.storage_root,
@@ -1775,9 +2158,13 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
   const masterStatusReport = reports.find((report) => report.key === 'masterStatus');
 
   return {
-    masterStatus: normalizeMasterStatus(masterRaw),
+    masterStatus,
     masterStatusSource: masterStatusReport?.dataSource || (rawReports.masterStatus ? dataSource : DATA_SOURCE.FIXTURE),
     masterStatusWarning: masterStatusReport?.warning || '',
+    humanReview: normalizeHumanReviewQueue(humanReviewRaw, masterStatus),
+    cognitiveControl: buildCognitiveControl(masterStatus, rawReports, reports),
+    domains: buildDomainOverview(masterStatus, rawReports.domainStatus),
+    roles: buildRoleOverview(masterStatus, rawReports),
     supervisor: normalizeSupervisorState(supervisorRaw),
     schedulerJobs: normalizeSchedulerJobs(schedulerRaw),
     resource,
@@ -1834,6 +2221,13 @@ export function createOperatorDashboardFallback(loadError = '') {
   return buildOperatorDashboard(
     {
       masterStatus: runtimeMasterStatusMock,
+      humanReviewQueue: runtimeHumanReviewMock,
+      cognitiveStatus: reportFixtureRaw('cognitiveStatus'),
+      planningStatus: reportFixtureRaw('planningStatus'),
+      taskExecutionState: reportFixtureRaw('taskExecutionState'),
+      autonomousLoopState: reportFixtureRaw('autonomousLoopState'),
+      metaReview: reportFixtureRaw('metaReview'),
+      domainStatus: reportFixtureRaw('domainStatus'),
       supervisorState: operatorDashboardMock.supervisorState,
       schedulerState: operatorDashboardMock.schedulerState,
       resourceStatus: operatorDashboardMock.resourceStatus,
@@ -1883,6 +2277,13 @@ export async function loadOperatorDashboard() {
       const warnings = bridgeResponseWarnings(response);
       const rawReports = {
         masterStatus: masterStatusEntry?.raw,
+        humanReviewQueue: dashboard.humanReviewQueue,
+        cognitiveStatus: dashboard.cognitiveStatus,
+        planningStatus: dashboard.planningStatus,
+        taskExecutionState: dashboard.taskExecutionState,
+        autonomousLoopState: dashboard.autonomousLoopState,
+        metaReview: dashboard.metaReview,
+        domainStatus: dashboard.domainStatus,
         supervisorState: dashboard.supervisorState,
         schedulerState: dashboard.schedulerState,
         resourceStatus: dashboard.resourceStatus,

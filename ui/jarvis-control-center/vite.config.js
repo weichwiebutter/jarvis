@@ -18,9 +18,44 @@ function bridgeUrl(endpoint) {
 
 const operatorReports = {
   masterStatus: {
-    label: 'Hermes Master Status',
+    label: 'Hermes Gesamtstatus',
     url: bridgeUrl('/reports/master-status'),
     path: 'read-only bridge:/reports/master-status',
+  },
+  humanReviewQueue: {
+    label: 'Prüfwarteschlange',
+    url: bridgeUrl('/reports/human-review-queue'),
+    path: 'read-only bridge:/reports/human-review-queue',
+  },
+  cognitiveStatus: {
+    label: 'Hermes Gehirn Status',
+    url: bridgeUrl('/reports/cognitive-status'),
+    path: 'read-only bridge:/reports/cognitive-status',
+  },
+  planningStatus: {
+    label: 'Planungsstatus',
+    url: bridgeUrl('/reports/planning-status'),
+    path: 'read-only bridge:/reports/planning-status',
+  },
+  taskExecutionState: {
+    label: 'Aufgabenausfuehrung',
+    url: bridgeUrl('/reports/task-execution-state'),
+    path: 'read-only bridge:/reports/task-execution-state',
+  },
+  autonomousLoopState: {
+    label: 'Autonomer Lernzyklus',
+    url: bridgeUrl('/reports/autonomous-loop-state'),
+    path: 'read-only bridge:/reports/autonomous-loop-state',
+  },
+  metaReview: {
+    label: 'Lernanalyse',
+    url: bridgeUrl('/reports/meta-review'),
+    path: 'read-only bridge:/reports/meta-review',
+  },
+  domainStatus: {
+    label: 'Domänenstatus',
+    url: bridgeUrl('/reports/domain-status'),
+    path: 'read-only bridge:/reports/domain-status',
   },
   researchInsights: {
     label: 'Research Insights',

@@ -900,6 +900,220 @@ h2 {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.control-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px;
+  border: 1px solid rgba(132, 204, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.62);
+}
+
+.control-view-tabs button {
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid rgba(132, 204, 255, 0.16);
+  border-radius: 999px;
+  color: var(--soft);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.control-view-tabs button.is-active,
+.control-view-tabs button:hover {
+  border-color: rgba(71, 215, 255, 0.5);
+  color: var(--cyan);
+  background: rgba(71, 215, 255, 0.1);
+}
+
+.control-view-panel {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  padding: 13px;
+  overflow: auto;
+  border: 1px solid rgba(132, 204, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(4, 10, 18, 0.58);
+}
+
+.control-view-head,
+.review-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.control-view-head h2,
+.review-card h3,
+.cognitive-step-card h3,
+.domain-card h3,
+.role-card h3,
+.control-mini-panel h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.control-view-badges,
+.review-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.control-view-note {
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.review-grid,
+.cognitive-step-grid,
+.domain-grid,
+.role-grid,
+.trust-summary-grid,
+.control-split-grid {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.review-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cognitive-step-grid,
+.domain-grid,
+.role-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.trust-summary-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.control-split-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.review-card,
+.cognitive-step-card,
+.domain-card,
+.role-card,
+.control-mini-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(132, 204, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.review-card p {
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.82rem;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+}
+
+.review-card-head span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.review-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.review-card-metrics .cockpit-detail-metric,
+.cognitive-step-card .cockpit-detail-metric,
+.domain-card .cockpit-detail-metric,
+.role-card .cockpit-detail-metric,
+.trust-summary-grid .cockpit-detail-metric {
+  min-height: 58px;
+  padding: 8px;
+}
+
+.review-action-row button {
+  min-height: 30px;
+  padding: 6px 9px;
+  border: 1px solid rgba(132, 204, 255, 0.2);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: not-allowed;
+  font-weight: 800;
+}
+
+.review-command-list {
+  display: grid;
+  gap: 7px;
+}
+
+.review-command-list div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.review-command-list span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.review-command-list code {
+  display: block;
+  padding: 8px;
+  border: 1px solid rgba(132, 204, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.trust-distribution-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trust-distribution-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding: 9px;
+  border: 1px solid rgba(132, 204, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.trust-distribution-row span {
+  color: var(--soft);
+  font-size: 0.8rem;
+}
+
+.trust-distribution-row strong {
+  color: var(--cyan);
+}
+
 .cockpit-overlay {
   position: fixed;
   inset: 0;
@@ -3267,6 +3481,13 @@ h2 {
   .operator-middle-grid,
   .operator-bottom-grid,
   .operator-master-grid,
+  .review-grid,
+  .cognitive-step-grid,
+  .domain-grid,
+  .role-grid,
+  .trust-summary-grid,
+  .control-split-grid,
+  .trust-distribution-grid,
   .operator-report-viewer {
     grid-template-columns: 1fr;
   }
@@ -3407,6 +3628,14 @@ h2 {
   .operator-safety-grid,
   .operator-master-grid,
   .cockpit-master-grid,
+  .review-card-metrics,
+  .review-grid,
+  .cognitive-step-grid,
+  .domain-grid,
+  .role-grid,
+  .trust-summary-grid,
+  .control-split-grid,
+  .trust-distribution-grid,
   .operator-storage-card {
     grid-template-columns: 1fr;
   }
