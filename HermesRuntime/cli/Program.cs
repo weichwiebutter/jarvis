@@ -42,8 +42,13 @@ internal sealed class HermesCli
             "ctrader-auth-url" => ShowCTraderAuthUrl(),
             "ctrader-auth-code" => ExchangeCTraderAuthCode(),
             "ctrader-auth-status" => ShowCTraderAuthStatus(),
-            "download-history" => DownloadCTraderHistory(),
+            "download-history" or "import-ctrader-history" => DownloadCTraderHistory(),
             "import-csv" => ImportCsv(),
+            "market-data-status" => ShowMarketDataStatus(),
+            "scan-market-data" => ScanMarketData(),
+            "market-data-quality" => ShowMarketDataQuality(),
+            "normalize-market-data" => NormalizeMarketData(),
+            "explain-market-data-gap" => ExplainMarketDataGap(),
             "generate-features" => GenerateFeatures(),
             "run-nightly-research" => RunNightlyResearch(),
             "run-nightly-beta3" => RunNightlyBeta3(),
@@ -209,6 +214,11 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes ctrader-auth-status lokalen cTrader Token-Status anzeigen");
         Console.WriteLine("  hermes download-history   historische cTrader-Candles read-only laden oder Stub-Fallback nutzen");
         Console.WriteLine("  hermes import-csv         cTrader Candle-CSV lokal importieren");
+        Console.WriteLine("  hermes market-data-status Market Data Availability anzeigen");
+        Console.WriteLine("  hermes scan-market-data   lokale CSV-Datenquellen scannen");
+        Console.WriteLine("  hermes market-data-quality --asset XAUUSD Datenqualitaet anzeigen");
+        Console.WriteLine("  hermes normalize-market-data --asset XAUUSD CSVs normalisieren");
+        Console.WriteLine("  hermes explain-market-data-gap --asset XAUUSD Data Gap erklaeren");
         Console.WriteLine("  hermes generate-features  FeatureVectors aus lokalen Candle-Daten erzeugen");
         Console.WriteLine("  hermes run-nightly-research lokale Research-Pipeline ausfuehren");
         Console.WriteLine("  hermes run-nightly-beta3 Nightly Beta 3 Research-Orchestrierung starten");
@@ -463,6 +473,11 @@ internal sealed class HermesCli
         WriteField("best_scalping_candidate", snapshot.BestScalpingCandidate ?? "-");
         WriteField("signal_agent_specs_ready", snapshot.SignalAgentSpecsReady.ToString());
         WriteField("ctrader_bot_specs_ready", snapshot.CTraderBotSpecsReady.ToString());
+        WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
+        WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
+        WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
+        WriteField("market_data_quality_health", snapshot.MarketDataQualityHealth);
+        WriteField("scalping_data_gap", snapshot.ScalpingDataGap);
         WriteMessages("domain_validation_warnings", snapshot.DomainValidationWarnings.Take(8).ToList());
         WriteField("top_goal", string.IsNullOrWhiteSpace(snapshot.TopGoal) ? "-" : snapshot.TopGoal);
         WriteMessages("active_goals", snapshot.ActiveGoals);
@@ -3298,7 +3313,7 @@ internal sealed class HermesCli
     private int ShowScalpingStatus()
     {
         WriteHeader("Hermes Scalping Research Status");
-        var service = new ScalpingResearchService(BuildStoragePaths());
+        var service = new ScalpingResearchService(BuildStoragePaths(), _runtimeRoot);
         var report = service.LoadReport() ?? service.RunResearch(ScalpingResearchService.DefaultAsset, 0);
         WriteScalpingSummary(service, report);
         Console.WriteLine();
@@ -3311,7 +3326,7 @@ internal sealed class HermesCli
         WriteHeader("Hermes Scalping Research Loop");
         var asset = ReadOption(_args, "--asset") ?? ScalpingResearchService.DefaultAsset;
         var maxVariants = ReadIntOption(_args, "--max-variants", fallback: 50, min: 1, max: 500);
-        var service = new ScalpingResearchService(BuildStoragePaths());
+        var service = new ScalpingResearchService(BuildStoragePaths(), _runtimeRoot);
         var report = service.RunResearch(asset, maxVariants);
         WriteScalpingSummary(service, report);
         Console.WriteLine();
@@ -3322,7 +3337,7 @@ internal sealed class HermesCli
     private int ShowScalpingCandidates()
     {
         WriteHeader("Hermes Scalping Candidates");
-        var service = new ScalpingResearchService(BuildStoragePaths());
+        var service = new ScalpingResearchService(BuildStoragePaths(), _runtimeRoot);
         var report = service.LoadOrCreateStatus();
         WriteScalpingSummary(service, report);
         foreach (var candidate in report.Candidates.OrderByDescending(item => item.ConfidenceScore).Take(15))
@@ -3346,7 +3361,7 @@ internal sealed class HermesCli
             return 1;
         }
 
-        var candidate = new ScalpingResearchService(BuildStoragePaths()).FindCandidate(id);
+        var candidate = new ScalpingResearchService(BuildStoragePaths(), _runtimeRoot).FindCandidate(id);
         if (candidate is null)
         {
             WriteError($"Scalping Candidate nicht gefunden: {id}");
@@ -3363,7 +3378,7 @@ internal sealed class HermesCli
     private int ShowScalpingValidationReport()
     {
         WriteHeader("Hermes Scalping Validation Report");
-        var service = new ScalpingResearchService(BuildStoragePaths());
+        var service = new ScalpingResearchService(BuildStoragePaths(), _runtimeRoot);
         var report = service.LoadOrCreateStatus();
         WriteScalpingSummary(service, report);
         WriteMessages("Data Gaps", report.DataGaps);
@@ -3401,7 +3416,7 @@ internal sealed class HermesCli
 
         try
         {
-            var result = new ScalpingResearchService(BuildStoragePaths()).ExportCTraderBotSpec(id);
+            var result = new ScalpingResearchService(BuildStoragePaths(), _runtimeRoot).ExportCTraderBotSpec(id);
             WriteField("JSON", DisplayPath(result.JsonPath));
             WriteField("Markdown", DisplayPath(result.MarkdownPath));
             WriteSafety();
@@ -3428,7 +3443,7 @@ internal sealed class HermesCli
 
         try
         {
-            var result = new ScalpingResearchService(BuildStoragePaths()).ExportSignalAgentSpec(id);
+            var result = new ScalpingResearchService(BuildStoragePaths(), _runtimeRoot).ExportSignalAgentSpec(id);
             WriteField("JSON", DisplayPath(result.JsonPath));
             WriteField("Markdown", DisplayPath(result.MarkdownPath));
             WriteSafety();
@@ -5533,6 +5548,58 @@ internal sealed class HermesCli
         WriteMessages("Data Gaps", report.DataGaps);
     }
 
+    private void WriteMarketDataAvailability(MarketDataAvailabilityService service, MarketDataAvailability report)
+    {
+        WriteField("Availability Report", DisplayPath(service.AvailabilityPath));
+        WriteField("Quality Report", DisplayPath(service.QualityPath));
+        WriteField("Sources", report.Sources.Count.ToString());
+        WriteField("CSV Files", report.Files.Count.ToString());
+        WriteField("Assets Available", report.AssetsAvailable.Count == 0 ? "-" : string.Join(", ", report.AssetsAvailable));
+        WriteField("XAUUSD Available", report.XauusdAvailable.ToString().ToLowerInvariant());
+        WriteField("EURUSD Available", report.EurusdAvailable.ToString().ToLowerInvariant());
+        WriteField("Candle Count", report.Files.Sum(file => file.CandleCount).ToString());
+        WriteMessages("Data Gaps", report.DataGaps);
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", report.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", report.LiveTradingEnabled.ToString().ToLowerInvariant());
+    }
+
+    private void WriteMarketDataQuality(MarketDataAvailabilityService service, MarketDataQualityReport report)
+    {
+        WriteField("Quality Report", DisplayPath(service.QualityPath));
+        WriteField("Asset", report.Asset);
+        WriteField("Health", report.QualityHealth);
+        WriteField("Files", report.FileCount.ToString());
+        WriteField("Candles", report.CandleCount.ToString());
+        WriteField("Missing Candles", report.MissingCandles.ToString());
+        WriteField("Duplicate Candles", report.DuplicateCandles.ToString());
+        WriteField("Invalid Candles", report.InvalidCandles.ToString());
+        WriteMessages("Timeframes", report.TimeframesAvailable);
+        WriteMessages("Data Gaps", report.DataGaps);
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", report.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", report.LiveTradingEnabled.ToString().ToLowerInvariant());
+    }
+
+    private void WriteMarketDataFile(MarketDataFile file)
+    {
+        WriteSubHeader($"{file.Asset} {file.Timeframe}");
+        WriteField("Source", file.Source);
+        WriteField("Path", DisplayPath(file.FilePath));
+        WriteField("Candles", file.CandleCount.ToString());
+        WriteField("First", file.FirstTimestamp?.ToString("O") ?? "-");
+        WriteField("Last", file.LastTimestamp?.ToString("O") ?? "-");
+        WriteField("Missing", file.MissingCandles.ToString());
+        WriteField("Duplicates", file.DuplicateCandles.ToString());
+        WriteField("Invalid", file.InvalidCandles.ToString());
+        WriteField("Timezone", file.Timezone);
+        WriteField("Spread", file.SpreadAvailable.ToString().ToLowerInvariant());
+        WriteField("Volume", file.VolumeAvailable.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", file.Warnings);
+    }
+
     private static void WriteScalpingCandidateSummary(ScalpingStrategyCandidate candidate)
     {
         WriteSubHeader($"{candidate.CandidateId} / {candidate.ValidationStatus} / {candidate.SetupType}");
@@ -6761,7 +6828,7 @@ internal sealed class HermesCli
     private int DownloadCTraderHistory()
     {
         WriteHeader("Hermes cTrader Historical Download");
-        var symbol = ReadOption(_args, "--symbol");
+        var symbol = ReadOption(_args, "--symbol") ?? ReadOption(_args, "--asset");
         var timeframe = ReadOption(_args, "--timeframe");
         var fromText = ReadOption(_args, "--from");
         var toText = ReadOption(_args, "--to");
@@ -7437,6 +7504,83 @@ internal sealed class HermesCli
             Console.WriteLine();
         }
 
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowMarketDataStatus()
+    {
+        WriteHeader("Hermes Market Data Availability");
+        var service = new MarketDataAvailabilityService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Scan();
+        WriteMarketDataAvailability(service, report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ScanMarketData()
+    {
+        WriteHeader("Hermes Market Data Scan");
+        var service = new MarketDataAvailabilityService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Scan();
+        WriteMarketDataAvailability(service, report);
+        foreach (var file in report.Files.Take(20))
+        {
+            WriteMarketDataFile(file);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowMarketDataQuality()
+    {
+        WriteHeader("Hermes Market Data Quality");
+        var asset = ReadOption(_args, "--asset") ?? ScalpingResearchService.DefaultAsset;
+        var service = new MarketDataAvailabilityService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.BuildQuality(asset);
+        WriteMarketDataQuality(service, report);
+        foreach (var file in report.Files.Take(20))
+        {
+            WriteMarketDataFile(file);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int NormalizeMarketData()
+    {
+        WriteHeader("Hermes Market Data Normalization");
+        var asset = ReadOption(_args, "--asset") ?? ScalpingResearchService.DefaultAsset;
+        var service = new MarketDataAvailabilityService(BuildStoragePaths(), _runtimeRoot);
+        var result = service.Normalize(asset);
+        WriteField("Asset", result.Asset);
+        WriteField("Files Processed", result.FilesProcessed.ToString());
+        WriteField("Candles Written", result.CandlesWritten.ToString());
+        WriteField("Invalid Candles", result.InvalidCandles.ToString());
+        WriteMessages("Outputs", result.OutputPaths.Select(DisplayPath).ToList());
+        WriteMessages("Data Gaps", result.DataGaps);
+        WriteField("no_auto_trading", result.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", result.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", result.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", result.LiveTradingEnabled.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainMarketDataGap()
+    {
+        WriteHeader("Hermes Market Data Gap Explanation");
+        var asset = ReadOption(_args, "--asset") ?? ScalpingResearchService.DefaultAsset;
+        var service = new MarketDataAvailabilityService(BuildStoragePaths(), _runtimeRoot);
+        WriteField("Asset", asset.ToUpperInvariant());
+        WriteMessages("Reasons", service.ExplainGap(asset));
+        Console.WriteLine();
         WriteSafety();
         return 0;
     }

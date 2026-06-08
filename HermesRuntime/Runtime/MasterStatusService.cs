@@ -38,6 +38,7 @@ public sealed class MasterStatusService
         var strategyRoot = Path.Combine(_storagePaths.Root, "strategy_research");
         var botCandidatePath = Path.Combine(_storagePaths.Root, "bot_candidates", "latest_bot_candidate_report.json");
         var scalpingService = new ScalpingResearchService(_storagePaths);
+        var marketDataService = new MarketDataAvailabilityService(_storagePaths, _runtimeRoot);
         var simulationRoot = Path.Combine(_storagePaths.Root, "reports", "simulation");
         var requestedWalkforwardPath = Path.Combine(_storagePaths.Root, "simulation", "walkforward_validation.json");
         var fallbackWalkforwardPath = Path.Combine(simulationRoot, "walkforward_summary.json");
@@ -69,6 +70,8 @@ public sealed class MasterStatusService
         var walkforward = LoadOrDefault(walkforwardPath);
         var botCandidateReport = LoadOrDefault(botCandidatePath);
         var scalpingReport = scalpingService.LoadReport();
+        var marketDataAvailability = marketDataService.LoadAvailability() ?? marketDataService.Scan();
+        var xauusdQuality = marketDataService.BuildQuality(ScalpingResearchService.DefaultAsset);
         var knowledgeQuality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
         var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
         var domainValidation = new DomainKnowledgeValidationService(_storagePaths).BuildStatus();
@@ -172,6 +175,7 @@ public sealed class MasterStatusService
         var cTraderBotSpecsReady = Directory.Exists(scalpingService.BotSpecDirectory)
             ? Directory.GetFiles(scalpingService.BotSpecDirectory, "*.json").Length
             : 0;
+        var scalpingDataGap = xauusdQuality.DataGaps.Count == 0 ? "-" : string.Join(",", xauusdQuality.DataGaps);
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -454,6 +458,11 @@ public sealed class MasterStatusService
                     ["best_scalping_candidate"] = bestScalpingCandidate,
                     ["signal_agent_specs_ready"] = signalAgentSpecsReady,
                     ["ctrader_bot_specs_ready"] = cTraderBotSpecsReady,
+                    ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
+                    ["market_data_xauusd_available"] = marketDataAvailability.XauusdAvailable,
+                    ["market_data_eurusd_available"] = marketDataAvailability.EurusdAvailable,
+                    ["market_data_quality_health"] = xauusdQuality.QualityHealth,
+                    ["scalping_data_gap"] = scalpingDataGap,
                     ["walkforward_path"] = walkforwardPath,
                     ["walkforward_confidence"] = GetDouble(walkforward, "walkforward_confidence", "walkforwardConfidence"),
                     ["next_validation_recommendations"] = GetStringArray(researchInsights, "next_validation_recommendations", "nextValidationRecommendations").Take(8).ToList()
@@ -523,6 +532,11 @@ public sealed class MasterStatusService
             BestScalpingCandidate: bestScalpingCandidate,
             SignalAgentSpecsReady: signalAgentSpecsReady,
             CTraderBotSpecsReady: cTraderBotSpecsReady,
+            MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,
+            MarketDataXauusdAvailable: marketDataAvailability.XauusdAvailable,
+            MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,
+            MarketDataQualityHealth: xauusdQuality.QualityHealth,
+            ScalpingDataGap: scalpingDataGap,
             DomainValidationWarnings: domainValidation.DomainValidationWarnings,
             ActiveGoals: goalState.Goals.Where(goal => goal.Active).Select(goal => goal.GoalId).ToList(),
             TopGoal: goalState.TopGoalId,

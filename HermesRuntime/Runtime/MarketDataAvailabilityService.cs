@@ -112,6 +112,7 @@ public sealed class MarketDataAvailabilityService
                 .Select(path => AnalyzeCsv(source.SourceId, path)))
             .Where(file => file is not null)
             .Select(file => file!)
+            .Concat(AnalyzeCTraderJsonlCandles())
             .OrderBy(file => file.Asset, StringComparer.OrdinalIgnoreCase)
             .ThenBy(file => file.Timeframe, StringComparer.OrdinalIgnoreCase)
             .ThenBy(file => file.FilePath, StringComparer.OrdinalIgnoreCase)
@@ -148,7 +149,7 @@ public sealed class MarketDataAvailabilityService
     public MarketDataQualityReport BuildQuality(string asset)
     {
         var normalizedAsset = CanonicalAsset(asset);
-        var availability = LoadAvailability() ?? Scan();
+        var availability = Scan();
         var files = availability.Files
             .Where(file => CanonicalAsset(file.Asset).Equals(normalizedAsset, StringComparison.OrdinalIgnoreCase))
             .ToList();
@@ -233,6 +234,9 @@ public sealed class MarketDataAvailabilityService
         if (quality.FileCount == 0)
         {
             reasons.Add("No matching CSV files found in configured scan roots.");
+            reasons.Add("No existing cTrader candle JSONL files found for this asset under market_data/candles.");
+            reasons.Add($"Import command: dotnet run --project ./cli/Hermes.Cli.csproj -- download-history --symbol {quality.Asset} --timeframe M5 --from YYYY-MM-DD --to YYYY-MM-DD");
+            reasons.Add($"Alias: dotnet run --project ./cli/Hermes.Cli.csproj -- import-ctrader-history --asset {quality.Asset} --timeframe M5 --from YYYY-MM-DD --to YYYY-MM-DD");
             reasons.Add($"Scan roots: {string.Join(", ", ScanRoots(DateTimeOffset.UtcNow).Select(source => source.RootPath))}");
         }
         else
@@ -265,6 +269,75 @@ public sealed class MarketDataAvailabilityService
             yield return new MarketDataSource(SourceId: SourceId(root), RootPath: root, Exists: Directory.Exists(root), ScannedAtUtc: scannedAt);
         }
     }
+
+    private IEnumerable<MarketDataFile> AnalyzeCTraderJsonlCandles()
+    {
+        var root = Path.Combine(_storagePaths.Root, "market_data", "candles");
+        if (!Directory.Exists(root)) yield break;
+        foreach (var file in Directory.EnumerateFiles(root, "*.jsonl", SearchOption.AllDirectories).OrderBy(path => path))
+        {
+            var relative = Path.GetRelativePath(root, file).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (relative.Length < 3) continue;
+            var asset = CanonicalAsset(relative[0]);
+            if (!SupportedAssets.Contains(asset, StringComparer.OrdinalIgnoreCase)) continue;
+            var timeframe = relative[1].ToUpperInvariant();
+            var candles = ReadJsonlCandles(file).ToList();
+            var ordered = candles.OrderBy(candle => candle.TimestampUtc).ToList();
+            var duplicateCount = candles.GroupBy(candle => candle.TimestampUtc).Sum(group => Math.Max(0, group.Count() - 1));
+            yield return new MarketDataFile(
+                Asset: asset,
+                Timeframe: timeframe,
+                Source: "ctrader_candles_jsonl",
+                FilePath: file,
+                FirstTimestamp: ordered.Count > 0 ? ordered[0].TimestampUtc : null,
+                LastTimestamp: ordered.Count > 0 ? ordered[^1].TimestampUtc : null,
+                CandleCount: ordered.Count,
+                MissingCandles: CountMissing(ordered.Select(ToNormalized).ToList(), timeframe),
+                DuplicateCandles: duplicateCount,
+                InvalidCandles: 0,
+                Timezone: "UTC",
+                SpreadAvailable: false,
+                VolumeAvailable: ordered.Any(candle => candle.Volume > 0),
+                Warnings: []);
+        }
+    }
+
+    private static IEnumerable<MarketDataCandle> ReadJsonlCandles(string path)
+    {
+        foreach (var line in File.ReadLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            MarketDataCandle? candle;
+            try
+            {
+                candle = JsonSerializer.Deserialize<MarketDataCandle>(line, JsonDefaults.SnapshotReadOptions);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+
+            if (candle is not null && candle.High >= candle.Low && candle.Open > 0 && candle.High > 0 && candle.Low > 0 && candle.Close > 0)
+            {
+                yield return candle;
+            }
+        }
+    }
+
+    private static NormalizedCandle ToNormalized(MarketDataCandle candle) => new(
+        TimestampUtc: candle.TimestampUtc,
+        Open: candle.Open,
+        High: candle.High,
+        Low: candle.Low,
+        Close: candle.Close,
+        Volume: candle.Volume,
+        Bid: null,
+        Ask: null,
+        Spread: null,
+        Asset: candle.Symbol,
+        Timeframe: candle.Timeframe,
+        Source: "ctrader_candles_jsonl",
+        Timezone: "UTC");
 
     private MarketDataFile? AnalyzeCsv(string sourceId, string path)
     {

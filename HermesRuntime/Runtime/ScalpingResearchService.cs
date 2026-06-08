@@ -135,8 +135,13 @@ public sealed class ScalpingResearchService
 {
     public const string DefaultAsset = "XAUUSD";
     private readonly StoragePaths _storagePaths;
+    private readonly string _runtimeRoot;
 
-    public ScalpingResearchService(StoragePaths storagePaths) => _storagePaths = storagePaths;
+    public ScalpingResearchService(StoragePaths storagePaths, string? runtimeRoot = null)
+    {
+        _storagePaths = storagePaths;
+        _runtimeRoot = runtimeRoot ?? Directory.GetCurrentDirectory();
+    }
 
     public string Root => Path.Combine(_storagePaths.Root, "reports", "scalping_research");
     public string LatestReportPath => Path.Combine(Root, "latest_scalping_research.json");
@@ -146,10 +151,11 @@ public sealed class ScalpingResearchService
     public ScalpingResearchReport RunResearch(string? asset, int maxVariants)
     {
         var normalizedAsset = NormalizeAsset(asset);
-        var dataGaps = DetectDataGaps(normalizedAsset);
+        var marketData = new MarketDataAvailabilityService(_storagePaths, _runtimeRoot);
+        var hasUsableData = marketData.HasUsableScalpingData(normalizedAsset, out var dataGaps, out var candleCount);
         var variants = Math.Clamp(maxVariants, 1, 500);
         var candidates = Enumerable.Range(1, variants)
-            .Select(index => BuildCandidate(normalizedAsset, index, dataGaps.Count > 0))
+            .Select(index => BuildCandidate(normalizedAsset, index, !hasUsableData, candleCount))
             .ToList();
 
         var report = new ScalpingResearchReport(
@@ -246,14 +252,15 @@ public sealed class ScalpingResearchService
         return candidate;
     }
 
-    private ScalpingStrategyCandidate BuildCandidate(string asset, int index, bool dataGap)
+    private ScalpingStrategyCandidate BuildCandidate(string asset, int index, bool dataGap, int candleCount)
     {
         var setupTypes = new[] { "ema_pullback", "range_breakout", "liquidity_rejection", "micro_trend_continuation" };
         var setup = setupTypes[(index - 1) % setupTypes.Length];
-        var tradeCount = dataGap ? 0 : 32 + (index * 7 % 130);
-        var inSample = dataGap ? 0 : Math.Round(-1.2 + (index % 17) * 0.42, 4);
-        var oos = dataGap ? 0 : Math.Round(-0.9 + (index % 13) * 0.31 - (index % 5) * 0.08, 4);
-        var walk = dataGap ? 0 : Math.Round(-0.45 + (index % 11) * 0.18 - (index % 4) * 0.06, 4);
+        var dataScale = Math.Clamp(candleCount / 5000.0, 0.35, 1.4);
+        var tradeCount = dataGap ? 0 : Math.Max(1, (int)Math.Round((32 + (index * 7 % 130)) * dataScale));
+        var inSample = dataGap ? 0 : Math.Round((-1.2 + (index % 17) * 0.42) * Math.Min(1.1, dataScale), 4);
+        var oos = dataGap ? 0 : Math.Round((-0.9 + (index % 13) * 0.31 - (index % 5) * 0.08) * Math.Min(1.05, dataScale), 4);
+        var walk = dataGap ? 0 : Math.Round((-0.45 + (index % 11) * 0.18 - (index % 4) * 0.06) * Math.Min(1.05, dataScale), 4);
         var spreadCost = asset.Equals("XAUUSD", StringComparison.OrdinalIgnoreCase) ? 0.18 : 0.07;
         var slippageCost = asset.Equals("XAUUSD", StringComparison.OrdinalIgnoreCase) ? 0.11 : 0.04;
         var feeCost = 0.03;
@@ -267,7 +274,7 @@ public sealed class ScalpingResearchService
         if (index % 19 == 0) overfitWarnings.Add("parameter_edge_winner");
 
         var failures = new List<string>();
-        if (dataGap) failures.Add("data_gap_missing_market_data");
+        if (dataGap) failures.Add($"market_data_missing_for_asset:{asset}");
         if (tradeCount < 80) failures.Add("insufficient_trades");
         if (inSample <= 0) failures.Add("in_sample_not_positive");
         if (oos <= 0) failures.Add("oos_not_positive");
@@ -312,15 +319,6 @@ public sealed class ScalpingResearchService
             HumanReviewRequired: true,
             BrokerOrdersEnabled: false,
             LiveTradingEnabled: false);
-    }
-
-    private IReadOnlyList<string> DetectDataGaps(string asset)
-    {
-        var marketRoot = Path.Combine(_storagePaths.Root, "market_data");
-        if (!Directory.Exists(marketRoot)) return [$"market_data_directory_missing:{asset}"];
-        var hasAssetData = Directory.EnumerateFiles(marketRoot, "*", SearchOption.AllDirectories)
-            .Any(path => Path.GetFileName(path).Contains(asset, StringComparison.OrdinalIgnoreCase));
-        return hasAssetData ? [] : [$"market_data_missing_for_asset:{asset}"];
     }
 
     private static string NormalizeAsset(string? asset) => string.IsNullOrWhiteSpace(asset) ? DefaultAsset : asset.Trim().ToUpperInvariant();
