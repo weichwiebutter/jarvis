@@ -12,6 +12,9 @@ public enum ScalpingValidationStatus
     oos_tested,
     stress_tested,
     robust_candidate,
+    robustness_expanded,
+    final_candidate,
+    rejected_after_expansion,
     rejected,
     needs_more_data,
     human_review_required
@@ -249,6 +252,13 @@ public sealed class ScalpingResearchService
         {
             throw new InvalidOperationException($"candidate_not_robust:{id}:{candidate.ValidationStatus}");
         }
+
+        var expansion = new ScalpingRobustnessExpansionService(_storagePaths, _runtimeRoot).LoadReport(id);
+        if (expansion?.Status != ScalpingExpansionStatus.final_candidate)
+        {
+            throw new InvalidOperationException($"candidate_requires_final_candidate_expansion:{id}:current={expansion?.Status.ToString() ?? "robust_candidate"}");
+        }
+
         return candidate;
     }
 

@@ -33,6 +33,7 @@ public sealed class HermesInternalScheduler
         "consolidate_memory",
         "execute_validation_tasks",
         "validate_domain_knowledge"
+        ,"run_scalping_robustness_expansion"
     };
 
     private readonly StoragePaths _storagePaths;
@@ -298,6 +299,7 @@ public sealed class HermesInternalScheduler
             "consolidate_memory" => job.Command.Equals("consolidate-memory", StringComparison.OrdinalIgnoreCase),
             "execute_validation_tasks" => job.Command.Equals("execute-validation-tasks", StringComparison.OrdinalIgnoreCase),
             "validate_domain_knowledge" => job.Command.Equals("validate-domain-knowledge", StringComparison.OrdinalIgnoreCase),
+            "run_scalping_robustness_expansion" => job.Command.Equals("run-scalping-robustness-expansion", StringComparison.OrdinalIgnoreCase),
             _ => false
         };
     }

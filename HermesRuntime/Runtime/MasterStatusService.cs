@@ -176,6 +176,20 @@ public sealed class MasterStatusService
             ? Directory.GetFiles(scalpingService.BotSpecDirectory, "*.json").Length
             : 0;
         var scalpingDataGap = xauusdQuality.DataGaps.Count == 0 ? "-" : string.Join(",", xauusdQuality.DataGaps);
+        var expansionReports = new ScalpingRobustnessExpansionService(_storagePaths, _runtimeRoot).LoadReports();
+        var scalpingRobustnessExpanded = expansionReports.Count(report => report.Status == ScalpingExpansionStatus.robustness_expanded);
+        var scalpingFinalCandidates = expansionReports.Count(report => report.Status == ScalpingExpansionStatus.final_candidate);
+        var scalpingRejectedAfterExpansion = expansionReports.Count(report => report.Status == ScalpingExpansionStatus.rejected_after_expansion);
+        var bestFinalScalpingCandidate = expansionReports
+            .Where(report => report.Status == ScalpingExpansionStatus.final_candidate)
+            .OrderByDescending(report => report.StabilityScore)
+            .FirstOrDefault()?.CandidateId;
+        var scalpingMonteCarloHealth = expansionReports.Count == 0
+            ? "missing"
+            : expansionReports.Any(report => report.MonteCarlo.Health != "ok") ? "needs_attention" : "ok";
+        var scalpingParameterSensitivityHealth = expansionReports.Count == 0
+            ? "missing"
+            : expansionReports.Any(report => report.ParameterSensitivity.Health != "ok") ? "needs_attention" : "ok";
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -463,6 +477,12 @@ public sealed class MasterStatusService
                     ["market_data_eurusd_available"] = marketDataAvailability.EurusdAvailable,
                     ["market_data_quality_health"] = xauusdQuality.QualityHealth,
                     ["scalping_data_gap"] = scalpingDataGap,
+                    ["scalping_robustness_expanded"] = scalpingRobustnessExpanded,
+                    ["scalping_final_candidates"] = scalpingFinalCandidates,
+                    ["scalping_rejected_after_expansion"] = scalpingRejectedAfterExpansion,
+                    ["best_final_scalping_candidate"] = bestFinalScalpingCandidate,
+                    ["scalping_monte_carlo_health"] = scalpingMonteCarloHealth,
+                    ["scalping_parameter_sensitivity_health"] = scalpingParameterSensitivityHealth,
                     ["walkforward_path"] = walkforwardPath,
                     ["walkforward_confidence"] = GetDouble(walkforward, "walkforward_confidence", "walkforwardConfidence"),
                     ["next_validation_recommendations"] = GetStringArray(researchInsights, "next_validation_recommendations", "nextValidationRecommendations").Take(8).ToList()
@@ -537,6 +557,12 @@ public sealed class MasterStatusService
             MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,
             MarketDataQualityHealth: xauusdQuality.QualityHealth,
             ScalpingDataGap: scalpingDataGap,
+            ScalpingRobustnessExpanded: scalpingRobustnessExpanded,
+            ScalpingFinalCandidates: scalpingFinalCandidates,
+            ScalpingRejectedAfterExpansion: scalpingRejectedAfterExpansion,
+            BestFinalScalpingCandidate: bestFinalScalpingCandidate,
+            ScalpingMonteCarloHealth: scalpingMonteCarloHealth,
+            ScalpingParameterSensitivityHealth: scalpingParameterSensitivityHealth,
             DomainValidationWarnings: domainValidation.DomainValidationWarnings,
             ActiveGoals: goalState.Goals.Where(goal => goal.Active).Select(goal => goal.GoalId).ToList(),
             TopGoal: goalState.TopGoalId,

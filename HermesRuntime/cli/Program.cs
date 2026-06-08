@@ -165,6 +165,9 @@ internal sealed class HermesCli
             "scalping-candidates" => ShowScalpingCandidates(),
             "scalping-candidate" => ShowScalpingCandidate(),
             "scalping-validation-report" => ShowScalpingValidationReport(),
+            "run-scalping-robustness-expansion" => RunScalpingRobustnessExpansion(),
+            "scalping-robustness-report" => ShowScalpingRobustnessReport(),
+            "scalping-final-candidates" => ShowScalpingFinalCandidates(),
             "export-scalping-bot-spec" => ExportScalpingBotSpec(),
             "export-signal-agent-spec" => ExportSignalAgentSpec(),
             "near-miss-strategies" => ShowNearMissStrategies(),
@@ -331,6 +334,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes scalping-candidates Scalping-Kandidaten anzeigen");
         Console.WriteLine("  hermes scalping-candidate --id <ID> einzelnen Scalping-Kandidaten anzeigen");
         Console.WriteLine("  hermes scalping-validation-report strenge Scalping-Gates anzeigen");
+        Console.WriteLine("  hermes run-scalping-robustness-expansion --id <ID>|--all-robust robuste Scalping-Kandidaten erweitern");
+        Console.WriteLine("  hermes scalping-robustness-report --id <ID> Robustness Expansion anzeigen");
+        Console.WriteLine("  hermes scalping-final-candidates finale Scalping-Kandidaten anzeigen");
         Console.WriteLine("  hermes export-scalping-bot-spec --id <ID> cTrader-Spezifikationsreport exportieren");
         Console.WriteLine("  hermes export-signal-agent-spec --id <ID> Signal-Agent-Spezifikationsreport exportieren");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
@@ -478,6 +484,12 @@ internal sealed class HermesCli
         WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_quality_health", snapshot.MarketDataQualityHealth);
         WriteField("scalping_data_gap", snapshot.ScalpingDataGap);
+        WriteField("scalping_robustness_expanded", snapshot.ScalpingRobustnessExpanded.ToString());
+        WriteField("scalping_final_candidates", snapshot.ScalpingFinalCandidates.ToString());
+        WriteField("scalping_rejected_after_expansion", snapshot.ScalpingRejectedAfterExpansion.ToString());
+        WriteField("best_final_scalping_candidate", snapshot.BestFinalScalpingCandidate ?? "-");
+        WriteField("scalping_monte_carlo_health", snapshot.ScalpingMonteCarloHealth);
+        WriteField("scalping_parameter_sensitivity_health", snapshot.ScalpingParameterSensitivityHealth);
         WriteMessages("domain_validation_warnings", snapshot.DomainValidationWarnings.Take(8).ToList());
         WriteField("top_goal", string.IsNullOrWhiteSpace(snapshot.TopGoal) ? "-" : snapshot.TopGoal);
         WriteMessages("active_goals", snapshot.ActiveGoals);
@@ -1926,6 +1938,7 @@ internal sealed class HermesCli
             "consolidate_memory" => ExecuteConsolidateMemoryJob(storagePaths),
             "execute_validation_tasks" => ExecuteValidationTasksJob(storagePaths, job),
             "validate_domain_knowledge" => ExecuteDomainKnowledgeValidationJob(storagePaths, job),
+            "run_scalping_robustness_expansion" => ExecuteScalpingRobustnessExpansionJob(storagePaths),
             "market_data_refresh" => new ScheduledJobExecutionResult(
                 Status: "skipped",
                 WorkPerformed: false,
@@ -1946,6 +1959,18 @@ internal sealed class HermesCli
         }
 
         return result;
+    }
+
+    private ScheduledJobExecutionResult ExecuteScalpingRobustnessExpansionJob(StoragePaths storagePaths)
+    {
+        var service = new ScalpingRobustnessExpansionService(storagePaths, _runtimeRoot);
+        var reports = service.ExpandAllRobust();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: reports.Count > 0,
+            Action: $"scalping_robustness_expansion reports={reports.Count}; no_auto_trading=true; human_review_required=true",
+            ReportPath: service.ExpansionDirectory,
+            Warnings: reports.Count == 0 ? ["no_robust_scalping_candidates_to_expand"] : []);
     }
 
     private static bool ShouldRefreshMasterStatusAfterScheduledJob(string jobType) =>
@@ -3396,6 +3421,83 @@ internal sealed class HermesCli
         {
             WriteScalpingCandidateSummary(candidate);
             WriteMessages("Gate Failures", candidate.Validation.GateFailures);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunScalpingRobustnessExpansion()
+    {
+        WriteHeader("Hermes Scalping Robustness Expansion");
+        var service = new ScalpingRobustnessExpansionService(BuildStoragePaths(), _runtimeRoot);
+        var simulations = ReadIntOption(_args, "--simulations", fallback: 1000, min: 1000, max: 10000);
+        IReadOnlyList<ScalpingRobustnessExpansionReport> reports;
+        if (_args.Any(arg => arg.Equals("--all-robust", StringComparison.OrdinalIgnoreCase)))
+        {
+            reports = service.ExpandAllRobust(simulations);
+        }
+        else
+        {
+            var id = ReadOption(_args, "--id");
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                WriteError("--id fehlt oder nutze --all-robust");
+                WriteSafety();
+                return 1;
+            }
+
+            reports = [service.Expand(id, simulations)];
+        }
+
+        WriteField("Reports", reports.Count.ToString());
+        foreach (var report in reports)
+        {
+            WriteScalpingRobustnessReport(report);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingRobustnessReport()
+    {
+        WriteHeader("Hermes Scalping Robustness Report");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteError("--id fehlt");
+            WriteSafety();
+            return 1;
+        }
+
+        var report = new ScalpingRobustnessExpansionService(BuildStoragePaths(), _runtimeRoot).LoadReport(id);
+        if (report is null)
+        {
+            WriteError($"Robustness Report nicht gefunden: {id}");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteScalpingRobustnessReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingFinalCandidates()
+    {
+        WriteHeader("Hermes Scalping Final Candidates");
+        var reports = new ScalpingRobustnessExpansionService(BuildStoragePaths(), _runtimeRoot).LoadReports();
+        var finals = reports.Where(report => report.Status == ScalpingExpansionStatus.final_candidate).ToList();
+        WriteField("Final Candidates", finals.Count.ToString());
+        WriteField("Expanded", reports.Count(report => report.Status == ScalpingExpansionStatus.robustness_expanded).ToString());
+        WriteField("Rejected After Expansion", reports.Count(report => report.Status == ScalpingExpansionStatus.rejected_after_expansion).ToString());
+        foreach (var report in finals.Take(10))
+        {
+            WriteScalpingRobustnessReport(report);
         }
 
         Console.WriteLine();
@@ -5629,6 +5731,25 @@ internal sealed class HermesCli
         WriteMessages("Take Profit Rules", candidate.TakeProfitRules);
         WriteMessages("Overfit Warnings", candidate.Validation.OverfitWarnings);
         WriteMessages("Gate Failures", candidate.Validation.GateFailures);
+    }
+
+    private static void WriteScalpingRobustnessReport(ScalpingRobustnessExpansionReport report)
+    {
+        WriteSubHeader($"{report.CandidateId} / {report.Status}");
+        WriteField("Asset", report.Asset);
+        WriteField("Setup", report.SetupType);
+        WriteField("Stability", $"{report.StabilityScore:0.####}");
+        WriteField("Final Candidate", report.FinalCandidate.ToString().ToLowerInvariant());
+        WriteField("MC Simulations", report.MonteCarlo.Simulations.ToString());
+        WriteField("MC Median", $"{report.MonteCarlo.MedianOutcomeR:0.####}");
+        WriteField("MC Worst 5%", $"{report.MonteCarlo.WorstFivePercentOutcomeR:0.####}");
+        WriteField("MC Ruin", $"{report.MonteCarlo.RuinProbability:0.####}");
+        WriteField("Sensitivity", report.ParameterSensitivity.Health);
+        WriteField("Sensitivity Positive", $"OOS {report.ParameterSensitivity.PositiveOosVariants}/{report.ParameterSensitivity.VariantsTested}, WF {report.ParameterSensitivity.PositiveWalkForwardVariants}/{report.ParameterSensitivity.VariantsTested}, Cost {report.ParameterSensitivity.PositiveCostStressVariants}/{report.ParameterSensitivity.VariantsTested}");
+        WriteField("Regimes", $"{report.RegimeValidation.PositiveOrNeutralRegimes}/7 {report.RegimeValidation.Health}");
+        WriteMessages("Blockers", report.Blockers);
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
     }
 
     private void WriteRiskOfRuinEntry(RiskOfRuinEntry entry)
