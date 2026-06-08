@@ -37,6 +37,7 @@ public sealed class MasterStatusService
         var cognitiveRoot = Path.Combine(_storagePaths.Root, "cognitive_core");
         var strategyRoot = Path.Combine(_storagePaths.Root, "strategy_research");
         var botCandidatePath = Path.Combine(_storagePaths.Root, "bot_candidates", "latest_bot_candidate_report.json");
+        var scalpingService = new ScalpingResearchService(_storagePaths);
         var simulationRoot = Path.Combine(_storagePaths.Root, "reports", "simulation");
         var requestedWalkforwardPath = Path.Combine(_storagePaths.Root, "simulation", "walkforward_validation.json");
         var fallbackWalkforwardPath = Path.Combine(simulationRoot, "walkforward_summary.json");
@@ -67,6 +68,7 @@ public sealed class MasterStatusService
 
         var walkforward = LoadOrDefault(walkforwardPath);
         var botCandidateReport = LoadOrDefault(botCandidatePath);
+        var scalpingReport = scalpingService.LoadReport();
         var knowledgeQuality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
         var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
         var domainValidation = new DomainKnowledgeValidationService(_storagePaths).BuildStatus();
@@ -158,6 +160,18 @@ public sealed class MasterStatusService
         var rejectedCandidates = FirstPositive(
             GetInt(botCandidateReport, "rejected_candidate_count", "rejectedCandidateCount"),
             GetInt(researchInsights, "rejected_candidate_count", "rejectedCandidateCount"));
+        var scalpingAsset = scalpingReport?.Asset ?? ScalpingResearchService.DefaultAsset;
+        var scalpingCandidatesTotal = scalpingReport?.CandidatesTotal ?? 0;
+        var scalpingRobustCandidates = scalpingReport?.RobustCandidates ?? 0;
+        var scalpingRejectedCandidates = scalpingReport?.RejectedCandidates ?? 0;
+        var scalpingNeedsMoreData = scalpingReport?.NeedsMoreData ?? 0;
+        var bestScalpingCandidate = scalpingReport?.BestCandidateId;
+        var signalAgentSpecsReady = Directory.Exists(scalpingService.SignalSpecDirectory)
+            ? Directory.GetFiles(scalpingService.SignalSpecDirectory, "*.json").Length
+            : 0;
+        var cTraderBotSpecsReady = Directory.Exists(scalpingService.BotSpecDirectory)
+            ? Directory.GetFiles(scalpingService.BotSpecDirectory, "*.json").Length
+            : 0;
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -432,6 +446,14 @@ public sealed class MasterStatusService
                     ["high_risk_strategies"] = highRiskCount,
                     ["demo_bot_candidates"] = demoBotCandidates,
                     ["rejected_candidates"] = rejectedCandidates,
+                    ["scalping_asset"] = scalpingAsset,
+                    ["scalping_candidates_total"] = scalpingCandidatesTotal,
+                    ["scalping_robust_candidates"] = scalpingRobustCandidates,
+                    ["scalping_rejected_candidates"] = scalpingRejectedCandidates,
+                    ["scalping_needs_more_data"] = scalpingNeedsMoreData,
+                    ["best_scalping_candidate"] = bestScalpingCandidate,
+                    ["signal_agent_specs_ready"] = signalAgentSpecsReady,
+                    ["ctrader_bot_specs_ready"] = cTraderBotSpecsReady,
                     ["walkforward_path"] = walkforwardPath,
                     ["walkforward_confidence"] = GetDouble(walkforward, "walkforward_confidence", "walkforwardConfidence"),
                     ["next_validation_recommendations"] = GetStringArray(researchInsights, "next_validation_recommendations", "nextValidationRecommendations").Take(8).ToList()
@@ -493,6 +515,14 @@ public sealed class MasterStatusService
             SoftwareValidationPending: domainValidation.SoftwareValidationPending,
             ProcessValidationPending: domainValidation.ProcessValidationPending,
             ResearchValidationPending: domainValidation.ResearchValidationPending,
+            ScalpingAsset: scalpingAsset,
+            ScalpingCandidatesTotal: scalpingCandidatesTotal,
+            ScalpingRobustCandidates: scalpingRobustCandidates,
+            ScalpingRejectedCandidates: scalpingRejectedCandidates,
+            ScalpingNeedsMoreData: scalpingNeedsMoreData,
+            BestScalpingCandidate: bestScalpingCandidate,
+            SignalAgentSpecsReady: signalAgentSpecsReady,
+            CTraderBotSpecsReady: cTraderBotSpecsReady,
             DomainValidationWarnings: domainValidation.DomainValidationWarnings,
             ActiveGoals: goalState.Goals.Where(goal => goal.Active).Select(goal => goal.GoalId).ToList(),
             TopGoal: goalState.TopGoalId,

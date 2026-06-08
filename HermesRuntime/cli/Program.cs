@@ -155,6 +155,13 @@ internal sealed class HermesCli
             "bot-candidates" => ShowBotCandidates(),
             "bot-candidate-report" => ShowBotCandidateReport(),
             "candidate-rejection-analysis" => ShowCandidateRejectionAnalysis(),
+            "scalping-status" => ShowScalpingStatus(),
+            "run-scalping-research" => RunScalpingResearch(),
+            "scalping-candidates" => ShowScalpingCandidates(),
+            "scalping-candidate" => ShowScalpingCandidate(),
+            "scalping-validation-report" => ShowScalpingValidationReport(),
+            "export-scalping-bot-spec" => ExportScalpingBotSpec(),
+            "export-signal-agent-spec" => ExportSignalAgentSpec(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -309,6 +316,13 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes bot-candidates     strenge Demo-Bot-Kandidatenbewertung anzeigen");
         Console.WriteLine("  hermes bot-candidate-report Bot-Candidate-Report mit Ablehnungsgruenden anzeigen");
         Console.WriteLine("  hermes candidate-rejection-analysis Ablehnungsdiagnose fuer Bot-Kandidaten anzeigen");
+        Console.WriteLine("  hermes scalping-status   fokussierten Scalping-Research-Status anzeigen");
+        Console.WriteLine("  hermes run-scalping-research --asset XAUUSD --max-variants 50 gezielte Scalping-Varianten testen");
+        Console.WriteLine("  hermes scalping-candidates Scalping-Kandidaten anzeigen");
+        Console.WriteLine("  hermes scalping-candidate --id <ID> einzelnen Scalping-Kandidaten anzeigen");
+        Console.WriteLine("  hermes scalping-validation-report strenge Scalping-Gates anzeigen");
+        Console.WriteLine("  hermes export-scalping-bot-spec --id <ID> cTrader-Spezifikationsreport exportieren");
+        Console.WriteLine("  hermes export-signal-agent-spec --id <ID> Signal-Agent-Spezifikationsreport exportieren");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -441,6 +455,14 @@ internal sealed class HermesCli
         WriteField("software_validation_pending", snapshot.SoftwareValidationPending.ToString());
         WriteField("process_validation_pending", snapshot.ProcessValidationPending.ToString());
         WriteField("research_validation_pending", snapshot.ResearchValidationPending.ToString());
+        WriteField("scalping_asset", snapshot.ScalpingAsset);
+        WriteField("scalping_candidates_total", snapshot.ScalpingCandidatesTotal.ToString());
+        WriteField("scalping_robust_candidates", snapshot.ScalpingRobustCandidates.ToString());
+        WriteField("scalping_rejected_candidates", snapshot.ScalpingRejectedCandidates.ToString());
+        WriteField("scalping_needs_more_data", snapshot.ScalpingNeedsMoreData.ToString());
+        WriteField("best_scalping_candidate", snapshot.BestScalpingCandidate ?? "-");
+        WriteField("signal_agent_specs_ready", snapshot.SignalAgentSpecsReady.ToString());
+        WriteField("ctrader_bot_specs_ready", snapshot.CTraderBotSpecsReady.ToString());
         WriteMessages("domain_validation_warnings", snapshot.DomainValidationWarnings.Take(8).ToList());
         WriteField("top_goal", string.IsNullOrWhiteSpace(snapshot.TopGoal) ? "-" : snapshot.TopGoal);
         WriteMessages("active_goals", snapshot.ActiveGoals);
@@ -3273,6 +3295,153 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowScalpingStatus()
+    {
+        WriteHeader("Hermes Scalping Research Status");
+        var service = new ScalpingResearchService(BuildStoragePaths());
+        var report = service.LoadReport() ?? service.RunResearch(ScalpingResearchService.DefaultAsset, 0);
+        WriteScalpingSummary(service, report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunScalpingResearch()
+    {
+        WriteHeader("Hermes Scalping Research Loop");
+        var asset = ReadOption(_args, "--asset") ?? ScalpingResearchService.DefaultAsset;
+        var maxVariants = ReadIntOption(_args, "--max-variants", fallback: 50, min: 1, max: 500);
+        var service = new ScalpingResearchService(BuildStoragePaths());
+        var report = service.RunResearch(asset, maxVariants);
+        WriteScalpingSummary(service, report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingCandidates()
+    {
+        WriteHeader("Hermes Scalping Candidates");
+        var service = new ScalpingResearchService(BuildStoragePaths());
+        var report = service.LoadOrCreateStatus();
+        WriteScalpingSummary(service, report);
+        foreach (var candidate in report.Candidates.OrderByDescending(item => item.ConfidenceScore).Take(15))
+        {
+            WriteScalpingCandidateSummary(candidate);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingCandidate()
+    {
+        WriteHeader("Hermes Scalping Candidate");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteError("--id fehlt");
+            WriteSafety();
+            return 1;
+        }
+
+        var candidate = new ScalpingResearchService(BuildStoragePaths()).FindCandidate(id);
+        if (candidate is null)
+        {
+            WriteError($"Scalping Candidate nicht gefunden: {id}");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteScalpingCandidateDetails(candidate);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingValidationReport()
+    {
+        WriteHeader("Hermes Scalping Validation Report");
+        var service = new ScalpingResearchService(BuildStoragePaths());
+        var report = service.LoadOrCreateStatus();
+        WriteScalpingSummary(service, report);
+        WriteMessages("Data Gaps", report.DataGaps);
+        WriteMessages(
+            "Top Rejection Reasons",
+            report.Candidates
+                .SelectMany(candidate => candidate.RejectionReasons)
+                .GroupBy(reason => reason, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(group => group.Count())
+                .ThenBy(group => group.Key, StringComparer.Ordinal)
+                .Take(12)
+                .Select(group => $"{group.Key}: {group.Count()}")
+                .ToList());
+        foreach (var candidate in report.Candidates.OrderByDescending(item => item.ConfidenceScore).Take(8))
+        {
+            WriteScalpingCandidateSummary(candidate);
+            WriteMessages("Gate Failures", candidate.Validation.GateFailures);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExportScalpingBotSpec()
+    {
+        WriteHeader("Hermes Scalping cTrader Bot Spec Export");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteError("--id fehlt");
+            WriteSafety();
+            return 1;
+        }
+
+        try
+        {
+            var result = new ScalpingResearchService(BuildStoragePaths()).ExportCTraderBotSpec(id);
+            WriteField("JSON", DisplayPath(result.JsonPath));
+            WriteField("Markdown", DisplayPath(result.MarkdownPath));
+            WriteSafety();
+            return 0;
+        }
+        catch (InvalidOperationException ex)
+        {
+            WriteError(ex.Message);
+            WriteSafety();
+            return 1;
+        }
+    }
+
+    private int ExportSignalAgentSpec()
+    {
+        WriteHeader("Hermes Signal Agent Spec Export");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteError("--id fehlt");
+            WriteSafety();
+            return 1;
+        }
+
+        try
+        {
+            var result = new ScalpingResearchService(BuildStoragePaths()).ExportSignalAgentSpec(id);
+            WriteField("JSON", DisplayPath(result.JsonPath));
+            WriteField("Markdown", DisplayPath(result.MarkdownPath));
+            WriteSafety();
+            return 0;
+        }
+        catch (InvalidOperationException ex)
+        {
+            WriteError(ex.Message);
+            WriteSafety();
+            return 1;
+        }
+    }
+
     private int ShowNearMissStrategies()
     {
         WriteHeader("Hermes Near-Miss Strategies");
@@ -5343,6 +5512,56 @@ internal sealed class HermesCli
         {
             WriteField($"Scenario {scenario.Scenario.Name}", $"pf={scenario.AdjustedProfitFactor:0.####},net_r={scenario.AdjustedNetR:0.####},score={scenario.SurvivalScore:0.####},survived={scenario.Survived.ToString().ToLowerInvariant()}");
         }
+    }
+
+    private void WriteScalpingSummary(ScalpingResearchService service, ScalpingResearchReport report)
+    {
+        WriteField("Report", DisplayPath(service.LatestReportPath));
+        WriteField("scalping_asset", report.Asset);
+        WriteField("variants_tested", report.VariantsTested.ToString());
+        WriteField("candidates_total", report.CandidatesTotal.ToString());
+        WriteField("robust_candidates", report.RobustCandidates.ToString());
+        WriteField("rejected_candidates", report.RejectedCandidates.ToString());
+        WriteField("needs_more_data", report.NeedsMoreData.ToString());
+        WriteField("best_candidate", report.BestCandidateId ?? "-");
+        WriteField("bot_specs_ready", Directory.Exists(service.BotSpecDirectory) ? Directory.GetFiles(service.BotSpecDirectory, "*.json").Length.ToString() : "0");
+        WriteField("signal_specs_ready", Directory.Exists(service.SignalSpecDirectory) ? Directory.GetFiles(service.SignalSpecDirectory, "*.json").Length.ToString() : "0");
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", report.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", report.LiveTradingEnabled.ToString().ToLowerInvariant());
+        WriteMessages("Data Gaps", report.DataGaps);
+    }
+
+    private static void WriteScalpingCandidateSummary(ScalpingStrategyCandidate candidate)
+    {
+        WriteSubHeader($"{candidate.CandidateId} / {candidate.ValidationStatus} / {candidate.SetupType}");
+        WriteField("Asset", candidate.Asset);
+        WriteField("Timeframe", candidate.Timeframe);
+        WriteField("Confidence", $"{candidate.ConfidenceScore:0.####}");
+        WriteField("Trades", candidate.Backtest.TradeCount.ToString());
+        WriteField("IS/OOS/WF", $"{candidate.Backtest.InSampleNetR:0.####} / {candidate.Backtest.OosNetR:0.####} / {candidate.Backtest.WalkForwardNetR:0.####}");
+        WriteField("Cost Stress", $"{candidate.Backtest.CostStressNetR:0.####}");
+        WriteField("Risk of Ruin", $"{candidate.RiskProfile.RiskOfRuinProbability:0.####}");
+        WriteMessages("Rejection Reasons", candidate.RejectionReasons);
+    }
+
+    private static void WriteScalpingCandidateDetails(ScalpingStrategyCandidate candidate)
+    {
+        WriteScalpingCandidateSummary(candidate);
+        WriteField("Strategy", candidate.StrategyName);
+        WriteField("Risk Per Trade", $"{candidate.RiskPerTrade:0.####}");
+        WriteField("Max Daily Loss", $"{candidate.MaxDailyLoss:0.####}");
+        WriteField("Max Trades/Day", candidate.MaxTradesPerDay.ToString());
+        WriteField("Session Filter", candidate.SessionFilter);
+        WriteField("Spread Filter", candidate.SpreadFilter);
+        WriteField("News Filter", candidate.NewsFilterStub);
+        WriteMessages("Entry Rules", candidate.EntryRules);
+        WriteMessages("Exit Rules", candidate.ExitRules);
+        WriteMessages("Stop Rules", candidate.StopLossRules);
+        WriteMessages("Take Profit Rules", candidate.TakeProfitRules);
+        WriteMessages("Overfit Warnings", candidate.Validation.OverfitWarnings);
+        WriteMessages("Gate Failures", candidate.Validation.GateFailures);
     }
 
     private void WriteRiskOfRuinEntry(RiskOfRuinEntry entry)
@@ -8115,7 +8334,7 @@ internal sealed class HermesCli
 
     private static void WriteSafety()
     {
-        Console.WriteLine("Safety: keine Trading-Ausfuehrung, keine Broker-Orders, Supervisor nur per kontrolliertem Start/Stop-Request, no_auto_trading sichtbar, human_review_required sichtbar.");
+        Console.WriteLine("Safety: keine Trading-Ausfuehrung, keine Broker-Orders, no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false.");
     }
 
     private static void WriteWarning(string message) => WriteColored($"WARN: {message}", ConsoleColor.Yellow);
