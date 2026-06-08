@@ -84,17 +84,35 @@ public sealed record ScalpingRiskProfile(
     string RiskNotes);
 
 public sealed record ScalpingSignalSpec(
+    string CandidateId,
     string SignalName,
+    string StrategyName,
     string Asset,
+    string Timeframe,
+    string SetupType,
+    IReadOnlyList<string> SignalDirectionLogic,
     IReadOnlyList<string> EntryConditions,
     IReadOnlyList<string> InvalidationConditions,
+    IReadOnlyList<string> ExitConditions,
+    object ConfidenceModel,
+    object ConfidenceThresholds,
+    string SessionFilter,
+    string SpreadFilter,
+    string NewsFilter,
     double ConfidenceScore,
     IReadOnlyList<string> RequiredMarketContext,
     IReadOnlyList<string> RiskNotes,
+    int MaxTradesPerDay,
+    double MaxDailyLoss,
     string HumanReviewStatus,
+    object CertificationSummary,
     object BacktestSummary,
     object OosSummary,
     object MonteCarloSummary,
+    object SensitivitySummary,
+    object RegimeSummary,
+    object DrawdownSummary,
+    IReadOnlyList<string> OperationalLimits,
     bool NoAutoTrading,
     bool HumanReviewRequired,
     bool BrokerOrdersEnabled,
@@ -221,28 +239,73 @@ public sealed class ScalpingResearchService
 
     public (string JsonPath, string MarkdownPath) ExportSignalAgentSpec(string id)
     {
-        var candidate = RequireRobustCandidate(id);
+        var candidate = RequireCertifiedCandidate(id);
+        var certification = new ScalpingCertificationService(_storagePaths, _runtimeRoot).LoadReport(id)!;
+        var expansion = new ScalpingRobustnessExpansionService(_storagePaths, _runtimeRoot).LoadReport(id);
         var spec = new ScalpingSignalSpec(
+            CandidateId: candidate.CandidateId,
             SignalName: candidate.StrategyName,
+            StrategyName: candidate.StrategyName,
             Asset: candidate.Asset,
+            Timeframe: candidate.Timeframe,
+            SetupType: candidate.SetupType,
+            SignalDirectionLogic: ["research_signal_only", "range_breakout_direction_from_confirmed_m5_break", "no_order_execution"],
             EntryConditions: candidate.EntryRules,
             InvalidationConditions: [.. candidate.StopLossRules, "spread_filter_fails", "session_filter_fails", "news_filter_stub_blocks"],
+            ExitConditions: candidate.ExitRules,
+            ConfidenceModel: new { source = "certified_scalping_research_v1", score = candidate.ConfidenceScore, certification_status = certification.Status.ToString(), human_review_required = true },
+            ConfidenceThresholds: new { observe_only_below = 0.70, review_required_from = 0.70, candidate_confidence = candidate.ConfidenceScore, production_requires_separate_approval = true },
+            SessionFilter: candidate.SessionFilter,
+            SpreadFilter: candidate.SpreadFilter,
+            NewsFilter: candidate.NewsFilterStub,
             ConfidenceScore: candidate.ConfidenceScore,
             RequiredMarketContext: [candidate.Timeframe, candidate.SetupType, candidate.SessionFilter, candidate.SpreadFilter],
-            RiskNotes: [candidate.RiskProfile.RiskNotes, $"risk_of_ruin={candidate.RiskProfile.RiskOfRuinProbability:0.####}", $"mc_p95_drawdown_r={candidate.RiskProfile.MonteCarloP95DrawdownR:0.####}"],
+            RiskNotes: [candidate.RiskProfile.RiskNotes, $"risk_of_ruin={candidate.RiskProfile.RiskOfRuinProbability:0.####}", $"max_drawdown_r={certification.DrawdownCertification.MaxDrawdownR:0.####}", $"max_daily_drawdown_r={certification.DrawdownCertification.MaxDailyDrawdownR:0.####}", $"max_weekly_drawdown_r={certification.DrawdownCertification.MaxWeeklyDrawdownR:0.####}"],
+            MaxTradesPerDay: candidate.MaxTradesPerDay,
+            MaxDailyLoss: candidate.MaxDailyLoss,
             HumanReviewStatus: "open_required",
+            CertificationSummary: new { status = certification.Status.ToString(), certified_candidate = certification.CertifiedCandidate, profit_factor = certification.DrawdownCertification.ProfitFactor, recovery_factor = certification.DrawdownCertification.RecoveryFactor, human_review_package = certification.HumanReviewPackagePath },
             BacktestSummary: new { candidate.Backtest.TradeCount, candidate.Backtest.InSampleNetR, candidate.Backtest.ProfitFactor, candidate.Backtest.MaxDrawdownR },
             OosSummary: new { candidate.Backtest.OosNetR, candidate.Backtest.WalkForwardNetR, candidate.Backtest.CostStressNetR },
-            MonteCarloSummary: new { candidate.RiskProfile.MonteCarloMedianDrawdownR, candidate.RiskProfile.MonteCarloP95DrawdownR, candidate.RiskProfile.RiskOfRuinProbability },
+            MonteCarloSummary: expansion is null ? new { candidate.RiskProfile.MonteCarloMedianDrawdownR, candidate.RiskProfile.MonteCarloP95DrawdownR, candidate.RiskProfile.RiskOfRuinProbability } : new { expansion.MonteCarlo.Health, expansion.MonteCarlo.Simulations, expansion.MonteCarlo.MedianOutcomeR, expansion.MonteCarlo.WorstFivePercentOutcomeR, expansion.MonteCarlo.RuinProbability },
+            SensitivitySummary: expansion is null ? new { health = "missing" } : new { expansion.ParameterSensitivity.Health, expansion.ParameterSensitivity.StableConservativeCorridorAvailable, expansion.ParameterSensitivity.StableCorridor.PrimaryConfidenceDropDriver },
+            RegimeSummary: expansion is null ? new { health = "missing" } : new { expansion.RegimeValidation.Health, expansion.RegimeValidation.PositiveOrNeutralRegimes },
+            DrawdownSummary: new { certification.DrawdownCertification.MaxDrawdownR, certification.DrawdownCertification.MaxDailyDrawdownR, certification.DrawdownCertification.MaxWeeklyDrawdownR, certification.DrawdownCertification.MaxConsecutiveLosses, certification.DrawdownCertification.RecoveryFactor, certification.DrawdownCertification.ProfitFactor },
+            OperationalLimits: ["read_only_signal_specification", "no_auto_trading=true", "human_review_required=true", "broker_orders_enabled=false", "live_trading_enabled=false", $"max_trades_per_day={candidate.MaxTradesPerDay}", $"max_daily_loss={candidate.MaxDailyLoss:0.####}"],
             NoAutoTrading: true,
             HumanReviewRequired: true,
             BrokerOrdersEnabled: false,
             LiveTradingEnabled: false);
-        Directory.CreateDirectory(SignalSpecDirectory);
-        var basePath = Path.Combine(SignalSpecDirectory, candidate.CandidateId);
-        File.WriteAllText(basePath + ".json", JsonSerializer.Serialize(spec, JsonDefaults.WriteOptions));
-        File.WriteAllText(basePath + ".md", SignalMarkdown(spec));
-        return (basePath + ".json", basePath + ".md");
+        var candidateDirectory = Path.Combine(SignalSpecDirectory, candidate.CandidateId);
+        Directory.CreateDirectory(candidateDirectory);
+        var jsonPath = Path.Combine(candidateDirectory, "signal_agent_spec.json");
+        var markdownPath = Path.Combine(candidateDirectory, "signal_agent_spec.md");
+        File.WriteAllText(jsonPath, JsonSerializer.Serialize(spec, JsonDefaults.WriteOptions));
+        File.WriteAllText(markdownPath, SignalMarkdown(spec));
+        return (jsonPath, markdownPath);
+    }
+
+    private ScalpingStrategyCandidate RequireCertifiedCandidate(string id)
+    {
+        var candidate = RequireRobustCandidate(id);
+        var certificationService = new ScalpingCertificationService(_storagePaths, _runtimeRoot);
+        var certification = certificationService.LoadReport(id);
+        if (certification?.Status != ScalpingCertificationStatus.certified_candidate)
+        {
+            throw new InvalidOperationException($"candidate_not_certified_yet:{id}");
+        }
+
+        if (!File.Exists(Path.Combine(certificationService.CertificationDirectory, id, "certification_report.json")))
+        {
+            throw new InvalidOperationException($"certification_report_missing:{id}");
+        }
+
+        if (!File.Exists(certification.HumanReviewPackagePath))
+        {
+            throw new InvalidOperationException($"human_review_package_missing:{id}");
+        }
+
+        return candidate;
     }
 
     private ScalpingStrategyCandidate RequireRobustCandidate(string id)
@@ -378,7 +441,10 @@ This is a specification draft only. It contains no broker credentials, no live o
     private static string SignalMarkdown(ScalpingSignalSpec spec) => $"""
 # {spec.SignalName}
 
+- candidate_id: {spec.CandidateId}
 - asset: {spec.Asset}
+- timeframe: {spec.Timeframe}
+- setup_type: {spec.SetupType}
 - confidence_score: {spec.ConfidenceScore.ToString("0.####", CultureInfo.InvariantCulture)}
 - human_review_status: {spec.HumanReviewStatus}
 - no_auto_trading: true
@@ -386,17 +452,36 @@ This is a specification draft only. It contains no broker credentials, no live o
 - broker_orders_enabled: false
 - live_trading_enabled: false
 
+## Signal Direction Logic
+{Bullets(spec.SignalDirectionLogic)}
+
 ## Entry Conditions
 {Bullets(spec.EntryConditions)}
 
 ## Invalidation Conditions
 {Bullets(spec.InvalidationConditions)}
 
+## Exit Conditions
+{Bullets(spec.ExitConditions)}
+
+## Confidence Model
+- source: certified_scalping_research_v1
+- threshold_review_required_from: 0.70
+- candidate_confidence: {spec.ConfidenceScore.ToString("0.####", CultureInfo.InvariantCulture)}
+
+## Filters
+- session_filter: {spec.SessionFilter}
+- spread_filter: {spec.SpreadFilter}
+- news_filter: {spec.NewsFilter}
+
 ## Required Market Context
 {Bullets(spec.RequiredMarketContext)}
 
 ## Risk Notes
 {Bullets(spec.RiskNotes)}
+
+## Operational Limits
+{Bullets(spec.OperationalLimits)}
 
 This is a portable Signal-Agent specification only. It does not execute trades.
 """;

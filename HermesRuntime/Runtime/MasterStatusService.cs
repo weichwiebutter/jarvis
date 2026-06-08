@@ -170,8 +170,13 @@ public sealed class MasterStatusService
         var scalpingNeedsMoreData = scalpingReport?.NeedsMoreData ?? 0;
         var bestScalpingCandidate = scalpingReport?.BestCandidateId;
         var signalAgentSpecsReady = Directory.Exists(scalpingService.SignalSpecDirectory)
-            ? Directory.GetFiles(scalpingService.SignalSpecDirectory, "*.json").Length
+            ? Directory.GetFiles(scalpingService.SignalSpecDirectory, "signal_agent_spec.json", SearchOption.AllDirectories).Length
             : 0;
+        var latestSignalAgentSpec = Directory.Exists(scalpingService.SignalSpecDirectory)
+            ? Directory.GetFiles(scalpingService.SignalSpecDirectory, "signal_agent_spec.json", SearchOption.AllDirectories)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault()
+            : null;
         var cTraderBotSpecsReady = Directory.Exists(scalpingService.BotSpecDirectory)
             ? Directory.GetFiles(scalpingService.BotSpecDirectory, "*.json").Length
             : 0;
@@ -217,6 +222,12 @@ public sealed class MasterStatusService
         var scalpingCertificationHealth = certificationReports.Count == 0
             ? "missing"
             : scalpingCertificationFailed > 0 ? "needs_attention" : "ok";
+        var certifiedCandidateSignalReady = certificationReports
+            .Where(report => report.Status == ScalpingCertificationStatus.certified_candidate)
+            .Any(report => File.Exists(Path.Combine(scalpingService.SignalSpecDirectory, report.CandidateId, "signal_agent_spec.json")));
+        var signalAgentExportHealth = certificationReports.Any(report => report.Status == ScalpingCertificationStatus.certified_candidate)
+            ? certifiedCandidateSignalReady ? "ok" : "needs_export"
+            : "missing_certified_candidate";
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -498,6 +509,9 @@ public sealed class MasterStatusService
                     ["scalping_needs_more_data"] = scalpingNeedsMoreData,
                     ["best_scalping_candidate"] = bestScalpingCandidate,
                     ["signal_agent_specs_ready"] = signalAgentSpecsReady,
+                    ["latest_signal_agent_spec"] = latestSignalAgentSpec,
+                    ["signal_agent_export_health"] = signalAgentExportHealth,
+                    ["certified_candidate_signal_ready"] = certifiedCandidateSignalReady,
                     ["ctrader_bot_specs_ready"] = cTraderBotSpecsReady,
                     ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
                     ["market_data_xauusd_available"] = marketDataAvailability.XauusdAvailable,
@@ -589,6 +603,9 @@ public sealed class MasterStatusService
             BestScalpingCandidate: bestScalpingCandidate,
             SignalAgentSpecsReady: signalAgentSpecsReady,
             CTraderBotSpecsReady: cTraderBotSpecsReady,
+            LatestSignalAgentSpec: latestSignalAgentSpec,
+            SignalAgentExportHealth: signalAgentExportHealth,
+            CertifiedCandidateSignalReady: certifiedCandidateSignalReady,
             MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,
             MarketDataXauusdAvailable: marketDataAvailability.XauusdAvailable,
             MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,

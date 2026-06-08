@@ -177,6 +177,8 @@ internal sealed class HermesCli
             "scalping-human-review-package" => ShowScalpingHumanReviewPackage(),
             "export-scalping-bot-spec" => ExportScalpingBotSpec(),
             "export-signal-agent-spec" => ExportSignalAgentSpec(),
+            "signal-agent-spec" => ShowSignalAgentSpec(),
+            "signal-agent-specs" => ShowSignalAgentSpecs(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -353,6 +355,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes scalping-human-review-package --id <ID> Human Review Package anzeigen");
         Console.WriteLine("  hermes export-scalping-bot-spec --id <ID> cTrader-Spezifikationsreport exportieren");
         Console.WriteLine("  hermes export-signal-agent-spec --id <ID> Signal-Agent-Spezifikationsreport exportieren");
+        Console.WriteLine("  hermes signal-agent-spec --id <ID> Signal-Agent-Spezifikation anzeigen");
+        Console.WriteLine("  hermes signal-agent-specs exportierte Signal-Agent-Spezifikationen anzeigen");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -492,6 +496,9 @@ internal sealed class HermesCli
         WriteField("scalping_needs_more_data", snapshot.ScalpingNeedsMoreData.ToString());
         WriteField("best_scalping_candidate", snapshot.BestScalpingCandidate ?? "-");
         WriteField("signal_agent_specs_ready", snapshot.SignalAgentSpecsReady.ToString());
+        WriteField("latest_signal_agent_spec", snapshot.LatestSignalAgentSpec is null ? "-" : DisplayPath(snapshot.LatestSignalAgentSpec));
+        WriteField("signal_agent_export_health", snapshot.SignalAgentExportHealth);
+        WriteField("certified_candidate_signal_ready", snapshot.CertifiedCandidateSignalReady.ToString().ToLowerInvariant());
         WriteField("ctrader_bot_specs_ready", snapshot.CTraderBotSpecsReady.ToString());
         WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
         WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
@@ -3746,6 +3753,54 @@ internal sealed class HermesCli
             WriteSafety();
             return 1;
         }
+    }
+
+    private int ShowSignalAgentSpec()
+    {
+        WriteHeader("Hermes Signal Agent Spec");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteError("--id fehlt");
+            WriteSafety();
+            return 1;
+        }
+
+        var path = Path.Combine(BuildStoragePaths().Root, "reports", "signal_agent_specs", id, "signal_agent_spec.md");
+        if (!File.Exists(path))
+        {
+            WriteError($"signal_agent_spec_missing:{id}");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteField("Markdown", DisplayPath(path));
+        foreach (var line in File.ReadLines(path).Take(120))
+        {
+            Console.WriteLine(line);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowSignalAgentSpecs()
+    {
+        WriteHeader("Hermes Signal Agent Specs");
+        var root = Path.Combine(BuildStoragePaths().Root, "reports", "signal_agent_specs");
+        var specs = Directory.Exists(root)
+            ? Directory.GetFiles(root, "signal_agent_spec.json", SearchOption.AllDirectories).OrderByDescending(File.GetLastWriteTimeUtc).ToList()
+            : [];
+        WriteField("Specs Ready", specs.Count.ToString());
+        foreach (var spec in specs.Take(20))
+        {
+            WriteField(Path.GetFileName(Path.GetDirectoryName(spec)) ?? "candidate", DisplayPath(spec));
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
     }
 
     private int ShowNearMissStrategies()
