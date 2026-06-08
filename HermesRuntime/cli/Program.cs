@@ -181,6 +181,11 @@ internal sealed class HermesCli
             "export-signal-agent-spec" => ExportSignalAgentSpec(),
             "signal-agent-spec" => ShowSignalAgentSpec(),
             "signal-agent-specs" => ShowSignalAgentSpecs(),
+            "scalping-portfolio-status" => ShowScalpingPortfolioStatus(),
+            "build-scalping-portfolio" => BuildScalpingPortfolio(),
+            "scalping-ensemble-plan" => ShowScalpingEnsemblePlan(),
+            "scalping-portfolio-candidates" => ShowScalpingPortfolioCandidates(),
+            "search-more-scalping-candidates" => SearchMoreScalpingCandidates(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -361,6 +366,11 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes export-signal-agent-spec --id <ID> Signal-Agent-Spezifikationsreport exportieren");
         Console.WriteLine("  hermes signal-agent-spec --id <ID> Signal-Agent-Spezifikation anzeigen");
         Console.WriteLine("  hermes signal-agent-specs exportierte Signal-Agent-Spezifikationen anzeigen");
+        Console.WriteLine("  hermes build-scalping-portfolio Scalping-Portfolio-Report erzeugen");
+        Console.WriteLine("  hermes scalping-portfolio-status Scalping-Portfolio-Status anzeigen");
+        Console.WriteLine("  hermes scalping-ensemble-plan Scalping-Ensemble-Plan anzeigen");
+        Console.WriteLine("  hermes scalping-portfolio-candidates Portfolio-Kandidaten anzeigen");
+        Console.WriteLine("  hermes search-more-scalping-candidates --asset XAUUSD --max-variants 100 weitere Kandidaten suchen");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -508,6 +518,12 @@ internal sealed class HermesCli
         WriteField("ctrader_bot_export_health", snapshot.CTraderBotExportHealth);
         WriteField("certified_candidate_bot_ready", snapshot.CertifiedCandidateBotReady.ToString().ToLowerInvariant());
         WriteField("candidate_portfolio_mode", snapshot.CandidatePortfolioMode);
+        WriteField("scalping_portfolio_status", snapshot.ScalpingPortfolioStatus);
+        WriteField("scalping_portfolio_members", snapshot.ScalpingPortfolioMembers.ToString());
+        WriteField("scalping_ensemble_candidates", snapshot.ScalpingEnsembleCandidates.ToString());
+        WriteField("scalping_signal_density_score", $"{snapshot.ScalpingSignalDensityScore:0.####}");
+        WriteField("scalping_portfolio_diversity_score", $"{snapshot.ScalpingPortfolioDiversityScore:0.####}");
+        WriteField("scalping_next_candidate_search_action", snapshot.ScalpingNextCandidateSearchAction);
         WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
         WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
@@ -3859,6 +3875,90 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int BuildScalpingPortfolio()
+    {
+        WriteHeader("Hermes Scalping Portfolio Build");
+        var portfolio = new ScalpingPortfolioService(BuildStoragePaths(), _runtimeRoot).Build();
+        WriteScalpingPortfolio(portfolio);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingPortfolioStatus()
+    {
+        WriteHeader("Hermes Scalping Portfolio Status");
+        var service = new ScalpingPortfolioService(BuildStoragePaths(), _runtimeRoot);
+        var portfolio = service.Load() ?? service.Build();
+        WriteScalpingPortfolio(portfolio);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingEnsemblePlan()
+    {
+        WriteHeader("Hermes Scalping Ensemble Plan");
+        var service = new ScalpingPortfolioService(BuildStoragePaths(), _runtimeRoot);
+        var portfolio = service.Load() ?? service.Build();
+        WriteField("Status", portfolio.EnsemblePlan.Status);
+        WriteMessages("Candidate Selection Rules", portfolio.EnsemblePlan.CandidateSelectionRules);
+        WriteMessages("Correlation Controls", portfolio.EnsemblePlan.CorrelationControls);
+        WriteMessages("Readiness Gates", portfolio.EnsemblePlan.EnsembleReadinessGates);
+        WriteMessages("Next Actions", portfolio.EnsemblePlan.NextActions);
+        WriteMessages("Safety Rules", portfolio.EnsemblePlan.SafetyRules);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingPortfolioCandidates()
+    {
+        WriteHeader("Hermes Scalping Portfolio Candidates");
+        var service = new ScalpingPortfolioService(BuildStoragePaths(), _runtimeRoot);
+        var portfolio = service.Load() ?? service.Build();
+        WriteField("Members", portfolio.Members.Count.ToString());
+        foreach (var member in portfolio.Members.OrderByDescending(item => item.Status == ScalpingCertificationStatus.certified_candidate.ToString()).ThenByDescending(item => item.DiversityScore).Take(30))
+        {
+            WriteSubHeader(member.CandidateId);
+            WriteField("Asset/Timeframe", $"{member.Asset}/{member.Timeframe}");
+            WriteField("Setup", member.SetupType);
+            WriteField("Status", member.Status);
+            WriteField("Confidence", $"{member.Confidence:0.####}");
+            WriteField("Profit Factor", $"{member.ProfitFactor:0.####}");
+            WriteField("Recovery Factor", $"{member.RecoveryFactor:0.####}");
+            WriteField("Max Drawdown", $"{member.MaxDrawdown:0.####}");
+            WriteField("Diversity", $"{member.DiversityScore:0.####}");
+            WriteField("Signal Density", $"{member.SignalDensityScore:0.####}");
+            WriteField("Correlation Group", member.CorrelationGroup);
+            WriteField("Ensemble Readiness", member.EnsembleReadiness);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int SearchMoreScalpingCandidates()
+    {
+        WriteHeader("Hermes Search More Scalping Candidates");
+        var asset = ReadOption(_args, "--asset") ?? ScalpingResearchService.DefaultAsset;
+        var maxVariants = ReadIntOption(_args, "--max-variants", fallback: 100, min: 1, max: 500);
+        var service = new ScalpingPortfolioService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.SearchMoreCandidates(asset, maxVariants);
+        WriteField("Asset", report.Asset);
+        WriteField("Variants Tested", report.VariantsTested.ToString());
+        WriteField("Candidates", report.CandidatesTotal.ToString());
+        WriteField("Robust Candidates", report.RobustCandidates.ToString());
+        WriteField("Rejected", report.RejectedCandidates.ToString());
+        WriteField("Needs More Data", report.NeedsMoreData.ToString());
+        WriteField("Best Candidate", report.BestCandidateId ?? "-");
+        WriteMessages("Target Setups", ["XAUUSD range_breakout", "XAUUSD ema_pullback", "XAUUSD liquidity_rejection", "XAUUSD micro_trend_continuation", "EURUSD optional when data available"]);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowNearMissStrategies()
     {
         WriteHeader("Hermes Near-Miss Strategies");
@@ -6097,6 +6197,29 @@ internal sealed class HermesCli
         WriteField("Human Review Package", DisplayPath(report.HumanReviewPackagePath));
         WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteScalpingPortfolio(ScalpingCandidatePortfolio portfolio)
+    {
+        WriteField("Portfolio Status", portfolio.Evaluation.Status);
+        WriteField("Certified Candidates", portfolio.Evaluation.CertifiedCandidates.ToString());
+        WriteField("Portfolio Members", portfolio.Members.Count.ToString());
+        WriteField("Ensemble Candidates", portfolio.Evaluation.EnsembleCandidates.ToString());
+        WriteField("Signal Density Score", $"{portfolio.Evaluation.SignalDensityScore:0.####}");
+        WriteField("Diversity Score", $"{portfolio.Evaluation.DiversityScore:0.####}");
+        WriteField("Drawdown Profile", portfolio.Evaluation.DrawdownProfile);
+        WriteField("Next Candidate Search Action", portfolio.Evaluation.NextCandidateSearchAction);
+        WriteMessages("Blockers", portfolio.Evaluation.Blockers);
+        WriteMessages(
+            "Certified Members",
+            portfolio.Members
+                .Where(member => member.Status == ScalpingCertificationStatus.certified_candidate.ToString())
+                .Select(member => $"{member.CandidateId}:{member.Asset}/{member.Timeframe}/{member.SetupType}:diversity={member.DiversityScore:0.####}:density={member.SignalDensityScore:0.####}")
+                .ToList());
+        WriteField("Portfolio Report", DisplayPath(Path.Combine(BuildStoragePaths().Root, "reports", "scalping_portfolio", "portfolio_status.json")));
+        WriteField("Ensemble Plan", DisplayPath(Path.Combine(BuildStoragePaths().Root, "reports", "scalping_portfolio", "ensemble_plan.json")));
+        WriteField("no_auto_trading", portfolio.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", portfolio.HumanReviewRequired.ToString().ToLowerInvariant());
     }
 
     private void WriteRiskOfRuinEntry(RiskOfRuinEntry entry)

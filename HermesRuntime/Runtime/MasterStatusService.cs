@@ -240,6 +240,13 @@ public sealed class MasterStatusService
             ? certifiedCandidateBotReady ? "ok" : "needs_export"
             : "missing_certified_candidate";
         const string candidatePortfolioMode = "planned";
+        var portfolio = new ScalpingPortfolioService(_storagePaths, _runtimeRoot).Load();
+        var scalpingPortfolioStatus = portfolio?.Evaluation.Status ?? "missing";
+        var scalpingPortfolioMembers = portfolio?.Members.Count ?? 0;
+        var scalpingEnsembleCandidates = portfolio?.Evaluation.EnsembleCandidates ?? 0;
+        var scalpingSignalDensityScore = portfolio?.Evaluation.SignalDensityScore ?? 0;
+        var scalpingPortfolioDiversityScore = portfolio?.Evaluation.DiversityScore ?? 0;
+        var scalpingNextCandidateSearchAction = portfolio?.Evaluation.NextCandidateSearchAction ?? "build_scalping_portfolio";
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -529,6 +536,12 @@ public sealed class MasterStatusService
                     ["ctrader_bot_export_health"] = cTraderBotExportHealth,
                     ["certified_candidate_bot_ready"] = certifiedCandidateBotReady,
                     ["candidate_portfolio_mode"] = candidatePortfolioMode,
+                    ["scalping_portfolio_status"] = scalpingPortfolioStatus,
+                    ["scalping_portfolio_members"] = scalpingPortfolioMembers,
+                    ["scalping_ensemble_candidates"] = scalpingEnsembleCandidates,
+                    ["scalping_signal_density_score"] = scalpingSignalDensityScore,
+                    ["scalping_portfolio_diversity_score"] = scalpingPortfolioDiversityScore,
+                    ["scalping_next_candidate_search_action"] = scalpingNextCandidateSearchAction,
                     ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
                     ["market_data_xauusd_available"] = marketDataAvailability.XauusdAvailable,
                     ["market_data_eurusd_available"] = marketDataAvailability.EurusdAvailable,
@@ -626,6 +639,12 @@ public sealed class MasterStatusService
             CTraderBotExportHealth: cTraderBotExportHealth,
             CertifiedCandidateBotReady: certifiedCandidateBotReady,
             CandidatePortfolioMode: candidatePortfolioMode,
+            ScalpingPortfolioStatus: scalpingPortfolioStatus,
+            ScalpingPortfolioMembers: scalpingPortfolioMembers,
+            ScalpingEnsembleCandidates: scalpingEnsembleCandidates,
+            ScalpingSignalDensityScore: scalpingSignalDensityScore,
+            ScalpingPortfolioDiversityScore: scalpingPortfolioDiversityScore,
+            ScalpingNextCandidateSearchAction: scalpingNextCandidateSearchAction,
             MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,
             MarketDataXauusdAvailable: marketDataAvailability.XauusdAvailable,
             MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,
