@@ -186,6 +186,9 @@ internal sealed class HermesCli
             "scalping-ensemble-plan" => ShowScalpingEnsemblePlan(),
             "scalping-portfolio-candidates" => ShowScalpingPortfolioCandidates(),
             "search-more-scalping-candidates" => SearchMoreScalpingCandidates(),
+            "scalping-multi-asset-roadmap" => ShowScalpingMultiAssetRoadmap(),
+            "update-scalping-multi-asset-roadmap" => UpdateScalpingMultiAssetRoadmap(),
+            "scalping-asset-status" => ShowScalpingAssetStatus(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -371,6 +374,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes scalping-ensemble-plan Scalping-Ensemble-Plan anzeigen");
         Console.WriteLine("  hermes scalping-portfolio-candidates Portfolio-Kandidaten anzeigen");
         Console.WriteLine("  hermes search-more-scalping-candidates --asset XAUUSD --max-variants 100 weitere Kandidaten suchen");
+        Console.WriteLine("  hermes update-scalping-multi-asset-roadmap Multi-Asset-Roadmap aktualisieren");
+        Console.WriteLine("  hermes scalping-multi-asset-roadmap Multi-Asset-Roadmap anzeigen");
+        Console.WriteLine("  hermes scalping-asset-status --asset GER40 Asset-Roadmap-Status anzeigen");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -524,6 +530,15 @@ internal sealed class HermesCli
         WriteField("scalping_signal_density_score", $"{snapshot.ScalpingSignalDensityScore:0.####}");
         WriteField("scalping_portfolio_diversity_score", $"{snapshot.ScalpingPortfolioDiversityScore:0.####}");
         WriteField("scalping_next_candidate_search_action", snapshot.ScalpingNextCandidateSearchAction);
+        WriteField("scalping_multi_asset_mode", snapshot.ScalpingMultiAssetMode);
+        WriteMessages("scalping_next_assets", snapshot.ScalpingNextAssets);
+        WriteMessages("scalping_assets_with_data", snapshot.ScalpingAssetsWithData);
+        WriteMessages("scalping_assets_needing_data", snapshot.ScalpingAssetsNeedingData);
+        WriteField("scalping_multi_asset_roadmap_health", snapshot.ScalpingMultiAssetRoadmapHealth);
+        WriteField("eurusd_certified_candidates", snapshot.EurusdCertifiedCandidates.ToString());
+        WriteField("ensemble_candidate_status", snapshot.EnsembleCandidateStatus);
+        WriteField("ensemble_candidate_members", snapshot.EnsembleCandidateMembers.ToString());
+        WriteField("ensemble_candidate_health", snapshot.EnsembleCandidateHealth);
         WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
         WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
@@ -3959,6 +3974,52 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int UpdateScalpingMultiAssetRoadmap()
+    {
+        WriteHeader("Hermes Scalping Multi-Asset Roadmap Update");
+        var roadmap = new ScalpingMultiAssetRoadmapService(BuildStoragePaths(), _runtimeRoot).Update();
+        WriteScalpingMultiAssetRoadmap(roadmap);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingMultiAssetRoadmap()
+    {
+        WriteHeader("Hermes Scalping Multi-Asset Roadmap");
+        var service = new ScalpingMultiAssetRoadmapService(BuildStoragePaths(), _runtimeRoot);
+        var roadmap = service.Load() ?? service.Update();
+        WriteScalpingMultiAssetRoadmap(roadmap);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingAssetStatus()
+    {
+        WriteHeader("Hermes Scalping Asset Status");
+        var asset = ReadOption(_args, "--asset");
+        if (string.IsNullOrWhiteSpace(asset))
+        {
+            WriteError("--asset fehlt");
+            WriteSafety();
+            return 1;
+        }
+
+        var entry = new ScalpingMultiAssetRoadmapService(BuildStoragePaths(), _runtimeRoot).FindAsset(asset);
+        if (entry is null)
+        {
+            WriteError($"asset_not_in_scalping_roadmap:{asset}");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteScalpingAssetRoadmapEntry(entry);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowNearMissStrategies()
     {
         WriteHeader("Hermes Near-Miss Strategies");
@@ -6220,6 +6281,40 @@ internal sealed class HermesCli
         WriteField("Ensemble Plan", DisplayPath(Path.Combine(BuildStoragePaths().Root, "reports", "scalping_portfolio", "ensemble_plan.json")));
         WriteField("no_auto_trading", portfolio.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", portfolio.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteScalpingMultiAssetRoadmap(ScalpingMultiAssetRoadmap roadmap)
+    {
+        WriteField("Mode", roadmap.Mode);
+        WriteField("Health", roadmap.RoadmapHealth);
+        WriteField("Assets", roadmap.Assets.Count.ToString());
+        WriteMessages("Next Assets", roadmap.NextAssets);
+        WriteMessages("Assets With Data", roadmap.AssetsWithData);
+        WriteMessages("Assets Needing Data", roadmap.AssetsNeedingData);
+        foreach (var entry in roadmap.Assets.OrderBy(entry => entry.Priority))
+        {
+            WriteSubHeader(entry.Asset);
+            WriteScalpingAssetRoadmapEntry(entry);
+        }
+
+        WriteField("Roadmap JSON", DisplayPath(Path.Combine(BuildStoragePaths().Root, "reports", "scalping_portfolio", "multi_asset_roadmap.json")));
+        WriteField("Roadmap Markdown", DisplayPath(Path.Combine(BuildStoragePaths().Root, "reports", "scalping_portfolio", "multi_asset_roadmap.md")));
+        WriteField("no_auto_trading", roadmap.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", roadmap.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private static void WriteScalpingAssetRoadmapEntry(ScalpingAssetRoadmapEntry entry)
+    {
+        WriteField("Asset", entry.Asset);
+        WriteMessages("Aliases", entry.Aliases);
+        WriteField("Priority", entry.Priority.ToString());
+        WriteField("Market Type", entry.MarketType);
+        WriteField("Data Available", entry.DataAvailable.ToString().ToLowerInvariant());
+        WriteField("Data Gap", entry.DataGap);
+        WriteField("Research Status", entry.ResearchStatus);
+        WriteField("Certified Candidates", entry.CertifiedCandidates.ToString());
+        WriteField("Next Action", entry.NextAction);
+        WriteMessages("Risk Notes", entry.RiskNotes);
     }
 
     private void WriteRiskOfRuinEntry(RiskOfRuinEntry entry)

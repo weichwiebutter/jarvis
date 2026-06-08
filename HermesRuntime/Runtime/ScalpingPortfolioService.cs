@@ -58,6 +58,23 @@ public sealed record ScalpingCandidatePortfolio(
     bool BrokerOrdersEnabled,
     bool LiveTradingEnabled);
 
+public sealed record ScalpingEnsembleCandidateV1(
+    string ReportVersion,
+    DateTimeOffset UpdatedAtUtc,
+    string Status,
+    IReadOnlyList<ScalpingPortfolioMember> Members,
+    double DiversityScore,
+    double SignalDensityScore,
+    double SessionCoverageScore,
+    string DrawdownImpact,
+    string Correlation,
+    string EnsembleReadiness,
+    IReadOnlyList<string> Blockers,
+    bool NoAutoTrading,
+    bool HumanReviewRequired,
+    bool BrokerOrdersEnabled,
+    bool LiveTradingEnabled);
+
 public sealed class ScalpingPortfolioService
 {
     private static readonly string[] TargetSetups = ["range_breakout", "ema_pullback", "liquidity_rejection", "micro_trend_continuation"];
@@ -75,6 +92,8 @@ public sealed class ScalpingPortfolioService
     public string PortfolioMarkdownPath => Path.Combine(Root, "portfolio_status.md");
     public string EnsemblePlanPath => Path.Combine(Root, "ensemble_plan.json");
     public string EnsemblePlanMarkdownPath => Path.Combine(Root, "ensemble_plan.md");
+    public string EnsembleCandidatePath => Path.Combine(Root, "ensemble_candidate_v1.json");
+    public string EnsembleCandidateMarkdownPath => Path.Combine(Root, "ensemble_candidate_v1.md");
 
     public ScalpingCandidatePortfolio Build()
     {
@@ -123,6 +142,7 @@ public sealed class ScalpingPortfolioService
         File.WriteAllText(PortfolioMarkdownPath, BuildPortfolioMarkdown(portfolio));
         File.WriteAllText(EnsemblePlanPath, JsonSerializer.Serialize(plan, JsonDefaults.WriteOptions));
         File.WriteAllText(EnsemblePlanMarkdownPath, BuildPlanMarkdown(plan, portfolio));
+        WriteEnsembleCandidate(portfolio);
         return portfolio;
     }
 
@@ -136,6 +156,17 @@ public sealed class ScalpingPortfolioService
     public ScalpingResearchReport SearchMoreCandidates(string? asset, int maxVariants)
     {
         var report = new ScalpingResearchService(_storagePaths, _runtimeRoot).RunResearch(asset, maxVariants);
+        var expansion = new ScalpingRobustnessExpansionService(_storagePaths, _runtimeRoot);
+        var certification = new ScalpingCertificationService(_storagePaths, _runtimeRoot);
+        foreach (var candidate in report.Candidates.Where(candidate => candidate.ValidationStatus == ScalpingValidationStatus.robust_candidate))
+        {
+            var expanded = expansion.Expand(candidate.CandidateId);
+            if (expanded.Status == ScalpingExpansionStatus.final_candidate)
+            {
+                certification.Certify(candidate.CandidateId);
+            }
+        }
+
         Build();
         return report;
     }
@@ -170,6 +201,31 @@ public sealed class ScalpingPortfolioService
                 SignalDensityScore: density,
                 EnsembleReadiness: status == ScalpingCertificationStatus.certified_candidate.ToString() && diversity >= 0.45 ? "ready_member" : "not_ready");
         }
+
+        foreach (var certification in certifications.Where(report => !research.Candidates.Any(candidate => candidate.CandidateId.Equals(report.CandidateId, StringComparison.OrdinalIgnoreCase))))
+        {
+            var sessionStrength = certification.SessionValidation.Count == 0
+                ? 0.5
+                : Math.Round(certification.SessionValidation.Count(session => session.Status == "positive") / (double)certification.SessionValidation.Count, 4);
+            var regimeStrength = expansions.FirstOrDefault(report => report.CandidateId.Equals(certification.CandidateId, StringComparison.OrdinalIgnoreCase))?.RegimeValidation.PositiveOrNeutralRegimes / 7.0 ?? EstimateRegimeStrength(certification.SetupType);
+            var diversity = CalculateDiversity(certification.Asset, certification.Timeframe, certification.SetupType, sessionStrength, regimeStrength);
+            yield return new ScalpingPortfolioMember(
+                CandidateId: certification.CandidateId,
+                Asset: certification.Asset,
+                Timeframe: certification.Timeframe,
+                SetupType: certification.SetupType,
+                Status: certification.Status.ToString(),
+                Confidence: 0,
+                ProfitFactor: certification.DrawdownCertification.ProfitFactor,
+                RecoveryFactor: certification.DrawdownCertification.RecoveryFactor,
+                MaxDrawdown: certification.DrawdownCertification.MaxDrawdownR,
+                SessionStrength: sessionStrength,
+                RegimeStrength: Math.Round(regimeStrength, 4),
+                CorrelationGroup: $"{certification.Asset}:{certification.Timeframe}:{certification.SetupType}:certified_sessions",
+                DiversityScore: diversity,
+                SignalDensityScore: Math.Round(Math.Clamp(certification.SessionValidation.Sum(session => session.TradeCount) / 180.0, 0, 2.5), 4),
+                EnsembleReadiness: certification.Status == ScalpingCertificationStatus.certified_candidate ? "ready_member" : "not_ready");
+        }
     }
 
     private static ScalpingSignalEnsemblePlan BuildPlan(string status, string nextAction, IReadOnlyList<string> blockers) => new(
@@ -197,11 +253,28 @@ public sealed class ScalpingPortfolioService
         _ => 0.5
     };
 
+    private static double EstimateRegimeStrength(string setupType) => setupType switch
+    {
+        "range_breakout" => 0.72,
+        "ema_pullback" => 0.62,
+        "liquidity_rejection" => 0.66,
+        "micro_trend_continuation" => 0.68,
+        _ => 0.5
+    };
+
     private static double CalculateDiversity(ScalpingStrategyCandidate candidate, double sessionStrength, double regimeStrength)
     {
         var setupDiversity = Array.IndexOf(TargetSetups, candidate.SetupType) >= 0 ? 0.45 : 0.25;
         var sessionDiversity = candidate.SessionFilter.Contains("overlap", StringComparison.OrdinalIgnoreCase) ? 0.15 : 0.25;
         return Math.Round(Math.Clamp(setupDiversity + sessionDiversity + regimeStrength * 0.25 + sessionStrength * 0.15, 0, 1), 4);
+    }
+
+    private static double CalculateDiversity(string asset, string timeframe, string setupType, double sessionStrength, double regimeStrength)
+    {
+        var setupDiversity = Array.IndexOf(TargetSetups, setupType) >= 0 ? 0.45 : 0.25;
+        var assetDiversity = asset.Equals("XAUUSD", StringComparison.OrdinalIgnoreCase) ? 0.15 : 0.25;
+        var timeframePenalty = timeframe.Equals("M5", StringComparison.OrdinalIgnoreCase) ? 0 : -0.05;
+        return Math.Round(Math.Clamp(setupDiversity + assetDiversity + timeframePenalty + regimeStrength * 0.2 + sessionStrength * 0.15, 0, 1), 4);
     }
 
     private static double CalculateSignalDensity(ScalpingStrategyCandidate candidate, ScalpingCertificationReport? certification)
@@ -265,6 +338,78 @@ This portfolio report prepares a future signal ensemble only. It does not execut
 {Bullets(plan.SafetyRules)}
 
 Prepared only as a research and reporting plan. No broker orders, no live trading, no cTrader Order API.
+""";
+
+    private ScalpingEnsembleCandidateV1 WriteEnsembleCandidate(ScalpingCandidatePortfolio portfolio)
+    {
+        var certified = portfolio.Members
+            .Where(member => member.Status == ScalpingCertificationStatus.certified_candidate.ToString())
+            .GroupBy(member => member.CandidateId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderByDescending(member => member.DiversityScore)
+            .ToList();
+        var distinctAssets = certified.Select(member => member.Asset).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        var distinctCorrelationGroups = certified.Select(member => member.CorrelationGroup).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        var blockers = new List<string>();
+        if (certified.Count < 2) blockers.Add("minimum_two_certified_candidates_required");
+        if (distinctAssets < 2) blockers.Add("minimum_two_assets_preferred_for_v1");
+        if (distinctCorrelationGroups < certified.Count) blockers.Add("correlation_groups_not_distinct");
+        var diversity = certified.Count == 0 ? 0 : Math.Round(certified.Average(member => member.DiversityScore), 4);
+        var density = certified.Count == 0 ? 0 : Math.Round(certified.Sum(member => member.SignalDensityScore), 4);
+        var sessionCoverage = certified.Count == 0 ? 0 : Math.Round(certified.Average(member => member.SessionStrength), 4);
+        var maxDrawdown = certified.Count == 0 ? 0 : certified.Max(member => member.MaxDrawdown);
+        if (maxDrawdown > 4.5) blockers.Add("drawdown_impact_too_high");
+        var status = blockers.Count == 0 ? "ensemble_candidate_v1" : "building";
+        var ensemble = new ScalpingEnsembleCandidateV1(
+            ReportVersion: "scalping_ensemble_candidate_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            Status: status,
+            Members: certified,
+            DiversityScore: diversity,
+            SignalDensityScore: density,
+            SessionCoverageScore: sessionCoverage,
+            DrawdownImpact: maxDrawdown <= 4.5 ? "acceptable" : "needs_attention",
+            Correlation: distinctCorrelationGroups >= certified.Count ? "diversified" : "overlapping",
+            EnsembleReadiness: status == "ensemble_candidate_v1" ? "ready_for_human_review" : "not_ready",
+            Blockers: blockers,
+            NoAutoTrading: true,
+            HumanReviewRequired: true,
+            BrokerOrdersEnabled: false,
+            LiveTradingEnabled: false);
+        File.WriteAllText(EnsembleCandidatePath, JsonSerializer.Serialize(ensemble, JsonDefaults.WriteOptions));
+        File.WriteAllText(EnsembleCandidateMarkdownPath, BuildEnsembleMarkdown(ensemble));
+        return ensemble;
+    }
+
+    public ScalpingEnsembleCandidateV1? LoadEnsembleCandidate()
+    {
+        return File.Exists(EnsembleCandidatePath)
+            ? JsonSerializer.Deserialize<ScalpingEnsembleCandidateV1>(File.ReadAllText(EnsembleCandidatePath), JsonDefaults.SnapshotReadOptions)
+            : null;
+    }
+
+    private static string BuildEnsembleMarkdown(ScalpingEnsembleCandidateV1 ensemble) => $"""
+# Scalping Ensemble Candidate v1
+
+- status: {ensemble.Status}
+- diversity_score: {ensemble.DiversityScore:0.####}
+- signal_density_score: {ensemble.SignalDensityScore:0.####}
+- session_coverage_score: {ensemble.SessionCoverageScore:0.####}
+- drawdown_impact: {ensemble.DrawdownImpact}
+- correlation: {ensemble.Correlation}
+- ensemble_readiness: {ensemble.EnsembleReadiness}
+- no_auto_trading: true
+- human_review_required: true
+- broker_orders_enabled: false
+- live_trading_enabled: false
+
+## Members
+{string.Join(Environment.NewLine, ensemble.Members.Select(member => $"- {member.CandidateId}: {member.Asset}/{member.Timeframe}/{member.SetupType}, status={member.Status}, density={member.SignalDensityScore:0.####}, diversity={member.DiversityScore:0.####}"))}
+
+## Blockers
+{Bullets(ensemble.Blockers)}
+
+Prepared only as a research ensemble candidate. No broker orders, no live trading, no cTrader Order API.
 """;
 
     private static string Bullets(IEnumerable<string> items) => string.Join(Environment.NewLine, items.Any() ? items.Select(item => $"- {item}") : ["- none"]);

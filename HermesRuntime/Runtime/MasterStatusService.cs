@@ -247,6 +247,19 @@ public sealed class MasterStatusService
         var scalpingSignalDensityScore = portfolio?.Evaluation.SignalDensityScore ?? 0;
         var scalpingPortfolioDiversityScore = portfolio?.Evaluation.DiversityScore ?? 0;
         var scalpingNextCandidateSearchAction = portfolio?.Evaluation.NextCandidateSearchAction ?? "build_scalping_portfolio";
+        var multiAssetRoadmap = new ScalpingMultiAssetRoadmapService(_storagePaths, _runtimeRoot).Load();
+        var scalpingMultiAssetMode = multiAssetRoadmap?.Mode ?? "planned_research_only";
+        var scalpingNextAssets = multiAssetRoadmap?.NextAssets ?? [];
+        var scalpingAssetsWithData = multiAssetRoadmap?.AssetsWithData ?? [];
+        var scalpingAssetsNeedingData = multiAssetRoadmap?.AssetsNeedingData ?? [];
+        var scalpingMultiAssetRoadmapHealth = multiAssetRoadmap?.RoadmapHealth ?? "missing";
+        var eurusdCertifiedCandidates = certificationReports.Count(report => report.Asset.Equals("EURUSD", StringComparison.OrdinalIgnoreCase) && report.Status == ScalpingCertificationStatus.certified_candidate);
+        var ensembleCandidate = new ScalpingPortfolioService(_storagePaths, _runtimeRoot).LoadEnsembleCandidate();
+        var ensembleCandidateStatus = ensembleCandidate?.Status ?? "missing";
+        var ensembleCandidateMembers = ensembleCandidate?.Members.Count ?? 0;
+        var ensembleCandidateHealth = ensembleCandidate is null
+            ? "missing"
+            : ensembleCandidate.Status == "ensemble_candidate_v1" ? "ok" : "building";
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -542,6 +555,15 @@ public sealed class MasterStatusService
                     ["scalping_signal_density_score"] = scalpingSignalDensityScore,
                     ["scalping_portfolio_diversity_score"] = scalpingPortfolioDiversityScore,
                     ["scalping_next_candidate_search_action"] = scalpingNextCandidateSearchAction,
+                    ["scalping_multi_asset_mode"] = scalpingMultiAssetMode,
+                    ["scalping_next_assets"] = scalpingNextAssets,
+                    ["scalping_assets_with_data"] = scalpingAssetsWithData,
+                    ["scalping_assets_needing_data"] = scalpingAssetsNeedingData,
+                    ["scalping_multi_asset_roadmap_health"] = scalpingMultiAssetRoadmapHealth,
+                    ["eurusd_certified_candidates"] = eurusdCertifiedCandidates,
+                    ["ensemble_candidate_status"] = ensembleCandidateStatus,
+                    ["ensemble_candidate_members"] = ensembleCandidateMembers,
+                    ["ensemble_candidate_health"] = ensembleCandidateHealth,
                     ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
                     ["market_data_xauusd_available"] = marketDataAvailability.XauusdAvailable,
                     ["market_data_eurusd_available"] = marketDataAvailability.EurusdAvailable,
@@ -645,6 +667,15 @@ public sealed class MasterStatusService
             ScalpingSignalDensityScore: scalpingSignalDensityScore,
             ScalpingPortfolioDiversityScore: scalpingPortfolioDiversityScore,
             ScalpingNextCandidateSearchAction: scalpingNextCandidateSearchAction,
+            ScalpingMultiAssetMode: scalpingMultiAssetMode,
+            ScalpingNextAssets: scalpingNextAssets,
+            ScalpingAssetsWithData: scalpingAssetsWithData,
+            ScalpingAssetsNeedingData: scalpingAssetsNeedingData,
+            ScalpingMultiAssetRoadmapHealth: scalpingMultiAssetRoadmapHealth,
+            EurusdCertifiedCandidates: eurusdCertifiedCandidates,
+            EnsembleCandidateStatus: ensembleCandidateStatus,
+            EnsembleCandidateMembers: ensembleCandidateMembers,
+            EnsembleCandidateHealth: ensembleCandidateHealth,
             MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,
             MarketDataXauusdAvailable: marketDataAvailability.XauusdAvailable,
             MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,
