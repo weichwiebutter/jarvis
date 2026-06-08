@@ -208,6 +208,37 @@ function KnowledgeHealthCard({ masterStatus }) {
   );
 }
 
+function ScalpingProgressCard({ masterStatus }) {
+  const finalCandidates = masterStatus.scalping_final_candidates || 0;
+  const robustCandidates = masterStatus.scalping_robust_candidates || 0;
+
+  return (
+    <details className="knowledge-health-card operator-goal-card" open>
+      <summary>
+        <span>Scalping Progress</span>
+        <strong>{masterStatus.scalping_asset || '-'}</strong>
+        <StatusPill tone={finalCandidates ? 'good' : robustCandidates ? 'warn' : 'info'}>read-only</StatusPill>
+      </summary>
+      <div className="goal-system-metrics">
+        <MiniMetric label="Candidates" value={formatNumber(masterStatus.scalping_candidates_total)} tone="info" />
+        <MiniMetric label="Robust" value={formatNumber(masterStatus.scalping_robust_candidates)} tone={robustCandidates ? 'good' : 'warn'} />
+        <MiniMetric label="Final" value={formatNumber(masterStatus.scalping_final_candidates)} tone={finalCandidates ? 'good' : 'warn'} />
+        <MiniMetric label="Best" value={masterStatus.best_scalping_candidate || '-'} tone="info" />
+        <MiniMetric label="Monte Carlo" value={masterStatus.scalping_monte_carlo_health || 'missing'} tone={statusTone(masterStatus.scalping_monte_carlo_health)} />
+        <MiniMetric label="Sensitivity" value={masterStatus.scalping_parameter_sensitivity_health || 'missing'} tone={statusTone(masterStatus.scalping_parameter_sensitivity_health)} />
+        <MiniMetric label="Regime" value={masterStatus.scalping_regime_validation_health || 'missing'} tone={statusTone(masterStatus.scalping_regime_validation_health)} />
+        <MiniMetric label="Bot Specs" value={formatNumber(masterStatus.ctrader_bot_specs_ready)} tone={masterStatus.ctrader_bot_specs_ready ? 'good' : 'info'} />
+        <MiniMetric label="Signal Specs" value={formatNumber(masterStatus.signal_agent_specs_ready)} tone={masterStatus.signal_agent_specs_ready ? 'good' : 'info'} />
+        <MiniMetric label="no_auto_trading" value={String(masterStatus.no_auto_trading)} tone={masterStatus.no_auto_trading ? 'good' : 'danger'} />
+        <MiniMetric label="human_review" value={String(masterStatus.human_review_required)} tone={masterStatus.human_review_required ? 'good' : 'danger'} />
+        <MiniMetric label="broker_orders" value={String(masterStatus.broker_orders_enabled)} tone={masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
+        <MiniMetric label="live_trading" value={String(masterStatus.live_trading_enabled)} tone={masterStatus.live_trading_enabled ? 'danger' : 'good'} />
+      </div>
+      <p>Read-only snapshot panel. No runtime commands, broker actions, or trading actions.</p>
+    </details>
+  );
+}
+
 function OperatorCard({ title, badge, tone = 'info', children }) {
   return (
     <article className={`operator-card ${toneClass(tone)}`}>
@@ -380,6 +411,7 @@ export function OperatorDashboardPanel() {
         </div>
         <GoalSystemCard masterStatus={operatorState.masterStatus} />
         <KnowledgeHealthCard masterStatus={operatorState.masterStatus} />
+        <ScalpingProgressCard masterStatus={operatorState.masterStatus} />
       </OperatorCard>
 
       <div className="operator-top-grid">

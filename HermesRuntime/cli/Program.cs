@@ -167,6 +167,9 @@ internal sealed class HermesCli
             "scalping-validation-report" => ShowScalpingValidationReport(),
             "run-scalping-robustness-expansion" => RunScalpingRobustnessExpansion(),
             "scalping-robustness-report" => ShowScalpingRobustnessReport(),
+            "scalping-sensitivity-report" => ShowScalpingSensitivityReport(),
+            "explain-scalping-blocker" => ExplainScalpingBlocker(),
+            "scalping-parameter-corridor" => ShowScalpingParameterCorridor(),
             "scalping-final-candidates" => ShowScalpingFinalCandidates(),
             "export-scalping-bot-spec" => ExportScalpingBotSpec(),
             "export-signal-agent-spec" => ExportSignalAgentSpec(),
@@ -336,6 +339,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes scalping-validation-report strenge Scalping-Gates anzeigen");
         Console.WriteLine("  hermes run-scalping-robustness-expansion --id <ID>|--all-robust robuste Scalping-Kandidaten erweitern");
         Console.WriteLine("  hermes scalping-robustness-report --id <ID> Robustness Expansion anzeigen");
+        Console.WriteLine("  hermes scalping-sensitivity-report --id <ID> Parameter-Sensitivity Details anzeigen");
+        Console.WriteLine("  hermes explain-scalping-blocker --id <ID> Scalping-Blocker erklaeren");
+        Console.WriteLine("  hermes scalping-parameter-corridor --id <ID> stabilen Parameterkorridor anzeigen");
         Console.WriteLine("  hermes scalping-final-candidates finale Scalping-Kandidaten anzeigen");
         Console.WriteLine("  hermes export-scalping-bot-spec --id <ID> cTrader-Spezifikationsreport exportieren");
         Console.WriteLine("  hermes export-signal-agent-spec --id <ID> Signal-Agent-Spezifikationsreport exportieren");
@@ -490,6 +496,11 @@ internal sealed class HermesCli
         WriteField("best_final_scalping_candidate", snapshot.BestFinalScalpingCandidate ?? "-");
         WriteField("scalping_monte_carlo_health", snapshot.ScalpingMonteCarloHealth);
         WriteField("scalping_parameter_sensitivity_health", snapshot.ScalpingParameterSensitivityHealth);
+        WriteField("scalping_regime_validation_health", snapshot.ScalpingRegimeValidationHealth);
+        WriteField("scalping_sensitivity_explainability_health", snapshot.ScalpingSensitivityExplainabilityHealth);
+        WriteField("scalping_candidates_with_stable_corridor", snapshot.ScalpingCandidatesWithStableCorridor.ToString());
+        WriteField("scalping_candidates_blocked_by_sensitivity", snapshot.ScalpingCandidatesBlockedBySensitivity.ToString());
+        WriteField("best_scalping_parameter_corridor_candidate", snapshot.BestScalpingParameterCorridorCandidate ?? "-");
         WriteMessages("domain_validation_warnings", snapshot.DomainValidationWarnings.Take(8).ToList());
         WriteField("top_goal", string.IsNullOrWhiteSpace(snapshot.TopGoal) ? "-" : snapshot.TopGoal);
         WriteMessages("active_goals", snapshot.ActiveGoals);
@@ -3487,6 +3498,76 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowScalpingSensitivityReport()
+    {
+        WriteHeader("Hermes Scalping Sensitivity Report");
+        var report = LoadRequiredScalpingRobustnessReport();
+        if (report is null) return 1;
+        WriteScalpingSensitivityDetails(report.ParameterSensitivity);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainScalpingBlocker()
+    {
+        WriteHeader("Hermes Scalping Blocker Explanation");
+        var report = LoadRequiredScalpingRobustnessReport();
+        if (report is null) return 1;
+        WriteField("Candidate", report.CandidateId);
+        WriteField("Status", report.Status.ToString());
+        WriteField("Final Candidate", report.FinalCandidate.ToString().ToLowerInvariant());
+        WriteMessages("Blockers", report.Blockers);
+        WriteField("Primary Sensitivity Driver", report.ParameterSensitivity.StableCorridor.PrimaryConfidenceDropDriver);
+        WriteField("Explainability", report.ParameterSensitivity.StableCorridor.ExplanationHealth);
+        WriteMessages("Recommended Corridor", report.ParameterSensitivity.StableCorridor.RecommendedConservativeCorridor);
+        foreach (var detail in report.ParameterSensitivity.Details.OrderBy(item => item.ConfidenceDelta).Take(3))
+        {
+            WriteSubHeader(detail.VariantLabel);
+            WriteField("Parameter", detail.ParameterName);
+            WriteField("Confidence Delta", $"{detail.ConfidenceDelta:0.####}");
+            WriteField("Stability", detail.Stability);
+            WriteField("Explanation", detail.Explanation);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingParameterCorridor()
+    {
+        WriteHeader("Hermes Scalping Parameter Corridor");
+        var report = LoadRequiredScalpingRobustnessReport();
+        if (report is null) return 1;
+        var corridor = report.ParameterSensitivity.StableCorridor;
+        WriteField("Candidate", report.CandidateId);
+        WriteField("Stable Corridor Available", report.ParameterSensitivity.StableConservativeCorridorAvailable.ToString().ToLowerInvariant());
+        WriteField("Primary Confidence Driver", corridor.PrimaryConfidenceDropDriver);
+        WriteField("Explainability", corridor.ExplanationHealth);
+        WriteMessages("Stable Ranges", corridor.StableParameterRanges);
+        WriteMessages("Unstable Ranges", corridor.UnstableParameterRanges);
+        WriteMessages("Recommended Conservative Corridor", corridor.RecommendedConservativeCorridor);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private ScalpingRobustnessExpansionReport? LoadRequiredScalpingRobustnessReport()
+    {
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteError("--id fehlt");
+            WriteSafety();
+            return null;
+        }
+
+        var service = new ScalpingRobustnessExpansionService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadReport(id) ?? service.Expand(id);
+        return report;
+    }
+
     private int ShowScalpingFinalCandidates()
     {
         WriteHeader("Hermes Scalping Final Candidates");
@@ -5750,6 +5831,30 @@ internal sealed class HermesCli
         WriteMessages("Blockers", report.Blockers);
         WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private static void WriteScalpingSensitivityDetails(ScalpingParameterSensitivityReport report)
+    {
+        WriteField("Candidate", report.CandidateId);
+        WriteField("Health", report.Health);
+        WriteField("Baseline Variants", report.VariantsTested.ToString());
+        WriteField("Worst Confidence Drop", $"{report.WorstConfidenceDrop:0.####}");
+        WriteField("Confidence Drop Explainable", report.ConfidenceDropExplainable.ToString().ToLowerInvariant());
+        WriteField("Stable Corridor Available", report.StableConservativeCorridorAvailable.ToString().ToLowerInvariant());
+        WriteField("Primary Driver", report.StableCorridor.PrimaryConfidenceDropDriver);
+        WriteMessages("Blockers", report.Blockers);
+        foreach (var detail in report.Details.OrderBy(item => item.ParameterName).ThenBy(item => item.VariantLabel))
+        {
+            WriteSubHeader(detail.VariantLabel);
+            WriteField("Parameter", detail.ParameterName);
+            WriteField("Baseline Confidence", $"{detail.BaselineConfidence:0.####}");
+            WriteField("Variant Confidence", $"{detail.VariantConfidence:0.####}");
+            WriteField("Confidence Delta", $"{detail.ConfidenceDelta:0.####}");
+            WriteField("OOS Delta", $"{detail.OosDelta:0.####}");
+            WriteField("WF Delta", $"{detail.WalkForwardDelta:0.####}");
+            WriteField("Cost Delta", $"{detail.CostStressDelta:0.####}");
+            WriteField("Stability", detail.Stability);
+        }
     }
 
     private void WriteRiskOfRuinEntry(RiskOfRuinEntry entry)

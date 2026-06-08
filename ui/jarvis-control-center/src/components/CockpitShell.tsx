@@ -492,6 +492,39 @@ function MasterStatusOverview({ masterStatus, source }) {
       </div>
       <GoalSystemCard masterStatus={masterStatus} />
       <KnowledgeHealthCard masterStatus={masterStatus} />
+      <ScalpingProgressPanel masterStatus={masterStatus} />
+    </section>
+  );
+}
+
+function ScalpingProgressPanel({ masterStatus }) {
+  const finalCandidates = masterStatus.scalping_final_candidates || 0;
+  const robustCandidates = masterStatus.scalping_robust_candidates || 0;
+  const tone = finalCandidates ? 'good' : robustCandidates ? 'warn' : 'info';
+
+  return (
+    <section className="cockpit-sub-card" aria-label="Scalping Progress read-only">
+      <div className="cockpit-sub-card-head">
+        <span>Scalping Progress</span>
+        <StatusPill tone={tone}>read-only</StatusPill>
+      </div>
+      <div className="cockpit-master-grid">
+        <Metric label="Asset" value={masterStatus.scalping_asset || '-'} tone="info" />
+        <Metric label="Candidates" value={formatNumber(masterStatus.scalping_candidates_total)} tone="info" />
+        <Metric label="Robust" value={formatNumber(masterStatus.scalping_robust_candidates)} tone={robustCandidates ? 'good' : 'warn'} />
+        <Metric label="Final" value={formatNumber(masterStatus.scalping_final_candidates)} tone={finalCandidates ? 'good' : 'warn'} />
+        <Metric label="Best Candidate" value={masterStatus.best_scalping_candidate || '-'} tone="info" />
+        <Metric label="Monte Carlo" value={masterStatus.scalping_monte_carlo_health || 'missing'} tone={toneFromStatus(masterStatus.scalping_monte_carlo_health)} />
+        <Metric label="Parameter Sensitivity" value={masterStatus.scalping_parameter_sensitivity_health || 'missing'} tone={toneFromStatus(masterStatus.scalping_parameter_sensitivity_health)} />
+        <Metric label="Regime Validation" value={masterStatus.scalping_regime_validation_health || 'missing'} tone={toneFromStatus(masterStatus.scalping_regime_validation_health)} />
+        <Metric label="Bot Specs" value={formatNumber(masterStatus.ctrader_bot_specs_ready)} tone={masterStatus.ctrader_bot_specs_ready ? 'good' : 'info'} />
+        <Metric label="Signal Specs" value={formatNumber(masterStatus.signal_agent_specs_ready)} tone={masterStatus.signal_agent_specs_ready ? 'good' : 'info'} />
+        <Metric label="no_auto_trading" value={String(masterStatus.no_auto_trading)} tone={masterStatus.no_auto_trading ? 'good' : 'danger'} />
+        <Metric label="human_review" value={String(masterStatus.human_review_required)} tone={masterStatus.human_review_required ? 'good' : 'danger'} />
+        <Metric label="broker_orders" value={String(masterStatus.broker_orders_enabled)} tone={masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
+        <Metric label="live_trading" value={String(masterStatus.live_trading_enabled)} tone={masterStatus.live_trading_enabled ? 'danger' : 'good'} />
+      </div>
+      <p className="cockpit-master-source-warning">Read-only: uses master-status/report snapshots only. No runtime commands or trading actions.</p>
     </section>
   );
 }

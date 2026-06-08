@@ -190,6 +190,18 @@ public sealed class MasterStatusService
         var scalpingParameterSensitivityHealth = expansionReports.Count == 0
             ? "missing"
             : expansionReports.Any(report => report.ParameterSensitivity.Health != "ok") ? "needs_attention" : "ok";
+        var scalpingRegimeValidationHealth = expansionReports.Count == 0
+            ? "missing"
+            : expansionReports.Any(report => report.RegimeValidation.Health != "ok") ? "needs_attention" : "ok";
+        var scalpingCandidatesWithStableCorridor = expansionReports.Count(report => report.ParameterSensitivity.StableConservativeCorridorAvailable);
+        var scalpingCandidatesBlockedBySensitivity = expansionReports.Count(report => report.Blockers.Any(blocker => blocker.Contains("sensitivity", StringComparison.OrdinalIgnoreCase)));
+        var scalpingSensitivityExplainabilityHealth = expansionReports.Count == 0
+            ? "missing"
+            : expansionReports.Any(report => report.ParameterSensitivity.Blockers.Any(blocker => blocker.Contains("unexplained", StringComparison.OrdinalIgnoreCase))) ? "needs_attention" : "ok";
+        var bestScalpingParameterCorridorCandidate = expansionReports
+            .Where(report => report.ParameterSensitivity.StableConservativeCorridorAvailable)
+            .OrderByDescending(report => report.StabilityScore)
+            .FirstOrDefault()?.CandidateId;
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -483,6 +495,11 @@ public sealed class MasterStatusService
                     ["best_final_scalping_candidate"] = bestFinalScalpingCandidate,
                     ["scalping_monte_carlo_health"] = scalpingMonteCarloHealth,
                     ["scalping_parameter_sensitivity_health"] = scalpingParameterSensitivityHealth,
+                    ["scalping_regime_validation_health"] = scalpingRegimeValidationHealth,
+                    ["scalping_sensitivity_explainability_health"] = scalpingSensitivityExplainabilityHealth,
+                    ["scalping_candidates_with_stable_corridor"] = scalpingCandidatesWithStableCorridor,
+                    ["scalping_candidates_blocked_by_sensitivity"] = scalpingCandidatesBlockedBySensitivity,
+                    ["best_scalping_parameter_corridor_candidate"] = bestScalpingParameterCorridorCandidate,
                     ["walkforward_path"] = walkforwardPath,
                     ["walkforward_confidence"] = GetDouble(walkforward, "walkforward_confidence", "walkforwardConfidence"),
                     ["next_validation_recommendations"] = GetStringArray(researchInsights, "next_validation_recommendations", "nextValidationRecommendations").Take(8).ToList()
@@ -563,6 +580,11 @@ public sealed class MasterStatusService
             BestFinalScalpingCandidate: bestFinalScalpingCandidate,
             ScalpingMonteCarloHealth: scalpingMonteCarloHealth,
             ScalpingParameterSensitivityHealth: scalpingParameterSensitivityHealth,
+            ScalpingRegimeValidationHealth: scalpingRegimeValidationHealth,
+            ScalpingSensitivityExplainabilityHealth: scalpingSensitivityExplainabilityHealth,
+            ScalpingCandidatesWithStableCorridor: scalpingCandidatesWithStableCorridor,
+            ScalpingCandidatesBlockedBySensitivity: scalpingCandidatesBlockedBySensitivity,
+            BestScalpingParameterCorridorCandidate: bestScalpingParameterCorridorCandidate,
             DomainValidationWarnings: domainValidation.DomainValidationWarnings,
             ActiveGoals: goalState.Goals.Where(goal => goal.Active).Select(goal => goal.GoalId).ToList(),
             TopGoal: goalState.TopGoalId,
