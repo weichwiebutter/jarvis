@@ -260,6 +260,15 @@ public sealed class MasterStatusService
         var ensembleCandidateHealth = ensembleCandidate is null
             ? "missing"
             : ensembleCandidate.Status == "ensemble_candidate_v1" ? "ok" : "building";
+        var optimizerReport = new ScalpingEnsembleOptimizerService(_storagePaths, _runtimeRoot).LoadReport();
+        var optimizedSelection = optimizerReport?.SelectedEnsemble;
+        var scalpingEnsembleOptimizerHealth = optimizerReport?.OptimizerHealth ?? "missing";
+        var scalpingOptimizedEnsembleStatus = optimizedSelection?.Status.ToString() ?? "missing";
+        var scalpingOptimizedEnsembleMembers = optimizedSelection?.Members.Count ?? 0;
+        var scalpingOptimizedEnsembleMode = optimizedSelection?.Mode.ToString() ?? "balanced";
+        var scalpingOptimizedEnsembleDrawdown = optimizedSelection?.OptimizedPortfolioDrawdown ?? 0;
+        var scalpingOptimizedEnsembleSignalDensity = optimizedSelection?.OptimizedSignalDensity ?? 0;
+        var scalpingOptimizedEnsembleReadiness = optimizedSelection?.Readiness ?? "missing";
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -564,6 +573,13 @@ public sealed class MasterStatusService
                     ["ensemble_candidate_status"] = ensembleCandidateStatus,
                     ["ensemble_candidate_members"] = ensembleCandidateMembers,
                     ["ensemble_candidate_health"] = ensembleCandidateHealth,
+                    ["scalping_ensemble_optimizer_health"] = scalpingEnsembleOptimizerHealth,
+                    ["scalping_optimized_ensemble_status"] = scalpingOptimizedEnsembleStatus,
+                    ["scalping_optimized_ensemble_members"] = scalpingOptimizedEnsembleMembers,
+                    ["scalping_optimized_ensemble_mode"] = scalpingOptimizedEnsembleMode,
+                    ["scalping_optimized_ensemble_drawdown"] = scalpingOptimizedEnsembleDrawdown,
+                    ["scalping_optimized_ensemble_signal_density"] = scalpingOptimizedEnsembleSignalDensity,
+                    ["scalping_optimized_ensemble_readiness"] = scalpingOptimizedEnsembleReadiness,
                     ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
                     ["market_data_xauusd_available"] = marketDataAvailability.XauusdAvailable,
                     ["market_data_eurusd_available"] = marketDataAvailability.EurusdAvailable,
@@ -676,6 +692,13 @@ public sealed class MasterStatusService
             EnsembleCandidateStatus: ensembleCandidateStatus,
             EnsembleCandidateMembers: ensembleCandidateMembers,
             EnsembleCandidateHealth: ensembleCandidateHealth,
+            ScalpingEnsembleOptimizerHealth: scalpingEnsembleOptimizerHealth,
+            ScalpingOptimizedEnsembleStatus: scalpingOptimizedEnsembleStatus,
+            ScalpingOptimizedEnsembleMembers: scalpingOptimizedEnsembleMembers,
+            ScalpingOptimizedEnsembleMode: scalpingOptimizedEnsembleMode,
+            ScalpingOptimizedEnsembleDrawdown: scalpingOptimizedEnsembleDrawdown,
+            ScalpingOptimizedEnsembleSignalDensity: scalpingOptimizedEnsembleSignalDensity,
+            ScalpingOptimizedEnsembleReadiness: scalpingOptimizedEnsembleReadiness,
             MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,
             MarketDataXauusdAvailable: marketDataAvailability.XauusdAvailable,
             MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,

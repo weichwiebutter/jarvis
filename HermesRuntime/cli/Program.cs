@@ -189,6 +189,9 @@ internal sealed class HermesCli
             "scalping-multi-asset-roadmap" => ShowScalpingMultiAssetRoadmap(),
             "update-scalping-multi-asset-roadmap" => UpdateScalpingMultiAssetRoadmap(),
             "scalping-asset-status" => ShowScalpingAssetStatus(),
+            "optimize-scalping-ensemble" => OptimizeScalpingEnsemble(),
+            "scalping-ensemble-optimized" => ShowScalpingEnsembleOptimized(),
+            "scalping-ensemble-member" => ShowScalpingEnsembleMember(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -377,6 +380,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes update-scalping-multi-asset-roadmap Multi-Asset-Roadmap aktualisieren");
         Console.WriteLine("  hermes scalping-multi-asset-roadmap Multi-Asset-Roadmap anzeigen");
         Console.WriteLine("  hermes scalping-asset-status --asset GER40 Asset-Roadmap-Status anzeigen");
+        Console.WriteLine("  hermes optimize-scalping-ensemble --mode balanced optimiertes Scalping-Ensemble erzeugen");
+        Console.WriteLine("  hermes scalping-ensemble-optimized optimiertes Scalping-Ensemble anzeigen");
+        Console.WriteLine("  hermes scalping-ensemble-member --id <ID> optimiertes Ensemble-Mitglied anzeigen");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -539,6 +545,13 @@ internal sealed class HermesCli
         WriteField("ensemble_candidate_status", snapshot.EnsembleCandidateStatus);
         WriteField("ensemble_candidate_members", snapshot.EnsembleCandidateMembers.ToString());
         WriteField("ensemble_candidate_health", snapshot.EnsembleCandidateHealth);
+        WriteField("scalping_ensemble_optimizer_health", snapshot.ScalpingEnsembleOptimizerHealth);
+        WriteField("scalping_optimized_ensemble_status", snapshot.ScalpingOptimizedEnsembleStatus);
+        WriteField("scalping_optimized_ensemble_members", snapshot.ScalpingOptimizedEnsembleMembers.ToString());
+        WriteField("scalping_optimized_ensemble_mode", snapshot.ScalpingOptimizedEnsembleMode);
+        WriteField("scalping_optimized_ensemble_drawdown", $"{snapshot.ScalpingOptimizedEnsembleDrawdown:0.####}");
+        WriteField("scalping_optimized_ensemble_signal_density", $"{snapshot.ScalpingOptimizedEnsembleSignalDensity:0.####}");
+        WriteField("scalping_optimized_ensemble_readiness", snapshot.ScalpingOptimizedEnsembleReadiness);
         WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
         WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
@@ -4020,6 +4033,66 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int OptimizeScalpingEnsemble()
+    {
+        WriteHeader("Hermes Scalping Ensemble Optimizer");
+        var modeValue = ReadOption(_args, "--mode") ?? ScalpingEnsembleOptimizationMode.balanced.ToString();
+        if (!Enum.TryParse<ScalpingEnsembleOptimizationMode>(modeValue, ignoreCase: true, out var mode))
+        {
+            WriteError($"invalid_optimizer_mode:{modeValue}");
+            WriteSafety();
+            return 1;
+        }
+
+        var report = new ScalpingEnsembleOptimizerService(BuildStoragePaths(), _runtimeRoot).Optimize(mode);
+        WriteScalpingOptimizerReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingEnsembleOptimized()
+    {
+        WriteHeader("Hermes Scalping Optimized Ensemble");
+        var report = new ScalpingEnsembleOptimizerService(BuildStoragePaths(), _runtimeRoot).LoadReport();
+        if (report is null)
+        {
+            WriteError("scalping_ensemble_optimizer_report_missing");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteScalpingOptimizerReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingEnsembleMember()
+    {
+        WriteHeader("Hermes Scalping Optimized Ensemble Member");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteError("--id fehlt");
+            WriteSafety();
+            return 1;
+        }
+
+        var member = new ScalpingEnsembleOptimizerService(BuildStoragePaths(), _runtimeRoot).FindMember(id);
+        if (member is null)
+        {
+            WriteError($"optimized_ensemble_member_not_found:{id}");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteScalpingOptimizedMember(member);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowNearMissStrategies()
     {
         WriteHeader("Hermes Near-Miss Strategies");
@@ -6315,6 +6388,54 @@ internal sealed class HermesCli
         WriteField("Certified Candidates", entry.CertifiedCandidates.ToString());
         WriteField("Next Action", entry.NextAction);
         WriteMessages("Risk Notes", entry.RiskNotes);
+    }
+
+    private void WriteScalpingOptimizerReport(ScalpingEnsembleOptimizerReport report)
+    {
+        var selected = report.SelectedEnsemble;
+        WriteField("Mode", report.Mode.ToString());
+        WriteField("Optimizer Health", report.OptimizerHealth);
+        WriteField("Certified Evaluated", report.CertifiedCandidatesEvaluated.ToString());
+        WriteField("Combinations Evaluated", report.CombinationsEvaluated.ToString());
+        WriteField("Selected Status", selected.Status.ToString());
+        WriteField("Selected Members", selected.Members.Count.ToString());
+        WriteField("Previous Drawdown", $"{selected.PreviousPortfolioDrawdown:0.####}");
+        WriteField("Optimized Drawdown", $"{selected.OptimizedPortfolioDrawdown:0.####}");
+        WriteField("Previous Signal Density", $"{selected.PreviousSignalDensity:0.####}");
+        WriteField("Optimized Signal Density", $"{selected.OptimizedSignalDensity:0.####}");
+        WriteField("Asset Diversity", $"{selected.AssetDiversityScore:0.####}");
+        WriteField("Setup Diversity", $"{selected.SetupDiversityScore:0.####}");
+        WriteField("Correlation Penalty", $"{selected.CorrelationPenalty:0.####}");
+        WriteField("Risk Of Ruin", $"{selected.RiskOfRuinEstimate:0.####}");
+        WriteField("Stability", $"{selected.EnsembleStability:0.####}");
+        WriteField("Readiness", selected.Readiness);
+        WriteMessages("Blockers", selected.Blockers);
+        foreach (var member in selected.Members)
+        {
+            WriteScalpingOptimizedMember(member);
+        }
+
+        WriteField("Optimizer Report", DisplayPath(Path.Combine(BuildStoragePaths().Root, "reports", "scalping_portfolio", "optimizer", "ensemble_optimizer_report.json")));
+        if (report.Mode == ScalpingEnsembleOptimizationMode.balanced)
+        {
+            WriteField("Balanced Selection", DisplayPath(Path.Combine(BuildStoragePaths().Root, "reports", "scalping_portfolio", "optimizer", "selected_ensemble_balanced.json")));
+        }
+    }
+
+    private static void WriteScalpingOptimizedMember(ScalpingOptimizedEnsembleMember member)
+    {
+        WriteSubHeader(member.CandidateId);
+        WriteField("Asset", member.Asset);
+        WriteField("Setup", member.SetupType);
+        WriteField("Confidence", $"{member.Confidence:0.####}");
+        WriteField("Profit Factor", $"{member.ProfitFactor:0.####}");
+        WriteField("Recovery Factor", $"{member.RecoveryFactor:0.####}");
+        WriteField("Drawdown", $"{member.Drawdown:0.####}");
+        WriteField("Max Daily Drawdown", $"{member.MaxDailyDrawdown:0.####}");
+        WriteField("Max Weekly Drawdown", $"{member.MaxWeeklyDrawdown:0.####}");
+        WriteField("Signal Density", $"{member.SignalDensityScore:0.####}");
+        WriteField("Contribution", member.ContributionReason);
+        WriteMessages("Risk Notes", member.RiskNotes);
     }
 
     private void WriteRiskOfRuinEntry(RiskOfRuinEntry entry)
