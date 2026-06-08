@@ -178,8 +178,13 @@ public sealed class MasterStatusService
                 .FirstOrDefault()
             : null;
         var cTraderBotSpecsReady = Directory.Exists(scalpingService.BotSpecDirectory)
-            ? Directory.GetFiles(scalpingService.BotSpecDirectory, "*.json").Length
+            ? Directory.GetFiles(scalpingService.BotSpecDirectory, "ctrader_bot_spec.json", SearchOption.AllDirectories).Length
             : 0;
+        var latestCTraderBotSpec = Directory.Exists(scalpingService.BotSpecDirectory)
+            ? Directory.GetFiles(scalpingService.BotSpecDirectory, "ctrader_bot_spec.json", SearchOption.AllDirectories)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault()
+            : null;
         var scalpingDataGap = xauusdQuality.DataGaps.Count == 0 ? "-" : string.Join(",", xauusdQuality.DataGaps);
         var expansionReports = new ScalpingRobustnessExpansionService(_storagePaths, _runtimeRoot).LoadReports();
         var scalpingRobustnessExpanded = expansionReports.Count(report => report.Status == ScalpingExpansionStatus.robustness_expanded);
@@ -228,6 +233,13 @@ public sealed class MasterStatusService
         var signalAgentExportHealth = certificationReports.Any(report => report.Status == ScalpingCertificationStatus.certified_candidate)
             ? certifiedCandidateSignalReady ? "ok" : "needs_export"
             : "missing_certified_candidate";
+        var certifiedCandidateBotReady = certificationReports
+            .Where(report => report.Status == ScalpingCertificationStatus.certified_candidate)
+            .Any(report => File.Exists(Path.Combine(scalpingService.BotSpecDirectory, report.CandidateId, "ctrader_bot_spec.json")));
+        var cTraderBotExportHealth = certificationReports.Any(report => report.Status == ScalpingCertificationStatus.certified_candidate)
+            ? certifiedCandidateBotReady ? "ok" : "needs_export"
+            : "missing_certified_candidate";
+        const string candidatePortfolioMode = "planned";
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -513,6 +525,10 @@ public sealed class MasterStatusService
                     ["signal_agent_export_health"] = signalAgentExportHealth,
                     ["certified_candidate_signal_ready"] = certifiedCandidateSignalReady,
                     ["ctrader_bot_specs_ready"] = cTraderBotSpecsReady,
+                    ["latest_ctrader_bot_spec"] = latestCTraderBotSpec,
+                    ["ctrader_bot_export_health"] = cTraderBotExportHealth,
+                    ["certified_candidate_bot_ready"] = certifiedCandidateBotReady,
+                    ["candidate_portfolio_mode"] = candidatePortfolioMode,
                     ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
                     ["market_data_xauusd_available"] = marketDataAvailability.XauusdAvailable,
                     ["market_data_eurusd_available"] = marketDataAvailability.EurusdAvailable,
@@ -606,6 +622,10 @@ public sealed class MasterStatusService
             LatestSignalAgentSpec: latestSignalAgentSpec,
             SignalAgentExportHealth: signalAgentExportHealth,
             CertifiedCandidateSignalReady: certifiedCandidateSignalReady,
+            LatestCTraderBotSpec: latestCTraderBotSpec,
+            CTraderBotExportHealth: cTraderBotExportHealth,
+            CertifiedCandidateBotReady: certifiedCandidateBotReady,
+            CandidatePortfolioMode: candidatePortfolioMode,
             MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,
             MarketDataXauusdAvailable: marketDataAvailability.XauusdAvailable,
             MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,

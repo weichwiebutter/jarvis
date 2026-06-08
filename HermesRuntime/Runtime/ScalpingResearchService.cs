@@ -119,11 +119,29 @@ public sealed record ScalpingSignalSpec(
     bool LiveTradingEnabled);
 
 public sealed record CTraderBotSpecDraft(
+    string CandidateId,
     string StrategyName,
     string Asset,
     string Timeframe,
+    string SetupType,
     IReadOnlyList<string> EntryRules,
     IReadOnlyList<string> ExitRules,
+    IReadOnlyList<string> InvalidationRules,
+    IReadOnlyList<string> StopLossRules,
+    IReadOnlyList<string> TakeProfitRules,
+    IReadOnlyList<string> TimeStopRules,
+    string SessionFilter,
+    string SpreadFilter,
+    string NewsFilterStub,
+    double RiskPerTrade,
+    int MaxTradesPerDay,
+    double MaxDailyLoss,
+    string MaxDrawdownGuard,
+    IReadOnlyList<string> KillSwitchRules,
+    IReadOnlyList<string> LoggingRequirements,
+    IReadOnlyList<string> SafetyRequirements,
+    object CertificationSummary,
+    IReadOnlyList<string> FutureCandidatePortfolio,
     IReadOnlyList<string> RiskRules,
     IReadOnlyList<string> SessionRules,
     IReadOnlyList<string> SafetyRules,
@@ -213,13 +231,38 @@ public sealed class ScalpingResearchService
 
     public (string JsonPath, string MarkdownPath) ExportCTraderBotSpec(string id)
     {
-        var candidate = RequireRobustCandidate(id);
+        var candidate = RequireCertifiedCandidate(id);
+        var certification = new ScalpingCertificationService(_storagePaths, _runtimeRoot).LoadReport(id)!;
+        var signalSpecPath = Path.Combine(SignalSpecDirectory, candidate.CandidateId, "signal_agent_spec.json");
+        if (!File.Exists(signalSpecPath))
+        {
+            throw new InvalidOperationException($"signal_agent_spec_missing:{id}");
+        }
+
         var spec = new CTraderBotSpecDraft(
+            CandidateId: candidate.CandidateId,
             StrategyName: candidate.StrategyName,
             Asset: candidate.Asset,
             Timeframe: candidate.Timeframe,
+            SetupType: candidate.SetupType,
             EntryRules: candidate.EntryRules,
             ExitRules: candidate.ExitRules,
+            InvalidationRules: [.. candidate.StopLossRules, "spread_filter_fails", "session_filter_fails", "news_filter_stub_blocks", "daily_loss_guard_triggered"],
+            StopLossRules: candidate.StopLossRules,
+            TakeProfitRules: candidate.TakeProfitRules,
+            TimeStopRules: ["time_stop_after_6_m5_candles", "exit_before_session_close_if_signal_unresolved"],
+            SessionFilter: candidate.SessionFilter,
+            SpreadFilter: candidate.SpreadFilter,
+            NewsFilterStub: candidate.NewsFilterStub,
+            RiskPerTrade: candidate.RiskPerTrade,
+            MaxTradesPerDay: candidate.MaxTradesPerDay,
+            MaxDailyLoss: candidate.MaxDailyLoss,
+            MaxDrawdownGuard: $"halt_signals_if_drawdown_exceeds_{certification.DrawdownCertification.MaxDrawdownR:0.####}R_without_human_review",
+            KillSwitchRules: ["disable_new_signals_when_max_daily_loss_reached", "disable_new_signals_when_spread_filter_fails", "disable_new_signals_during_news_filter_block", "disable_new_signals_after_unexpected_runtime_error", "manual_human_reenable_required"],
+            LoggingRequirements: ["log_every_signal_decision", "log_entry_condition_state", "log_invalidation_reason", "log_session_and_spread_context", "log_safety_gate_state", "log_no_order_execution_confirmation"],
+            SafetyRequirements: ["specification_only", "no_broker_credentials", "no_live_order_execution", "no_ctrader_order_api_calls", "no_auto_trading_activation", "human_review_required=true"],
+            CertificationSummary: new { status = certification.Status.ToString(), certified_candidate = certification.CertifiedCandidate, profit_factor = certification.DrawdownCertification.ProfitFactor, recovery_factor = certification.DrawdownCertification.RecoveryFactor, max_drawdown_r = certification.DrawdownCertification.MaxDrawdownR, max_daily_drawdown_r = certification.DrawdownCertification.MaxDailyDrawdownR, human_review_package = certification.HumanReviewPackagePath, signal_agent_spec = signalSpecPath },
+            FutureCandidatePortfolio: ["this_spec_is_based_on_one_certified_candidate", "hermes_should_continue_searching_for_scalping_candidates", "future_versions_should_combine_multiple_certified_candidates", "each_candidate_must_be_individually_certified_before_combination", "ensemble_must_not_enable_automatic_live_trading", "human_review_remains_required"],
             RiskRules: [.. candidate.StopLossRules, .. candidate.TakeProfitRules, $"risk_per_trade={candidate.RiskPerTrade:0.####}", $"max_daily_loss={candidate.MaxDailyLoss:0.####}", $"max_trades_per_day={candidate.MaxTradesPerDay}"],
             SessionRules: [candidate.SessionFilter, candidate.SpreadFilter, candidate.NewsFilterStub],
             SafetyRules: ["no_auto_trading=true", "human_review_required=true", "broker_orders_enabled=false", "live_trading_enabled=false", "specification_only_no_ctrader_order_api"],
@@ -230,11 +273,13 @@ public sealed class ScalpingResearchService
             HumanReviewRequired: true,
             BrokerOrdersEnabled: false,
             LiveTradingEnabled: false);
-        Directory.CreateDirectory(BotSpecDirectory);
-        var basePath = Path.Combine(BotSpecDirectory, candidate.CandidateId);
-        File.WriteAllText(basePath + ".json", JsonSerializer.Serialize(spec, JsonDefaults.WriteOptions));
-        File.WriteAllText(basePath + ".md", BotMarkdown(spec));
-        return (basePath + ".json", basePath + ".md");
+        var candidateDirectory = Path.Combine(BotSpecDirectory, candidate.CandidateId);
+        Directory.CreateDirectory(candidateDirectory);
+        var jsonPath = Path.Combine(candidateDirectory, "ctrader_bot_spec.json");
+        var markdownPath = Path.Combine(candidateDirectory, "ctrader_bot_spec.md");
+        File.WriteAllText(jsonPath, JsonSerializer.Serialize(spec, JsonDefaults.WriteOptions));
+        File.WriteAllText(markdownPath, BotMarkdown(spec));
+        return (jsonPath, markdownPath);
     }
 
     public (string JsonPath, string MarkdownPath) ExportSignalAgentSpec(string id)
@@ -413,8 +458,10 @@ public sealed class ScalpingResearchService
     private static string BotMarkdown(CTraderBotSpecDraft spec) => $"""
 # {spec.StrategyName}
 
+- candidate_id: {spec.CandidateId}
 - asset: {spec.Asset}
 - timeframe: {spec.Timeframe}
+- setup_type: {spec.SetupType}
 - no_auto_trading: true
 - human_review_required: true
 - broker_orders_enabled: false
@@ -426,14 +473,47 @@ public sealed class ScalpingResearchService
 ## Exit Rules
 {Bullets(spec.ExitRules)}
 
+## Invalidation Rules
+{Bullets(spec.InvalidationRules)}
+
+## Stop Loss Rules
+{Bullets(spec.StopLossRules)}
+
+## Take Profit Rules
+{Bullets(spec.TakeProfitRules)}
+
+## Time Stop Rules
+{Bullets(spec.TimeStopRules)}
+
 ## Risk Rules
 {Bullets(spec.RiskRules)}
+
+- risk_per_trade: {spec.RiskPerTrade.ToString("0.####", CultureInfo.InvariantCulture)}
+- max_trades_per_day: {spec.MaxTradesPerDay}
+- max_daily_loss: {spec.MaxDailyLoss.ToString("0.####", CultureInfo.InvariantCulture)}
+- max_drawdown_guard: {spec.MaxDrawdownGuard}
 
 ## Session Rules
 {Bullets(spec.SessionRules)}
 
+- session_filter: {spec.SessionFilter}
+- spread_filter: {spec.SpreadFilter}
+- news_filter_stub: {spec.NewsFilterStub}
+
+## Kill Switch Rules
+{Bullets(spec.KillSwitchRules)}
+
+## Logging Requirements
+{Bullets(spec.LoggingRequirements)}
+
 ## Safety Rules
 {Bullets(spec.SafetyRules)}
+
+## Safety Requirements
+{Bullets(spec.SafetyRequirements)}
+
+## Future Candidate Portfolio
+{Bullets(spec.FutureCandidatePortfolio)}
 
 This is a specification draft only. It contains no broker credentials, no live order execution, and no cTrader Order API integration.
 """;

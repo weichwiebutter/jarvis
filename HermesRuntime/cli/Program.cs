@@ -176,6 +176,8 @@ internal sealed class HermesCli
             "scalping-certified-candidates" => ShowScalpingCertifiedCandidates(),
             "scalping-human-review-package" => ShowScalpingHumanReviewPackage(),
             "export-scalping-bot-spec" => ExportScalpingBotSpec(),
+            "scalping-bot-spec" => ShowScalpingBotSpec(),
+            "scalping-bot-specs" => ShowScalpingBotSpecs(),
             "export-signal-agent-spec" => ExportSignalAgentSpec(),
             "signal-agent-spec" => ShowSignalAgentSpec(),
             "signal-agent-specs" => ShowSignalAgentSpecs(),
@@ -354,6 +356,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes scalping-certified-candidates zertifizierte Scalping-Kandidaten anzeigen");
         Console.WriteLine("  hermes scalping-human-review-package --id <ID> Human Review Package anzeigen");
         Console.WriteLine("  hermes export-scalping-bot-spec --id <ID> cTrader-Spezifikationsreport exportieren");
+        Console.WriteLine("  hermes scalping-bot-spec --id <ID> cTrader-Spezifikation anzeigen");
+        Console.WriteLine("  hermes scalping-bot-specs exportierte cTrader-Spezifikationen anzeigen");
         Console.WriteLine("  hermes export-signal-agent-spec --id <ID> Signal-Agent-Spezifikationsreport exportieren");
         Console.WriteLine("  hermes signal-agent-spec --id <ID> Signal-Agent-Spezifikation anzeigen");
         Console.WriteLine("  hermes signal-agent-specs exportierte Signal-Agent-Spezifikationen anzeigen");
@@ -500,6 +504,10 @@ internal sealed class HermesCli
         WriteField("signal_agent_export_health", snapshot.SignalAgentExportHealth);
         WriteField("certified_candidate_signal_ready", snapshot.CertifiedCandidateSignalReady.ToString().ToLowerInvariant());
         WriteField("ctrader_bot_specs_ready", snapshot.CTraderBotSpecsReady.ToString());
+        WriteField("latest_ctrader_bot_spec", snapshot.LatestCTraderBotSpec is null ? "-" : DisplayPath(snapshot.LatestCTraderBotSpec));
+        WriteField("ctrader_bot_export_health", snapshot.CTraderBotExportHealth);
+        WriteField("certified_candidate_bot_ready", snapshot.CertifiedCandidateBotReady.ToString().ToLowerInvariant());
+        WriteField("candidate_portfolio_mode", snapshot.CandidatePortfolioMode);
         WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
         WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
@@ -3726,6 +3734,54 @@ internal sealed class HermesCli
             WriteSafety();
             return 1;
         }
+    }
+
+    private int ShowScalpingBotSpec()
+    {
+        WriteHeader("Hermes Scalping cTrader Bot Spec");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteError("--id fehlt");
+            WriteSafety();
+            return 1;
+        }
+
+        var path = Path.Combine(BuildStoragePaths().Root, "reports", "scalping_bot_specs", id, "ctrader_bot_spec.md");
+        if (!File.Exists(path))
+        {
+            WriteError($"ctrader_bot_spec_missing:{id}");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteField("Markdown", DisplayPath(path));
+        foreach (var line in File.ReadLines(path).Take(140))
+        {
+            Console.WriteLine(line);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingBotSpecs()
+    {
+        WriteHeader("Hermes Scalping cTrader Bot Specs");
+        var root = Path.Combine(BuildStoragePaths().Root, "reports", "scalping_bot_specs");
+        var specs = Directory.Exists(root)
+            ? Directory.GetFiles(root, "ctrader_bot_spec.json", SearchOption.AllDirectories).OrderByDescending(File.GetLastWriteTimeUtc).ToList()
+            : [];
+        WriteField("Specs Ready", specs.Count.ToString());
+        foreach (var spec in specs.Take(20))
+        {
+            WriteField(Path.GetFileName(Path.GetDirectoryName(spec)) ?? "candidate", DisplayPath(spec));
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
     }
 
     private int ExportSignalAgentSpec()
