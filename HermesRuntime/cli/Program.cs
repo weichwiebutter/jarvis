@@ -171,6 +171,10 @@ internal sealed class HermesCli
             "explain-scalping-blocker" => ExplainScalpingBlocker(),
             "scalping-parameter-corridor" => ShowScalpingParameterCorridor(),
             "scalping-final-candidates" => ShowScalpingFinalCandidates(),
+            "run-scalping-certification" => RunScalpingCertification(),
+            "scalping-certification-report" => ShowScalpingCertificationReport(),
+            "scalping-certified-candidates" => ShowScalpingCertifiedCandidates(),
+            "scalping-human-review-package" => ShowScalpingHumanReviewPackage(),
             "export-scalping-bot-spec" => ExportScalpingBotSpec(),
             "export-signal-agent-spec" => ExportSignalAgentSpec(),
             "near-miss-strategies" => ShowNearMissStrategies(),
@@ -343,6 +347,10 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes explain-scalping-blocker --id <ID> Scalping-Blocker erklaeren");
         Console.WriteLine("  hermes scalping-parameter-corridor --id <ID> stabilen Parameterkorridor anzeigen");
         Console.WriteLine("  hermes scalping-final-candidates finale Scalping-Kandidaten anzeigen");
+        Console.WriteLine("  hermes run-scalping-certification --id <ID>|--all-final finale Scalping-Kandidaten zertifizieren");
+        Console.WriteLine("  hermes scalping-certification-report --id <ID> Certification Report anzeigen");
+        Console.WriteLine("  hermes scalping-certified-candidates zertifizierte Scalping-Kandidaten anzeigen");
+        Console.WriteLine("  hermes scalping-human-review-package --id <ID> Human Review Package anzeigen");
         Console.WriteLine("  hermes export-scalping-bot-spec --id <ID> cTrader-Spezifikationsreport exportieren");
         Console.WriteLine("  hermes export-signal-agent-spec --id <ID> Signal-Agent-Spezifikationsreport exportieren");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
@@ -501,6 +509,11 @@ internal sealed class HermesCli
         WriteField("scalping_candidates_with_stable_corridor", snapshot.ScalpingCandidatesWithStableCorridor.ToString());
         WriteField("scalping_candidates_blocked_by_sensitivity", snapshot.ScalpingCandidatesBlockedBySensitivity.ToString());
         WriteField("best_scalping_parameter_corridor_candidate", snapshot.BestScalpingParameterCorridorCandidate ?? "-");
+        WriteField("scalping_certification_health", snapshot.ScalpingCertificationHealth);
+        WriteField("scalping_certified_candidates", snapshot.ScalpingCertifiedCandidates.ToString());
+        WriteField("scalping_certification_failed", snapshot.ScalpingCertificationFailed.ToString());
+        WriteField("best_certified_scalping_candidate", snapshot.BestCertifiedScalpingCandidate ?? "-");
+        WriteField("scalping_human_review_packages_ready", snapshot.ScalpingHumanReviewPackagesReady.ToString());
         WriteMessages("domain_validation_warnings", snapshot.DomainValidationWarnings.Take(8).ToList());
         WriteField("top_goal", string.IsNullOrWhiteSpace(snapshot.TopGoal) ? "-" : snapshot.TopGoal);
         WriteMessages("active_goals", snapshot.ActiveGoals);
@@ -3586,6 +3599,101 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunScalpingCertification()
+    {
+        WriteHeader("Hermes Scalping Certification");
+        var service = new ScalpingCertificationService(BuildStoragePaths(), _runtimeRoot);
+        IReadOnlyList<ScalpingCertificationReport> reports;
+        if (_args.Any(arg => arg.Equals("--all-final", StringComparison.OrdinalIgnoreCase)))
+        {
+            reports = service.CertifyAllFinal();
+        }
+        else
+        {
+            var id = ReadOption(_args, "--id");
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                WriteError("--id fehlt oder nutze --all-final");
+                WriteSafety();
+                return 1;
+            }
+
+            reports = [service.Certify(id)];
+        }
+
+        WriteField("Reports", reports.Count.ToString());
+        foreach (var report in reports)
+        {
+            WriteScalpingCertificationReport(report);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingCertificationReport()
+    {
+        WriteHeader("Hermes Scalping Certification Report");
+        var report = LoadRequiredScalpingCertificationReport();
+        if (report is null) return 1;
+        WriteScalpingCertificationReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingCertifiedCandidates()
+    {
+        WriteHeader("Hermes Scalping Certified Candidates");
+        var reports = new ScalpingCertificationService(BuildStoragePaths(), _runtimeRoot).LoadReports();
+        var certified = reports.Where(report => report.Status == ScalpingCertificationStatus.certified_candidate).ToList();
+        WriteField("Certified Candidates", certified.Count.ToString());
+        WriteField("Certification Failed", reports.Count(report => report.Status == ScalpingCertificationStatus.certification_failed).ToString());
+        foreach (var report in certified.Take(10))
+        {
+            WriteScalpingCertificationReport(report);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingHumanReviewPackage()
+    {
+        WriteHeader("Hermes Scalping Human Review Package");
+        var report = LoadRequiredScalpingCertificationReport();
+        if (report is null) return 1;
+        WriteField("Candidate", report.CandidateId);
+        WriteField("Package", DisplayPath(report.HumanReviewPackagePath));
+        if (File.Exists(report.HumanReviewPackagePath))
+        {
+            foreach (var line in File.ReadLines(report.HumanReviewPackagePath).Take(80))
+            {
+                Console.WriteLine(line);
+            }
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private ScalpingCertificationReport? LoadRequiredScalpingCertificationReport()
+    {
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteError("--id fehlt");
+            WriteSafety();
+            return null;
+        }
+
+        var service = new ScalpingCertificationService(BuildStoragePaths(), _runtimeRoot);
+        return service.LoadReport(id) ?? service.Certify(id);
+    }
+
     private int ExportScalpingBotSpec()
     {
         WriteHeader("Hermes Scalping cTrader Bot Spec Export");
@@ -5855,6 +5963,29 @@ internal sealed class HermesCli
             WriteField("Cost Delta", $"{detail.CostStressDelta:0.####}");
             WriteField("Stability", detail.Stability);
         }
+    }
+
+    private void WriteScalpingCertificationReport(ScalpingCertificationReport report)
+    {
+        WriteSubHeader($"{report.CandidateId} / {report.Status}");
+        WriteField("Asset", report.Asset);
+        WriteField("Timeframe", report.Timeframe);
+        WriteField("Setup", report.SetupType);
+        WriteField("Certified", report.CertifiedCandidate.ToString().ToLowerInvariant());
+        WriteField("Drawdown Health", report.DrawdownCertification.Health);
+        WriteField("Max Drawdown R", $"{report.DrawdownCertification.MaxDrawdownR:0.####}");
+        WriteField("Daily Drawdown R", $"{report.DrawdownCertification.MaxDailyDrawdownR:0.####}");
+        WriteField("Weekly Drawdown R", $"{report.DrawdownCertification.MaxWeeklyDrawdownR:0.####}");
+        WriteField("Consecutive Losses", report.DrawdownCertification.MaxConsecutiveLosses.ToString());
+        WriteField("Recovery Factor", $"{report.DrawdownCertification.RecoveryFactor:0.####}");
+        WriteField("Profit Factor", $"{report.DrawdownCertification.ProfitFactor:0.####}");
+        WriteField("Trade Distribution", report.TradeDistribution.Health);
+        WriteMessages("Sessions", report.SessionValidation.Select(session => $"{session.SessionName}:{session.Status}:net_r={session.NetR:0.####}:trades={session.TradeCount}").ToList());
+        WriteMessages("Periods", report.MultiPeriodValidation.Select(period => $"{period.SegmentName}:{period.Status}:net_r={period.NetR:0.####}:pf={period.ProfitFactor:0.####}").ToList());
+        WriteMessages("Blockers", report.Blockers);
+        WriteField("Human Review Package", DisplayPath(report.HumanReviewPackagePath));
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
     }
 
     private void WriteRiskOfRuinEntry(RiskOfRuinEntry entry)

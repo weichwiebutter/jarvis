@@ -253,11 +253,19 @@ public sealed class ScalpingResearchService
             throw new InvalidOperationException($"candidate_not_robust:{id}:{candidate.ValidationStatus}");
         }
 
+        var certification = new ScalpingCertificationService(_storagePaths, _runtimeRoot).LoadReport(id);
+        if (certification?.Status == ScalpingCertificationStatus.certified_candidate)
+        {
+            return candidate;
+        }
+
         var expansion = new ScalpingRobustnessExpansionService(_storagePaths, _runtimeRoot).LoadReport(id);
         if (expansion?.Status != ScalpingExpansionStatus.final_candidate)
         {
             throw new InvalidOperationException($"candidate_requires_final_candidate_expansion:{id}:current={expansion?.Status.ToString() ?? "robust_candidate"}");
         }
+
+        Console.Error.WriteLine($"WARN: candidate_not_certified_yet:{id}");
 
         return candidate;
     }
