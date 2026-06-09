@@ -210,6 +210,9 @@ internal sealed class HermesCli
             "forward-test-status" => ShowForwardTestStatus(),
             "forward-test-log" => ShowForwardTestLog(),
             "record-forward-test-observation" => RecordForwardTestObservation(),
+            "run-forward-test-observation" => RunForwardTestObservation(),
+            "latest-forward-test-observations" => ShowLatestForwardTestObservations(),
+            "forward-test-summary" => ShowForwardTestSummary(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -419,6 +422,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes forward-test-status Forward-Test-Status anzeigen");
         Console.WriteLine("  hermes forward-test-log Forward-Test-Log anzeigen");
         Console.WriteLine("  hermes record-forward-test-observation --signal-id <ID> --result <RESULT> --note \"<TEXT>\" Beobachtung protokollieren");
+        Console.WriteLine("  hermes run-forward-test-observation Demo-Signale read-only beobachten");
+        Console.WriteLine("  hermes latest-forward-test-observations letzte Forward-Test-Beobachtungen anzeigen");
+        Console.WriteLine("  hermes forward-test-summary Forward-Test-Zusammenfassung anzeigen");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -606,6 +612,11 @@ internal sealed class HermesCli
         WriteField("forward_test_mode", snapshot.ForwardTestMode);
         WriteField("forward_test_assets", snapshot.ForwardTestAssets.Count == 0 ? "-" : string.Join(", ", snapshot.ForwardTestAssets));
         WriteField("forward_test_signals_observed", snapshot.ForwardTestSignalsObserved.ToString());
+        WriteField("forward_test_observations_total", snapshot.ForwardTestObservationsTotal.ToString());
+        WriteField("forward_test_triggered_count", snapshot.ForwardTestTriggeredCount.ToString());
+        WriteField("forward_test_invalidated_count", snapshot.ForwardTestInvalidatedCount.ToString());
+        WriteField("forward_test_simulated_observation_count", snapshot.ForwardTestSimulatedObservationCount.ToString());
+        WriteField("forward_test_latest_observation_utc", snapshot.ForwardTestLatestObservationUtc?.ToString("O") ?? "-");
         WriteField("forward_test_health", snapshot.ForwardTestHealth);
         WriteField("forward_test_requires_human_review", snapshot.ForwardTestRequiresHumanReview.ToString().ToLowerInvariant());
         WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
@@ -4512,6 +4523,80 @@ internal sealed class HermesCli
         }
     }
 
+    private int RunForwardTestObservation()
+    {
+        WriteHeader("Hermes Run Forward Test Observation");
+        try
+        {
+            var service = new ForwardTestService(BuildStoragePaths(), _runtimeRoot);
+            var status = service.RunObservation();
+            var observations = service.LoadLatestObservations();
+            WriteForwardTestStatus(status);
+            if (observations.Count > 0)
+            {
+                Console.WriteLine();
+                WriteSubHeader("Latest Observations");
+                foreach (var observation in observations.Take(10))
+                {
+                    WriteForwardTestObservation(observation);
+                }
+            }
+
+            Console.WriteLine();
+            WriteForwardTestSafety();
+            WriteSafety();
+            return status.Blockers.Count > 0 ? 1 : 0;
+        }
+        catch (InvalidOperationException ex)
+        {
+            WriteError(ex.Message);
+            WriteForwardTestSafety();
+            WriteSafety();
+            return 1;
+        }
+    }
+
+    private int ShowLatestForwardTestObservations()
+    {
+        WriteHeader("Hermes Latest Forward Test Observations");
+        var service = new ForwardTestService(BuildStoragePaths(), _runtimeRoot);
+        var status = service.LoadOrCreateStatus();
+        var observations = service.LoadLatestObservations();
+        WriteField("Latest Observations JSON", DisplayPath(service.LatestObservationsJsonPath));
+        WriteField("Latest Observations Markdown", DisplayPath(service.LatestObservationsMarkdownPath));
+        WriteField("Observation Count", observations.Count.ToString());
+        if (observations.Count == 0)
+        {
+            WriteWarning("Keine Forward-Test-Beobachtungen vorhanden.");
+        }
+        else
+        {
+            foreach (var observation in observations.Take(20))
+            {
+                WriteForwardTestObservation(observation);
+            }
+        }
+
+        Console.WriteLine();
+        WriteField("Forward Test Status", status.ForwardTestStatus);
+        WriteField("Forward Test Health", status.ForwardTestHealth);
+        WriteForwardTestSafety();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowForwardTestSummary()
+    {
+        WriteHeader("Hermes Forward Test Summary");
+        var service = new ForwardTestService(BuildStoragePaths(), _runtimeRoot);
+        var status = service.LoadOrCreateStatus();
+        WriteForwardTestStatus(status);
+        Console.WriteLine();
+        WriteForwardTestSafety();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowNearMissStrategies()
     {
         WriteHeader("Hermes Near-Miss Strategies");
@@ -6933,17 +7018,29 @@ internal sealed class HermesCli
         WriteField("Mode", status.ForwardTestMode);
         WriteField("Assets", status.ForwardTestAssets.Count == 0 ? "-" : string.Join(", ", status.ForwardTestAssets));
         WriteField("Signals Observed", status.ForwardTestSignalsObserved.ToString());
+        WriteField("Observations Total", status.ForwardTestObservationsTotal.ToString());
+        WriteField("Triggered Count", status.ForwardTestTriggeredCount.ToString());
+        WriteField("Invalidated Count", status.ForwardTestInvalidatedCount.ToString());
+        WriteField("Simulated Observation Count", status.ForwardTestSimulatedObservationCount.ToString());
+        WriteField("Latest Observation UTC", status.ForwardTestLatestObservationUtc?.ToString("O") ?? "-");
         WriteField("Health", status.ForwardTestHealth);
         WriteField("Requires Human Review", status.ForwardTestRequiresHumanReview.ToString().ToLowerInvariant());
         WriteMessages("Blockers", status.Blockers);
         WriteMessages("Warnings", status.Warnings);
-        WriteField("Plan", DisplayPath(status.PlanPath));
-        WriteField("Log", DisplayPath(status.LogPath));
+        WriteField("Plan", DisplayOptionalPath(status.PlanPath));
+        WriteField("Log", DisplayOptionalPath(status.LogPath));
+        WriteField("Latest Observations JSON", DisplayOptionalPath(status.LatestObservationsJsonPath));
+        WriteField("Latest Observations Markdown", DisplayOptionalPath(status.LatestObservationsMarkdownPath));
         WriteField("signals_generated", status.Metrics.SignalsGenerated.ToString());
-        WriteField("signals_triggered", status.Metrics.SignalsTriggered.ToString());
-        WriteField("signals_invalidated", status.Metrics.SignalsInvalidated.ToString());
+        WriteField("signals_observed", status.Metrics.SignalsObserved.ToString());
+        WriteField("observations_total", status.Metrics.ObservationsTotal.ToString());
+        WriteField("triggered_count", status.Metrics.TriggeredCount.ToString());
+        WriteField("invalidated_count", status.Metrics.InvalidatedCount.ToString());
+        WriteField("expired_count", status.Metrics.ExpiredCount.ToString());
         WriteField("hypothetical_wins", status.Metrics.HypotheticalWins.ToString());
         WriteField("hypothetical_losses", status.Metrics.HypotheticalLosses.ToString());
+        WriteField("manual_review_count", status.Metrics.ManualReviewCount.ToString());
+        WriteField("simulated_observation_count", status.Metrics.SimulatedObservationCount.ToString());
         WriteField("win_rate", $"{status.Metrics.WinRate:0.####}");
         WriteField("average_r", $"{status.Metrics.AverageR:0.####}");
         WriteField("max_drawdown_r", $"{status.Metrics.MaxDrawdownR:0.####}");
@@ -6958,9 +7055,30 @@ internal sealed class HermesCli
         WriteField("live_trading_enabled", status.LiveTradingEnabled.ToString().ToLowerInvariant());
     }
 
+    private static void WriteForwardTestObservation(ForwardTestObservation observation)
+    {
+        WriteSubHeader($"{observation.Asset} / {observation.CandidateId}");
+        WriteField("Observation ID", observation.ObservationId);
+        WriteField("Created UTC", observation.CreatedUtc.ToString("O"));
+        WriteField("Signal ID", observation.SignalId);
+        WriteField("Observed Status", observation.ObservedStatus);
+        WriteField("Observed Price", observation.ObservedPrice.HasValue ? $"{observation.ObservedPrice.Value:0.#####}" : "n/a");
+        WriteField("Entry", $"{observation.EntryLevel:0.#####}");
+        WriteField("Stop Loss", $"{observation.StopLoss:0.#####}");
+        WriteField("Take Profit", $"{observation.TakeProfit:0.#####}");
+        WriteField("Invalidation", $"{observation.InvalidationLevel:0.#####}");
+        WriteField("Result", observation.Result);
+        WriteField("Note", observation.Note);
+        WriteField("Simulated", observation.Simulated.ToString().ToLowerInvariant());
+        WriteField("human_review_required", observation.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("no_auto_trading", observation.NoAutoTrading.ToString().ToLowerInvariant());
+    }
+
     private static void WriteForwardTestSafety()
     {
-        WriteMessages("Forward Test ist", ["Beobachtung", "Demo-Signal-Tracking", "keine Order", "kein Live-Trading", "kein Broker-Zugriff"]);
+        WriteMessages("Forward Test ist", ["Observation only", "Demo signal tracking", "No orders", "No broker action", "No cTrader Order API"]);
+        WriteField("no_auto_trading", "true");
+        WriteField("human_review_required", "true");
     }
 
     private static void WriteScalpingOptimizedMember(ScalpingOptimizedEnsembleMember member)

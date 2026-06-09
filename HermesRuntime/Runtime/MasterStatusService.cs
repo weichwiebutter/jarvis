@@ -298,6 +298,11 @@ public sealed class MasterStatusService
         var forwardTestMode = forwardTest.ForwardTestMode;
         var forwardTestAssets = forwardTest.ForwardTestAssets;
         var forwardTestSignalsObserved = forwardTest.ForwardTestSignalsObserved;
+        var forwardTestObservationsTotal = forwardTest.ForwardTestObservationsTotal;
+        var forwardTestTriggeredCount = forwardTest.ForwardTestTriggeredCount;
+        var forwardTestInvalidatedCount = forwardTest.ForwardTestInvalidatedCount;
+        var forwardTestSimulatedObservationCount = forwardTest.ForwardTestSimulatedObservationCount;
+        var forwardTestLatestObservationUtc = forwardTest.ForwardTestLatestObservationUtc;
         var forwardTestHealth = forwardTest.ForwardTestHealth;
         var forwardTestRequiresHumanReview = forwardTest.ForwardTestRequiresHumanReview;
 
@@ -629,6 +634,11 @@ public sealed class MasterStatusService
                     ["forward_test_mode"] = forwardTestMode,
                     ["forward_test_assets"] = forwardTestAssets,
                     ["forward_test_signals_observed"] = forwardTestSignalsObserved,
+                    ["forward_test_observations_total"] = forwardTestObservationsTotal,
+                    ["forward_test_triggered_count"] = forwardTestTriggeredCount,
+                    ["forward_test_invalidated_count"] = forwardTestInvalidatedCount,
+                    ["forward_test_simulated_observation_count"] = forwardTestSimulatedObservationCount,
+                    ["forward_test_latest_observation_utc"] = forwardTestLatestObservationUtc,
                     ["forward_test_health"] = forwardTestHealth,
                     ["forward_test_requires_human_review"] = forwardTestRequiresHumanReview,
                     ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
@@ -768,6 +778,11 @@ public sealed class MasterStatusService
             ForwardTestMode: forwardTestMode,
             ForwardTestAssets: forwardTestAssets,
             ForwardTestSignalsObserved: forwardTestSignalsObserved,
+            ForwardTestObservationsTotal: forwardTestObservationsTotal,
+            ForwardTestTriggeredCount: forwardTestTriggeredCount,
+            ForwardTestInvalidatedCount: forwardTestInvalidatedCount,
+            ForwardTestSimulatedObservationCount: forwardTestSimulatedObservationCount,
+            ForwardTestLatestObservationUtc: forwardTestLatestObservationUtc,
             ForwardTestHealth: forwardTestHealth,
             ForwardTestRequiresHumanReview: forwardTestRequiresHumanReview,
             MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,

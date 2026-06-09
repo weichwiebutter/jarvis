@@ -1,13 +1,19 @@
+using System.Text;
 using System.Text.Json;
 
 namespace Hermes.Runtime;
 
 public sealed record ForwardTestMetrics(
     int SignalsGenerated,
-    int SignalsTriggered,
-    int SignalsInvalidated,
+    int SignalsObserved,
+    int ObservationsTotal,
+    int TriggeredCount,
+    int InvalidatedCount,
+    int ExpiredCount,
     int HypotheticalWins,
     int HypotheticalLosses,
+    int ManualReviewCount,
+    int SimulatedObservationCount,
     double WinRate,
     double AverageR,
     double MaxDrawdownR,
@@ -36,6 +42,24 @@ public sealed record ForwardTestPlan(
     bool BrokerOrdersEnabled,
     bool LiveTradingEnabled);
 
+public sealed record ForwardTestObservation(
+    string ObservationId,
+    DateTimeOffset CreatedUtc,
+    string SignalId,
+    string Asset,
+    string CandidateId,
+    string ObservedStatus,
+    double? ObservedPrice,
+    double EntryLevel,
+    double StopLoss,
+    double TakeProfit,
+    double InvalidationLevel,
+    string Result,
+    string Note,
+    bool Simulated,
+    bool HumanReviewRequired,
+    bool NoAutoTrading);
+
 public sealed record ForwardTestStatusSnapshot(
     string StatusVersion,
     DateTimeOffset UpdatedAtUtc,
@@ -44,6 +68,11 @@ public sealed record ForwardTestStatusSnapshot(
     string ForwardTestMode,
     IReadOnlyList<string> ForwardTestAssets,
     int ForwardTestSignalsObserved,
+    int ForwardTestObservationsTotal,
+    int ForwardTestTriggeredCount,
+    int ForwardTestInvalidatedCount,
+    int ForwardTestSimulatedObservationCount,
+    DateTimeOffset? ForwardTestLatestObservationUtc,
     string ForwardTestHealth,
     bool ForwardTestRequiresHumanReview,
     IReadOnlyList<string> Blockers,
@@ -51,6 +80,8 @@ public sealed record ForwardTestStatusSnapshot(
     ForwardTestMetrics Metrics,
     string PlanPath,
     string LogPath,
+    string LatestObservationsJsonPath,
+    string LatestObservationsMarkdownPath,
     bool NoAutoTrading,
     bool HumanReviewRequired,
     bool BrokerOrdersEnabled,
@@ -63,6 +94,7 @@ public sealed record ForwardTestObservationLogEntry(
     string? SignalId,
     string? Result,
     string? Note,
+    ForwardTestObservation? Observation,
     string ForwardTestStatus,
     string ForwardTestMode,
     int ForwardTestSignalsObserved,
@@ -78,12 +110,14 @@ public sealed class ForwardTestService
 {
     private static readonly HashSet<string> AllowedObservationResults =
     [
+        "still_waiting",
         "triggered",
         "invalidated",
         "expired",
         "hypothetical_win",
         "hypothetical_loss",
-        "manual_review",
+        "manual_review_required",
+        "simulated_observation",
     ];
 
     private readonly StoragePaths _storagePaths;
@@ -100,21 +134,21 @@ public sealed class ForwardTestService
     public string PlanMarkdownPath => Path.Combine(Root, "forward_test_plan.md");
     public string StatusPath => Path.Combine(Root, "forward_test_status.json");
     public string LogPath => Path.Combine(Root, "forward_test_log.jsonl");
+    public string LatestObservationsJsonPath => Path.Combine(Root, "latest_observations.json");
+    public string LatestObservationsMarkdownPath => Path.Combine(Root, "latest_observations.md");
 
     public ForwardTestStatusSnapshot CreatePlan()
     {
         var gates = ValidateForwardTestGates();
         var plan = BuildPlan(gates.Package);
-        var warnings = new List<string>();
-        var blockers = gates.Blockers;
 
         Directory.CreateDirectory(Root);
         File.WriteAllText(PlanPath, JsonSerializer.Serialize(plan, JsonDefaults.WriteOptions));
         File.WriteAllText(PlanMarkdownPath, BuildPlanMarkdown(plan));
 
-        var status = BuildStatus(plan, blockers, warnings, ReadObservationEntries());
-        WriteStatus(status);
-        AppendLog("create_forward_test_plan", status, null, null, null);
+        var status = BuildStatus(plan, gates.Blockers, [], ReadObservationLogEntries());
+        WriteStatusArtifacts(status, []);
+        AppendLog("create_forward_test_plan", status, null, null, null, null);
         return status;
     }
 
@@ -123,7 +157,11 @@ public sealed class ForwardTestService
         if (File.Exists(StatusPath))
         {
             var snapshot = JsonSerializer.Deserialize<ForwardTestStatusSnapshot>(File.ReadAllText(StatusPath), JsonDefaults.SnapshotReadOptions);
-            if (snapshot is not null)
+            if (snapshot is not null
+                && !string.IsNullOrWhiteSpace(snapshot.PlanPath)
+                && !string.IsNullOrWhiteSpace(snapshot.LogPath)
+                && !string.IsNullOrWhiteSpace(snapshot.LatestObservationsJsonPath)
+                && !string.IsNullOrWhiteSpace(snapshot.LatestObservationsMarkdownPath))
             {
                 return snapshot;
             }
@@ -131,9 +169,10 @@ public sealed class ForwardTestService
 
         var gates = ValidateForwardTestGates();
         var plan = LoadPlan() ?? BuildPlan(gates.Package);
-        var status = BuildStatus(plan, gates.Blockers, [], ReadObservationEntries());
-        WriteStatus(status);
-        AppendLog("forward_test_status_check", status, null, null, null);
+        var entries = ReadObservationLogEntries();
+        var status = BuildStatus(plan, gates.Blockers, [], entries);
+        WriteStatusArtifacts(status, ExtractObservations(entries));
+        AppendLog("forward_test_status_check", status, null, null, null, null);
         return status;
     }
 
@@ -144,12 +183,7 @@ public sealed class ForwardTestService
             throw new InvalidOperationException("signal_id_required");
         }
 
-        var normalizedResult = result.Trim().ToLowerInvariant();
-        if (!AllowedObservationResults.Contains(normalizedResult))
-        {
-            throw new InvalidOperationException($"invalid_forward_test_result:{result}");
-        }
-
+        var normalizedResult = NormalizeResult(result);
         var current = LoadOrCreateStatus();
         if (current.Blockers.Count > 0)
         {
@@ -157,32 +191,101 @@ public sealed class ForwardTestService
         }
 
         var plan = LoadPlan() ?? throw new InvalidOperationException("forward_test_plan_missing");
-        var observations = ReadObservationEntries()
-            .Where(entry => entry.Action == "record_forward_test_observation")
-            .ToList();
+        var latestSignals = new DemoSignalFeedService(_storagePaths, _runtimeRoot).LoadLatestSignals();
+        var signal = latestSignals.FirstOrDefault(item => item.SignalId.Equals(signalId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"forward_test_signal_not_found:{signalId}");
+        var observation = BuildManualObservation(signal, normalizedResult, note);
 
-        observations.Add(new ForwardTestObservationLogEntry(
-            TimestampUtc: DateTimeOffset.UtcNow,
-            Action: "record_forward_test_observation",
-            PackageId: plan.PackageId,
-            SignalId: signalId,
-            Result: normalizedResult,
-            Note: note,
-            ForwardTestStatus: current.ForwardTestStatus,
-            ForwardTestMode: current.ForwardTestMode,
-            ForwardTestSignalsObserved: current.ForwardTestSignalsObserved,
-            Blockers: current.Blockers,
-            Warnings: current.Warnings,
-            Metrics: current.Metrics,
-            NoAutoTrading: true,
-            HumanReviewRequired: true,
-            BrokerOrdersEnabled: false,
-            LiveTradingEnabled: false));
+        var entries = ReadObservationLogEntries().ToList();
+        var previewStatus = BuildStatus(plan, current.Blockers, current.Warnings, entries);
+        var entry = BuildLogEntry("record_forward_test_observation", previewStatus, signal.SignalId, normalizedResult, note, observation);
+        entries.Add(entry);
 
-        var status = BuildStatus(plan, current.Blockers, current.Warnings, observations);
-        WriteStatus(status);
-        AppendLog("record_forward_test_observation", status, signalId, normalizedResult, note);
+        var status = BuildStatus(plan, current.Blockers, current.Warnings, entries);
+        WriteStatusArtifacts(status, ExtractObservations(entries));
+        AppendLog("record_forward_test_observation", status, signal.SignalId, normalizedResult, note, observation);
         return status;
+    }
+
+    public ForwardTestStatusSnapshot RunObservation()
+    {
+        var current = LoadOrCreateStatus();
+        if (current.Blockers.Count > 0)
+        {
+            throw new InvalidOperationException($"forward_test_blocked:{string.Join(",", current.Blockers)}");
+        }
+
+        var plan = LoadPlan() ?? throw new InvalidOperationException("forward_test_plan_missing");
+        var demoSignals = new DemoSignalFeedService(_storagePaths, _runtimeRoot).LoadLatestSignals();
+        var warnings = new List<string>();
+        var entries = ReadObservationLogEntries().ToList();
+        var observations = new List<ForwardTestObservation>();
+
+        foreach (var signal in demoSignals)
+        {
+            var observation = BuildObservation(signal, warnings);
+            observations.Add(observation);
+            var previewStatus = BuildStatus(plan, current.Blockers, warnings, entries);
+            entries.Add(BuildLogEntry(
+                "run_forward_test_observation",
+                previewStatus,
+                signal.SignalId,
+                observation.Result,
+                observation.Note,
+                observation));
+        }
+
+        var status = BuildStatus(plan, current.Blockers, warnings, entries);
+        WriteStatusArtifacts(status, ExtractObservations(entries));
+        AppendLog("run_forward_test_observation_summary", status, null, null, $"observations={observations.Count}", null);
+        return status;
+    }
+
+    public IReadOnlyList<ForwardTestObservation> LoadLatestObservations()
+    {
+        if (!File.Exists(LatestObservationsJsonPath))
+        {
+            return [];
+        }
+
+        var json = File.ReadAllText(LatestObservationsJsonPath);
+        var observations = JsonSerializer.Deserialize<List<ForwardTestObservation>>(json, JsonDefaults.SnapshotReadOptions);
+        if (observations is not null)
+        {
+            return observations;
+        }
+
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var fallback = new List<ForwardTestObservation>();
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            fallback.Add(new ForwardTestObservation(
+                ObservationId: item.GetProperty("observation_id").GetString() ?? string.Empty,
+                CreatedUtc: item.GetProperty("created_utc").GetDateTimeOffset(),
+                SignalId: item.GetProperty("signal_id").GetString() ?? string.Empty,
+                Asset: item.GetProperty("asset").GetString() ?? string.Empty,
+                CandidateId: item.GetProperty("candidate_id").GetString() ?? string.Empty,
+                ObservedStatus: item.GetProperty("observed_status").GetString() ?? string.Empty,
+                ObservedPrice: item.TryGetProperty("observed_price", out var observedPrice) && observedPrice.ValueKind != JsonValueKind.Null
+                    ? observedPrice.GetDouble()
+                    : null,
+                EntryLevel: item.GetProperty("entry_level").GetDouble(),
+                StopLoss: item.GetProperty("stop_loss").GetDouble(),
+                TakeProfit: item.GetProperty("take_profit").GetDouble(),
+                InvalidationLevel: item.GetProperty("invalidation_level").GetDouble(),
+                Result: item.GetProperty("result").GetString() ?? string.Empty,
+                Note: item.GetProperty("note").GetString() ?? string.Empty,
+                Simulated: item.GetProperty("simulated").GetBoolean(),
+                HumanReviewRequired: item.GetProperty("human_review_required").GetBoolean(),
+                NoAutoTrading: item.GetProperty("no_auto_trading").GetBoolean()));
+        }
+
+        return fallback;
     }
 
     public ForwardTestPlan? LoadPlan()
@@ -192,22 +295,43 @@ public sealed class ForwardTestService
             : null;
     }
 
-    private void WriteStatus(ForwardTestStatusSnapshot status)
+    private void WriteStatusArtifacts(ForwardTestStatusSnapshot status, IReadOnlyList<ForwardTestObservation> observations)
     {
         Directory.CreateDirectory(Root);
         File.WriteAllText(StatusPath, JsonSerializer.Serialize(status, JsonDefaults.WriteOptions));
+        File.WriteAllText(LatestObservationsJsonPath, JsonSerializer.Serialize(observations, JsonDefaults.WriteOptions));
+        File.WriteAllText(LatestObservationsMarkdownPath, BuildObservationsMarkdown(status, observations));
     }
 
-    private void AppendLog(string action, ForwardTestStatusSnapshot status, string? signalId, string? result, string? note)
+    private void AppendLog(
+        string action,
+        ForwardTestStatusSnapshot status,
+        string? signalId,
+        string? result,
+        string? note,
+        ForwardTestObservation? observation)
     {
         Directory.CreateDirectory(Root);
-        var entry = new ForwardTestObservationLogEntry(
+        var entry = BuildLogEntry(action, status, signalId, result, note, observation);
+        File.AppendAllText(LogPath, JsonSerializer.Serialize(entry, JsonDefaults.WriteOptions) + Environment.NewLine);
+    }
+
+    private static ForwardTestObservationLogEntry BuildLogEntry(
+        string action,
+        ForwardTestStatusSnapshot status,
+        string? signalId,
+        string? result,
+        string? note,
+        ForwardTestObservation? observation)
+    {
+        return new ForwardTestObservationLogEntry(
             TimestampUtc: DateTimeOffset.UtcNow,
             Action: action,
             PackageId: status.PackageId,
             SignalId: signalId,
             Result: result,
             Note: note,
+            Observation: observation,
             ForwardTestStatus: status.ForwardTestStatus,
             ForwardTestMode: status.ForwardTestMode,
             ForwardTestSignalsObserved: status.ForwardTestSignalsObserved,
@@ -218,7 +342,6 @@ public sealed class ForwardTestService
             HumanReviewRequired: true,
             BrokerOrdersEnabled: false,
             LiveTradingEnabled: false);
-        File.AppendAllText(LogPath, JsonSerializer.Serialize(entry, JsonDefaults.WriteOptions) + Environment.NewLine);
     }
 
     private ForwardTestStatusSnapshot BuildStatus(
@@ -227,22 +350,29 @@ public sealed class ForwardTestService
         IReadOnlyList<string> warnings,
         IReadOnlyList<ForwardTestObservationLogEntry> observationEntries)
     {
-        var observationOnlyEntries = observationEntries
-            .Where(entry => entry.Action == "record_forward_test_observation")
-            .ToList();
-        var metrics = BuildMetrics(observationOnlyEntries);
-        var observed = observationOnlyEntries.Count;
-        var health = blockers.Count > 0 ? "needs_attention" : "ok";
+        var observations = ExtractObservations(observationEntries);
+        var metrics = BuildMetrics(observations);
+        DateTimeOffset? latestObservationUtc = observations.Count == 0
+            ? null
+            : observations.Max(observation => observation.CreatedUtc);
+        var health = blockers.Count > 0
+            ? "needs_attention"
+            : metrics.ManualReviewCount > 0 ? "needs_attention" : "ok";
         var status = blockers.Count > 0 ? "blocked" : "observation_ready";
 
         return new ForwardTestStatusSnapshot(
-            StatusVersion: "forward_test_status_v1",
+            StatusVersion: "forward_test_status_v2",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
             PackageId: plan.PackageId,
             ForwardTestStatus: status,
             ForwardTestMode: plan.Mode,
             ForwardTestAssets: plan.Assets,
-            ForwardTestSignalsObserved: observed,
+            ForwardTestSignalsObserved: metrics.SignalsObserved,
+            ForwardTestObservationsTotal: metrics.ObservationsTotal,
+            ForwardTestTriggeredCount: metrics.TriggeredCount,
+            ForwardTestInvalidatedCount: metrics.InvalidatedCount,
+            ForwardTestSimulatedObservationCount: metrics.SimulatedObservationCount,
+            ForwardTestLatestObservationUtc: latestObservationUtc,
             ForwardTestHealth: health,
             ForwardTestRequiresHumanReview: true,
             Blockers: blockers,
@@ -250,53 +380,64 @@ public sealed class ForwardTestService
             Metrics: metrics,
             PlanPath: PlanPath,
             LogPath: LogPath,
+            LatestObservationsJsonPath: LatestObservationsJsonPath,
+            LatestObservationsMarkdownPath: LatestObservationsMarkdownPath,
             NoAutoTrading: true,
             HumanReviewRequired: true,
             BrokerOrdersEnabled: false,
             LiveTradingEnabled: false);
     }
 
-    private static ForwardTestMetrics BuildMetrics(IReadOnlyList<ForwardTestObservationLogEntry> observations)
+    private static ForwardTestMetrics BuildMetrics(IReadOnlyList<ForwardTestObservation> observations)
     {
-        var triggered = observations.Count(entry => entry.Result == "triggered");
-        var invalidated = observations.Count(entry => entry.Result == "invalidated");
-        var wins = observations.Count(entry => entry.Result == "hypothetical_win");
-        var losses = observations.Count(entry => entry.Result == "hypothetical_loss");
+        var uniqueSignals = observations.Select(observation => observation.SignalId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        var triggered = observations.Count(observation => observation.Result == "triggered");
+        var invalidated = observations.Count(observation => observation.Result == "invalidated");
+        var expired = observations.Count(observation => observation.Result == "expired");
+        var wins = observations.Count(observation => observation.Result == "hypothetical_win");
+        var losses = observations.Count(observation => observation.Result == "hypothetical_loss");
+        var manualReviews = observations.Count(observation => observation.Result == "manual_review_required");
+        var simulated = observations.Count(observation => observation.Result == "simulated_observation");
         var completedHypotheticals = wins + losses;
         var winRate = completedHypotheticals == 0 ? 0 : Math.Round((double)wins / completedHypotheticals, 4);
         var averageR = completedHypotheticals == 0 ? 0 : Math.Round((wins - losses) / (double)completedHypotheticals, 4);
         var runningDrawdown = 0.0;
         var maxDrawdown = 0.0;
-        foreach (var entry in observations)
+        foreach (var observation in observations)
         {
-            if (entry.Result == "hypothetical_loss")
+            if (observation.Result == "hypothetical_loss")
             {
                 runningDrawdown += 1.0;
                 maxDrawdown = Math.Max(maxDrawdown, runningDrawdown);
             }
-            else if (entry.Result == "hypothetical_win")
+            else if (observation.Result == "hypothetical_win")
             {
                 runningDrawdown = Math.Max(0, runningDrawdown - 1.0);
             }
         }
 
         return new ForwardTestMetrics(
-            SignalsGenerated: 0,
-            SignalsTriggered: triggered,
-            SignalsInvalidated: invalidated,
+            SignalsGenerated: uniqueSignals,
+            SignalsObserved: uniqueSignals,
+            ObservationsTotal: observations.Count,
+            TriggeredCount: triggered,
+            InvalidatedCount: invalidated,
+            ExpiredCount: expired,
             HypotheticalWins: wins,
             HypotheticalLosses: losses,
+            ManualReviewCount: manualReviews,
+            SimulatedObservationCount: simulated,
             WinRate: winRate,
             AverageR: averageR,
             MaxDrawdownR: Math.Round(maxDrawdown, 4),
             MaxDailyDrawdownR: Math.Round(maxDrawdown, 4),
-            SlippageNotes: observations.Where(entry => entry.Note?.Contains("slippage", StringComparison.OrdinalIgnoreCase) == true).Select(entry => entry.Note!).ToList(),
-            SpreadNotes: observations.Where(entry => entry.Note?.Contains("spread", StringComparison.OrdinalIgnoreCase) == true).Select(entry => entry.Note!).ToList(),
-            MissedSignalNotes: observations.Where(entry => entry.Note?.Contains("missed", StringComparison.OrdinalIgnoreCase) == true).Select(entry => entry.Note!).ToList(),
-            ManualReviewNotes: observations.Where(entry => entry.Result == "manual_review" && !string.IsNullOrWhiteSpace(entry.Note)).Select(entry => entry.Note!).ToList());
+            SlippageNotes: observations.Where(observation => observation.Note.Contains("slippage", StringComparison.OrdinalIgnoreCase)).Select(observation => observation.Note).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            SpreadNotes: observations.Where(observation => observation.Note.Contains("spread", StringComparison.OrdinalIgnoreCase)).Select(observation => observation.Note).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            MissedSignalNotes: observations.Where(observation => observation.Note.Contains("missed", StringComparison.OrdinalIgnoreCase)).Select(observation => observation.Note).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            ManualReviewNotes: observations.Where(observation => observation.Result == "manual_review_required").Select(observation => observation.Note).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
     }
 
-    private IReadOnlyList<ForwardTestObservationLogEntry> ReadObservationEntries()
+    private IReadOnlyList<ForwardTestObservationLogEntry> ReadObservationLogEntries()
     {
         if (!File.Exists(LogPath))
         {
@@ -319,6 +460,172 @@ public sealed class ForwardTestService
         }
 
         return entries;
+    }
+
+    private static List<ForwardTestObservation> ExtractObservations(IReadOnlyList<ForwardTestObservationLogEntry> entries)
+    {
+        return entries
+            .Where(entry => entry.Observation is not null)
+            .Select(entry => entry.Observation!)
+            .OrderByDescending(observation => observation.CreatedUtc)
+            .Take(200)
+            .ToList();
+    }
+
+    private ForwardTestObservation BuildObservation(DemoSignalFeedItem signal, List<string> warnings)
+    {
+        var candle = LoadLatestCandle(signal.Asset, signal.Timeframe);
+        if (candle is null)
+        {
+            return new ForwardTestObservation(
+                ObservationId: $"observation_{signal.SignalId}_{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
+                CreatedUtc: DateTimeOffset.UtcNow,
+                SignalId: signal.SignalId,
+                Asset: signal.Asset,
+                CandidateId: signal.CandidateId,
+                ObservedStatus: "simulated_observation",
+                ObservedPrice: null,
+                EntryLevel: signal.EntryLevel,
+                StopLoss: signal.StopLoss,
+                TakeProfit: signal.TakeProfit,
+                InvalidationLevel: signal.InvalidationLevel,
+                Result: "simulated_observation",
+                Note: "simulated_observation:no_current_market_data_available;tracking_structure_only;no_real_performance_claim",
+                Simulated: true,
+                HumanReviewRequired: true,
+                NoAutoTrading: true);
+        }
+
+        var result = EvaluateSignalObservation(signal, candle);
+        if (DateTimeOffset.UtcNow - candle.TimestampUtc > TimeSpan.FromDays(7))
+        {
+            warnings.Add($"market_data_stale_for_observation:{signal.Asset}:{signal.Timeframe}:{candle.TimestampUtc:O}");
+        }
+
+        return new ForwardTestObservation(
+            ObservationId: $"observation_{signal.SignalId}_{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
+            CreatedUtc: DateTimeOffset.UtcNow,
+            SignalId: signal.SignalId,
+            Asset: signal.Asset,
+            CandidateId: signal.CandidateId,
+            ObservedStatus: result.ObservedStatus,
+            ObservedPrice: RoundPrice(signal.Asset, candle.Close),
+            EntryLevel: signal.EntryLevel,
+            StopLoss: signal.StopLoss,
+            TakeProfit: signal.TakeProfit,
+            InvalidationLevel: signal.InvalidationLevel,
+            Result: result.Result,
+            Note: result.Note,
+            Simulated: false,
+            HumanReviewRequired: true,
+            NoAutoTrading: true);
+    }
+
+    private static (string ObservedStatus, string Result, string Note) EvaluateSignalObservation(DemoSignalFeedItem signal, MarketDataCandle candle)
+    {
+        var close = candle.Close;
+        var high = candle.High;
+        var low = candle.Low;
+        var direction = signal.Direction.ToLowerInvariant();
+        var isShort = direction.Contains("short", StringComparison.OrdinalIgnoreCase);
+        var isLong = direction.Contains("long", StringComparison.OrdinalIgnoreCase);
+
+        if (isLong)
+        {
+            if (low <= signal.StopLoss)
+            {
+                return ("invalidated", "invalidated", "read_only_observation:stop_level_touched;no_order");
+            }
+
+            if (high >= signal.TakeProfit)
+            {
+                return ("triggered", "hypothetical_win", "read_only_observation:take_profit_zone_reached;no_order");
+            }
+
+            if (close >= signal.EntryLevel)
+            {
+                return ("triggered", "triggered", "read_only_observation:entry_zone_reached;no_order");
+            }
+        }
+        else if (isShort)
+        {
+            if (high >= signal.StopLoss)
+            {
+                return ("invalidated", "invalidated", "read_only_observation:stop_level_touched;no_order");
+            }
+
+            if (low <= signal.TakeProfit)
+            {
+                return ("triggered", "hypothetical_win", "read_only_observation:take_profit_zone_reached;no_order");
+            }
+
+            if (close <= signal.EntryLevel)
+            {
+                return ("triggered", "triggered", "read_only_observation:entry_zone_reached;no_order");
+            }
+        }
+
+        var age = DateTimeOffset.UtcNow - signal.CreatedUtc;
+        if (age > TimeSpan.FromDays(2))
+        {
+            return ("expired", "expired", "read_only_observation:signal_age_expired;no_order");
+        }
+
+        return ("still_waiting", "still_waiting", "read_only_observation:still_waiting;no_order");
+    }
+
+    private static ForwardTestObservation BuildManualObservation(DemoSignalFeedItem signal, string result, string note)
+    {
+        return new ForwardTestObservation(
+            ObservationId: $"observation_{signal.SignalId}_{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
+            CreatedUtc: DateTimeOffset.UtcNow,
+            SignalId: signal.SignalId,
+            Asset: signal.Asset,
+            CandidateId: signal.CandidateId,
+            ObservedStatus: result,
+            ObservedPrice: null,
+            EntryLevel: signal.EntryLevel,
+            StopLoss: signal.StopLoss,
+            TakeProfit: signal.TakeProfit,
+            InvalidationLevel: signal.InvalidationLevel,
+            Result: result,
+            Note: string.IsNullOrWhiteSpace(note) ? "manual_forward_test_observation" : note,
+            Simulated: result == "simulated_observation",
+            HumanReviewRequired: true,
+            NoAutoTrading: true);
+    }
+
+    private string NormalizeResult(string result)
+    {
+        var normalizedResult = result.Trim().ToLowerInvariant();
+        if (!AllowedObservationResults.Contains(normalizedResult))
+        {
+            throw new InvalidOperationException($"invalid_forward_test_result:{result}");
+        }
+
+        return normalizedResult;
+    }
+
+    private MarketDataCandle? LoadLatestCandle(string asset, string timeframe)
+    {
+        var directory = Path.Combine(_storagePaths.Root, "market_data", "candles", asset, timeframe);
+        if (!Directory.Exists(directory))
+        {
+            return null;
+        }
+
+        var latestFile = Directory.GetFiles(directory, "*.candles.jsonl", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+        if (latestFile is null)
+        {
+            return null;
+        }
+
+        var line = File.ReadLines(latestFile).Reverse().FirstOrDefault(item => !string.IsNullOrWhiteSpace(item));
+        return string.IsNullOrWhiteSpace(line)
+            ? null
+            : JsonSerializer.Deserialize<MarketDataCandle>(line, JsonDefaults.SnapshotReadOptions);
     }
 
     private (EnsembleSignalAgentPackage? Package, List<string> Blockers) ValidateForwardTestGates()
@@ -382,30 +689,64 @@ public sealed class ForwardTestService
 - objective: {plan.Objective}
 
 ## Metrics
-- signals_generated
-- signals_triggered
-- signals_invalidated
+- signals_observed
+- observations_total
+- triggered_count
+- invalidated_count
+- expired_count
 - hypothetical_wins
 - hypothetical_losses
-- win_rate
-- average_r
-- max_drawdown_r
-- max_daily_drawdown_r
-- slippage_notes
-- spread_notes
-- missed_signal_notes
-- manual_review_notes
+- manual_review_count
+- simulated_observation_count
+- forward_test_health
 
 ## Safety
-Forward Test ist:
-- Beobachtung
-- Demo-Signal-Tracking
-- keine Order
-- kein Live-Trading
-- kein Broker-Zugriff
+- Observation only
+- No orders
+- No broker action
+- No cTrader Order API
 - no_auto_trading=true
 - human_review_required=true
-- broker_orders_enabled=false
-- live_trading_enabled=false
 """;
+
+    private static string BuildObservationsMarkdown(ForwardTestStatusSnapshot status, IReadOnlyList<ForwardTestObservation> observations)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("# Forward Test Observations");
+        builder.AppendLine();
+        builder.AppendLine($"- forward_test_status: {status.ForwardTestStatus}");
+        builder.AppendLine($"- forward_test_mode: {status.ForwardTestMode}");
+        builder.AppendLine($"- observations_total: {status.ForwardTestObservationsTotal}");
+        builder.AppendLine($"- triggered_count: {status.ForwardTestTriggeredCount}");
+        builder.AppendLine($"- invalidated_count: {status.ForwardTestInvalidatedCount}");
+        builder.AppendLine($"- simulated_observation_count: {status.ForwardTestSimulatedObservationCount}");
+        builder.AppendLine("- Observation only");
+        builder.AppendLine("- No orders");
+        builder.AppendLine("- No broker action");
+        builder.AppendLine("- No cTrader Order API");
+        builder.AppendLine("- no_auto_trading=true");
+        builder.AppendLine("- human_review_required=true");
+        builder.AppendLine();
+        foreach (var observation in observations)
+        {
+            builder.AppendLine($"## {observation.ObservationId}");
+            builder.AppendLine($"- signal_id: {observation.SignalId}");
+            builder.AppendLine($"- asset: {observation.Asset}");
+            builder.AppendLine($"- candidate_id: {observation.CandidateId}");
+            builder.AppendLine($"- observed_status: {observation.ObservedStatus}");
+            builder.AppendLine($"- observed_price: {(observation.ObservedPrice.HasValue ? observation.ObservedPrice.Value.ToString("0.#####") : "n/a")}");
+            builder.AppendLine($"- result: {observation.Result}");
+            builder.AppendLine($"- simulated: {observation.Simulated}");
+            builder.AppendLine($"- note: {observation.Note}");
+            builder.AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
+    private static double RoundPrice(string asset, double value) => asset.ToUpperInvariant() switch
+    {
+        "EURUSD" => Math.Round(value, 5),
+        _ => Math.Round(value, 2)
+    };
 }
