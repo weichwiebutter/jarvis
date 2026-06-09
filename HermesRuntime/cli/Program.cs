@@ -204,6 +204,8 @@ internal sealed class HermesCli
             "generate-demo-signals" => GenerateDemoSignals(),
             "latest-demo-signals" => ShowLatestDemoSignals(),
             "demo-signal-feed-log" => ShowDemoSignalFeedLog(),
+            "export-missing-signal-agent-specs" => ExportMissingSignalAgentSpecs(),
+            "validate-ensemble-signal-specs" => ValidateEnsembleSignalSpecs(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -407,6 +409,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes generate-demo-signals read-only Demo-Signale erzeugen");
         Console.WriteLine("  hermes latest-demo-signals letzte Demo-Signale anzeigen");
         Console.WriteLine("  hermes demo-signal-feed-log Demo Signal Feed Log anzeigen");
+        Console.WriteLine("  hermes export-missing-signal-agent-specs fehlende Ensemble-Signal-Agent-Specs exportieren");
+        Console.WriteLine("  hermes validate-ensemble-signal-specs Ensemble-Signal-Agent-Specs validieren");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -4383,6 +4387,38 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ExportMissingSignalAgentSpecs()
+    {
+        WriteHeader("Hermes Export Missing Signal Agent Specs");
+        try
+        {
+            var result = new EnsembleSignalSpecMaintenanceService(BuildStoragePaths(), _runtimeRoot).ExportMissingSpecs();
+            WriteEnsembleSignalSpecValidationResult(result);
+            Console.WriteLine();
+            WriteDemoSignalFeedSafety();
+            WriteSafety();
+            return result.Blockers.Count > 0 || result.MissingSpecs.Count > 0 ? 1 : 0;
+        }
+        catch (InvalidOperationException ex)
+        {
+            WriteError(ex.Message);
+            WriteDemoSignalFeedSafety();
+            WriteSafety();
+            return 1;
+        }
+    }
+
+    private int ValidateEnsembleSignalSpecs()
+    {
+        WriteHeader("Hermes Validate Ensemble Signal Specs");
+        var result = new EnsembleSignalSpecMaintenanceService(BuildStoragePaths(), _runtimeRoot).ValidateSpecs();
+        WriteEnsembleSignalSpecValidationResult(result);
+        Console.WriteLine();
+        WriteDemoSignalFeedSafety();
+        WriteSafety();
+        return result.Blockers.Count > 0 || result.MissingSpecs.Count > 0 ? 1 : 0;
+    }
+
     private int ShowNearMissStrategies()
     {
         WriteHeader("Hermes Near-Miss Strategies");
@@ -6778,6 +6814,23 @@ internal sealed class HermesCli
         WriteField("Status", signal.Status);
         WriteField("Reason", signal.Reason);
         WriteMessages("Risk Notes", signal.RiskNotes);
+    }
+
+    private void WriteEnsembleSignalSpecValidationResult(EnsembleSignalSpecValidationResult result)
+    {
+        WriteField("Package", result.PackageId);
+        WriteField("Members Total", result.MembersTotal.ToString());
+        WriteField("Specs Present", result.SpecsPresent.ToString());
+        WriteField("Specs Exported", result.SpecsExported.ToString());
+        WriteMessages("Exported Candidates", result.ExportedCandidates);
+        WriteMessages("Missing Specs", result.MissingSpecs);
+        WriteMessages("Blockers", result.Blockers);
+        var root = Path.Combine(BuildStoragePaths().Root, "reports", "signal_agent_specs");
+        WriteField("Signal Spec Root", DisplayPath(root));
+        WriteField("no_auto_trading", result.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", result.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", result.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", result.LiveTradingEnabled.ToString().ToLowerInvariant());
     }
 
     private static void WriteScalpingOptimizedMember(ScalpingOptimizedEnsembleMember member)
