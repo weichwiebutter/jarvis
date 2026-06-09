@@ -292,6 +292,14 @@ public sealed class MasterStatusService
         var latestDemoSignalCount = demoSignalFeed.SignalCount;
         var demoSignalFeedHealth = demoSignalFeed.Blockers.Count > 0 ? "needs_attention" : "ok";
         var demoSignalFeedMode = demoSignalFeed.FeedMode;
+        var forwardTestService = new ForwardTestService(_storagePaths, _runtimeRoot);
+        var forwardTest = forwardTestService.LoadOrCreateStatus();
+        var forwardTestStatus = forwardTest.ForwardTestStatus;
+        var forwardTestMode = forwardTest.ForwardTestMode;
+        var forwardTestAssets = forwardTest.ForwardTestAssets;
+        var forwardTestSignalsObserved = forwardTest.ForwardTestSignalsObserved;
+        var forwardTestHealth = forwardTest.ForwardTestHealth;
+        var forwardTestRequiresHumanReview = forwardTest.ForwardTestRequiresHumanReview;
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -617,6 +625,12 @@ public sealed class MasterStatusService
                     ["latest_demo_signal_count"] = latestDemoSignalCount,
                     ["demo_signal_feed_health"] = demoSignalFeedHealth,
                     ["demo_signal_feed_mode"] = demoSignalFeedMode,
+                    ["forward_test_status"] = forwardTestStatus,
+                    ["forward_test_mode"] = forwardTestMode,
+                    ["forward_test_assets"] = forwardTestAssets,
+                    ["forward_test_signals_observed"] = forwardTestSignalsObserved,
+                    ["forward_test_health"] = forwardTestHealth,
+                    ["forward_test_requires_human_review"] = forwardTestRequiresHumanReview,
                     ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
                     ["market_data_xauusd_available"] = marketDataAvailability.XauusdAvailable,
                     ["market_data_eurusd_available"] = marketDataAvailability.EurusdAvailable,
@@ -750,6 +764,12 @@ public sealed class MasterStatusService
             LatestDemoSignalCount: latestDemoSignalCount,
             DemoSignalFeedHealth: demoSignalFeedHealth,
             DemoSignalFeedMode: demoSignalFeedMode,
+            ForwardTestStatus: forwardTestStatus,
+            ForwardTestMode: forwardTestMode,
+            ForwardTestAssets: forwardTestAssets,
+            ForwardTestSignalsObserved: forwardTestSignalsObserved,
+            ForwardTestHealth: forwardTestHealth,
+            ForwardTestRequiresHumanReview: forwardTestRequiresHumanReview,
             MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,
             MarketDataXauusdAvailable: marketDataAvailability.XauusdAvailable,
             MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,
