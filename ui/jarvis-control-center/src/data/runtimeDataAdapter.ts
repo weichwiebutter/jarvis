@@ -181,6 +181,10 @@ function buildSource(dataSource, path, warning = '') {
   };
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function combineDataSource(sources) {
   if (sources.every((source) => source.dataSource === DATA_SOURCE.LIVE_FILE)) {
     return DATA_SOURCE.LIVE_FILE;
@@ -1236,10 +1240,6 @@ export async function loadBetaReport() {
   }
 }
 
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
 function firstDefined(...values) {
   return values.find((value) => value !== undefined && value !== null);
 }
@@ -1462,6 +1462,10 @@ function reportFixtureRaw(key) {
       return operatorDashboardMock.cleanupPlan;
     case 'nightlyState':
       return operatorDashboardMock.nightlyState;
+    case 'demoSignalFeedStatus':
+      return operatorDashboardMock.demoSignalFeedStatus;
+    case 'latestDemoSignals':
+      return operatorDashboardMock.latestDemoSignals;
     case 'robustStrategies':
       return {
         strategies: operatorDashboardMock.researchInsights.robust_strategies,
@@ -1573,6 +1577,26 @@ export function normalizeMasterStatus(raw = {}) {
     scalping_regime_validation_health: asString(firstDefined(raw.scalping_regime_validation_health, raw.scalpingRegimeValidationHealth, trading.scalping_regime_validation_health, trading.scalpingRegimeValidationHealth), 'missing'),
     ctrader_bot_specs_ready: asNumber(firstDefined(raw.ctrader_bot_specs_ready, raw.cTraderBotSpecsReady, raw.CTraderBotSpecsReady, trading.ctrader_bot_specs_ready, trading.cTraderBotSpecsReady), 0),
     signal_agent_specs_ready: asNumber(firstDefined(raw.signal_agent_specs_ready, raw.signalAgentSpecsReady, trading.signal_agent_specs_ready, trading.signalAgentSpecsReady), 0),
+    demo_signal_feed_status: asString(
+      firstDefined(raw.demo_signal_feed_status, raw.demoSignalFeedStatus, trading.demo_signal_feed_status, trading.demoSignalFeedStatus),
+      'unknown',
+    ),
+    demo_signals_available: asBoolean(
+      firstDefined(raw.demo_signals_available, raw.demoSignalsAvailable, trading.demo_signals_available, trading.demoSignalsAvailable),
+      false,
+    ),
+    latest_demo_signal_count: asNumber(
+      firstDefined(raw.latest_demo_signal_count, raw.latestDemoSignalCount, trading.latest_demo_signal_count, trading.latestDemoSignalCount),
+      0,
+    ),
+    demo_signal_feed_health: asString(
+      firstDefined(raw.demo_signal_feed_health, raw.demoSignalFeedHealth, trading.demo_signal_feed_health, trading.demoSignalFeedHealth),
+      'unknown',
+    ),
+    demo_signal_feed_mode: asString(
+      firstDefined(raw.demo_signal_feed_mode, raw.demoSignalFeedMode, trading.demo_signal_feed_mode, trading.demoSignalFeedMode),
+      'unknown',
+    ),
     trusted_knowledge: asNumber(
       firstDefined(raw.trusted_knowledge, raw.trustedKnowledge, raw.knowledge_health?.trusted_knowledge, raw.knowledgeHealth?.trustedKnowledge),
       0,
@@ -1687,6 +1711,81 @@ export function normalizeMasterStatus(raw = {}) {
     updated_at_utc: firstDefined(raw.updated_at_utc, raw.updatedAtUtc, raw.last_updated_utc, raw.lastUpdatedUtc, null),
     data_root: asString(firstDefined(raw.data_root, raw.dataRoot), hermesDataRoot),
   };
+}
+
+export function normalizeDemoSignalFeedStatus(raw = {}, masterStatus = normalizeMasterStatus({})) {
+  return {
+    feed_status: asString(
+      firstDefined(raw.feed_status, raw.feedStatus, masterStatus.demo_signal_feed_status),
+      'unknown',
+    ),
+    feed_mode: asString(
+      firstDefined(raw.feed_mode, raw.feedMode, masterStatus.demo_signal_feed_mode),
+      'unknown',
+    ),
+    signal_count: asNumber(
+      firstDefined(raw.signal_count, raw.signalCount, masterStatus.latest_demo_signal_count),
+      0,
+    ),
+    demo_signals_available: asBoolean(
+      firstDefined(raw.demo_signals_available, raw.demoSignalsAvailable, masterStatus.demo_signals_available),
+      false,
+    ),
+    health: asString(
+      firstDefined(raw.health, raw.demo_signal_feed_health, raw.demoSignalFeedHealth, masterStatus.demo_signal_feed_health),
+      masterStatus.demo_signal_feed_health || 'unknown',
+    ),
+    warnings: asArray(firstDefined(raw.warnings, raw.Warnings)).map(String),
+    no_auto_trading: asBoolean(firstDefined(raw.no_auto_trading, raw.noAutoTrading), true),
+    human_review_required: asBoolean(
+      firstDefined(raw.human_review_required, raw.humanReviewRequired),
+      true,
+    ),
+    broker_orders_enabled: asBoolean(
+      firstDefined(raw.broker_orders_enabled, raw.brokerOrdersEnabled),
+      false,
+    ),
+    live_trading_enabled: asBoolean(
+      firstDefined(raw.live_trading_enabled, raw.liveTradingEnabled),
+      false,
+    ),
+  };
+}
+
+export function normalizeLatestDemoSignals(raw = []) {
+  return asArray(raw).map((signal, index) => ({
+    signal_id: asString(firstDefined(signal.signal_id, signal.signalId), `demo_signal_${index}`),
+    created_utc: firstDefined(signal.created_utc, signal.createdUtc, null),
+    asset: asString(signal.asset, 'n/a'),
+    timeframe: asString(signal.timeframe, 'n/a'),
+    candidate_id: asString(firstDefined(signal.candidate_id, signal.candidateId), 'n/a'),
+    setup_type: asString(firstDefined(signal.setup_type, signal.setupType), 'n/a'),
+    direction: asString(signal.direction, 'n/a'),
+    entry_level: firstDefined(signal.entry_level, signal.entryLevel, null),
+    stop_loss: firstDefined(signal.stop_loss, signal.stopLoss, null),
+    take_profit: firstDefined(signal.take_profit, signal.takeProfit, null),
+    invalidation_level: firstDefined(
+      signal.invalidation_level,
+      signal.invalidationLevel,
+      null,
+    ),
+    confidence: firstDefined(signal.confidence, null),
+    status: asString(signal.status, 'n/a'),
+    reason: asString(signal.reason, 'n/a'),
+    human_review_required: asBoolean(
+      firstDefined(signal.human_review_required, signal.humanReviewRequired),
+      true,
+    ),
+    no_auto_trading: asBoolean(firstDefined(signal.no_auto_trading, signal.noAutoTrading), true),
+    broker_orders_enabled: asBoolean(
+      firstDefined(signal.broker_orders_enabled, signal.brokerOrdersEnabled),
+      false,
+    ),
+    live_trading_enabled: asBoolean(
+      firstDefined(signal.live_trading_enabled, signal.liveTradingEnabled),
+      false,
+    ),
+  }));
 }
 
 export function normalizeHumanReviewQueue(raw = {}, masterStatus = normalizeMasterStatus({})) {
@@ -2143,10 +2242,16 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
     rawReports.strategyRegimePerformance || operatorDashboardMock.strategyRegimePerformance;
   const cleanupRaw = rawReports.cleanupPlan || operatorDashboardMock.cleanupPlan;
   const humanReviewRaw = rawReports.humanReviewQueue || runtimeHumanReviewMock;
+  const demoSignalFeedRaw =
+    rawReports.demoSignalFeedStatus || operatorDashboardMock.demoSignalFeedStatus;
+  const latestDemoSignalsRaw =
+    rawReports.latestDemoSignals || operatorDashboardMock.latestDemoSignals;
 
   const resource = normalizeResourceStatus(resourceRaw);
   const cleanup = normalizeCleanupPlan(cleanupRaw);
   const masterStatus = normalizeMasterStatus(masterRaw);
+  const demoSignalFeed = normalizeDemoSignalFeedStatus(demoSignalFeedRaw, masterStatus);
+  const latestDemoSignals = normalizeLatestDemoSignals(latestDemoSignalsRaw);
   const storageRoot = asString(
     firstDefined(
       storageRaw.storage_root,
@@ -2201,6 +2306,8 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
       cleanup_safe_to_apply: cleanup.safe_to_apply,
     },
     cleanup,
+    demoSignalFeed,
+    latestDemoSignals,
     reports,
     logLines,
     dataSource,
@@ -2242,6 +2349,8 @@ export function createOperatorDashboardFallback(loadError = '') {
       schedulerState: operatorDashboardMock.schedulerState,
       resourceStatus: operatorDashboardMock.resourceStatus,
       nightlyState: operatorDashboardMock.nightlyState,
+      demoSignalFeedStatus: operatorDashboardMock.demoSignalFeedStatus,
+      latestDemoSignals: operatorDashboardMock.latestDemoSignals,
       researchInsights: operatorDashboardMock.researchInsights,
       regimeSummary: operatorDashboardMock.regimeSummary,
       strategyRegimePerformance: operatorDashboardMock.strategyRegimePerformance,
@@ -2300,6 +2409,8 @@ export async function loadOperatorDashboard() {
         storageStatus: dashboard.storageStatus,
         cleanupPlan: dashboard.cleanupPlan,
         nightlyState: dashboard.nightlyState,
+        demoSignalFeedStatus: dashboard.demoSignalFeedStatus,
+        latestDemoSignals: dashboard.latestDemoSignals,
         researchInsights: dashboard.researchInsights,
         robustStrategies: dashboard.robustStrategies,
         overfitReport: dashboard.overfitReport,

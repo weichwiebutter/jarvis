@@ -35,6 +35,19 @@ function formatPercent(value) {
   return `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(Number(value || 0))}%`;
 }
 
+function formatMaybeNumber(value, digits = 4) {
+  if (value === null || value === undefined || value === '') {
+    return 'n/a';
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 'n/a';
+  }
+
+  return new Intl.NumberFormat('de-DE', { maximumFractionDigits: digits }).format(parsed);
+}
+
 function shortDateTime(value) {
   if (!value) {
     return '-';
@@ -236,6 +249,64 @@ function ScalpingProgressCard({ masterStatus }) {
       </div>
       <p>Read-only snapshot panel. No runtime commands, broker actions, or trading actions.</p>
     </details>
+  );
+}
+
+function DemoSignalFeedCard({ masterStatus, demoSignalFeed, latestDemoSignals }) {
+  const warnings = demoSignalFeed.warnings?.length ? demoSignalFeed.warnings : ['none'];
+
+  return (
+    <OperatorCard
+      badge={demoSignalFeed.feed_status || 'unknown'}
+      title="Demo Signal Feed"
+      tone={statusTone(demoSignalFeed.health || demoSignalFeed.feed_status)}
+    >
+      <div className="operator-metric-grid">
+        <MiniMetric label="Feed Status" value={demoSignalFeed.feed_status || 'n/a'} tone={statusTone(demoSignalFeed.feed_status)} />
+        <MiniMetric label="Feed Mode" value={demoSignalFeed.feed_mode || 'n/a'} tone="info" />
+        <MiniMetric label="Signal Count" value={formatNumber(demoSignalFeed.signal_count ?? masterStatus.latest_demo_signal_count)} tone={demoSignalFeed.signal_count ? 'good' : 'info'} />
+        <MiniMetric label="Health" value={demoSignalFeed.health || masterStatus.demo_signal_feed_health || 'n/a'} tone={statusTone(demoSignalFeed.health || masterStatus.demo_signal_feed_health)} />
+      </div>
+
+      <div className="operator-warning-list" aria-label="Demo Signal Feed Warnings">
+        {warnings.map((warning) => (
+          <span key={warning}>{warning}</span>
+        ))}
+      </div>
+
+      <div className="operator-safety-flags">
+        <StatusPill tone="warn">Demo Signal Feed only</StatusPill>
+        <StatusPill tone="good">no_auto_trading=true</StatusPill>
+        <StatusPill tone="good">human_review_required=true</StatusPill>
+        <StatusPill tone="good">broker_orders_enabled=false</StatusPill>
+        <StatusPill tone="good">live_trading_enabled=false</StatusPill>
+      </div>
+
+      <div className="demo-signal-list" aria-label="Aktuelle Demo-Signale">
+        {(latestDemoSignals?.length ? latestDemoSignals : [{ signal_id: 'empty' }]).map((signal) => (
+          <article className="demo-signal-item" key={signal.signal_id}>
+            <div className="demo-signal-head">
+              <strong>{signal.asset || 'n/a'}</strong>
+              <span>{signal.timeframe || 'n/a'}</span>
+            </div>
+            <div className="demo-signal-grid">
+              <MiniMetric label="candidate_id" value={signal.candidate_id || 'n/a'} tone="info" />
+              <MiniMetric label="setup_type" value={signal.setup_type || 'n/a'} tone="info" />
+              <MiniMetric label="direction" value={signal.direction || 'n/a'} tone="info" />
+              <MiniMetric label="entry_level" value={formatMaybeNumber(signal.entry_level, 5)} tone="info" />
+              <MiniMetric label="stop_loss" value={formatMaybeNumber(signal.stop_loss, 5)} tone="warn" />
+              <MiniMetric label="take_profit" value={formatMaybeNumber(signal.take_profit, 5)} tone="good" />
+              <MiniMetric label="invalidation_level" value={formatMaybeNumber(signal.invalidation_level, 5)} tone="warn" />
+              <MiniMetric label="confidence" value={formatMaybeNumber(signal.confidence, 4)} tone="info" />
+              <MiniMetric label="status" value={signal.status || 'n/a'} tone={statusTone(signal.status)} />
+            </div>
+            <p>{signal.reason || 'n/a'}</p>
+          </article>
+        ))}
+      </div>
+
+      <p>Read-only panel. No runtime commands, no trading actions, no broker actions, no cTrader Order API.</p>
+    </OperatorCard>
   );
 }
 
@@ -479,6 +550,12 @@ export function OperatorDashboardPanel() {
       </div>
 
       <div className="operator-middle-grid">
+        <DemoSignalFeedCard
+          demoSignalFeed={operatorState.demoSignalFeed}
+          latestDemoSignals={operatorState.latestDemoSignals}
+          masterStatus={operatorState.masterStatus}
+        />
+
         <OperatorCard title="Research Summary" tone="info">
           <div className="operator-research-grid">
             <MiniMetric label="Strategien getestet" value={formatNumber(operatorState.research.strategies_tested)} tone="info" />

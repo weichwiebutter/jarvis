@@ -117,6 +117,16 @@ const operatorReports = {
     url: bridgeUrl('/runtime/nightly'),
     path: 'read-only bridge:/runtime/nightly',
   },
+  demoSignalFeedStatus: {
+    label: 'Demo Signal Feed Status',
+    url: bridgeUrl('/reports/demo-signal-feed-status'),
+    path: 'read-only bridge:/reports/demo-signal-feed-status',
+  },
+  latestDemoSignals: {
+    label: 'Latest Demo Signals',
+    url: bridgeUrl('/reports/latest-demo-signals'),
+    path: 'read-only bridge:/reports/latest-demo-signals',
+  },
 };
 
 export default defineConfig({

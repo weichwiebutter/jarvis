@@ -3420,6 +3420,43 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.demo-signal-list {
+  display: grid;
+  gap: 10px;
+  max-height: 420px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.demo-signal-item {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(132, 204, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  min-width: 0;
+}
+
+.demo-signal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.demo-signal-head strong,
+.demo-signal-head span {
+  overflow-wrap: anywhere;
+}
+
+.demo-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
 @media (max-width: 980px) {
   h1 {
     font-size: 3.6rem;
@@ -3443,6 +3480,10 @@ h2 {
   .details-grid > .panel {
     height: auto;
     max-height: 72vh;
+  }
+
+  .demo-signal-grid {
+    grid-template-columns: 1fr;
   }
 
   .hero-shell {
