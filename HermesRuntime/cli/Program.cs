@@ -213,6 +213,10 @@ internal sealed class HermesCli
             "run-forward-test-observation" => RunForwardTestObservation(),
             "latest-forward-test-observations" => ShowLatestForwardTestObservations(),
             "forward-test-summary" => ShowForwardTestSummary(),
+            "current-market-status" => ShowCurrentMarketStatus(),
+            "update-current-market-snapshot" => UpdateCurrentMarketSnapshot(),
+            "current-market-snapshot" => ShowCurrentMarketSnapshot(),
+            "explain-current-market-gap" => ExplainCurrentMarketGap(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -425,6 +429,10 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes run-forward-test-observation Demo-Signale read-only beobachten");
         Console.WriteLine("  hermes latest-forward-test-observations letzte Forward-Test-Beobachtungen anzeigen");
         Console.WriteLine("  hermes forward-test-summary Forward-Test-Zusammenfassung anzeigen");
+        Console.WriteLine("  hermes current-market-status Current Market Snapshot Status anzeigen");
+        Console.WriteLine("  hermes update-current-market-snapshot read-only Current Market Snapshot aktualisieren");
+        Console.WriteLine("  hermes current-market-snapshot read-only Current Market Snapshot anzeigen");
+        Console.WriteLine("  hermes explain-current-market-gap --asset XAUUSD Snapshot-Luecke erklaeren");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -617,8 +625,13 @@ internal sealed class HermesCli
         WriteField("forward_test_invalidated_count", snapshot.ForwardTestInvalidatedCount.ToString());
         WriteField("forward_test_simulated_observation_count", snapshot.ForwardTestSimulatedObservationCount.ToString());
         WriteField("forward_test_latest_observation_utc", snapshot.ForwardTestLatestObservationUtc?.ToString("O") ?? "-");
+        WriteField("forward_test_using_current_market_snapshot", snapshot.ForwardTestUsingCurrentMarketSnapshot.ToString().ToLowerInvariant());
         WriteField("forward_test_health", snapshot.ForwardTestHealth);
         WriteField("forward_test_requires_human_review", snapshot.ForwardTestRequiresHumanReview.ToString().ToLowerInvariant());
+        WriteField("current_market_snapshot_status", snapshot.CurrentMarketSnapshotStatus);
+        WriteField("current_market_assets_available", snapshot.CurrentMarketAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.CurrentMarketAssetsAvailable));
+        WriteField("current_market_snapshot_health", snapshot.CurrentMarketSnapshotHealth);
+        WriteField("current_market_latest_update_utc", snapshot.CurrentMarketLatestUpdateUtc?.ToString("O") ?? "-");
         WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
         WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
@@ -4597,6 +4610,65 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowCurrentMarketStatus()
+    {
+        WriteHeader("Hermes Current Market Status");
+        var service = new CurrentMarketSnapshotService(BuildStoragePaths(), _runtimeRoot);
+        var status = service.LoadOrCreateStatus();
+        WriteCurrentMarketStatus(status);
+        Console.WriteLine();
+        WriteCurrentMarketSafety();
+        WriteSafety();
+        return status.SnapshotStatus == "available" ? 0 : 1;
+    }
+
+    private int UpdateCurrentMarketSnapshot()
+    {
+        WriteHeader("Hermes Update Current Market Snapshot");
+        var service = new CurrentMarketSnapshotService(BuildStoragePaths(), _runtimeRoot);
+        var status = service.UpdateSnapshot();
+        WriteCurrentMarketStatus(status);
+        foreach (var snapshot in service.LoadSnapshot())
+        {
+            WriteCurrentMarketAssetSnapshot(snapshot);
+        }
+
+        Console.WriteLine();
+        WriteCurrentMarketSafety();
+        WriteSafety();
+        return status.SnapshotStatus == "available" ? 0 : 1;
+    }
+
+    private int ShowCurrentMarketSnapshot()
+    {
+        WriteHeader("Hermes Current Market Snapshot");
+        var service = new CurrentMarketSnapshotService(BuildStoragePaths(), _runtimeRoot);
+        var status = service.LoadOrCreateStatus();
+        WriteCurrentMarketStatus(status);
+        foreach (var snapshot in service.LoadSnapshot())
+        {
+            WriteCurrentMarketAssetSnapshot(snapshot);
+        }
+
+        Console.WriteLine();
+        WriteCurrentMarketSafety();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainCurrentMarketGap()
+    {
+        WriteHeader("Hermes Explain Current Market Gap");
+        var asset = ReadOption(_args, "--asset") ?? "XAUUSD";
+        var service = new CurrentMarketSnapshotService(BuildStoragePaths(), _runtimeRoot);
+        WriteField("Asset", asset.ToUpperInvariant());
+        WriteMessages("Gap Reasons", service.ExplainGap(asset));
+        Console.WriteLine();
+        WriteCurrentMarketSafety();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowNearMissStrategies()
     {
         WriteHeader("Hermes Near-Miss Strategies");
@@ -7023,6 +7095,7 @@ internal sealed class HermesCli
         WriteField("Invalidated Count", status.ForwardTestInvalidatedCount.ToString());
         WriteField("Simulated Observation Count", status.ForwardTestSimulatedObservationCount.ToString());
         WriteField("Latest Observation UTC", status.ForwardTestLatestObservationUtc?.ToString("O") ?? "-");
+        WriteField("Using Current Market Snapshot", status.UsingCurrentMarketSnapshot.ToString().ToLowerInvariant());
         WriteField("Health", status.ForwardTestHealth);
         WriteField("Requires Human Review", status.ForwardTestRequiresHumanReview.ToString().ToLowerInvariant());
         WriteMessages("Blockers", status.Blockers);
@@ -7077,6 +7150,44 @@ internal sealed class HermesCli
     private static void WriteForwardTestSafety()
     {
         WriteMessages("Forward Test ist", ["Observation only", "Demo signal tracking", "No orders", "No broker action", "No cTrader Order API"]);
+        WriteField("no_auto_trading", "true");
+        WriteField("human_review_required", "true");
+    }
+
+    private void WriteCurrentMarketStatus(CurrentMarketStatusSnapshot status)
+    {
+        WriteField("Snapshot Status", status.SnapshotStatus);
+        WriteField("Snapshot Health", status.SnapshotHealth);
+        WriteField("Assets Requested", string.Join(", ", status.AssetsRequested));
+        WriteField("Assets Available", status.AssetsAvailable.Count == 0 ? "none" : string.Join(", ", status.AssetsAvailable));
+        WriteField("Latest Update UTC", status.LatestUpdateUtc?.ToString("O") ?? "n/a");
+        WriteMessages("Warnings", status.Warnings);
+        WriteField("Snapshot JSON", DisplayOptionalPath(status.SnapshotJsonPath));
+        WriteField("Snapshot Markdown", DisplayOptionalPath(status.SnapshotMarkdownPath));
+        WriteField("no_auto_trading", status.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", status.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", status.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", status.LiveTradingEnabled.ToString().ToLowerInvariant());
+    }
+
+    private static void WriteCurrentMarketAssetSnapshot(CurrentMarketAssetSnapshot snapshot)
+    {
+        WriteSubHeader(snapshot.Asset);
+        WriteField("Status", snapshot.Status);
+        WriteField("Source", snapshot.Source);
+        WriteField("Bid", snapshot.Bid.HasValue ? $"{snapshot.Bid.Value:0.#####}" : "n/a");
+        WriteField("Ask", snapshot.Ask.HasValue ? $"{snapshot.Ask.Value:0.#####}" : "n/a");
+        WriteField("Mid", snapshot.Mid.HasValue ? $"{snapshot.Mid.Value:0.#####}" : "n/a");
+        WriteField("Spread", snapshot.Spread.HasValue ? $"{snapshot.Spread.Value:0.#####}" : "n/a");
+        WriteField("Timestamp UTC", snapshot.TimestampUtc?.ToString("O") ?? "n/a");
+        WriteField("Age Seconds", snapshot.AgeSeconds.HasValue ? $"{snapshot.AgeSeconds.Value:0.##}" : "n/a");
+        WriteField("is_live_readonly", snapshot.IsLiveReadonly.ToString().ToLowerInvariant());
+        WriteField("is_placeholder", snapshot.IsPlaceholder.ToString().ToLowerInvariant());
+    }
+
+    private static void WriteCurrentMarketSafety()
+    {
+        WriteMessages("Current Market Snapshot", ["Read-only market snapshot", "No orders", "No broker action", "No cTrader Order API for trading"]);
         WriteField("no_auto_trading", "true");
         WriteField("human_review_required", "true");
     }

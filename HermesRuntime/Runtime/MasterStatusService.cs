@@ -303,8 +303,15 @@ public sealed class MasterStatusService
         var forwardTestInvalidatedCount = forwardTest.ForwardTestInvalidatedCount;
         var forwardTestSimulatedObservationCount = forwardTest.ForwardTestSimulatedObservationCount;
         var forwardTestLatestObservationUtc = forwardTest.ForwardTestLatestObservationUtc;
+        var forwardTestUsingCurrentMarketSnapshot = forwardTest.UsingCurrentMarketSnapshot;
         var forwardTestHealth = forwardTest.ForwardTestHealth;
         var forwardTestRequiresHumanReview = forwardTest.ForwardTestRequiresHumanReview;
+        var currentMarketService = new CurrentMarketSnapshotService(_storagePaths, _runtimeRoot);
+        var currentMarket = currentMarketService.LoadOrCreateStatus();
+        var currentMarketSnapshotStatus = currentMarket.SnapshotStatus;
+        var currentMarketAssetsAvailable = currentMarket.AssetsAvailable;
+        var currentMarketSnapshotHealth = currentMarket.SnapshotHealth;
+        var currentMarketLatestUpdateUtc = currentMarket.LatestUpdateUtc;
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -639,8 +646,13 @@ public sealed class MasterStatusService
                     ["forward_test_invalidated_count"] = forwardTestInvalidatedCount,
                     ["forward_test_simulated_observation_count"] = forwardTestSimulatedObservationCount,
                     ["forward_test_latest_observation_utc"] = forwardTestLatestObservationUtc,
+                    ["forward_test_using_current_market_snapshot"] = forwardTestUsingCurrentMarketSnapshot,
                     ["forward_test_health"] = forwardTestHealth,
                     ["forward_test_requires_human_review"] = forwardTestRequiresHumanReview,
+                    ["current_market_snapshot_status"] = currentMarketSnapshotStatus,
+                    ["current_market_assets_available"] = currentMarketAssetsAvailable,
+                    ["current_market_snapshot_health"] = currentMarketSnapshotHealth,
+                    ["current_market_latest_update_utc"] = currentMarketLatestUpdateUtc,
                     ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
                     ["market_data_xauusd_available"] = marketDataAvailability.XauusdAvailable,
                     ["market_data_eurusd_available"] = marketDataAvailability.EurusdAvailable,
@@ -783,8 +795,13 @@ public sealed class MasterStatusService
             ForwardTestInvalidatedCount: forwardTestInvalidatedCount,
             ForwardTestSimulatedObservationCount: forwardTestSimulatedObservationCount,
             ForwardTestLatestObservationUtc: forwardTestLatestObservationUtc,
+            ForwardTestUsingCurrentMarketSnapshot: forwardTestUsingCurrentMarketSnapshot,
             ForwardTestHealth: forwardTestHealth,
             ForwardTestRequiresHumanReview: forwardTestRequiresHumanReview,
+            CurrentMarketSnapshotStatus: currentMarketSnapshotStatus,
+            CurrentMarketAssetsAvailable: currentMarketAssetsAvailable,
+            CurrentMarketSnapshotHealth: currentMarketSnapshotHealth,
+            CurrentMarketLatestUpdateUtc: currentMarketLatestUpdateUtc,
             MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,
             MarketDataXauusdAvailable: marketDataAvailability.XauusdAvailable,
             MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,

@@ -73,6 +73,7 @@ public sealed record ForwardTestStatusSnapshot(
     int ForwardTestInvalidatedCount,
     int ForwardTestSimulatedObservationCount,
     DateTimeOffset? ForwardTestLatestObservationUtc,
+    bool UsingCurrentMarketSnapshot,
     string ForwardTestHealth,
     bool ForwardTestRequiresHumanReview,
     IReadOnlyList<string> Blockers,
@@ -352,6 +353,7 @@ public sealed class ForwardTestService
     {
         var observations = ExtractObservations(observationEntries);
         var metrics = BuildMetrics(observations);
+        var marketSnapshotStatus = new CurrentMarketSnapshotService(_storagePaths, _runtimeRoot).LoadOrCreateStatus();
         DateTimeOffset? latestObservationUtc = observations.Count == 0
             ? null
             : observations.Max(observation => observation.CreatedUtc);
@@ -373,6 +375,7 @@ public sealed class ForwardTestService
             ForwardTestInvalidatedCount: metrics.InvalidatedCount,
             ForwardTestSimulatedObservationCount: metrics.SimulatedObservationCount,
             ForwardTestLatestObservationUtc: latestObservationUtc,
+            UsingCurrentMarketSnapshot: marketSnapshotStatus.AssetsAvailable.Count > 0,
             ForwardTestHealth: health,
             ForwardTestRequiresHumanReview: true,
             Blockers: blockers,
@@ -474,6 +477,38 @@ public sealed class ForwardTestService
 
     private ForwardTestObservation BuildObservation(DemoSignalFeedItem signal, List<string> warnings)
     {
+        var marketSnapshot = new CurrentMarketSnapshotService(_storagePaths, _runtimeRoot).FindSnapshot(signal.Asset);
+        if (marketSnapshot is not null
+            && marketSnapshot.Status == "available"
+            && marketSnapshot.IsLiveReadonly
+            && !marketSnapshot.IsPlaceholder
+            && marketSnapshot.Mid.HasValue)
+        {
+            var snapshotResult = EvaluateSnapshotObservation(signal, marketSnapshot);
+            return new ForwardTestObservation(
+                ObservationId: $"observation_{signal.SignalId}_{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
+                CreatedUtc: DateTimeOffset.UtcNow,
+                SignalId: signal.SignalId,
+                Asset: signal.Asset,
+                CandidateId: signal.CandidateId,
+                ObservedStatus: snapshotResult.ObservedStatus,
+                ObservedPrice: RoundPrice(signal.Asset, marketSnapshot.Mid.Value),
+                EntryLevel: signal.EntryLevel,
+                StopLoss: signal.StopLoss,
+                TakeProfit: signal.TakeProfit,
+                InvalidationLevel: signal.InvalidationLevel,
+                Result: snapshotResult.Result,
+                Note: snapshotResult.Note,
+                Simulated: false,
+                HumanReviewRequired: true,
+                NoAutoTrading: true);
+        }
+
+        if (marketSnapshot is not null && marketSnapshot.Status != "unavailable")
+        {
+            warnings.Add($"current_market_snapshot_not_usable:{signal.Asset}:{marketSnapshot.Status}");
+        }
+
         var candle = LoadLatestCandle(signal.Asset, signal.Timeframe);
         if (candle is null)
         {
@@ -519,6 +554,49 @@ public sealed class ForwardTestService
             Simulated: false,
             HumanReviewRequired: true,
             NoAutoTrading: true);
+    }
+
+    private static (string ObservedStatus, string Result, string Note) EvaluateSnapshotObservation(
+        DemoSignalFeedItem signal,
+        CurrentMarketAssetSnapshot snapshot)
+    {
+        var price = snapshot.Mid ?? snapshot.Bid ?? snapshot.Ask ?? 0;
+        var direction = signal.Direction.ToLowerInvariant();
+        var isShort = direction.Contains("short", StringComparison.OrdinalIgnoreCase);
+        var isLong = direction.Contains("long", StringComparison.OrdinalIgnoreCase) || !isShort;
+
+        if (isLong)
+        {
+            if (price <= signal.InvalidationLevel || price <= signal.StopLoss)
+            {
+                return ("invalidated", "invalidated", $"read_only_snapshot_observation:invalidation_level_reached;source={snapshot.Source};no_order");
+            }
+
+            if (price >= signal.EntryLevel)
+            {
+                return ("triggered", "triggered", $"read_only_snapshot_observation:entry_level_reached;source={snapshot.Source};no_order");
+            }
+        }
+        else
+        {
+            if (price >= signal.InvalidationLevel || price >= signal.StopLoss)
+            {
+                return ("invalidated", "invalidated", $"read_only_snapshot_observation:invalidation_level_reached;source={snapshot.Source};no_order");
+            }
+
+            if (price <= signal.EntryLevel)
+            {
+                return ("triggered", "triggered", $"read_only_snapshot_observation:entry_level_reached;source={snapshot.Source};no_order");
+            }
+        }
+
+        var age = DateTimeOffset.UtcNow - signal.CreatedUtc;
+        if (age > TimeSpan.FromDays(2))
+        {
+            return ("expired", "expired", $"read_only_snapshot_observation:signal_age_expired;source={snapshot.Source};no_order");
+        }
+
+        return ("still_waiting", "still_waiting", $"read_only_snapshot_observation:still_waiting;source={snapshot.Source};no_order");
     }
 
     private static (string ObservedStatus, string Result, string Note) EvaluateSignalObservation(DemoSignalFeedItem signal, MarketDataCandle candle)
