@@ -278,6 +278,13 @@ public sealed class MasterStatusService
         var latestScalpingEnsemblePackage = scalpingEnsemblePackageReady ? ensembleExportService.ManifestPath : null;
         var scalpingEnsembleExportHealth = scalpingEnsemblePackageReady ? "ok" : optimizedSelection?.Status == ScalpingOptimizedEnsembleStatus.ensemble_ready ? "needs_export" : "not_ready";
         var scalpingEnsembleHumanReviewReady = File.Exists(ensembleExportService.HumanReviewPackagePath);
+        var reviewService = new ScalpingEnsembleReviewService(_storagePaths, _runtimeRoot);
+        var reviewState = reviewService.LoadOrCreate();
+        var scalpingEnsembleReviewStatus = reviewState.ReviewStatus.ToString();
+        var scalpingEnsembleApprovedForDemoSignalUse = reviewState.ReviewStatus == ScalpingEnsembleReviewStatus.approved_for_demo_signal_use;
+        var scalpingEnsembleApprovedForForwardTestPreparation = reviewState.ReviewStatus == ScalpingEnsembleReviewStatus.approved_for_forward_test_preparation;
+        var scalpingEnsembleReviewHealth = reviewState.Blockers.Count > 0 ? "needs_attention" : "ok";
+        var latestScalpingEnsembleReview = File.Exists(reviewService.StatusPath) ? reviewService.StatusPath : null;
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -593,6 +600,11 @@ public sealed class MasterStatusService
                     ["latest_scalping_ensemble_package"] = latestScalpingEnsemblePackage,
                     ["scalping_ensemble_export_health"] = scalpingEnsembleExportHealth,
                     ["scalping_ensemble_human_review_ready"] = scalpingEnsembleHumanReviewReady,
+                    ["scalping_ensemble_review_status"] = scalpingEnsembleReviewStatus,
+                    ["scalping_ensemble_approved_for_demo_signal_use"] = scalpingEnsembleApprovedForDemoSignalUse,
+                    ["scalping_ensemble_approved_for_forward_test_preparation"] = scalpingEnsembleApprovedForForwardTestPreparation,
+                    ["scalping_ensemble_review_health"] = scalpingEnsembleReviewHealth,
+                    ["latest_scalping_ensemble_review"] = latestScalpingEnsembleReview,
                     ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
                     ["market_data_xauusd_available"] = marketDataAvailability.XauusdAvailable,
                     ["market_data_eurusd_available"] = marketDataAvailability.EurusdAvailable,
@@ -716,6 +728,11 @@ public sealed class MasterStatusService
             LatestScalpingEnsemblePackage: latestScalpingEnsemblePackage,
             ScalpingEnsembleExportHealth: scalpingEnsembleExportHealth,
             ScalpingEnsembleHumanReviewReady: scalpingEnsembleHumanReviewReady,
+            ScalpingEnsembleReviewStatus: scalpingEnsembleReviewStatus,
+            ScalpingEnsembleApprovedForDemoSignalUse: scalpingEnsembleApprovedForDemoSignalUse,
+            ScalpingEnsembleApprovedForForwardTestPreparation: scalpingEnsembleApprovedForForwardTestPreparation,
+            ScalpingEnsembleReviewHealth: scalpingEnsembleReviewHealth,
+            LatestScalpingEnsembleReview: latestScalpingEnsembleReview,
             MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,
             MarketDataXauusdAvailable: marketDataAvailability.XauusdAvailable,
             MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,

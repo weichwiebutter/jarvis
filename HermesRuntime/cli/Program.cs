@@ -195,6 +195,11 @@ internal sealed class HermesCli
             "export-scalping-ensemble-package" => ExportScalpingEnsemblePackage(),
             "scalping-ensemble-package" => ShowScalpingEnsemblePackage(),
             "scalping-ensemble-human-review-package" => ShowScalpingEnsembleHumanReviewPackage(),
+            "scalping-ensemble-review-status" => ShowScalpingEnsembleReviewStatus(),
+            "approve-scalping-ensemble" => ApproveScalpingEnsemble(),
+            "reject-scalping-ensemble" => RejectScalpingEnsemble(),
+            "defer-scalping-ensemble" => DeferScalpingEnsemble(),
+            "request-more-scalping-evidence" => RequestMoreScalpingEvidence(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -389,6 +394,11 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes export-scalping-ensemble-package Ensemble Export Package erzeugen");
         Console.WriteLine("  hermes scalping-ensemble-package Ensemble Export Package anzeigen");
         Console.WriteLine("  hermes scalping-ensemble-human-review-package Ensemble Human Review Package anzeigen");
+        Console.WriteLine("  hermes scalping-ensemble-review-status Ensemble Review Status anzeigen");
+        Console.WriteLine("  hermes approve-scalping-ensemble --mode demo_signal_use|forward_test_preparation Ensemble freigeben");
+        Console.WriteLine("  hermes reject-scalping-ensemble --reason \"<TEXT>\" Ensemble ablehnen");
+        Console.WriteLine("  hermes defer-scalping-ensemble --reason \"<TEXT>\" Ensemble zurueckstellen");
+        Console.WriteLine("  hermes request-more-scalping-evidence --reason \"<TEXT>\" mehr Evidenz anfordern");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -562,6 +572,11 @@ internal sealed class HermesCli
         WriteField("latest_scalping_ensemble_package", snapshot.LatestScalpingEnsemblePackage is null ? "-" : DisplayPath(snapshot.LatestScalpingEnsemblePackage));
         WriteField("scalping_ensemble_export_health", snapshot.ScalpingEnsembleExportHealth);
         WriteField("scalping_ensemble_human_review_ready", snapshot.ScalpingEnsembleHumanReviewReady.ToString().ToLowerInvariant());
+        WriteField("scalping_ensemble_review_status", snapshot.ScalpingEnsembleReviewStatus);
+        WriteField("scalping_ensemble_approved_for_demo_signal_use", snapshot.ScalpingEnsembleApprovedForDemoSignalUse.ToString().ToLowerInvariant());
+        WriteField("scalping_ensemble_approved_for_forward_test_preparation", snapshot.ScalpingEnsembleApprovedForForwardTestPreparation.ToString().ToLowerInvariant());
+        WriteField("scalping_ensemble_review_health", snapshot.ScalpingEnsembleReviewHealth);
+        WriteField("latest_scalping_ensemble_review", snapshot.LatestScalpingEnsembleReview is null ? "-" : DisplayPath(snapshot.LatestScalpingEnsembleReview));
         WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
         WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
@@ -4171,6 +4186,112 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowScalpingEnsembleReviewStatus()
+    {
+        WriteHeader("Hermes Scalping Ensemble Review Status");
+        var state = new ScalpingEnsembleReviewService(BuildStoragePaths(), _runtimeRoot).LoadOrCreate();
+        WriteScalpingEnsembleReviewState(state);
+        WriteEnsembleApprovalScope();
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ApproveScalpingEnsemble()
+    {
+        WriteHeader("Hermes Scalping Ensemble Approve");
+        var mode = ReadOption(_args, "--mode");
+        if (string.IsNullOrWhiteSpace(mode))
+        {
+            WriteError("--mode fehlt");
+            WriteSafety();
+            return 1;
+        }
+
+        try
+        {
+            var state = new ScalpingEnsembleReviewService(BuildStoragePaths(), _runtimeRoot).Approve(mode);
+            WriteScalpingEnsembleReviewState(state);
+            WriteEnsembleApprovalScope();
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+        catch (InvalidOperationException ex)
+        {
+            WriteError(ex.Message);
+            WriteEnsembleApprovalScope();
+            WriteSafety();
+            return 1;
+        }
+    }
+
+    private int RejectScalpingEnsemble()
+    {
+        WriteHeader("Hermes Scalping Ensemble Reject");
+        var reason = ReadOption(_args, "--reason");
+        try
+        {
+            var state = new ScalpingEnsembleReviewService(BuildStoragePaths(), _runtimeRoot).Reject(reason ?? string.Empty);
+            WriteScalpingEnsembleReviewState(state);
+            WriteEnsembleApprovalScope();
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+        catch (InvalidOperationException ex)
+        {
+            WriteError(ex.Message);
+            WriteEnsembleApprovalScope();
+            WriteSafety();
+            return 1;
+        }
+    }
+
+    private int DeferScalpingEnsemble()
+    {
+        WriteHeader("Hermes Scalping Ensemble Defer");
+        var reason = ReadOption(_args, "--reason");
+        try
+        {
+            var state = new ScalpingEnsembleReviewService(BuildStoragePaths(), _runtimeRoot).Defer(reason ?? string.Empty);
+            WriteScalpingEnsembleReviewState(state);
+            WriteEnsembleApprovalScope();
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+        catch (InvalidOperationException ex)
+        {
+            WriteError(ex.Message);
+            WriteEnsembleApprovalScope();
+            WriteSafety();
+            return 1;
+        }
+    }
+
+    private int RequestMoreScalpingEvidence()
+    {
+        WriteHeader("Hermes Scalping Ensemble Request More Evidence");
+        var reason = ReadOption(_args, "--reason");
+        try
+        {
+            var state = new ScalpingEnsembleReviewService(BuildStoragePaths(), _runtimeRoot).RequestMoreEvidence(reason ?? string.Empty);
+            WriteScalpingEnsembleReviewState(state);
+            WriteEnsembleApprovalScope();
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+        catch (InvalidOperationException ex)
+        {
+            WriteError(ex.Message);
+            WriteEnsembleApprovalScope();
+            WriteSafety();
+            return 1;
+        }
+    }
+
     private int ShowNearMissStrategies()
     {
         WriteHeader("Hermes Near-Miss Strategies");
@@ -6498,6 +6619,31 @@ internal sealed class HermesCli
         {
             WriteField("Balanced Selection", DisplayPath(Path.Combine(BuildStoragePaths().Root, "reports", "scalping_portfolio", "optimizer", "selected_ensemble_balanced.json")));
         }
+    }
+
+    private void WriteScalpingEnsembleReviewState(ScalpingEnsembleReviewState state)
+    {
+        WriteField("Review ID", state.ReviewId);
+        WriteField("Package", state.PackageId);
+        WriteField("Package Status", state.PackageStatus);
+        WriteField("Review Status", state.ReviewStatus.ToString());
+        WriteField("Review Mode", state.ReviewMode ?? "-");
+        WriteField("Reason", state.Reason ?? "-");
+        WriteMessages("Members", state.Members);
+        WriteMessages("Blockers", state.Blockers);
+        WriteField("Status JSON", DisplayPath(Path.Combine(BuildStoragePaths().Root, "reports", "scalping_portfolio", "ensemble_review", "ensemble_review_status.json")));
+        WriteField("Status Markdown", DisplayPath(Path.Combine(BuildStoragePaths().Root, "reports", "scalping_portfolio", "ensemble_review", "ensemble_review_status.md")));
+        WriteField("Review Log", DisplayPath(state.ReviewLogPath));
+        WriteField("no_auto_trading", state.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", state.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", state.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", state.LiveTradingEnabled.ToString().ToLowerInvariant());
+    }
+
+    private static void WriteEnsembleApprovalScope()
+    {
+        WriteMessages("Approval erlaubt", ["Demo-Signal-Nutzung", "Forward-Test-Vorbereitung", "weitere Review-Schritte"]);
+        WriteMessages("Approval erlaubt NICHT", ["Live-Trading", "Broker-Orders", "cTrader Order API", "automatische Ausfuehrung"]);
     }
 
     private static void WriteScalpingOptimizedMember(ScalpingOptimizedEnsembleMember member)
