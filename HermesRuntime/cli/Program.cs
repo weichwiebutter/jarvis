@@ -192,6 +192,9 @@ internal sealed class HermesCli
             "optimize-scalping-ensemble" => OptimizeScalpingEnsemble(),
             "scalping-ensemble-optimized" => ShowScalpingEnsembleOptimized(),
             "scalping-ensemble-member" => ShowScalpingEnsembleMember(),
+            "export-scalping-ensemble-package" => ExportScalpingEnsemblePackage(),
+            "scalping-ensemble-package" => ShowScalpingEnsemblePackage(),
+            "scalping-ensemble-human-review-package" => ShowScalpingEnsembleHumanReviewPackage(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -383,6 +386,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes optimize-scalping-ensemble --mode balanced optimiertes Scalping-Ensemble erzeugen");
         Console.WriteLine("  hermes scalping-ensemble-optimized optimiertes Scalping-Ensemble anzeigen");
         Console.WriteLine("  hermes scalping-ensemble-member --id <ID> optimiertes Ensemble-Mitglied anzeigen");
+        Console.WriteLine("  hermes export-scalping-ensemble-package Ensemble Export Package erzeugen");
+        Console.WriteLine("  hermes scalping-ensemble-package Ensemble Export Package anzeigen");
+        Console.WriteLine("  hermes scalping-ensemble-human-review-package Ensemble Human Review Package anzeigen");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -552,6 +558,10 @@ internal sealed class HermesCli
         WriteField("scalping_optimized_ensemble_drawdown", $"{snapshot.ScalpingOptimizedEnsembleDrawdown:0.####}");
         WriteField("scalping_optimized_ensemble_signal_density", $"{snapshot.ScalpingOptimizedEnsembleSignalDensity:0.####}");
         WriteField("scalping_optimized_ensemble_readiness", snapshot.ScalpingOptimizedEnsembleReadiness);
+        WriteField("scalping_ensemble_package_ready", snapshot.ScalpingEnsemblePackageReady.ToString().ToLowerInvariant());
+        WriteField("latest_scalping_ensemble_package", snapshot.LatestScalpingEnsemblePackage is null ? "-" : DisplayPath(snapshot.LatestScalpingEnsemblePackage));
+        WriteField("scalping_ensemble_export_health", snapshot.ScalpingEnsembleExportHealth);
+        WriteField("scalping_ensemble_human_review_ready", snapshot.ScalpingEnsembleHumanReviewReady.ToString().ToLowerInvariant());
         WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
         WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
@@ -4093,6 +4103,74 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ExportScalpingEnsemblePackage()
+    {
+        WriteHeader("Hermes Scalping Ensemble Export Package");
+        try
+        {
+            var result = new ScalpingEnsembleExportService(BuildStoragePaths(), _runtimeRoot).Export();
+            WriteScalpingEnsembleExportResult(result);
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+        catch (InvalidOperationException ex)
+        {
+            WriteError(ex.Message);
+            WriteSafety();
+            return 1;
+        }
+    }
+
+    private int ShowScalpingEnsemblePackage()
+    {
+        WriteHeader("Hermes Scalping Ensemble Package");
+        var service = new ScalpingEnsembleExportService(BuildStoragePaths(), _runtimeRoot);
+        var manifest = service.LoadManifest();
+        if (manifest is null)
+        {
+            WriteError("scalping_ensemble_package_missing");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteField("Package", manifest.PackageId);
+        WriteField("Status", manifest.Status);
+        WriteMessages("Members", manifest.Members);
+        foreach (var file in manifest.Files)
+        {
+            WriteField(file.Key, DisplayPath(file.Value));
+        }
+
+        WriteField("no_auto_trading", manifest.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", manifest.HumanReviewRequired.ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowScalpingEnsembleHumanReviewPackage()
+    {
+        WriteHeader("Hermes Scalping Ensemble Human Review Package");
+        var path = new ScalpingEnsembleExportService(BuildStoragePaths(), _runtimeRoot).HumanReviewPackagePath;
+        if (!File.Exists(path))
+        {
+            WriteError("scalping_ensemble_human_review_package_missing");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteField("Package", DisplayPath(path));
+        foreach (var line in File.ReadLines(path).Take(140))
+        {
+            Console.WriteLine(line);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowNearMissStrategies()
     {
         WriteHeader("Hermes Near-Miss Strategies");
@@ -6436,6 +6514,22 @@ internal sealed class HermesCli
         WriteField("Signal Density", $"{member.SignalDensityScore:0.####}");
         WriteField("Contribution", member.ContributionReason);
         WriteMessages("Risk Notes", member.RiskNotes);
+    }
+
+    private void WriteScalpingEnsembleExportResult(ScalpingEnsembleExportResult result)
+    {
+        WriteField("Package", result.PackageId);
+        WriteField("Status", result.Status);
+        WriteField("Signal Agent JSON", DisplayPath(result.SignalAgentJsonPath));
+        WriteField("Signal Agent Markdown", DisplayPath(result.SignalAgentMarkdownPath));
+        WriteField("Bot Portfolio JSON", DisplayPath(result.BotPortfolioJsonPath));
+        WriteField("Bot Portfolio Markdown", DisplayPath(result.BotPortfolioMarkdownPath));
+        WriteField("Human Review Package", DisplayPath(result.HumanReviewPackagePath));
+        WriteField("Manifest", DisplayPath(result.ManifestPath));
+        WriteField("no_auto_trading", result.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", result.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", result.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", result.LiveTradingEnabled.ToString().ToLowerInvariant());
     }
 
     private void WriteRiskOfRuinEntry(RiskOfRuinEntry entry)
