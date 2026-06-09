@@ -217,6 +217,9 @@ internal sealed class HermesCli
             "update-current-market-snapshot" => UpdateCurrentMarketSnapshot(),
             "current-market-snapshot" => ShowCurrentMarketSnapshot(),
             "explain-current-market-gap" => ExplainCurrentMarketGap(),
+            "update-ctrader-readonly-quotes" => UpdateCTraderReadonlyQuotes(),
+            "ctrader-readonly-quotes" => ShowCTraderReadonlyQuotes(),
+            "quote-snapshot-status" => ShowQuoteSnapshotStatus(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -433,6 +436,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes update-current-market-snapshot read-only Current Market Snapshot aktualisieren");
         Console.WriteLine("  hermes current-market-snapshot read-only Current Market Snapshot anzeigen");
         Console.WriteLine("  hermes explain-current-market-gap --asset XAUUSD Snapshot-Luecke erklaeren");
+        Console.WriteLine("  hermes update-ctrader-readonly-quotes cTrader read-only Quotes aktualisieren");
+        Console.WriteLine("  hermes ctrader-readonly-quotes cTrader read-only Quotes anzeigen");
+        Console.WriteLine("  hermes quote-snapshot-status cTrader Quote Snapshot Status anzeigen");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -4669,6 +4675,52 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int UpdateCTraderReadonlyQuotes()
+    {
+        WriteHeader("Hermes Update cTrader Read-Only Quotes");
+        var service = new CTraderReadOnlyQuoteService(BuildStoragePaths(), _runtimeRoot);
+        var snapshot = service.UpdateQuotes();
+        WriteQuoteSnapshotStatus(snapshot);
+        foreach (var quote in service.LoadQuotes())
+        {
+            WriteQuoteSnapshot(quote);
+        }
+
+        Console.WriteLine();
+        WriteCurrentMarketSafety();
+        WriteSafety();
+        return snapshot.QuoteSnapshotStatus == "available" ? 0 : 1;
+    }
+
+    private int ShowCTraderReadonlyQuotes()
+    {
+        WriteHeader("Hermes cTrader Read-Only Quotes");
+        var service = new CTraderReadOnlyQuoteService(BuildStoragePaths(), _runtimeRoot);
+        var snapshot = service.LoadOrCreateStatus();
+        WriteQuoteSnapshotStatus(snapshot);
+        foreach (var quote in service.LoadQuotes())
+        {
+            WriteQuoteSnapshot(quote);
+        }
+
+        Console.WriteLine();
+        WriteCurrentMarketSafety();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowQuoteSnapshotStatus()
+    {
+        WriteHeader("Hermes Quote Snapshot Status");
+        var service = new CTraderReadOnlyQuoteService(BuildStoragePaths(), _runtimeRoot);
+        var snapshot = service.LoadOrCreateStatus();
+        WriteQuoteSnapshotStatus(snapshot);
+        Console.WriteLine();
+        WriteCurrentMarketSafety();
+        WriteSafety();
+        return snapshot.QuoteSnapshotStatus == "available" ? 0 : 1;
+    }
+
     private int ShowNearMissStrategies()
     {
         WriteHeader("Hermes Near-Miss Strategies");
@@ -7190,6 +7242,36 @@ internal sealed class HermesCli
         WriteMessages("Current Market Snapshot", ["Read-only market snapshot", "No orders", "No broker action", "No cTrader Order API for trading"]);
         WriteField("no_auto_trading", "true");
         WriteField("human_review_required", "true");
+    }
+
+    private void WriteQuoteSnapshotStatus(CTraderReadOnlyQuoteSnapshot snapshot)
+    {
+        WriteField("Quote Snapshot Status", snapshot.QuoteSnapshotStatus);
+        WriteField("Assets Requested", string.Join(", ", snapshot.AssetsRequested));
+        WriteField("Assets Available", snapshot.AssetsAvailable.Count == 0 ? "none" : string.Join(", ", snapshot.AssetsAvailable));
+        WriteMessages("Warnings", snapshot.Warnings);
+        WriteField("Quotes JSON", DisplayOptionalPath(snapshot.QuotesJsonPath));
+        WriteField("Quotes Markdown", DisplayOptionalPath(snapshot.QuotesMarkdownPath));
+        WriteField("Quote Log", DisplayOptionalPath(snapshot.QuoteLogPath));
+        WriteField("no_auto_trading", snapshot.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", snapshot.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", snapshot.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", snapshot.LiveTradingEnabled.ToString().ToLowerInvariant());
+    }
+
+    private static void WriteQuoteSnapshot(CTraderReadOnlyQuote quote)
+    {
+        WriteSubHeader(quote.Asset);
+        WriteField("Status", quote.Status);
+        WriteField("Bid", quote.Bid.HasValue ? $"{quote.Bid.Value:0.#####}" : "n/a");
+        WriteField("Ask", quote.Ask.HasValue ? $"{quote.Ask.Value:0.#####}" : "n/a");
+        WriteField("Mid", quote.Mid.HasValue ? $"{quote.Mid.Value:0.#####}" : "n/a");
+        WriteField("Spread", quote.Spread.HasValue ? $"{quote.Spread.Value:0.#####}" : "n/a");
+        WriteField("Timestamp UTC", quote.TimestampUtc?.ToString("O") ?? "n/a");
+        WriteField("Source", quote.Source);
+        WriteField("is_live_readonly", quote.IsLiveReadonly.ToString().ToLowerInvariant());
+        WriteField("is_placeholder", quote.IsPlaceholder.ToString().ToLowerInvariant());
+        WriteField("Age Seconds", quote.AgeSeconds.HasValue ? $"{quote.AgeSeconds.Value:0.##}" : "n/a");
     }
 
     private static void WriteScalpingOptimizedMember(ScalpingOptimizedEnsembleMember member)

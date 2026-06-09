@@ -67,6 +67,8 @@ public sealed class CurrentMarketSnapshotService
     public CurrentMarketStatusSnapshot UpdateSnapshot()
     {
         var warnings = new List<string>();
+        var quoteSnapshot = new CTraderReadOnlyQuoteService(_storagePaths, _runtimeRoot).LoadOrCreateStatus();
+        warnings.AddRange(quoteSnapshot.Warnings);
         var snapshots = SupportedAssets.Select(asset => BuildAssetSnapshot(asset, warnings)).ToList();
         var availableAssets = snapshots
             .Where(snapshot => snapshot.Status == "available" && snapshot.IsLiveReadonly && !snapshot.IsPlaceholder)
@@ -214,7 +216,12 @@ public sealed class CurrentMarketSnapshotService
             try
             {
                 using var document = JsonDocument.Parse(File.ReadAllText(path));
-                var root = document.RootElement;
+                var root = ResolveQuoteRoot(document.RootElement, asset);
+                if (root.ValueKind == JsonValueKind.Undefined)
+                {
+                    continue;
+                }
+
                 var quoteRoot = root.ValueKind == JsonValueKind.Object && TryGetObject(root, out var nestedQuote, "quote", "snapshot", asset)
                     ? nestedQuote
                     : root;
@@ -308,6 +315,7 @@ public sealed class CurrentMarketSnapshotService
     {
         yield return Path.Combine(_storagePaths.Root, "market_data", "quotes", $"{asset}.json");
         yield return Path.Combine(_storagePaths.Root, "market_data", "quotes", asset, "latest.json");
+        yield return Path.Combine(_storagePaths.Root, "reports", "current_market", "current_market_quotes.json");
         yield return Path.Combine(_storagePaths.Root, "reports", "readonly_quotes", $"{asset}.json");
         yield return Path.Combine(_storagePaths.Root, "reports", "current_market", "raw", $"{asset}.json");
         yield return Path.Combine(_storagePaths.Root, "snapshots", "market", $"{asset}.json");
@@ -364,6 +372,25 @@ public sealed class CurrentMarketSnapshotService
         }
 
         return false;
+    }
+
+    private static JsonElement ResolveQuoteRoot(JsonElement root, string asset)
+    {
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in root.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.Object
+                    && ReadString(item, "asset")?.Equals(asset, StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    return item;
+                }
+            }
+
+            return default;
+        }
+
+        return root;
     }
 
     private static string? ReadString(JsonElement root, params string[] names)
