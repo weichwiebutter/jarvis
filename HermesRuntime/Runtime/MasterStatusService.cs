@@ -285,6 +285,13 @@ public sealed class MasterStatusService
         var scalpingEnsembleApprovedForForwardTestPreparation = reviewState.ReviewStatus == ScalpingEnsembleReviewStatus.approved_for_forward_test_preparation;
         var scalpingEnsembleReviewHealth = reviewState.Blockers.Count > 0 ? "needs_attention" : "ok";
         var latestScalpingEnsembleReview = File.Exists(reviewService.StatusPath) ? reviewService.StatusPath : null;
+        var demoSignalFeedService = new DemoSignalFeedService(_storagePaths, _runtimeRoot);
+        var demoSignalFeed = demoSignalFeedService.LoadOrCreateStatus();
+        var demoSignalFeedStatus = demoSignalFeed.FeedStatus;
+        var demoSignalsAvailable = demoSignalFeed.DemoSignalsAvailable;
+        var latestDemoSignalCount = demoSignalFeed.SignalCount;
+        var demoSignalFeedHealth = demoSignalFeed.Blockers.Count > 0 ? "needs_attention" : "ok";
+        var demoSignalFeedMode = demoSignalFeed.FeedMode;
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -605,6 +612,11 @@ public sealed class MasterStatusService
                     ["scalping_ensemble_approved_for_forward_test_preparation"] = scalpingEnsembleApprovedForForwardTestPreparation,
                     ["scalping_ensemble_review_health"] = scalpingEnsembleReviewHealth,
                     ["latest_scalping_ensemble_review"] = latestScalpingEnsembleReview,
+                    ["demo_signal_feed_status"] = demoSignalFeedStatus,
+                    ["demo_signals_available"] = demoSignalsAvailable,
+                    ["latest_demo_signal_count"] = latestDemoSignalCount,
+                    ["demo_signal_feed_health"] = demoSignalFeedHealth,
+                    ["demo_signal_feed_mode"] = demoSignalFeedMode,
                     ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
                     ["market_data_xauusd_available"] = marketDataAvailability.XauusdAvailable,
                     ["market_data_eurusd_available"] = marketDataAvailability.EurusdAvailable,
@@ -733,6 +745,11 @@ public sealed class MasterStatusService
             ScalpingEnsembleApprovedForForwardTestPreparation: scalpingEnsembleApprovedForForwardTestPreparation,
             ScalpingEnsembleReviewHealth: scalpingEnsembleReviewHealth,
             LatestScalpingEnsembleReview: latestScalpingEnsembleReview,
+            DemoSignalFeedStatus: demoSignalFeedStatus,
+            DemoSignalsAvailable: demoSignalsAvailable,
+            LatestDemoSignalCount: latestDemoSignalCount,
+            DemoSignalFeedHealth: demoSignalFeedHealth,
+            DemoSignalFeedMode: demoSignalFeedMode,
             MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,
             MarketDataXauusdAvailable: marketDataAvailability.XauusdAvailable,
             MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,

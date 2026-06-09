@@ -200,6 +200,10 @@ internal sealed class HermesCli
             "reject-scalping-ensemble" => RejectScalpingEnsemble(),
             "defer-scalping-ensemble" => DeferScalpingEnsemble(),
             "request-more-scalping-evidence" => RequestMoreScalpingEvidence(),
+            "demo-signal-feed-status" => ShowDemoSignalFeedStatus(),
+            "generate-demo-signals" => GenerateDemoSignals(),
+            "latest-demo-signals" => ShowLatestDemoSignals(),
+            "demo-signal-feed-log" => ShowDemoSignalFeedLog(),
             "near-miss-strategies" => ShowNearMissStrategies(),
             "improvement-experiments" => ShowImprovementExperiments(),
             "run-quality-improvement-experiments" => RunQualityImprovementExperiments(),
@@ -399,6 +403,10 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes reject-scalping-ensemble --reason \"<TEXT>\" Ensemble ablehnen");
         Console.WriteLine("  hermes defer-scalping-ensemble --reason \"<TEXT>\" Ensemble zurueckstellen");
         Console.WriteLine("  hermes request-more-scalping-evidence --reason \"<TEXT>\" mehr Evidenz anfordern");
+        Console.WriteLine("  hermes demo-signal-feed-status Demo Signal Feed Status anzeigen");
+        Console.WriteLine("  hermes generate-demo-signals read-only Demo-Signale erzeugen");
+        Console.WriteLine("  hermes latest-demo-signals letzte Demo-Signale anzeigen");
+        Console.WriteLine("  hermes demo-signal-feed-log Demo Signal Feed Log anzeigen");
         Console.WriteLine("  hermes near-miss-strategies beinahe geeignete verworfene Strategien anzeigen");
         Console.WriteLine("  hermes improvement-experiments naechste Research-Experimente anzeigen");
         Console.WriteLine("  hermes run-quality-improvement-experiments gezielte OOS-/Cost-/Risk-Experimente erzeugen");
@@ -577,6 +585,11 @@ internal sealed class HermesCli
         WriteField("scalping_ensemble_approved_for_forward_test_preparation", snapshot.ScalpingEnsembleApprovedForForwardTestPreparation.ToString().ToLowerInvariant());
         WriteField("scalping_ensemble_review_health", snapshot.ScalpingEnsembleReviewHealth);
         WriteField("latest_scalping_ensemble_review", snapshot.LatestScalpingEnsembleReview is null ? "-" : DisplayPath(snapshot.LatestScalpingEnsembleReview));
+        WriteField("demo_signal_feed_status", snapshot.DemoSignalFeedStatus);
+        WriteField("demo_signals_available", snapshot.DemoSignalsAvailable.ToString().ToLowerInvariant());
+        WriteField("latest_demo_signal_count", snapshot.LatestDemoSignalCount.ToString());
+        WriteField("demo_signal_feed_health", snapshot.DemoSignalFeedHealth);
+        WriteField("demo_signal_feed_mode", snapshot.DemoSignalFeedMode);
         WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
         WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
@@ -4292,6 +4305,84 @@ internal sealed class HermesCli
         }
     }
 
+    private int ShowDemoSignalFeedStatus()
+    {
+        WriteHeader("Hermes Demo Signal Feed Status");
+        var snapshot = new DemoSignalFeedService(BuildStoragePaths(), _runtimeRoot).LoadOrCreateStatus();
+        WriteDemoSignalFeedSnapshot(snapshot);
+        Console.WriteLine();
+        WriteDemoSignalFeedSafety();
+        WriteSafety();
+        return 0;
+    }
+
+    private int GenerateDemoSignals()
+    {
+        WriteHeader("Hermes Generate Demo Signals");
+        var service = new DemoSignalFeedService(BuildStoragePaths(), _runtimeRoot);
+        var snapshot = service.Generate();
+        WriteDemoSignalFeedSnapshot(snapshot);
+        var signals = service.LoadLatestSignals();
+        if (signals.Count > 0)
+        {
+            Console.WriteLine();
+            WriteDemoSignal(signals[0]);
+        }
+
+        Console.WriteLine();
+        WriteDemoSignalFeedSafety();
+        WriteSafety();
+        return snapshot.Blockers.Count > 0 ? 1 : 0;
+    }
+
+    private int ShowLatestDemoSignals()
+    {
+        WriteHeader("Hermes Latest Demo Signals");
+        var service = new DemoSignalFeedService(BuildStoragePaths(), _runtimeRoot);
+        var signals = service.LoadLatestSignals();
+        if (signals.Count == 0)
+        {
+            WriteWarning("Keine Demo-Signale vorhanden.");
+        }
+        else
+        {
+            foreach (var signal in signals)
+            {
+                WriteDemoSignal(signal);
+            }
+        }
+
+        WriteField("JSON", DisplayPath(service.LatestSignalsJsonPath));
+        WriteField("Markdown", DisplayPath(service.LatestSignalsMarkdownPath));
+        Console.WriteLine();
+        WriteDemoSignalFeedSafety();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowDemoSignalFeedLog()
+    {
+        WriteHeader("Hermes Demo Signal Feed Log");
+        var service = new DemoSignalFeedService(BuildStoragePaths(), _runtimeRoot);
+        if (!File.Exists(service.LogPath))
+        {
+            WriteWarning("Demo-Signal-Feed-Log nicht vorhanden.");
+        }
+        else
+        {
+            WriteField("Log", DisplayPath(service.LogPath));
+            foreach (var line in File.ReadLines(service.LogPath).TakeLast(20))
+            {
+                Console.WriteLine(line);
+            }
+        }
+
+        Console.WriteLine();
+        WriteDemoSignalFeedSafety();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowNearMissStrategies()
     {
         WriteHeader("Hermes Near-Miss Strategies");
@@ -6644,6 +6735,49 @@ internal sealed class HermesCli
     {
         WriteMessages("Approval erlaubt", ["Demo-Signal-Nutzung", "Forward-Test-Vorbereitung", "weitere Review-Schritte"]);
         WriteMessages("Approval erlaubt NICHT", ["Live-Trading", "Broker-Orders", "cTrader Order API", "automatische Ausfuehrung"]);
+    }
+
+    private void WriteDemoSignalFeedSnapshot(DemoSignalFeedSnapshot snapshot)
+    {
+        WriteField("Package", snapshot.PackageId);
+        WriteField("Ensemble Review Status", snapshot.EnsembleReviewStatus);
+        WriteField("Feed Status", snapshot.FeedStatus);
+        WriteField("Feed Mode", snapshot.FeedMode);
+        WriteField("Signal Count", snapshot.SignalCount.ToString());
+        WriteField("Demo Signals Available", snapshot.DemoSignalsAvailable.ToString().ToLowerInvariant());
+        WriteMessages("Assets", snapshot.Assets);
+        WriteMessages("Blockers", snapshot.Blockers);
+        WriteMessages("Warnings", snapshot.Warnings);
+        WriteField("Status JSON", DisplayPath(Path.Combine(BuildStoragePaths().Root, "reports", "demo_signal_feed", "demo_signal_feed_status.json")));
+        WriteField("Latest Signals JSON", DisplayPath(snapshot.LatestSignalsJsonPath));
+        WriteField("Latest Signals Markdown", DisplayPath(snapshot.LatestSignalsMarkdownPath));
+        WriteField("Feed Log", DisplayPath(snapshot.FeedLogPath));
+        WriteField("no_auto_trading", snapshot.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", snapshot.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", snapshot.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", snapshot.LiveTradingEnabled.ToString().ToLowerInvariant());
+    }
+
+    private static void WriteDemoSignalFeedSafety()
+    {
+        WriteMessages("Demo Feed Safety", ["Demo Signal Feed only", "no_auto_trading=true", "human_review_required=true", "broker_orders_enabled=false", "live_trading_enabled=false", "no cTrader Order API", "no broker orders"]);
+    }
+
+    private static void WriteDemoSignal(DemoSignalFeedItem signal)
+    {
+        WriteSubHeader($"{signal.Asset} {signal.Timeframe} / {signal.CandidateId}");
+        WriteField("Signal ID", signal.SignalId);
+        WriteField("Created UTC", signal.CreatedUtc.ToString("O"));
+        WriteField("Setup", signal.SetupType);
+        WriteField("Direction", signal.Direction);
+        WriteField("Entry", $"{signal.EntryLevel:0.#####}");
+        WriteField("Stop Loss", $"{signal.StopLoss:0.#####}");
+        WriteField("Take Profit", $"{signal.TakeProfit:0.#####}");
+        WriteField("Invalidation", $"{signal.InvalidationLevel:0.#####}");
+        WriteField("Confidence", $"{signal.Confidence:0.####}");
+        WriteField("Status", signal.Status);
+        WriteField("Reason", signal.Reason);
+        WriteMessages("Risk Notes", signal.RiskNotes);
     }
 
     private static void WriteScalpingOptimizedMember(ScalpingOptimizedEnsembleMember member)
