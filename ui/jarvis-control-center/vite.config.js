@@ -127,6 +127,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/latest-demo-signals'),
     path: 'read-only bridge:/reports/latest-demo-signals',
   },
+  forwardTestStatus: {
+    label: 'Forward Test Status',
+    url: bridgeUrl('/reports/forward-test-status'),
+    path: 'read-only bridge:/reports/forward-test-status',
+  },
 };
 
 export default defineConfig({

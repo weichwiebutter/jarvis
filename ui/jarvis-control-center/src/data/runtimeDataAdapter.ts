@@ -1466,6 +1466,8 @@ function reportFixtureRaw(key) {
       return operatorDashboardMock.demoSignalFeedStatus;
     case 'latestDemoSignals':
       return operatorDashboardMock.latestDemoSignals;
+    case 'forwardTestStatus':
+      return operatorDashboardMock.forwardTestStatus;
     case 'robustStrategies':
       return {
         strategies: operatorDashboardMock.researchInsights.robust_strategies,
@@ -1596,6 +1598,29 @@ export function normalizeMasterStatus(raw = {}) {
     demo_signal_feed_mode: asString(
       firstDefined(raw.demo_signal_feed_mode, raw.demoSignalFeedMode, trading.demo_signal_feed_mode, trading.demoSignalFeedMode),
       'unknown',
+    ),
+    forward_test_status: asString(
+      firstDefined(raw.forward_test_status, raw.forwardTestStatus, trading.forward_test_status, trading.forwardTestStatus),
+      'unknown',
+    ),
+    forward_test_mode: asString(
+      firstDefined(raw.forward_test_mode, raw.forwardTestMode, trading.forward_test_mode, trading.forwardTestMode),
+      'unknown',
+    ),
+    forward_test_assets: asArray(
+      firstDefined(raw.forward_test_assets, raw.forwardTestAssets, trading.forward_test_assets, trading.forwardTestAssets),
+    ).map(String),
+    forward_test_signals_observed: asNumber(
+      firstDefined(raw.forward_test_signals_observed, raw.forwardTestSignalsObserved, trading.forward_test_signals_observed, trading.forwardTestSignalsObserved),
+      0,
+    ),
+    forward_test_health: asString(
+      firstDefined(raw.forward_test_health, raw.forwardTestHealth, trading.forward_test_health, trading.forwardTestHealth),
+      'unknown',
+    ),
+    forward_test_requires_human_review: asBoolean(
+      firstDefined(raw.forward_test_requires_human_review, raw.forwardTestRequiresHumanReview, trading.forward_test_requires_human_review, trading.forwardTestRequiresHumanReview),
+      true,
     ),
     trusted_knowledge: asNumber(
       firstDefined(raw.trusted_knowledge, raw.trustedKnowledge, raw.knowledge_health?.trusted_knowledge, raw.knowledgeHealth?.trustedKnowledge),
@@ -1786,6 +1811,46 @@ export function normalizeLatestDemoSignals(raw = []) {
       false,
     ),
   }));
+}
+
+export function normalizeForwardTestStatus(raw = {}, masterStatus = normalizeMasterStatus({})) {
+  return {
+    forward_test_status: asString(
+      firstDefined(raw.forward_test_status, raw.forwardTestStatus, masterStatus.forward_test_status),
+      'unknown',
+    ),
+    forward_test_mode: asString(
+      firstDefined(raw.forward_test_mode, raw.forwardTestMode, masterStatus.forward_test_mode),
+      'unknown',
+    ),
+    forward_test_assets: asArray(
+      firstDefined(raw.forward_test_assets, raw.forwardTestAssets, masterStatus.forward_test_assets),
+    ).map(String),
+    forward_test_signals_observed: asNumber(
+      firstDefined(raw.forward_test_signals_observed, raw.forwardTestSignalsObserved, masterStatus.forward_test_signals_observed),
+      0,
+    ),
+    forward_test_health: asString(
+      firstDefined(raw.forward_test_health, raw.forwardTestHealth, masterStatus.forward_test_health),
+      'unknown',
+    ),
+    forward_test_requires_human_review: asBoolean(
+      firstDefined(raw.forward_test_requires_human_review, raw.forwardTestRequiresHumanReview, masterStatus.forward_test_requires_human_review),
+      true,
+    ),
+    blockers: asArray(firstDefined(raw.blockers, raw.Blockers)).map(String),
+    warnings: asArray(firstDefined(raw.warnings, raw.Warnings)).map(String),
+    plan_path: asString(firstDefined(raw.plan_path, raw.planPath), ''),
+    log_path: asString(firstDefined(raw.log_path, raw.logPath), ''),
+    latest_observation_count: asNumber(
+      firstDefined(raw.forward_test_signals_observed, raw.forwardTestSignalsObserved, masterStatus.forward_test_signals_observed),
+      0,
+    ),
+    no_auto_trading: asBoolean(firstDefined(raw.no_auto_trading, raw.noAutoTrading), true),
+    human_review_required: asBoolean(firstDefined(raw.human_review_required, raw.humanReviewRequired), true),
+    broker_orders_enabled: asBoolean(firstDefined(raw.broker_orders_enabled, raw.brokerOrdersEnabled), false),
+    live_trading_enabled: asBoolean(firstDefined(raw.live_trading_enabled, raw.liveTradingEnabled), false),
+  };
 }
 
 export function normalizeHumanReviewQueue(raw = {}, masterStatus = normalizeMasterStatus({})) {
@@ -2246,12 +2311,15 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
     rawReports.demoSignalFeedStatus || operatorDashboardMock.demoSignalFeedStatus;
   const latestDemoSignalsRaw =
     rawReports.latestDemoSignals || operatorDashboardMock.latestDemoSignals;
+  const forwardTestRaw =
+    rawReports.forwardTestStatus || operatorDashboardMock.forwardTestStatus;
 
   const resource = normalizeResourceStatus(resourceRaw);
   const cleanup = normalizeCleanupPlan(cleanupRaw);
   const masterStatus = normalizeMasterStatus(masterRaw);
   const demoSignalFeed = normalizeDemoSignalFeedStatus(demoSignalFeedRaw, masterStatus);
   const latestDemoSignals = normalizeLatestDemoSignals(latestDemoSignalsRaw);
+  const forwardTest = normalizeForwardTestStatus(forwardTestRaw, masterStatus);
   const storageRoot = asString(
     firstDefined(
       storageRaw.storage_root,
@@ -2308,6 +2376,7 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
     cleanup,
     demoSignalFeed,
     latestDemoSignals,
+    forwardTest,
     reports,
     logLines,
     dataSource,
@@ -2351,6 +2420,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       nightlyState: operatorDashboardMock.nightlyState,
       demoSignalFeedStatus: operatorDashboardMock.demoSignalFeedStatus,
       latestDemoSignals: operatorDashboardMock.latestDemoSignals,
+      forwardTestStatus: operatorDashboardMock.forwardTestStatus,
       researchInsights: operatorDashboardMock.researchInsights,
       regimeSummary: operatorDashboardMock.regimeSummary,
       strategyRegimePerformance: operatorDashboardMock.strategyRegimePerformance,
@@ -2411,6 +2481,7 @@ export async function loadOperatorDashboard() {
         nightlyState: dashboard.nightlyState,
         demoSignalFeedStatus: dashboard.demoSignalFeedStatus,
         latestDemoSignals: dashboard.latestDemoSignals,
+        forwardTestStatus: dashboard.forwardTestStatus,
         researchInsights: dashboard.researchInsights,
         robustStrategies: dashboard.robustStrategies,
         overfitReport: dashboard.overfitReport,

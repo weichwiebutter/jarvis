@@ -310,6 +310,59 @@ function DemoSignalFeedCard({ masterStatus, demoSignalFeed, latestDemoSignals })
   );
 }
 
+function ForwardTestCard({ masterStatus, forwardTest }) {
+  const warnings = forwardTest.warnings?.length ? forwardTest.warnings : ['none'];
+  const blockers = forwardTest.blockers?.length ? forwardTest.blockers : [];
+
+  return (
+    <OperatorCard
+      badge={forwardTest.forward_test_status || 'unknown'}
+      title="Forward Test"
+      tone={statusTone(forwardTest.forward_test_health || forwardTest.forward_test_status)}
+    >
+      <div className="operator-metric-grid">
+        <MiniMetric label="Status" value={forwardTest.forward_test_status || 'n/a'} tone={statusTone(forwardTest.forward_test_status)} />
+        <MiniMetric label="Mode" value={forwardTest.forward_test_mode || 'n/a'} tone="info" />
+        <MiniMetric label="Assets" value={forwardTest.forward_test_assets?.join(', ') || masterStatus.forward_test_assets?.join(', ') || 'n/a'} tone="info" />
+        <MiniMetric label="Signals Observed" value={formatNumber(forwardTest.forward_test_signals_observed ?? masterStatus.forward_test_signals_observed)} tone="info" />
+        <MiniMetric label="Health" value={forwardTest.forward_test_health || masterStatus.forward_test_health || 'n/a'} tone={statusTone(forwardTest.forward_test_health || masterStatus.forward_test_health)} />
+        <MiniMetric label="Human Review" value={String(forwardTest.forward_test_requires_human_review ?? masterStatus.forward_test_requires_human_review ?? true)} tone={(forwardTest.forward_test_requires_human_review ?? true) ? 'good' : 'danger'} />
+      </div>
+
+      <div className="operator-warning-list" aria-label="Forward Test Warnings">
+        {warnings.map((warning) => (
+          <span key={warning}>{warning}</span>
+        ))}
+      </div>
+
+      {blockers.length ? (
+        <div className="operator-token-list" aria-label="Forward Test Blockers">
+          {blockers.map((blocker) => (
+            <span key={blocker}>{blocker}</span>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="operator-metric-grid">
+        <MiniMetric label="Plan Path" value={forwardTest.plan_path || 'n/a'} tone="info" />
+        <MiniMetric label="Log Path" value={forwardTest.log_path || 'n/a'} tone="info" />
+        <MiniMetric label="Latest Observation Count" value={formatNumber(forwardTest.latest_observation_count)} tone="info" />
+      </div>
+
+      <div className="operator-safety-flags">
+        <StatusPill tone="warn">Observation only</StatusPill>
+        <StatusPill tone="warn">Demo signal tracking</StatusPill>
+        <StatusPill tone="good">no_auto_trading=true</StatusPill>
+        <StatusPill tone="good">human_review_required=true</StatusPill>
+        <StatusPill tone="good">broker_orders_enabled=false</StatusPill>
+        <StatusPill tone="good">live_trading_enabled=false</StatusPill>
+      </div>
+
+      <p>Read-only panel. No runtime commands, no trading actions, no broker actions, no cTrader Order API.</p>
+    </OperatorCard>
+  );
+}
+
 function OperatorCard({ title, badge, tone = 'info', children }) {
   return (
     <article className={`operator-card ${toneClass(tone)}`}>
@@ -553,6 +606,11 @@ export function OperatorDashboardPanel() {
         <DemoSignalFeedCard
           demoSignalFeed={operatorState.demoSignalFeed}
           latestDemoSignals={operatorState.latestDemoSignals}
+          masterStatus={operatorState.masterStatus}
+        />
+
+        <ForwardTestCard
+          forwardTest={operatorState.forwardTest}
           masterStatus={operatorState.masterStatus}
         />
 
