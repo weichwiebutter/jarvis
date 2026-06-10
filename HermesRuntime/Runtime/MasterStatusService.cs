@@ -266,6 +266,11 @@ public sealed class MasterStatusService
         var scalpingAssetsWithData = multiAssetRoadmap?.AssetsWithData ?? [];
         var scalpingAssetsNeedingData = multiAssetRoadmap?.AssetsNeedingData ?? [];
         var scalpingMultiAssetRoadmapHealth = multiAssetRoadmap?.RoadmapHealth ?? "missing";
+        var ger40Roadmap = multiAssetRoadmap?.Assets.FirstOrDefault(entry => entry.Asset.Equals("GER40", StringComparison.OrdinalIgnoreCase));
+        var ger40QuoteMappingStatus = ger40Roadmap?.QuoteMappingStatus ?? "missing";
+        var ger40HistoricalDataStatus = ger40Roadmap?.HistoricalDataStatus ?? "missing";
+        var ger40ResearchStatus = ger40Roadmap?.ResearchStatus ?? "missing";
+        var ger40SignalAgentSpecStatus = ger40Roadmap?.SignalAgentSpecStatus ?? "missing";
         var eurusdCertifiedCandidates = certificationReports.Count(report => report.Asset.Equals("EURUSD", StringComparison.OrdinalIgnoreCase) && report.Status == ScalpingCertificationStatus.certified_candidate);
         var ensembleCandidate = new ScalpingPortfolioService(_storagePaths, _runtimeRoot).LoadEnsembleCandidate();
         var ensembleCandidateStatus = ensembleCandidate?.Status ?? "missing";
@@ -634,6 +639,10 @@ public sealed class MasterStatusService
                     ["scalping_assets_with_data"] = scalpingAssetsWithData,
                     ["scalping_assets_needing_data"] = scalpingAssetsNeedingData,
                     ["scalping_multi_asset_roadmap_health"] = scalpingMultiAssetRoadmapHealth,
+                    ["ger40_quote_mapping_status"] = ger40QuoteMappingStatus,
+                    ["ger40_historical_data_status"] = ger40HistoricalDataStatus,
+                    ["ger40_research_status"] = ger40ResearchStatus,
+                    ["ger40_signal_agent_spec_status"] = ger40SignalAgentSpecStatus,
                     ["eurusd_certified_candidates"] = eurusdCertifiedCandidates,
                     ["ensemble_candidate_status"] = ensembleCandidateStatus,
                     ["ensemble_candidate_members"] = ensembleCandidateMembers,
@@ -792,6 +801,10 @@ public sealed class MasterStatusService
             ScalpingAssetsWithData: scalpingAssetsWithData,
             ScalpingAssetsNeedingData: scalpingAssetsNeedingData,
             ScalpingMultiAssetRoadmapHealth: scalpingMultiAssetRoadmapHealth,
+            Ger40QuoteMappingStatus: ger40QuoteMappingStatus,
+            Ger40HistoricalDataStatus: ger40HistoricalDataStatus,
+            Ger40ResearchStatus: ger40ResearchStatus,
+            Ger40SignalAgentSpecStatus: ger40SignalAgentSpecStatus,
             EurusdCertifiedCandidates: eurusdCertifiedCandidates,
             EnsembleCandidateStatus: ensembleCandidateStatus,
             EnsembleCandidateMembers: ensembleCandidateMembers,

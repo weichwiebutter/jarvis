@@ -9,7 +9,10 @@ public sealed record ScalpingAssetRoadmapEntry(
     string MarketType,
     bool DataAvailable,
     string DataGap,
+    string QuoteMappingStatus,
+    string HistoricalDataStatus,
     string ResearchStatus,
+    string SignalAgentSpecStatus,
     int CertifiedCandidates,
     string NextAction,
     IReadOnlyList<string> RiskNotes);
@@ -152,6 +155,11 @@ public sealed class ScalpingMultiAssetRoadmapService
         IReadOnlyList<ScalpingCertificationReport> certifications)
     {
         var quality = marketData.BuildQuality(asset.Asset, marketDataAvailability);
+        var research = new ScalpingResearchService(marketData.StoragePaths, marketData.RuntimeRoot).LoadAssetReport(asset.Asset);
+        var expansions = new ScalpingRobustnessExpansionService(marketData.StoragePaths, marketData.RuntimeRoot).LoadReports()
+            .Where(report => report.Asset.Equals(asset.Asset, StringComparison.OrdinalIgnoreCase)
+                || asset.Aliases.Any(alias => report.Asset.Equals(alias, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
         var certified = certifications.Count(report => report.Asset.Equals(asset.Asset, StringComparison.OrdinalIgnoreCase)
             || asset.Aliases.Any(alias => report.Asset.Equals(alias, StringComparison.OrdinalIgnoreCase)));
         var dataAvailable = quality.DataGaps.Count == 0;
@@ -162,6 +170,10 @@ public sealed class ScalpingMultiAssetRoadmapService
             || asset.Aliases.Any(alias => knownMapper.TryMap(alias, out _));
         var mappingConfigured = configuredMapper.TryMap(asset.Asset, out _)
             || asset.Aliases.Any(alias => configuredMapper.TryMap(alias, out _));
+        var quoteMappingStatus = !mappingConfigured
+            ? "mapping_missing"
+            : quoteAvailable ? "quote_available" : "quote_mapping_pending";
+        var historicalDataStatus = dataAvailable ? "historical_data_ready" : "historical_data_missing";
         var gapParts = new List<string>();
         if (!mappingConfigured) gapParts.Add(mappingKnown ? "mapping_not_enabled_in_config" : "mapping_missing");
         if (!quoteAvailable) gapParts.Add(currentMarketStatus.AssetsAvailable.Contains("GER40", StringComparer.OrdinalIgnoreCase) && asset.Aliases.Any(alias => alias.Equals("GER40", StringComparison.OrdinalIgnoreCase))
@@ -169,20 +181,25 @@ public sealed class ScalpingMultiAssetRoadmapService
             : "quote_unavailable");
         gapParts.AddRange(quality.DataGaps);
         var dataGap = gapParts.Count == 0 ? "-" : string.Join(",", gapParts.Distinct(StringComparer.OrdinalIgnoreCase));
+        var finalCandidates = expansions.Count(report => report.Status == ScalpingExpansionStatus.final_candidate);
+        var robustCandidates = research?.Candidates.Count(candidate => candidate.ValidationStatus == ScalpingValidationStatus.robust_candidate) ?? 0;
+        var totalCandidates = research?.Candidates.Count ?? 0;
+        var signalAgentSpecStatus = certified > 0 ? "signal_agent_spec_pending" : "not_ready";
         var researchStatus = certified > 0
-            ? "certified_candidate_available"
-            : !mappingConfigured ? "mapping_missing"
-            : quoteAvailable && quality.FileCount == 0 ? "quote_available_historical_data_missing"
-            : quoteAvailable && dataAvailable ? "ready_for_research"
-            : quoteAvailable ? "quote_available_historical_data_partial"
-            : quality.FileCount > 0 && dataAvailable ? "historical_data_ready_quote_missing"
-            : quality.FileCount > 0 ? "historical_data_partial_quote_missing"
-            : "quote_and_historical_data_missing";
+            ? "certified_candidates_available"
+            : finalCandidates > 0 ? "certification_pending"
+            : robustCandidates > 0 || totalCandidates > 0 ? "candidates_found"
+            : research is not null ? "research_started"
+            : dataAvailable ? "historical_data_ready"
+            : quoteMappingStatus == "quote_mapping_pending" ? "quote_mapping_pending"
+            : "historical_data_missing";
         var nextAction = certified > 0
-            ? "search_additional_diverse_candidates"
-            : researchStatus == "ready_for_research" ? "run_scalping_research"
-            : researchStatus == "quote_available_historical_data_missing" || researchStatus == "quote_available_historical_data_partial" ? "import_market_data"
-            : researchStatus == "historical_data_ready_quote_missing" || researchStatus == "historical_data_partial_quote_missing" ? "validate_ctrader_symbol_mapping"
+            ? "export_signal_agent_spec"
+            : researchStatus == "certification_pending" ? "run_scalping_certification"
+            : researchStatus == "candidates_found" ? "run_scalping_robustness_expansion"
+            : researchStatus == "research_started" ? "review_candidate_quality_and_continue_search"
+            : dataAvailable ? "run_scalping_research"
+            : quoteMappingStatus == "quote_mapping_pending" ? "validate_ctrader_symbol_mapping"
             : "import_market_data";
         var riskNotes = asset.RiskNotes
             .Concat(["no_strategy_transfer_without_asset_specific_validation", "requires_backtest_oos_walkforward_robustness_certification_human_review"])
@@ -195,7 +212,10 @@ public sealed class ScalpingMultiAssetRoadmapService
             MarketType: asset.MarketType,
             DataAvailable: dataAvailable,
             DataGap: dataGap,
+            QuoteMappingStatus: quoteMappingStatus,
+            HistoricalDataStatus: historicalDataStatus,
             ResearchStatus: researchStatus,
+            SignalAgentSpecStatus: signalAgentSpecStatus,
             CertifiedCandidates: certified,
             NextAction: nextAction,
             RiskNotes: riskNotes);

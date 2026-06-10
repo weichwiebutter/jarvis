@@ -655,6 +655,10 @@ internal sealed class HermesCli
         WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_quality_health", snapshot.MarketDataQualityHealth);
+        WriteField("ger40_quote_mapping_status", snapshot.Ger40QuoteMappingStatus);
+        WriteField("ger40_historical_data_status", snapshot.Ger40HistoricalDataStatus);
+        WriteField("ger40_research_status", snapshot.Ger40ResearchStatus);
+        WriteField("ger40_signal_agent_spec_status", snapshot.Ger40SignalAgentSpecStatus);
         WriteField("scalping_data_gap", snapshot.ScalpingDataGap);
         WriteField("scalping_robustness_expanded", snapshot.ScalpingRobustnessExpanded.ToString());
         WriteField("scalping_final_candidates", snapshot.ScalpingFinalCandidates.ToString());
@@ -687,6 +691,7 @@ internal sealed class HermesCli
         WriteField("human_review_required", snapshot.HumanReviewRequired.ToString().ToLowerInvariant());
         WriteField("broker_orders_enabled", snapshot.BrokerOrdersEnabled.ToString().ToLowerInvariant());
         WriteField("live_trading_enabled", snapshot.LiveTradingEnabled.ToString().ToLowerInvariant());
+        WriteField("research_only", "true");
         WriteField("JSON Report", DisplayPath(reportPath));
         WriteMessages("Top Blockers", snapshot.TopBlockers.Take(8).ToList());
         WriteMessages("Next Recommended Actions", snapshot.NextRecommendedActions.Take(8).ToList());
@@ -7079,7 +7084,10 @@ internal sealed class HermesCli
         WriteField("Market Type", entry.MarketType);
         WriteField("Data Available", entry.DataAvailable.ToString().ToLowerInvariant());
         WriteField("Data Gap", entry.DataGap);
+        WriteField("Quote Mapping Status", entry.QuoteMappingStatus);
+        WriteField("Historical Data Status", entry.HistoricalDataStatus);
         WriteField("Research Status", entry.ResearchStatus);
+        WriteField("Signal Agent Spec Status", entry.SignalAgentSpecStatus);
         WriteField("Certified Candidates", entry.CertifiedCandidates.ToString());
         WriteField("Next Action", entry.NextAction);
         WriteMessages("Risk Notes", entry.RiskNotes);
@@ -7392,6 +7400,7 @@ internal sealed class HermesCli
         WriteField("human_review_required", snapshot.HumanReviewRequired.ToString().ToLowerInvariant());
         WriteField("broker_orders_enabled", snapshot.BrokerOrdersEnabled.ToString().ToLowerInvariant());
         WriteField("live_trading_enabled", snapshot.LiveTradingEnabled.ToString().ToLowerInvariant());
+        WriteField("research_only", "true");
     }
 
     private static void WriteQuoteSnapshot(CTraderReadOnlyQuote quote)
@@ -10319,7 +10328,7 @@ internal sealed class HermesCli
 
     private static void WriteSafety()
     {
-        Console.WriteLine("Safety: keine Trading-Ausfuehrung, keine Broker-Orders, no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false.");
+        Console.WriteLine("Safety: keine Trading-Ausfuehrung, keine Broker-Orders, no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true.");
     }
 
     private static void WriteWarning(string message) => WriteColored($"WARN: {message}", ConsoleColor.Yellow);

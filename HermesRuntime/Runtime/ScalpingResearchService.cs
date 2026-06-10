@@ -173,8 +173,18 @@ public sealed record ScalpingResearchReport(
 public sealed class ScalpingResearchService
 {
     public const string DefaultAsset = "XAUUSD";
+    private static readonly Dictionary<string, string> AssetAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["GOLD"] = "XAUUSD",
+        ["DE40"] = "GER40",
+        ["GERMANY40"] = "GER40",
+        ["GERMANY 40"] = "GER40",
+        ["DAX"] = "GER40",
+        ["DAX40"] = "GER40"
+    };
     private readonly StoragePaths _storagePaths;
     private readonly string _runtimeRoot;
+    private string? _resolvedRoot;
 
     public ScalpingResearchService(StoragePaths storagePaths, string? runtimeRoot = null)
     {
@@ -182,8 +192,9 @@ public sealed class ScalpingResearchService
         _runtimeRoot = runtimeRoot ?? Directory.GetCurrentDirectory();
     }
 
-    public string Root => Path.Combine(_storagePaths.Root, "reports", "scalping_research");
+    public string Root => _resolvedRoot ??= ResolveRoot();
     public string LatestReportPath => Path.Combine(Root, "latest_scalping_research.json");
+    public string AssetReportsDirectory => Path.Combine(Root, "assets");
     public string BotSpecDirectory => Path.Combine(_storagePaths.Root, "reports", "scalping_bot_specs");
     public string SignalSpecDirectory => Path.Combine(_storagePaths.Root, "reports", "signal_agent_specs");
 
@@ -216,6 +227,9 @@ public sealed class ScalpingResearchService
 
         Directory.CreateDirectory(Root);
         File.WriteAllText(LatestReportPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
+        var assetDirectory = Path.Combine(AssetReportsDirectory, normalizedAsset);
+        Directory.CreateDirectory(assetDirectory);
+        File.WriteAllText(Path.Combine(assetDirectory, "latest_scalping_research.json"), JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
         return report;
     }
 
@@ -225,6 +239,15 @@ public sealed class ScalpingResearchService
     {
         if (!File.Exists(LatestReportPath)) return null;
         return JsonSerializer.Deserialize<ScalpingResearchReport>(File.ReadAllText(LatestReportPath), JsonDefaults.SnapshotReadOptions);
+    }
+
+    public ScalpingResearchReport? LoadAssetReport(string? asset)
+    {
+        var normalizedAsset = NormalizeAsset(asset);
+        var path = Path.Combine(AssetReportsDirectory, normalizedAsset, "latest_scalping_research.json");
+        return File.Exists(path)
+            ? JsonSerializer.Deserialize<ScalpingResearchReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions)
+            : null;
     }
 
     public ScalpingStrategyCandidate? FindCandidate(string id) => LoadReport()?.Candidates.FirstOrDefault(candidate => candidate.CandidateId.Equals(id, StringComparison.OrdinalIgnoreCase));
@@ -447,12 +470,44 @@ public sealed class ScalpingResearchService
             LiveTradingEnabled: false);
     }
 
-    private static string NormalizeAsset(string? asset) => string.IsNullOrWhiteSpace(asset) ? DefaultAsset : asset.Trim().ToUpperInvariant();
+    private static string NormalizeAsset(string? asset)
+    {
+        var normalized = string.IsNullOrWhiteSpace(asset) ? DefaultAsset : asset.Trim().ToUpperInvariant();
+        return AssetAliases.TryGetValue(normalized, out var canonical) ? canonical : normalized;
+    }
 
     private static string StableId(string asset, string setup, int index)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes($"{asset}:{setup}:{index}"));
         return $"scalp_{asset.ToLowerInvariant()}_{Convert.ToHexString(bytes)[..10].ToLowerInvariant()}";
+    }
+
+    private string ResolveRoot()
+    {
+        var preferred = Path.Combine(_storagePaths.Root, "reports", "scalping_research");
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            var probePath = Path.Combine(preferred, ".write_probe");
+            File.WriteAllText(probePath, "probe");
+            File.Delete(probePath);
+            return preferred;
+        }
+        catch (IOException)
+        {
+            return ResolveFallbackRoot();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ResolveFallbackRoot();
+        }
+    }
+
+    private string ResolveFallbackRoot()
+    {
+        var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "scalping_research");
+        Directory.CreateDirectory(fallback);
+        return fallback;
     }
 
     private static string BotMarkdown(CTraderBotSpecDraft spec) => $"""

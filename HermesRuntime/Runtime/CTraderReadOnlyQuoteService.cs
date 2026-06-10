@@ -90,6 +90,96 @@ public sealed class CTraderReadOnlyQuoteService
         return quotes ?? [];
     }
 
+    public IReadOnlyList<string> ExplainAssetGap(string asset)
+    {
+        var normalizedAsset = asset.Trim().ToUpperInvariant();
+        var configLoad = new CTraderOpenApiConfigLoader().Load(_runtimeRoot);
+        var tokenStore = new CTraderTokenStore(_storagePaths);
+        var token = tokenStore.LoadToken();
+        var mapper = new CTraderSymbolMapper(configLoad.Config.AllowedSymbols);
+        var reasons = new List<string>();
+        var snapshot = LoadOrCreateStatus();
+        var quote = LoadQuotes().FirstOrDefault(item => item.Asset.Equals(normalizedAsset, StringComparison.OrdinalIgnoreCase));
+
+        reasons.Add($"asset={normalizedAsset}");
+        reasons.Add($"quote_snapshot_status={snapshot.QuoteSnapshotStatus}");
+        reasons.Add($"quote_snapshot_file_exists={File.Exists(QuotesJsonPath).ToString().ToLowerInvariant()}");
+        reasons.Add($"quote_snapshot_markdown_exists={File.Exists(QuotesMarkdownPath).ToString().ToLowerInvariant()}");
+        reasons.Add($"token_store_exists={File.Exists(tokenStore.TokenStorePath).ToString().ToLowerInvariant()}");
+        reasons.Add($"token_loaded={(token?.HasAccessToken ?? false).ToString().ToLowerInvariant()}");
+        reasons.Add($"ctrader_local_config_loaded={configLoad.LocalConfigLoaded.ToString().ToLowerInvariant()}");
+        reasons.Add($"ctrader_no_orders={configLoad.Config.NoOrders.ToString().ToLowerInvariant()}");
+        reasons.Add($"ctrader_read_only_market_data={configLoad.Config.ReadOnlyMarketData.ToString().ToLowerInvariant()}");
+        reasons.Add($"ctrader_environment={configLoad.Config.Environment}");
+        reasons.Add($"assets_requested={string.Join(",", snapshot.AssetsRequested)}");
+
+        if (mapper.TryMap(normalizedAsset, out var mapping))
+        {
+            reasons.Add($"local_ctrader_symbol_name={mapping.CTraderSymbolName}");
+            reasons.Add($"local_ctrader_symbol_id={mapping.CTraderSymbolId}");
+            reasons.Add($"local_aliases={string.Join(",", mapping.Aliases)}");
+            reasons.Add($"local_mapping_stub={mapping.StubMapping.ToString().ToLowerInvariant()}");
+        }
+        else
+        {
+            reasons.Add("local_mapping_missing=true");
+        }
+
+        if (quote is not null)
+        {
+            reasons.Add($"quote_status={quote.Status}");
+            reasons.Add($"quote_source={quote.Source}");
+            reasons.Add($"quote_timestamp_utc={(quote.TimestampUtc?.ToString("O") ?? "n/a")}");
+            reasons.Add($"quote_age_seconds={(quote.AgeSeconds.HasValue ? $"{quote.AgeSeconds.Value:0.##}" : "n/a")}");
+            reasons.Add($"market_closed_or_quote_too_old={(quote.Status is "stale" or "unavailable" && quote.TimestampUtc.HasValue).ToString().ToLowerInvariant()}");
+        }
+        else
+        {
+            reasons.Add("quote_record_missing=true");
+        }
+
+        reasons.AddRange(snapshot.Warnings
+            .Where(warning =>
+                warning.Contains(normalizedAsset, StringComparison.OrdinalIgnoreCase)
+                || warning.Contains("ctrader_readonly_quote", StringComparison.OrdinalIgnoreCase)
+                || warning.Contains("symbols_missing", StringComparison.OrdinalIgnoreCase))
+            .Select(warning => $"snapshot_warning={warning}"));
+
+        var connectionWarning = snapshot.Warnings.FirstOrDefault(warning => warning.StartsWith("ctrader_readonly_quote_unavailable:", StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(connectionWarning))
+        {
+            reasons.Add("connection_ok=false");
+            reasons.Add("symbol_visible_in_broker_account=unknown");
+            reasons.Add("next_manual_action=verify_ctrader_readonly_connectivity_then_refresh_quote_snapshot");
+        }
+        else if (snapshot.Warnings.Any(warning => warning.StartsWith($"quote_symbol_unresolved:{normalizedAsset}", StringComparison.OrdinalIgnoreCase)))
+        {
+            reasons.Add("connection_ok=true");
+            reasons.Add("symbol_visible_in_broker_account=false");
+            reasons.Add("next_manual_action=compare_broker_symbol_list_with_local_aliases_and_update_mapping");
+        }
+        else if (quote?.Status == "stale")
+        {
+            reasons.Add("connection_ok=true");
+            reasons.Add("symbol_visible_in_broker_account=true");
+            reasons.Add("next_manual_action=refresh_during_market_session_and_check_quote_age");
+        }
+        else if (quote?.Status == "available")
+        {
+            reasons.Add("connection_ok=true");
+            reasons.Add("symbol_visible_in_broker_account=true");
+            reasons.Add("next_manual_action=none");
+        }
+        else
+        {
+            reasons.Add("connection_ok=unknown");
+            reasons.Add("symbol_visible_in_broker_account=unknown");
+            reasons.Add("next_manual_action=run_ctrader_readonly_quotes_and_compare_resolved_symbol_names");
+        }
+
+        return reasons;
+    }
+
     private IReadOnlyList<CTraderReadOnlyQuote> LoadQuotesFromCTrader(List<string> warnings)
     {
         var loader = new CTraderOpenApiConfigLoader();
@@ -171,7 +261,7 @@ public sealed class CTraderReadOnlyQuoteService
         {
         }
 
-        var symbols = await ResolveSymbolsAsync(webSocket, config, accountId, cts.Token, symbolsListReq, symbolsListRes, errorRes, heartbeatEvent).ConfigureAwait(false);
+        var symbols = await ResolveSymbolsAsync(webSocket, config, accountId, warnings, cts.Token, symbolsListReq, symbolsListRes, errorRes, heartbeatEvent).ConfigureAwait(false);
         var requestedSymbols = symbols
             .Where(item => Assets.Contains(item.HermesSymbol, StringComparer.OrdinalIgnoreCase))
             .ToList();
@@ -285,6 +375,7 @@ public sealed class CTraderReadOnlyQuoteService
         ClientWebSocket webSocket,
         CTraderOpenApiConfig config,
         long accountId,
+        List<string> warnings,
         CancellationToken cancellationToken,
         int symbolsListReq,
         int symbolsListRes,
@@ -312,6 +403,7 @@ public sealed class CTraderReadOnlyQuoteService
         var resolved = new List<ResolvedQuoteSymbol>();
         foreach (var mapping in mappings)
         {
+            var resolvedForMapping = false;
             foreach (var symbol in symbols.EnumerateArray())
             {
                 var name = ReadString(symbol, "symbolName", "symbol_name", "name");
@@ -330,8 +422,14 @@ public sealed class CTraderReadOnlyQuoteService
                     || expectedNames.Any(expected => normalizedName.Contains(expected, StringComparison.OrdinalIgnoreCase)))
                 {
                     resolved.Add(new ResolvedQuoteSymbol(mapping.HermesSymbol, symbolId.Value, name));
+                    resolvedForMapping = true;
                     break;
                 }
+            }
+
+            if (!resolvedForMapping)
+            {
+                warnings.Add($"quote_symbol_unresolved:{mapping.HermesSymbol}:local_name={mapping.CTraderSymbolName}:aliases={string.Join("|", mapping.Aliases)}");
             }
         }
 

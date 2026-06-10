@@ -70,6 +70,7 @@ public sealed class ScalpingCertificationService
 {
     private readonly StoragePaths _storagePaths;
     private readonly string _runtimeRoot;
+    private string? _resolvedCertificationDirectory;
 
     public ScalpingCertificationService(StoragePaths storagePaths, string runtimeRoot)
     {
@@ -77,7 +78,7 @@ public sealed class ScalpingCertificationService
         _runtimeRoot = runtimeRoot;
     }
 
-    public string CertificationDirectory => Path.Combine(_storagePaths.Root, "reports", "scalping_research", "certification");
+    public string CertificationDirectory => _resolvedCertificationDirectory ??= ResolveCertificationDirectory();
 
     public IReadOnlyList<ScalpingCertificationReport> CertifyAllFinal()
     {
@@ -169,6 +170,34 @@ public sealed class ScalpingCertificationService
             .OrderByDescending(report => report.CertifiedCandidate)
             .ThenBy(report => report.CandidateId, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private string ResolveCertificationDirectory()
+    {
+        var preferredRoot = Path.Combine(_storagePaths.Root, "reports", "scalping_research");
+        try
+        {
+            Directory.CreateDirectory(preferredRoot);
+            var probePath = Path.Combine(preferredRoot, ".write_probe");
+            File.WriteAllText(probePath, "probe");
+            File.Delete(probePath);
+            return Path.Combine(preferredRoot, "certification");
+        }
+        catch (IOException)
+        {
+            return ResolveFallbackCertificationDirectory();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ResolveFallbackCertificationDirectory();
+        }
+    }
+
+    private string ResolveFallbackCertificationDirectory()
+    {
+        var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "scalping_research", "certification");
+        Directory.CreateDirectory(fallback);
+        return fallback;
     }
 
     private static IEnumerable<ScalpingPeriodValidationSegment> BuildPeriods(ScalpingStrategyCandidate candidate)

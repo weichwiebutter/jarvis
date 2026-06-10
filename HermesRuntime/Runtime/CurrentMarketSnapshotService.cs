@@ -167,6 +167,7 @@ public sealed class CurrentMarketSnapshotService
         var configLoad = new CTraderOpenApiConfigLoader().Load(_runtimeRoot);
         var defaultMapper = new CTraderSymbolMapper([]);
         var configuredMapper = new CTraderSymbolMapper(configLoad.Config.AllowedSymbols);
+        var quoteService = new CTraderReadOnlyQuoteService(_storagePaths, _runtimeRoot);
 
         reasons.Add($"asset={normalizedAsset}");
         reasons.Add($"requested_asset={asset.Trim().ToUpperInvariant()}");
@@ -199,6 +200,8 @@ public sealed class CurrentMarketSnapshotService
                 reasons.Add($"market_snapshot_unavailable:{snapshot.Status}");
             }
         }
+
+        reasons.AddRange(quoteService.ExplainAssetGap(normalizedAsset));
 
         return reasons;
     }

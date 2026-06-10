@@ -101,6 +101,7 @@ public sealed class ScalpingRobustnessExpansionService
 {
     private readonly StoragePaths _storagePaths;
     private readonly string _runtimeRoot;
+    private string? _resolvedRoot;
 
     public ScalpingRobustnessExpansionService(StoragePaths storagePaths, string runtimeRoot)
     {
@@ -108,7 +109,7 @@ public sealed class ScalpingRobustnessExpansionService
         _runtimeRoot = runtimeRoot;
     }
 
-    public string Root => Path.Combine(_storagePaths.Root, "reports", "scalping_research");
+    public string Root => _resolvedRoot ??= ResolveRoot();
     public string MonteCarloDirectory => Path.Combine(Root, "monte_carlo");
     public string ParameterSensitivityDirectory => Path.Combine(Root, "parameter_sensitivity");
     public string RegimeValidationDirectory => Path.Combine(Root, "regime_validation");
@@ -235,6 +236,34 @@ public sealed class ScalpingRobustnessExpansionService
         Directory.CreateDirectory(MonteCarloDirectory);
         File.WriteAllText(Path.Combine(MonteCarloDirectory, $"{candidate.CandidateId}.json"), JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
         return report;
+    }
+
+    private string ResolveRoot()
+    {
+        var preferred = Path.Combine(_storagePaths.Root, "reports", "scalping_research");
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            var probePath = Path.Combine(preferred, ".write_probe");
+            File.WriteAllText(probePath, "probe");
+            File.Delete(probePath);
+            return preferred;
+        }
+        catch (IOException)
+        {
+            return ResolveFallbackRoot();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ResolveFallbackRoot();
+        }
+    }
+
+    private string ResolveFallbackRoot()
+    {
+        var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "scalping_research");
+        Directory.CreateDirectory(fallback);
+        return fallback;
     }
 
     private ScalpingParameterSensitivityReport BuildSensitivity(ScalpingStrategyCandidate candidate)

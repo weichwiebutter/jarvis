@@ -101,6 +101,9 @@ public sealed class MarketDataAvailabilityService
         _runtimeRoot = runtimeRoot;
     }
 
+    public StoragePaths StoragePaths => _storagePaths;
+    public string RuntimeRoot => _runtimeRoot;
+
     public string ReportsDirectory => _resolvedReportsDirectory ??= ResolveReportsDirectory();
     public string AvailabilityPath => Path.Combine(ReportsDirectory, "market_data_availability.json");
     public string QualityPath => Path.Combine(ReportsDirectory, "market_data_quality.json");
