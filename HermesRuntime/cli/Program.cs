@@ -162,6 +162,8 @@ internal sealed class HermesCli
             "candidate-rejection-analysis" => ShowCandidateRejectionAnalysis(),
             "scalping-status" => ShowScalpingStatus(),
             "run-scalping-research" => RunScalpingResearch(),
+            "run-multi-asset-scalping-research" => RunMultiAssetScalpingResearch(),
+            "multi-asset-research-status" => ShowMultiAssetResearchStatus(),
             "scalping-candidates" => ShowScalpingCandidates(),
             "scalping-candidate" => ShowScalpingCandidate(),
             "scalping-validation-report" => ShowScalpingValidationReport(),
@@ -389,6 +391,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes candidate-rejection-analysis Ablehnungsdiagnose fuer Bot-Kandidaten anzeigen");
         Console.WriteLine("  hermes scalping-status   fokussierten Scalping-Research-Status anzeigen");
         Console.WriteLine("  hermes run-scalping-research --asset XAUUSD --max-variants 50 gezielte Scalping-Varianten testen");
+        Console.WriteLine("  hermes run-multi-asset-scalping-research --assets XAUUSD,EURUSD,GER40 --max-variants 100 Multi-Asset Scalping-Pipeline ausfuehren");
+        Console.WriteLine("  hermes multi-asset-research-status Multi-Asset Scalping-Status anzeigen");
         Console.WriteLine("  hermes scalping-candidates Scalping-Kandidaten anzeigen");
         Console.WriteLine("  hermes scalping-candidate --id <ID> einzelnen Scalping-Kandidaten anzeigen");
         Console.WriteLine("  hermes scalping-validation-report strenge Scalping-Gates anzeigen");
@@ -617,6 +621,11 @@ internal sealed class HermesCli
         WriteMessages("scalping_assets_with_data", snapshot.ScalpingAssetsWithData);
         WriteMessages("scalping_assets_needing_data", snapshot.ScalpingAssetsNeedingData);
         WriteField("scalping_multi_asset_roadmap_health", snapshot.ScalpingMultiAssetRoadmapHealth);
+        WriteField("multi_asset_research_status", snapshot.MultiAssetResearchStatus);
+        WriteMessages("multi_asset_assets_ready", snapshot.MultiAssetAssetsReady);
+        WriteMessages("multi_asset_assets_setup_ready", snapshot.MultiAssetAssetsSetupReady);
+        WriteMessages("multi_asset_assets_data_ready_only", snapshot.MultiAssetAssetsDataReadyOnly);
+        WriteMessages("multi_asset_assets_missing_data", snapshot.MultiAssetAssetsMissingData);
         WriteField("certified_candidate_inventory_status", snapshot.CertifiedCandidateInventoryStatus);
         WriteField("setup_registry_status", snapshot.SetupRegistryStatus);
         WriteMessages("setup_registry_assets", snapshot.SetupRegistryAssets);
@@ -626,6 +635,8 @@ internal sealed class HermesCli
         WriteField("best_xauusd_setup", snapshot.BestXauusdSetup ?? "-");
         WriteField("best_eurusd_setup", snapshot.BestEurusdSetup ?? "-");
         WriteField("best_ger40_setup", snapshot.BestGer40Setup ?? "-");
+        WriteField("total_setup_ready_assets", snapshot.TotalSetupReadyAssets.ToString());
+        WriteField("total_signal_specs_ready", snapshot.TotalSignalSpecsReady.ToString());
         WriteField("eurusd_certified_candidates", snapshot.EurusdCertifiedCandidates.ToString());
         WriteField("ensemble_candidate_status", snapshot.EnsembleCandidateStatus);
         WriteField("ensemble_candidate_members", snapshot.EnsembleCandidateMembers.ToString());
@@ -3569,6 +3580,35 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunMultiAssetScalpingResearch()
+    {
+        WriteHeader("Hermes Multi-Asset Scalping Research Loop");
+        var service = new MultiAssetScalpingOrchestratorService(BuildStoragePaths(), _runtimeRoot);
+        var assets = ReadAssetList(_args, "--assets");
+        if (_args.Any(arg => arg.Equals("--all-ready-assets", StringComparison.OrdinalIgnoreCase)))
+        {
+            assets = ["GER40", "XAUUSD", "EURUSD"];
+        }
+
+        var maxVariants = ReadIntOption(_args, "--max-variants", fallback: 100, min: 1, max: 500);
+        var report = service.Run(assets.ToArray(), maxVariants);
+        WriteMultiAssetResearchReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowMultiAssetResearchStatus()
+    {
+        WriteHeader("Hermes Multi-Asset Scalping Research Status");
+        var service = new MultiAssetScalpingOrchestratorService(BuildStoragePaths(), _runtimeRoot);
+        var status = service.BuildStatus();
+        WriteMultiAssetResearchStatus(status, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowScalpingCandidates()
     {
         WriteHeader("Hermes Scalping Candidates");
@@ -3583,6 +3623,88 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private void WriteMultiAssetResearchReport(MultiAssetScalpingResearchReport report, MultiAssetScalpingOrchestratorService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Assets Requested", report.AssetsRequested.Count == 0 ? "-" : string.Join(", ", report.AssetsRequested));
+        WriteField("Assets Processed", report.AssetsProcessed.Count == 0 ? "-" : string.Join(", ", report.AssetsProcessed));
+        WriteField("Assets Skipped", report.AssetsSkipped.Count == 0 ? "-" : string.Join(", ", report.AssetsSkipped));
+        WriteField("Safety Flags", string.Join(", ", report.SafetyFlags));
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Next Recommended Actions", report.NextRecommendedActions);
+        foreach (var item in report.PerAssetResults)
+        {
+            WriteMultiAssetAssetResult(item);
+        }
+    }
+
+    private void WriteMultiAssetResearchStatus(MultiAssetResearchStatusSnapshot status, MultiAssetScalpingOrchestratorService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Updated UTC", status.UpdatedAtUtc.ToString("O"));
+        WriteField("Assets Ready", status.AssetsReady.Count == 0 ? "-" : string.Join(", ", status.AssetsReady));
+        WriteField("Assets Setup Ready", status.AssetsSetupReady.Count == 0 ? "-" : string.Join(", ", status.AssetsSetupReady));
+        WriteField("Assets Data Ready Only", status.AssetsDataReadyOnly.Count == 0 ? "-" : string.Join(", ", status.AssetsDataReadyOnly));
+        WriteField("Assets Missing Data", status.AssetsMissingData.Count == 0 ? "-" : string.Join(", ", status.AssetsMissingData));
+        WriteMessages("Warnings", status.Warnings);
+        WriteMessages("Next Recommended Actions", status.NextRecommendedActions);
+        foreach (var item in status.PerAssetResults)
+        {
+            WriteMultiAssetAssetResult(item);
+        }
+
+        WriteField("no_auto_trading", status.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", status.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", status.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", status.LiveTradingEnabled.ToString().ToLowerInvariant());
+        WriteField("research_only", status.ResearchOnly.ToString().ToLowerInvariant());
+    }
+
+    private static void WriteMultiAssetAssetResult(MultiAssetScalpingAssetResult item)
+    {
+        WriteSubHeader(item.Asset);
+        WriteField("Historical Data Status", item.HistoricalDataStatus);
+        WriteField("Quote Status", item.QuoteStatus);
+        WriteField("Research Status", item.ResearchStatus);
+        WriteField("Candidates Total", item.CandidatesTotal.ToString());
+        WriteField("Robust Candidates", item.RobustCandidates.ToString());
+        WriteField("Final Candidates", item.FinalCandidates.ToString());
+        WriteField("Certified Candidates", item.CertifiedCandidates.ToString());
+        WriteField("Failed Candidates", item.FailedCandidates.ToString());
+        WriteField("Setup Count", item.SetupCount.ToString());
+        WriteField("Best Setup", item.BestSetup);
+        WriteField("Signal Agent Spec Status", item.SignalAgentSpecStatus);
+        WriteField("Next Action", item.NextAction);
+        WriteField("M1 Available", item.M1Available.ToString().ToLowerInvariant());
+        WriteField("M5 Available", item.M5Available.ToString().ToLowerInvariant());
+        WriteField("M15 Available", item.M15Available.ToString().ToLowerInvariant());
+        WriteField("Timeframes", item.Timeframes.Count == 0 ? "-" : string.Join(", ", item.Timeframes));
+        WriteMessages("Warnings", item.Warnings);
+    }
+
+    private static void WriteMultiAssetAssetResult(MultiAssetResearchAssetStatus item)
+    {
+        WriteSubHeader(item.Asset);
+        WriteField("Historical Data Status", item.HistoricalDataStatus);
+        WriteField("Quote Status", item.QuoteStatus);
+        WriteField("Research Status", item.ResearchStatus);
+        WriteField("Candidates Total", item.CandidatesTotal.ToString());
+        WriteField("Robust Candidates", item.RobustCandidates.ToString());
+        WriteField("Final Candidates", item.FinalCandidates.ToString());
+        WriteField("Certified Candidates", item.CertifiedCandidates.ToString());
+        WriteField("Failed Candidates", item.FailedCandidates.ToString());
+        WriteField("Setup Count", item.SetupCount.ToString());
+        WriteField("Best Setup", item.BestSetup);
+        WriteField("Signal Agent Spec Status", item.SignalAgentSpecStatus);
+        WriteField("Next Action", item.NextAction);
+        WriteField("M1 Available", item.M1Available.ToString().ToLowerInvariant());
+        WriteField("M5 Available", item.M5Available.ToString().ToLowerInvariant());
+        WriteField("M15 Available", item.M15Available.ToString().ToLowerInvariant());
+        WriteField("Timeframes", item.Timeframes.Count == 0 ? "-" : string.Join(", ", item.Timeframes));
+        WriteMessages("Warnings", item.Warnings);
     }
 
     private int ShowScalpingCandidate()
@@ -10043,6 +10165,21 @@ internal sealed class HermesCli
         }
 
         return null;
+    }
+
+    private static IReadOnlyList<string> ReadAssetList(string[] args, string name)
+    {
+        var value = ReadOption(args, name);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(item => item.Trim().ToUpperInvariant())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static string ShellQuote(string value)

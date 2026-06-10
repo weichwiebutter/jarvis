@@ -266,6 +266,7 @@ public sealed class MasterStatusService
         var scalpingAssetsWithData = multiAssetRoadmap?.AssetsWithData ?? [];
         var scalpingAssetsNeedingData = multiAssetRoadmap?.AssetsNeedingData ?? [];
         var scalpingMultiAssetRoadmapHealth = multiAssetRoadmap?.RoadmapHealth ?? "missing";
+        var multiAssetStatus = new MultiAssetScalpingOrchestratorService(_storagePaths, _runtimeRoot).BuildStatus();
         var ger40Roadmap = multiAssetRoadmap?.Assets.FirstOrDefault(entry => entry.Asset.Equals("GER40", StringComparison.OrdinalIgnoreCase));
         var ger40QuoteMappingStatus = ger40Roadmap?.QuoteMappingStatus ?? "missing";
         var ger40HistoricalDataStatus = ger40Roadmap?.HistoricalDataStatus ?? "missing";
@@ -281,6 +282,8 @@ public sealed class MasterStatusService
         var bestXauusdSetup = setupRegistry.BestSetupByAsset.TryGetValue("XAUUSD", out var bestXauusd) ? bestXauusd : null;
         var bestEurusdSetup = setupRegistry.BestSetupByAsset.TryGetValue("EURUSD", out var bestEurusd) ? bestEurusd : null;
         var bestGer40Setup = setupRegistry.BestSetupByAsset.TryGetValue("GER40", out var bestGer40) ? bestGer40 : null;
+        var totalSetupReadyAssets = multiAssetStatus.AssetsSetupReady.Count;
+        var totalSignalSpecsReady = signalAgentSpecsReady;
         var eurusdCertifiedCandidates = certificationReports.Count(report => report.Asset.Equals("EURUSD", StringComparison.OrdinalIgnoreCase) && report.Status == ScalpingCertificationStatus.certified_candidate);
         var ensembleCandidate = new ScalpingPortfolioService(_storagePaths, _runtimeRoot).LoadEnsembleCandidate();
         var ensembleCandidateStatus = ensembleCandidate?.Status ?? "missing";
@@ -820,6 +823,11 @@ public sealed class MasterStatusService
             ScalpingAssetsWithData: scalpingAssetsWithData,
             ScalpingAssetsNeedingData: scalpingAssetsNeedingData,
             ScalpingMultiAssetRoadmapHealth: scalpingMultiAssetRoadmapHealth,
+            MultiAssetResearchStatus: multiAssetStatus.PerAssetResults.Any() ? "ready" : "missing",
+            MultiAssetAssetsReady: multiAssetStatus.AssetsReady,
+            MultiAssetAssetsSetupReady: multiAssetStatus.AssetsSetupReady,
+            MultiAssetAssetsDataReadyOnly: multiAssetStatus.AssetsDataReadyOnly,
+            MultiAssetAssetsMissingData: multiAssetStatus.AssetsMissingData,
             Ger40QuoteMappingStatus: ger40QuoteMappingStatus,
             Ger40HistoricalDataStatus: ger40HistoricalDataStatus,
             Ger40ResearchStatus: ger40ResearchStatus,
@@ -833,6 +841,8 @@ public sealed class MasterStatusService
             BestXauusdSetup: bestXauusdSetup,
             BestEurusdSetup: bestEurusdSetup,
             BestGer40Setup: bestGer40Setup,
+            TotalSetupReadyAssets: totalSetupReadyAssets,
+            TotalSignalSpecsReady: totalSignalSpecsReady,
             EurusdCertifiedCandidates: eurusdCertifiedCandidates,
             EnsembleCandidateStatus: ensembleCandidateStatus,
             EnsembleCandidateMembers: ensembleCandidateMembers,
