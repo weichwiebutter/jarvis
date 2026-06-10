@@ -139,6 +139,7 @@ public sealed record MasterStatusSnapshot(
     string CurrentMarketSnapshotHealth,
     DateTimeOffset? CurrentMarketLatestUpdateUtc,
     IReadOnlyList<string> MarketDataAssetsAvailable,
+    bool MarketDataGer40Available,
     bool MarketDataXauusdAvailable,
     bool MarketDataEurusdAvailable,
     string MarketDataQualityHealth,

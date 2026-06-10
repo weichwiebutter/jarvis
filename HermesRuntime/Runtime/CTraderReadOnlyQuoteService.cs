@@ -34,10 +34,11 @@ public sealed record CTraderReadOnlyQuoteSnapshot(
 
 public sealed class CTraderReadOnlyQuoteService
 {
-    private static readonly string[] Assets = ["EURUSD", "XAUUSD"];
+    private static readonly string[] Assets = ["EURUSD", "XAUUSD", "GER40"];
 
     private readonly StoragePaths _storagePaths;
     private readonly string _runtimeRoot;
+    private string? _resolvedRoot;
 
     public CTraderReadOnlyQuoteService(StoragePaths storagePaths, string runtimeRoot)
     {
@@ -45,7 +46,7 @@ public sealed class CTraderReadOnlyQuoteService
         _runtimeRoot = runtimeRoot;
     }
 
-    public string Root => Path.Combine(_storagePaths.Root, "reports", "current_market");
+    public string Root => _resolvedRoot ??= ResolveRoot();
     public string QuotesJsonPath => Path.Combine(Root, "current_market_quotes.json");
     public string QuotesMarkdownPath => Path.Combine(Root, "current_market_quotes.md");
     public string QuoteLogPath => Path.Combine(Root, "quote_snapshot_log.jsonl");
@@ -236,7 +237,7 @@ public sealed class CTraderReadOnlyQuoteService
 
             var timestamp = ReadDateTimeOffset(payloadRoot, "timestamp", "timestamp_utc", "updated_at_utc", "updatedAtUtc")
                 ?? DateTimeOffset.UtcNow;
-            received[symbol.HermesSymbol] = BuildAvailableQuote(symbol.HermesSymbol, bid.Value, ask.Value, timestamp);
+            received[symbol.HermesSymbol] = BuildAvailableQuote(symbol.HermesSymbol, bid.Value, ask.Value, timestamp, symbol.CTraderSymbolName);
         }
 
         return Assets
@@ -328,7 +329,7 @@ public sealed class CTraderReadOnlyQuoteService
                 if (expectedNames.Contains(normalizedName, StringComparer.OrdinalIgnoreCase)
                     || expectedNames.Any(expected => normalizedName.Contains(expected, StringComparison.OrdinalIgnoreCase)))
                 {
-                    resolved.Add(new ResolvedQuoteSymbol(mapping.HermesSymbol, symbolId.Value));
+                    resolved.Add(new ResolvedQuoteSymbol(mapping.HermesSymbol, symbolId.Value, name));
                     break;
                 }
             }
@@ -409,6 +410,34 @@ public sealed class CTraderReadOnlyQuoteService
     private static IReadOnlyList<CTraderReadOnlyQuote> BuildUnavailableQuotes(string source)
         => Assets.Select(asset => BuildUnavailableQuote(asset, source)).ToList();
 
+    private string ResolveRoot()
+    {
+        var preferred = Path.Combine(_storagePaths.Root, "reports", "current_market");
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            var probePath = Path.Combine(preferred, ".write_probe");
+            File.WriteAllText(probePath, "probe");
+            File.Delete(probePath);
+            return preferred;
+        }
+        catch (IOException)
+        {
+            return ResolveFallbackRoot();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ResolveFallbackRoot();
+        }
+    }
+
+    private string ResolveFallbackRoot()
+    {
+        var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "current_market");
+        Directory.CreateDirectory(fallback);
+        return fallback;
+    }
+
     private static CTraderReadOnlyQuote BuildUnavailableQuote(string asset, string source)
         => new(
             Asset: asset,
@@ -423,7 +452,7 @@ public sealed class CTraderReadOnlyQuoteService
             AgeSeconds: null,
             Status: "unavailable");
 
-    private static CTraderReadOnlyQuote BuildAvailableQuote(string asset, double bid, double ask, DateTimeOffset timestampUtc)
+    private static CTraderReadOnlyQuote BuildAvailableQuote(string asset, double bid, double ask, DateTimeOffset timestampUtc, string cTraderSymbolName)
     {
         var decimals = asset.Equals("EURUSD", StringComparison.OrdinalIgnoreCase) ? 5 : 2;
         var age = Math.Max(0, (DateTimeOffset.UtcNow - timestampUtc).TotalSeconds);
@@ -434,7 +463,7 @@ public sealed class CTraderReadOnlyQuoteService
             Mid: Math.Round((bid + ask) / 2.0, decimals),
             Spread: Math.Round(ask - bid, decimals),
             TimestampUtc: timestampUtc,
-            Source: "ctrader_readonly_quote",
+            Source: $"ctrader_readonly_quote:{cTraderSymbolName}",
             IsLiveReadonly: true,
             IsPlaceholder: false,
             AgeSeconds: Math.Round(age, 2),
@@ -611,5 +640,5 @@ public sealed class CTraderReadOnlyQuoteService
         return false;
     }
 
-    private sealed record ResolvedQuoteSymbol(string HermesSymbol, long SymbolId);
+    private sealed record ResolvedQuoteSymbol(string HermesSymbol, long SymbolId, string CTraderSymbolName);
 }

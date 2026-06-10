@@ -34,6 +34,7 @@ public sealed record MarketDataAvailability(
     IReadOnlyList<string> AssetsAvailable,
     IReadOnlyList<string> DataGaps,
     IReadOnlyList<string> Warnings,
+    bool Ger40Available,
     bool XauusdAvailable,
     bool EurusdAvailable,
     bool NoAutoTrading,
@@ -89,7 +90,7 @@ public sealed record MarketDataNormalizationResult(
 
 public sealed class MarketDataAvailabilityService
 {
-    private static readonly string[] SupportedAssets = ["XAUUSD", "GOLD", "EURUSD"];
+    private static readonly string[] SupportedAssets = ["GER40", "XAUUSD", "EURUSD"];
     private readonly StoragePaths _storagePaths;
     private readonly string _runtimeRoot;
     private string? _resolvedReportsDirectory;
@@ -129,6 +130,7 @@ public sealed class MarketDataAvailabilityService
             .OrderBy(asset => asset, StringComparer.OrdinalIgnoreCase)
             .ToList();
         var dataGaps = new List<string>();
+        if (!assetsAvailable.Contains("GER40", StringComparer.OrdinalIgnoreCase)) dataGaps.Add("market_data_missing_for_asset:GER40");
         if (!assetsAvailable.Contains("XAUUSD", StringComparer.OrdinalIgnoreCase)) dataGaps.Add("market_data_missing_for_asset:XAUUSD");
         if (!assetsAvailable.Contains("EURUSD", StringComparer.OrdinalIgnoreCase)) dataGaps.Add("market_data_missing_for_asset:EURUSD");
 
@@ -140,6 +142,7 @@ public sealed class MarketDataAvailabilityService
             AssetsAvailable: assetsAvailable,
             DataGaps: dataGaps,
             Warnings: warnings,
+            Ger40Available: assetsAvailable.Contains("GER40", StringComparer.OrdinalIgnoreCase),
             XauusdAvailable: assetsAvailable.Contains("XAUUSD", StringComparer.OrdinalIgnoreCase),
             EurusdAvailable: assetsAvailable.Contains("EURUSD", StringComparer.OrdinalIgnoreCase),
             NoAutoTrading: true,
@@ -149,11 +152,11 @@ public sealed class MarketDataAvailabilityService
         return TryWriteAvailability(report, warnings);
     }
 
-    public MarketDataQualityReport BuildQuality(string asset)
+    public MarketDataQualityReport BuildQuality(string asset, MarketDataAvailability? availability = null)
     {
         var normalizedAsset = CanonicalAsset(asset);
-        var availability = Scan();
-        var files = availability.Files
+        var reportSource = availability ?? Scan();
+        var files = reportSource.Files
             .Where(file => CanonicalAsset(file.Asset).Equals(normalizedAsset, StringComparison.OrdinalIgnoreCase))
             .ToList();
         var dataGaps = new List<string>();
@@ -166,7 +169,7 @@ public sealed class MarketDataAvailabilityService
         var duplicates = files.Sum(file => file.DuplicateCandles);
         var candles = files.Sum(file => file.CandleCount);
         var health = files.Count == 0 ? "missing" : dataGaps.Count > 0 ? "needs_more_data" : invalid > candles * 0.02 ? "quality_warning" : "ok";
-        var warnings = availability.Warnings.ToList();
+        var warnings = reportSource.Warnings.ToList();
         var report = new MarketDataQualityReport(
             ReportVersion: "market_data_quality_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -307,6 +310,8 @@ public sealed class MarketDataAvailabilityService
     {
         var quality = BuildQuality(asset);
         var reasons = new List<string>(quality.DataGaps);
+        reasons.Insert(0, $"canonical_asset={quality.Asset}");
+        reasons.Insert(1, $"recognized_aliases={string.Join(",", AliasesFor(quality.Asset))}");
         if (quality.FileCount == 0)
         {
             reasons.Add("No matching CSV files found in configured scan roots.");
@@ -529,6 +534,12 @@ public sealed class MarketDataAvailabilityService
     private static string? DetectAsset(string fileName)
     {
         var normalized = NormalizeHeader(fileName);
+        if (normalized.Contains("ger40", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("de40", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("germany40", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("germany40", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("dax40", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("dax", StringComparison.OrdinalIgnoreCase)) return "GER40";
         if (normalized.Contains("xauusd", StringComparison.OrdinalIgnoreCase) || normalized.Contains("gold", StringComparison.OrdinalIgnoreCase)) return "XAUUSD";
         if (normalized.Contains("eurusd", StringComparison.OrdinalIgnoreCase)) return "EURUSD";
         return null;
@@ -544,7 +555,24 @@ public sealed class MarketDataAvailabilityService
         return "UNKNOWN";
     }
 
-    private static string CanonicalAsset(string asset) => asset.Trim().Equals("GOLD", StringComparison.OrdinalIgnoreCase) ? "XAUUSD" : asset.Trim().ToUpperInvariant();
+    private static string CanonicalAsset(string asset)
+    {
+        var normalized = asset.Trim().ToUpperInvariant();
+        return normalized switch
+        {
+            "GOLD" => "XAUUSD",
+            "DE40" or "GERMANY40" or "GERMANY 40" or "DAX" or "DAX40" => "GER40",
+            _ => normalized
+        };
+    }
+
+    private static IReadOnlyList<string> AliasesFor(string asset) => asset.ToUpperInvariant() switch
+    {
+        "GER40" => ["DE40", "GERMANY40", "GERMANY 40", "DAX", "DAX40"],
+        "XAUUSD" => ["GOLD"],
+        "EURUSD" => ["EUR/USD"],
+        _ => []
+    };
     private static string SourceId(string root) => root.Replace(Path.DirectorySeparatorChar, '_').Replace(Path.AltDirectorySeparatorChar, '_').Trim('_').ToLowerInvariant();
     private static char DetectDelimiter(string headerLine) => new[] { ',', ';', '\t' }.OrderByDescending(candidate => SplitCsvLine(headerLine, candidate).Count).First();
 

@@ -6,7 +6,7 @@ public sealed class CTraderSymbolMapper
     [
         new CTraderSymbolMapping("XAUUSD", "XAUUSD", "stub_symbol_xauusd", ["GOLD"], StubMapping: true),
         new CTraderSymbolMapping("EURUSD", "EURUSD", "stub_symbol_eurusd", ["EUR/USD"], StubMapping: true),
-        new CTraderSymbolMapping("GER40", "GER40", "stub_symbol_ger40", ["DE40", "DAX40"], StubMapping: true),
+        new CTraderSymbolMapping("GER40", "GER40", "stub_symbol_ger40", ["DE40", "GERMANY40", "GERMANY 40", "DAX", "DAX40"], StubMapping: true),
         new CTraderSymbolMapping("US500", "US500", "stub_symbol_us500", ["SPX500", "S&P500"], StubMapping: true)
     ];
 

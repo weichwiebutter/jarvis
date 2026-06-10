@@ -44,6 +44,7 @@ public sealed class ScalpingMultiAssetRoadmapService
 
     private readonly StoragePaths _storagePaths;
     private readonly string _runtimeRoot;
+    private string? _resolvedRoot;
 
     public ScalpingMultiAssetRoadmapService(StoragePaths storagePaths, string runtimeRoot)
     {
@@ -51,15 +52,21 @@ public sealed class ScalpingMultiAssetRoadmapService
         _runtimeRoot = runtimeRoot;
     }
 
-    public string Root => Path.Combine(_storagePaths.Root, "reports", "scalping_portfolio");
+    public string Root => _resolvedRoot ??= ResolveRoot();
     public string RoadmapPath => Path.Combine(Root, "multi_asset_roadmap.json");
     public string RoadmapMarkdownPath => Path.Combine(Root, "multi_asset_roadmap.md");
 
     public ScalpingMultiAssetRoadmap Update()
     {
         var marketData = new MarketDataAvailabilityService(_storagePaths, _runtimeRoot);
+        var marketDataAvailability = marketData.Scan();
+        var currentMarket = new CurrentMarketSnapshotService(_storagePaths, _runtimeRoot);
+        var currentMarketStatus = currentMarket.LoadOrCreateStatus();
         var certifications = new ScalpingCertificationService(_storagePaths, _runtimeRoot).LoadReports();
-        var entries = DefaultAssets.Select(asset => BuildEntry(asset, marketData, certifications)).ToList();
+        var config = new CTraderOpenApiConfigLoader().Load(_runtimeRoot).Config;
+        var configuredMapper = new CTraderSymbolMapper(config.AllowedSymbols);
+        var knownMapper = new CTraderSymbolMapper([]);
+        var entries = DefaultAssets.Select(asset => BuildEntry(asset, marketData, marketDataAvailability, currentMarket, currentMarketStatus, configuredMapper, knownMapper, certifications)).ToList();
         var nextAssets = entries
             .Where(entry => entry.NextAction is "run_scalping_research" or "import_market_data")
             .OrderBy(entry => entry.Priority)
@@ -106,17 +113,77 @@ public sealed class ScalpingMultiAssetRoadmapService
             || entry.Aliases.Any(alias => alias.Equals(normalized, StringComparison.OrdinalIgnoreCase)));
     }
 
-    private static ScalpingAssetRoadmapEntry BuildEntry((string Asset, string[] Aliases, int Priority, string MarketType, string[] RiskNotes) asset, MarketDataAvailabilityService marketData, IReadOnlyList<ScalpingCertificationReport> certifications)
+    private string ResolveRoot()
     {
-        var quality = marketData.BuildQuality(asset.Asset);
+        var preferred = Path.Combine(_storagePaths.Root, "reports", "scalping_portfolio");
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            var probePath = Path.Combine(preferred, ".write_probe");
+            File.WriteAllText(probePath, "probe");
+            File.Delete(probePath);
+            return preferred;
+        }
+        catch (IOException)
+        {
+            return ResolveFallbackRoot();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ResolveFallbackRoot();
+        }
+    }
+
+    private string ResolveFallbackRoot()
+    {
+        var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "scalping_portfolio");
+        Directory.CreateDirectory(fallback);
+        return fallback;
+    }
+
+    private static ScalpingAssetRoadmapEntry BuildEntry(
+        (string Asset, string[] Aliases, int Priority, string MarketType, string[] RiskNotes) asset,
+        MarketDataAvailabilityService marketData,
+        MarketDataAvailability marketDataAvailability,
+        CurrentMarketSnapshotService currentMarket,
+        CurrentMarketStatusSnapshot currentMarketStatus,
+        CTraderSymbolMapper configuredMapper,
+        CTraderSymbolMapper knownMapper,
+        IReadOnlyList<ScalpingCertificationReport> certifications)
+    {
+        var quality = marketData.BuildQuality(asset.Asset, marketDataAvailability);
         var certified = certifications.Count(report => report.Asset.Equals(asset.Asset, StringComparison.OrdinalIgnoreCase)
             || asset.Aliases.Any(alias => report.Asset.Equals(alias, StringComparison.OrdinalIgnoreCase)));
         var dataAvailable = quality.DataGaps.Count == 0;
-        var dataGap = dataAvailable ? "-" : string.Join(",", quality.DataGaps);
-        var researchStatus = certified > 0 ? "certified_candidate_available" : dataAvailable ? "data_ready_research_pending" : "needs_market_data";
+        var quote = currentMarket.FindSnapshot(asset.Asset)
+            ?? asset.Aliases.Select(currentMarket.FindSnapshot).FirstOrDefault(snapshot => snapshot is not null);
+        var quoteAvailable = quote?.Status == "available";
+        var mappingKnown = knownMapper.TryMap(asset.Asset, out _)
+            || asset.Aliases.Any(alias => knownMapper.TryMap(alias, out _));
+        var mappingConfigured = configuredMapper.TryMap(asset.Asset, out _)
+            || asset.Aliases.Any(alias => configuredMapper.TryMap(alias, out _));
+        var gapParts = new List<string>();
+        if (!mappingConfigured) gapParts.Add(mappingKnown ? "mapping_not_enabled_in_config" : "mapping_missing");
+        if (!quoteAvailable) gapParts.Add(currentMarketStatus.AssetsAvailable.Contains("GER40", StringComparer.OrdinalIgnoreCase) && asset.Aliases.Any(alias => alias.Equals("GER40", StringComparison.OrdinalIgnoreCase))
+            ? "alias_quote_only"
+            : "quote_unavailable");
+        gapParts.AddRange(quality.DataGaps);
+        var dataGap = gapParts.Count == 0 ? "-" : string.Join(",", gapParts.Distinct(StringComparer.OrdinalIgnoreCase));
+        var researchStatus = certified > 0
+            ? "certified_candidate_available"
+            : !mappingConfigured ? "mapping_missing"
+            : quoteAvailable && quality.FileCount == 0 ? "quote_available_historical_data_missing"
+            : quoteAvailable && dataAvailable ? "ready_for_research"
+            : quoteAvailable ? "quote_available_historical_data_partial"
+            : quality.FileCount > 0 && dataAvailable ? "historical_data_ready_quote_missing"
+            : quality.FileCount > 0 ? "historical_data_partial_quote_missing"
+            : "quote_and_historical_data_missing";
         var nextAction = certified > 0
             ? "search_additional_diverse_candidates"
-            : dataAvailable ? "run_scalping_research" : "import_market_data";
+            : researchStatus == "ready_for_research" ? "run_scalping_research"
+            : researchStatus == "quote_available_historical_data_missing" || researchStatus == "quote_available_historical_data_partial" ? "import_market_data"
+            : researchStatus == "historical_data_ready_quote_missing" || researchStatus == "historical_data_partial_quote_missing" ? "validate_ctrader_symbol_mapping"
+            : "import_market_data";
         var riskNotes = asset.RiskNotes
             .Concat(["no_strategy_transfer_without_asset_specific_validation", "requires_backtest_oos_walkforward_robustness_certification_human_review"])
             .Distinct(StringComparer.OrdinalIgnoreCase)

@@ -651,6 +651,7 @@ internal sealed class HermesCli
         WriteField("current_market_snapshot_health", snapshot.CurrentMarketSnapshotHealth);
         WriteField("current_market_latest_update_utc", snapshot.CurrentMarketLatestUpdateUtc?.ToString("O") ?? "-");
         WriteField("market_data_assets_available", snapshot.MarketDataAssetsAvailable.Count == 0 ? "-" : string.Join(", ", snapshot.MarketDataAssetsAvailable));
+        WriteField("market_data_ger40_available", snapshot.MarketDataGer40Available.ToString().ToLowerInvariant());
         WriteField("market_data_xauusd_available", snapshot.MarketDataXauusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_eurusd_available", snapshot.MarketDataEurusdAvailable.ToString().ToLowerInvariant());
         WriteField("market_data_quality_health", snapshot.MarketDataQualityHealth);
@@ -4105,7 +4106,7 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Scalping Multi-Asset Roadmap");
         var service = new ScalpingMultiAssetRoadmapService(BuildStoragePaths(), _runtimeRoot);
-        var roadmap = service.Load() ?? service.Update();
+        var roadmap = service.Update();
         WriteScalpingMultiAssetRoadmap(roadmap);
         Console.WriteLine();
         WriteSafety();
@@ -4123,7 +4124,11 @@ internal sealed class HermesCli
             return 1;
         }
 
-        var entry = new ScalpingMultiAssetRoadmapService(BuildStoragePaths(), _runtimeRoot).FindAsset(asset);
+        var service = new ScalpingMultiAssetRoadmapService(BuildStoragePaths(), _runtimeRoot);
+        var roadmap = service.Update();
+        var entry = roadmap.Assets.FirstOrDefault(candidate =>
+            candidate.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase)
+            || candidate.Aliases.Any(alias => alias.Equals(asset, StringComparison.OrdinalIgnoreCase)));
         if (entry is null)
         {
             WriteError($"asset_not_in_scalping_roadmap:{asset}");
@@ -6878,6 +6883,7 @@ internal sealed class HermesCli
         WriteField("Sources", report.Sources.Count.ToString());
         WriteField("CSV Files", report.Files.Count.ToString());
         WriteField("Assets Available", report.AssetsAvailable.Count == 0 ? "-" : string.Join(", ", report.AssetsAvailable));
+        WriteField("GER40 Available", report.Ger40Available.ToString().ToLowerInvariant());
         WriteField("XAUUSD Available", report.XauusdAvailable.ToString().ToLowerInvariant());
         WriteField("EURUSD Available", report.EurusdAvailable.ToString().ToLowerInvariant());
         WriteField("Candle Count", report.Files.Sum(file => file.CandleCount).ToString());

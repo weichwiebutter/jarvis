@@ -71,7 +71,7 @@ public sealed class MasterStatusService
         var botCandidateReport = LoadOrDefault(botCandidatePath);
         var scalpingReport = scalpingService.LoadReport();
         var statusBuildWarnings = new List<string>();
-        var marketDataAvailability = marketDataService.LoadAvailability() ?? marketDataService.Scan();
+        var marketDataAvailability = marketDataService.Scan();
         var xauusdQuality = marketDataService.BuildQuality(ScalpingResearchService.DefaultAsset);
         var knowledgeQuality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
         var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
@@ -260,7 +260,7 @@ public sealed class MasterStatusService
         var scalpingSignalDensityScore = portfolio?.Evaluation.SignalDensityScore ?? 0;
         var scalpingPortfolioDiversityScore = portfolio?.Evaluation.DiversityScore ?? 0;
         var scalpingNextCandidateSearchAction = portfolio?.Evaluation.NextCandidateSearchAction ?? "build_scalping_portfolio";
-        var multiAssetRoadmap = new ScalpingMultiAssetRoadmapService(_storagePaths, _runtimeRoot).Load();
+        var multiAssetRoadmap = new ScalpingMultiAssetRoadmapService(_storagePaths, _runtimeRoot).Update();
         var scalpingMultiAssetMode = multiAssetRoadmap?.Mode ?? "planned_research_only";
         var scalpingNextAssets = multiAssetRoadmap?.NextAssets ?? [];
         var scalpingAssetsWithData = multiAssetRoadmap?.AssetsWithData ?? [];
@@ -676,6 +676,7 @@ public sealed class MasterStatusService
                     ["current_market_snapshot_health"] = currentMarketSnapshotHealth,
                     ["current_market_latest_update_utc"] = currentMarketLatestUpdateUtc,
                     ["market_data_assets_available"] = marketDataAvailability.AssetsAvailable,
+                    ["market_data_ger40_available"] = marketDataAvailability.Ger40Available,
                     ["market_data_xauusd_available"] = marketDataAvailability.XauusdAvailable,
                     ["market_data_eurusd_available"] = marketDataAvailability.EurusdAvailable,
                     ["market_data_quality_health"] = xauusdQuality.QualityHealth,
@@ -833,6 +834,7 @@ public sealed class MasterStatusService
             CurrentMarketSnapshotHealth: currentMarketSnapshotHealth,
             CurrentMarketLatestUpdateUtc: currentMarketLatestUpdateUtc,
             MarketDataAssetsAvailable: marketDataAvailability.AssetsAvailable,
+            MarketDataGer40Available: marketDataAvailability.Ger40Available,
             MarketDataXauusdAvailable: marketDataAvailability.XauusdAvailable,
             MarketDataEurusdAvailable: marketDataAvailability.EurusdAvailable,
             MarketDataQualityHealth: xauusdQuality.QualityHealth,

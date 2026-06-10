@@ -35,9 +35,19 @@ public sealed record CurrentMarketStatusSnapshot(
 public sealed class CurrentMarketSnapshotService
 {
     private static readonly string[] SupportedAssets = ["GER40", "XAUUSD", "EURUSD"];
+    private static readonly Dictionary<string, string> AssetAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["GOLD"] = "XAUUSD",
+        ["DE40"] = "GER40",
+        ["GERMANY40"] = "GER40",
+        ["GERMANY 40"] = "GER40",
+        ["DAX"] = "GER40",
+        ["DAX40"] = "GER40"
+    };
 
     private readonly StoragePaths _storagePaths;
     private readonly string _runtimeRoot;
+    private string? _resolvedRoot;
 
     public CurrentMarketSnapshotService(StoragePaths storagePaths, string runtimeRoot)
     {
@@ -45,7 +55,7 @@ public sealed class CurrentMarketSnapshotService
         _runtimeRoot = runtimeRoot;
     }
 
-    public string Root => Path.Combine(_storagePaths.Root, "reports", "current_market");
+    public string Root => _resolvedRoot ??= ResolveRoot();
     public string SnapshotJsonPath => Path.Combine(Root, "current_market_snapshot.json");
     public string SnapshotMarkdownPath => Path.Combine(Root, "current_market_snapshot.md");
     public string StatusPath => Path.Combine(Root, "current_market_status.json");
@@ -54,10 +64,16 @@ public sealed class CurrentMarketSnapshotService
     {
         if (File.Exists(StatusPath))
         {
-            var snapshot = JsonSerializer.Deserialize<CurrentMarketStatusSnapshot>(File.ReadAllText(StatusPath), JsonDefaults.SnapshotReadOptions);
-            if (snapshot is not null)
+            try
             {
-                return snapshot;
+                var snapshot = JsonSerializer.Deserialize<CurrentMarketStatusSnapshot>(File.ReadAllText(StatusPath), JsonDefaults.SnapshotReadOptions);
+                if (snapshot is not null)
+                {
+                    return snapshot;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or JsonException)
+            {
             }
         }
 
@@ -121,30 +137,47 @@ public sealed class CurrentMarketSnapshotService
             UpdateSnapshot();
         }
 
-        var snapshots = JsonSerializer.Deserialize<List<CurrentMarketAssetSnapshot>>(File.ReadAllText(SnapshotJsonPath), JsonDefaults.SnapshotReadOptions);
-        return snapshots ?? [];
+        try
+        {
+            var snapshots = JsonSerializer.Deserialize<List<CurrentMarketAssetSnapshot>>(File.ReadAllText(SnapshotJsonPath), JsonDefaults.SnapshotReadOptions);
+            return snapshots ?? [];
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            var refreshed = UpdateSnapshot();
+            var snapshots = JsonSerializer.Deserialize<List<CurrentMarketAssetSnapshot>>(File.ReadAllText(SnapshotJsonPath), JsonDefaults.SnapshotReadOptions);
+            return snapshots ?? [];
+        }
     }
 
     public CurrentMarketAssetSnapshot? FindSnapshot(string asset)
     {
-        return LoadSnapshot().FirstOrDefault(snapshot => snapshot.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase));
+        var normalizedAsset = CanonicalAsset(asset);
+        return LoadSnapshot().FirstOrDefault(snapshot => snapshot.Asset.Equals(normalizedAsset, StringComparison.OrdinalIgnoreCase));
     }
 
     public IReadOnlyList<string> ExplainGap(string asset)
     {
-        var normalizedAsset = string.IsNullOrWhiteSpace(asset) ? "XAUUSD" : asset.Trim().ToUpperInvariant();
+        var normalizedAsset = CanonicalAsset(string.IsNullOrWhiteSpace(asset) ? "XAUUSD" : asset);
         var reasons = new List<string>();
         var status = LoadOrCreateStatus();
         var snapshot = LoadSnapshot().FirstOrDefault(item => item.Asset.Equals(normalizedAsset, StringComparison.OrdinalIgnoreCase));
         var tokenStore = new CTraderTokenStore(_storagePaths);
         var token = tokenStore.LoadToken();
+        var configLoad = new CTraderOpenApiConfigLoader().Load(_runtimeRoot);
+        var defaultMapper = new CTraderSymbolMapper([]);
+        var configuredMapper = new CTraderSymbolMapper(configLoad.Config.AllowedSymbols);
 
         reasons.Add($"asset={normalizedAsset}");
+        reasons.Add($"requested_asset={asset.Trim().ToUpperInvariant()}");
+        reasons.Add($"asset_aliases={string.Join(",", AliasesFor(normalizedAsset))}");
         reasons.Add($"snapshot_status={status.SnapshotStatus}");
         reasons.Add($"snapshot_health={status.SnapshotHealth}");
         reasons.Add($"assets_available={(status.AssetsAvailable.Count == 0 ? "none" : string.Join(",", status.AssetsAvailable))}");
         reasons.Add($"token_store_exists={File.Exists(tokenStore.TokenStorePath).ToString().ToLowerInvariant()}");
         reasons.Add($"token_loaded={(token?.HasAccessToken ?? false).ToString().ToLowerInvariant()}");
+        reasons.Add($"ctrader_symbol_mapping_known={defaultMapper.TryMap(normalizedAsset, out _).ToString().ToLowerInvariant()}");
+        reasons.Add($"ctrader_symbol_mapping_configured={configuredMapper.TryMap(normalizedAsset, out _).ToString().ToLowerInvariant()}");
         foreach (var path in CandidateQuotePaths(normalizedAsset))
         {
             reasons.Add($"candidate_quote_path={path}:exists={File.Exists(path).ToString().ToLowerInvariant()}");
@@ -172,7 +205,8 @@ public sealed class CurrentMarketSnapshotService
 
     private CurrentMarketAssetSnapshot BuildAssetSnapshot(string asset, List<string> warnings)
     {
-        if (TryLoadLiveReadonlyQuote(asset, out var snapshot, out var liveWarning))
+        var normalizedAsset = CanonicalAsset(asset);
+        if (TryLoadLiveReadonlyQuote(normalizedAsset, out var snapshot, out var liveWarning))
         {
             if (!string.IsNullOrWhiteSpace(liveWarning))
             {
@@ -182,16 +216,16 @@ public sealed class CurrentMarketSnapshotService
             return snapshot;
         }
 
-        var placeholder = TryBuildPlaceholderFromLatestCandle(asset);
+        var placeholder = TryBuildPlaceholderFromLatestCandle(normalizedAsset);
         if (placeholder is not null)
         {
-            warnings.Add($"market_snapshot_placeholder_only:{asset}");
+            warnings.Add($"market_snapshot_placeholder_only:{normalizedAsset}");
             return placeholder;
         }
 
-        warnings.Add($"market_snapshot_unavailable:{asset}");
+        warnings.Add($"market_snapshot_unavailable:{normalizedAsset}");
         return new CurrentMarketAssetSnapshot(
-            Asset: asset,
+            Asset: normalizedAsset,
             Bid: null,
             Ask: null,
             Mid: null,
@@ -291,8 +325,12 @@ public sealed class CurrentMarketSnapshotService
 
     private MarketDataCandle? LoadLatestCandle(string asset, string timeframe)
     {
-        var directory = Path.Combine(_storagePaths.Root, "market_data", "candles", asset, timeframe);
-        if (!Directory.Exists(directory))
+        var candidateDirectories = new[] { CanonicalAsset(asset) }
+            .Concat(AliasesFor(CanonicalAsset(asset)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(candidate => Path.Combine(_storagePaths.Root, "market_data", "candles", candidate, timeframe));
+        var directory = candidateDirectories.FirstOrDefault(Directory.Exists);
+        if (directory is null)
         {
             return null;
         }
@@ -313,13 +351,17 @@ public sealed class CurrentMarketSnapshotService
 
     private IEnumerable<string> CandidateQuotePaths(string asset)
     {
-        yield return Path.Combine(_storagePaths.Root, "market_data", "quotes", $"{asset}.json");
-        yield return Path.Combine(_storagePaths.Root, "market_data", "quotes", asset, "latest.json");
+        foreach (var candidate in new[] { CanonicalAsset(asset) }.Concat(AliasesFor(CanonicalAsset(asset))).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            yield return Path.Combine(_storagePaths.Root, "market_data", "quotes", $"{candidate}.json");
+            yield return Path.Combine(_storagePaths.Root, "market_data", "quotes", candidate, "latest.json");
+            yield return Path.Combine(_storagePaths.Root, "reports", "readonly_quotes", $"{candidate}.json");
+            yield return Path.Combine(_storagePaths.Root, "reports", "current_market", "raw", $"{candidate}.json");
+            yield return Path.Combine(_storagePaths.Root, "snapshots", "market", $"{candidate}.json");
+            yield return Path.Combine(_storagePaths.Root, "snapshots", $"{candidate}.json");
+        }
+
         yield return Path.Combine(_storagePaths.Root, "reports", "current_market", "current_market_quotes.json");
-        yield return Path.Combine(_storagePaths.Root, "reports", "readonly_quotes", $"{asset}.json");
-        yield return Path.Combine(_storagePaths.Root, "reports", "current_market", "raw", $"{asset}.json");
-        yield return Path.Combine(_storagePaths.Root, "snapshots", "market", $"{asset}.json");
-        yield return Path.Combine(_storagePaths.Root, "snapshots", $"{asset}.json");
     }
 
     private static string BuildSnapshotMarkdown(CurrentMarketStatusSnapshot status, IReadOnlyList<CurrentMarketAssetSnapshot> snapshots)
@@ -448,6 +490,50 @@ public sealed class CurrentMarketSnapshotService
         }
 
         return null;
+    }
+
+    private static string CanonicalAsset(string asset)
+    {
+        var normalized = asset.Trim().ToUpperInvariant();
+        return AssetAliases.TryGetValue(normalized, out var canonical) ? canonical : normalized;
+    }
+
+    private static IReadOnlyList<string> AliasesFor(string asset)
+    {
+        return AssetAliases
+            .Where(item => item.Value.Equals(asset, StringComparison.OrdinalIgnoreCase))
+            .Select(item => item.Key)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private string ResolveRoot()
+    {
+        var preferred = Path.Combine(_storagePaths.Root, "reports", "current_market");
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            var probePath = Path.Combine(preferred, ".write_probe");
+            File.WriteAllText(probePath, "probe");
+            File.Delete(probePath);
+            return preferred;
+        }
+        catch (IOException)
+        {
+            return ResolveFallbackRoot();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ResolveFallbackRoot();
+        }
+    }
+
+    private string ResolveFallbackRoot()
+    {
+        var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "current_market");
+        Directory.CreateDirectory(fallback);
+        return fallback;
     }
 
     private static int PriceDecimals(string asset) => asset.Equals("EURUSD", StringComparison.OrdinalIgnoreCase) ? 5 : 2;
