@@ -261,7 +261,23 @@ public sealed class ScalpingResearchService
             : null;
     }
 
-    public ScalpingStrategyCandidate? FindCandidate(string id) => LoadReport()?.Candidates.FirstOrDefault(candidate => candidate.CandidateId.Equals(id, StringComparison.OrdinalIgnoreCase));
+    public ScalpingStrategyCandidate? FindCandidate(string id)
+    {
+        var current = LoadReport()?.Candidates.FirstOrDefault(candidate => candidate.CandidateId.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (current is not null) return current;
+
+        if (!Directory.Exists(AssetReportsDirectory)) return null;
+        foreach (var assetDirectory in Directory.EnumerateDirectories(AssetReportsDirectory))
+        {
+            var path = Path.Combine(assetDirectory, "latest_scalping_research.json");
+            if (!File.Exists(path)) continue;
+            var report = JsonSerializer.Deserialize<ScalpingResearchReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
+            var match = report?.Candidates.FirstOrDefault(candidate => candidate.CandidateId.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (match is not null) return match;
+        }
+
+        return null;
+    }
 
     public (string JsonPath, string MarkdownPath) ExportCTraderBotSpec(string id)
     {

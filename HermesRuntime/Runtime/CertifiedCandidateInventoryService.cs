@@ -191,9 +191,15 @@ public sealed class CertifiedCandidateInventoryService
 
     public CertifiedCandidateInventory? LoadInventory()
     {
-        return File.Exists(InventoryPath)
-            ? JsonSerializer.Deserialize<CertifiedCandidateInventory>(File.ReadAllText(InventoryPath), JsonDefaults.SnapshotReadOptions)
-            : null;
+        if (!File.Exists(InventoryPath)) return null;
+        var inventory = JsonSerializer.Deserialize<CertifiedCandidateInventory>(File.ReadAllText(InventoryPath), JsonDefaults.SnapshotReadOptions);
+        if (inventory is null) return null;
+        var certifiedAssets = new ScalpingCertificationService(_storagePaths, _runtimeRoot).LoadReports()
+            .Where(report => report.Status == ScalpingCertificationStatus.certified_candidate)
+            .Select(report => report.Asset)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return certifiedAssets.All(asset => inventory.AssetsByCount.ContainsKey(asset)) ? inventory : BuildInventory();
     }
 
     public SetupRegistry? LoadRegistry()
@@ -201,11 +207,13 @@ public sealed class CertifiedCandidateInventoryService
         if (!File.Exists(SetupRegistryPath)) return null;
         var registry = JsonSerializer.Deserialize<SetupRegistry>(File.ReadAllText(SetupRegistryPath), JsonDefaults.SnapshotReadOptions);
         if (registry is null) return null;
+        var certifiedAssets = (LoadInventory() ?? BuildInventory()).Items.Select(item => item.Asset).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList();
         var legacyShape = registry.Assets.Any(entry =>
             string.IsNullOrWhiteSpace(entry.ExpectedSignalFrequency)
             || entry.TradeCountRange == "-"
             || entry.MinimumMemberTradeCount == 0 && entry.MaximumMemberTradeCount == 0
-            || entry.AverageQualityScore == 0 && entry.AverageProfitFactor == 0 && entry.AverageWinRate == 0);
+            || entry.AverageQualityScore == 0 && entry.AverageProfitFactor == 0 && entry.AverageWinRate == 0)
+            || !certifiedAssets.All(asset => registry.SetupCountsByAsset.ContainsKey(asset));
         return legacyShape ? BuildRegistry() : registry;
     }
 
