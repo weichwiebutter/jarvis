@@ -152,6 +152,17 @@ public sealed class DemoSignalFeedService
         return SaveSnapshot("status_check", null, []);
     }
 
+    public DemoSignalFeedSnapshot? LoadStatus()
+    {
+        if (!File.Exists(StatusPath))
+        {
+            return null;
+        }
+
+        var snapshot = JsonSerializer.Deserialize<DemoSignalFeedSnapshot>(File.ReadAllText(StatusPath), JsonDefaults.SnapshotReadOptions);
+        return snapshot is null || string.IsNullOrWhiteSpace(snapshot.FeedStatus) ? null : snapshot;
+    }
+
     public DemoSignalFeedSnapshot Generate()
     {
         var signals = BuildSignals(out var blockers, out var warnings);

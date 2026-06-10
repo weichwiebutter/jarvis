@@ -13,6 +13,7 @@ public sealed record ScalpingAssetRoadmapEntry(
     string HistoricalDataStatus,
     string ResearchStatus,
     string SignalAgentSpecStatus,
+    string ReadinessStatus,
     int CertifiedCandidates,
     string NextAction,
     IReadOnlyList<string> RiskNotes);
@@ -216,6 +217,7 @@ public sealed class ScalpingMultiAssetRoadmapService
             .Concat(["no_strategy_transfer_without_asset_specific_validation", "requires_backtest_oos_walkforward_robustness_certification_human_review"])
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var readiness = new ScalpingAssetReadinessService(marketData.StoragePaths, marketData.RuntimeRoot).Evaluate(asset.Asset);
         return new ScalpingAssetRoadmapEntry(
             Asset: asset.Asset,
             Aliases: asset.Aliases,
@@ -225,8 +227,9 @@ public sealed class ScalpingMultiAssetRoadmapService
             DataGap: dataGap,
             QuoteMappingStatus: quoteMappingStatus,
             HistoricalDataStatus: historicalDataStatus,
-            ResearchStatus: researchStatus,
-            SignalAgentSpecStatus: signalAgentSpecStatus,
+            ResearchStatus: readiness.ResearchStatus,
+            SignalAgentSpecStatus: readiness.SignalAgentSpecStatus,
+            ReadinessStatus: readiness.AssetStatus,
             CertifiedCandidates: certified,
             NextAction: nextAction,
             RiskNotes: riskNotes);

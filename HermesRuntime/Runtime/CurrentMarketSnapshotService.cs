@@ -60,24 +60,26 @@ public sealed class CurrentMarketSnapshotService
     public string SnapshotMarkdownPath => Path.Combine(Root, "current_market_snapshot.md");
     public string StatusPath => Path.Combine(Root, "current_market_status.json");
 
-    public CurrentMarketStatusSnapshot LoadOrCreateStatus()
+    public CurrentMarketStatusSnapshot? LoadStatus()
     {
-        if (File.Exists(StatusPath))
+        if (!File.Exists(StatusPath))
         {
-            try
-            {
-                var snapshot = JsonSerializer.Deserialize<CurrentMarketStatusSnapshot>(File.ReadAllText(StatusPath), JsonDefaults.SnapshotReadOptions);
-                if (snapshot is not null)
-                {
-                    return snapshot;
-                }
-            }
-            catch (Exception ex) when (ex is IOException or JsonException)
-            {
-            }
+            return null;
         }
 
-        return UpdateSnapshot();
+        try
+        {
+            return JsonSerializer.Deserialize<CurrentMarketStatusSnapshot>(File.ReadAllText(StatusPath), JsonDefaults.SnapshotReadOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    public CurrentMarketStatusSnapshot LoadOrCreateStatus()
+    {
+        return LoadStatus() ?? UpdateSnapshot();
     }
 
     public CurrentMarketStatusSnapshot UpdateSnapshot()

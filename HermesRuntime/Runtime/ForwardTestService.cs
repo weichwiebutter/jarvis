@@ -199,6 +199,17 @@ public sealed class ForwardTestService
         return status;
     }
 
+    public ForwardTestStatusSnapshot? LoadStatus()
+    {
+        if (!File.Exists(StatusPath))
+        {
+            return null;
+        }
+
+        var snapshot = JsonSerializer.Deserialize<ForwardTestStatusSnapshot>(File.ReadAllText(StatusPath), JsonDefaults.SnapshotReadOptions);
+        return snapshot is null || string.IsNullOrWhiteSpace(snapshot.ForwardTestStatus) ? null : snapshot;
+    }
+
     public ForwardTestStatusSnapshot RecordObservation(string signalId, string result, string note)
     {
         if (string.IsNullOrWhiteSpace(signalId))

@@ -75,6 +75,17 @@ public sealed class ScalpingEnsembleReviewService
             reason: null);
     }
 
+    public ScalpingEnsembleReviewState? LoadState()
+    {
+        if (!File.Exists(StatusPath))
+        {
+            return null;
+        }
+
+        var state = JsonSerializer.Deserialize<ScalpingEnsembleReviewState>(File.ReadAllText(StatusPath), JsonDefaults.SnapshotReadOptions);
+        return state is null || string.IsNullOrWhiteSpace(state.PackageId) ? null : state;
+    }
+
     public ScalpingEnsembleReviewState Approve(string mode)
     {
         var normalized = mode.Trim().ToLowerInvariant();

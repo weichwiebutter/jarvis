@@ -113,17 +113,16 @@ public sealed class MultiAssetScalpingOrchestratorService
         var research = new ScalpingResearchService(_storagePaths, _runtimeRoot);
         var robustness = new ScalpingRobustnessExpansionService(_storagePaths, _runtimeRoot);
         var certification = new ScalpingCertificationService(_storagePaths, _runtimeRoot);
-        var inventoryService = new CertifiedCandidateInventoryService(_storagePaths, _runtimeRoot);
+        var readinessService = new ScalpingAssetReadinessService(_storagePaths, _runtimeRoot);
         var marketData = new MarketDataAvailabilityService(_storagePaths, _runtimeRoot);
-        var roadmapService = new ScalpingMultiAssetRoadmapService(_storagePaths, _runtimeRoot);
-        var signalSpecDirectory = research.SignalSpecDirectory;
 
         foreach (var asset in requested)
         {
             var dataAvailable = marketData.HasUsableScalpingData(asset, out var dataGaps, out var candleCount);
             var timeframes = AvailableTimeframes(asset, marketData);
-            var historicalStatus = dataAvailable ? "historical_data_ready" : "data_missing";
-            var quoteStatus = QuoteStatus(asset, roadmapService);
+            var readiness = readinessService.Evaluate(asset);
+            var historicalStatus = readiness.HistoricalDataStatus;
+            var quoteStatus = readiness.QuoteStatus;
             if (!dataAvailable)
             {
                 skipped.Add(asset);
@@ -150,90 +149,48 @@ public sealed class MultiAssetScalpingOrchestratorService
             }
 
             processed.Add(asset);
-            var researchReport = research.RunResearch(asset, maxVariants);
-            var robustReports = robustness.ExpandAllRobust();
-            var assetRobust = robustReports.Where(item => item.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase)).ToList();
-            var finalReports = robustness.LoadReports().Where(item => item.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase) && item.Status == ScalpingExpansionStatus.final_candidate).ToList();
-            var certReports = new List<ScalpingCertificationReport>();
-            foreach (var candidateId in finalReports.Select(item => item.CandidateId).Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                try
-                {
-                    certReports.Add(certification.LoadReport(candidateId) ?? certification.Certify(candidateId));
-                }
-                catch (Exception ex)
-                {
-                    warnings.Add($"{asset}:{candidateId}:certification_failed:{SanitizeWarning(ex.Message)}");
-                }
-            }
-
-            foreach (var cert in certReports)
-            {
-                try
-                {
-                    research.ExportSignalAgentSpec(cert.CandidateId);
-                }
-                catch
-                {
-                    warnings.Add($"{asset}:{cert.CandidateId}:signal_spec_export_failed");
-                }
-            }
-
-            var registry = inventoryService.BuildRegistry();
-            var setupCount = registry.SetupCountsByAsset.GetValueOrDefault(asset, 0);
-            var bestSetup = registry.BestSetupByAsset.GetValueOrDefault(asset, "-");
-            var signalSpecStatus = certReports.Count > 0
-                ? certReports.Count(cert => File.Exists(Path.Combine(signalSpecDirectory, cert.CandidateId, "signal_agent_spec.json"))) > 0
-                    ? "ready"
-                    : "signal_agent_spec_pending"
-                : "not_ready";
-            var researchStatus = certReports.Count > 0
-                ? "certified_candidates_available"
-                : finalReports.Count > 0
-                    ? "certification_pending"
-                    : assetRobust.Count > 0 || researchReport.Candidates.Count > 0
-                        ? "candidates_found"
-                        : "research_started";
-            var nextAction = signalSpecStatus == "ready"
-                ? "maintain_signal_agent_exports"
-                : researchStatus == "certified_candidates_available"
-                    ? "export_signal_agent_spec"
-                    : researchStatus == "certification_pending"
-                        ? "run_scalping_certification"
-                        : researchStatus == "candidates_found"
-                            ? "run_scalping_robustness_expansion"
-                            : "run_scalping_research";
-            var assetWarnings = new List<string>(dataGaps);
-            if (!timeframes.Contains("M1", StringComparer.OrdinalIgnoreCase)) assetWarnings.Add("m1_data_missing");
-            if (!timeframes.Contains("M5", StringComparer.OrdinalIgnoreCase)) assetWarnings.Add("m5_data_missing");
-            if (!timeframes.Contains("M15", StringComparer.OrdinalIgnoreCase)) assetWarnings.Add("m15_data_missing");
-            if (researchReport.Candidates.Any(candidate => candidate.Backtest.TradeCount < 100)) assetWarnings.Add("low_trade_count");
-            if (researchReport.Candidates.Any(candidate => (candidate.Backtest.SignalDensityPerMonth ?? 0) < 4)) assetWarnings.Add("low_signal_frequency");
-            if (researchReport.Candidates.Any(candidate => candidate.Backtest.AverageHoldingDurationMinutes is > 360)) assetWarnings.Add("overnight_risk");
+            var researchReport = research.LoadReport() ?? research.LoadAssetReport(asset);
+            var robustReports = robustness.LoadReports().Where(item => item.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase)).ToList();
+            var finalReports = robustReports.Where(item => item.Status == ScalpingExpansionStatus.final_candidate).ToList();
+            var certReports = certification.LoadReports()
+                .Where(item => item.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase) && item.Status == ScalpingCertificationStatus.certified_candidate)
+                .ToList();
 
             results.Add(new MultiAssetScalpingAssetResult(
                 Asset: asset,
                 HistoricalDataStatus: historicalStatus,
                 QuoteStatus: quoteStatus,
-                ResearchStatus: researchStatus,
-                CandidatesTotal: researchReport.CandidatesTotal,
-                RobustCandidates: researchReport.RobustCandidates,
-                FinalCandidates: finalReports.Count,
-                CertifiedCandidates: certReports.Count,
-                FailedCandidates: researchReport.RejectedCandidates,
-                SetupCount: setupCount,
-                BestSetup: bestSetup,
-                SignalAgentSpecStatus: signalSpecStatus,
-                NextAction: nextAction,
-                Warnings: assetWarnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-                Timeframes: timeframes,
-                M1Available: timeframes.Contains("M1", StringComparer.OrdinalIgnoreCase),
-                M5Available: timeframes.Contains("M5", StringComparer.OrdinalIgnoreCase),
-                M15Available: timeframes.Contains("M15", StringComparer.OrdinalIgnoreCase)));
+                ResearchStatus: readiness.ResearchStatus,
+                CandidatesTotal: readiness.CandidatesTotal,
+                RobustCandidates: readiness.RobustCandidates,
+                FinalCandidates: readiness.FinalCandidates,
+                CertifiedCandidates: readiness.CertifiedCandidates,
+                FailedCandidates: researchReport?.RejectedCandidates ?? 0,
+                SetupCount: readiness.SetupCount,
+                BestSetup: readiness.BestSetup,
+                SignalAgentSpecStatus: readiness.SignalAgentSpecStatus,
+                NextAction: readiness.AssetStatus switch
+                {
+                    "bot_ready" => "maintain_signal_agent_exports",
+                    "setup_ready" => "maintain_signal_agent_exports",
+                    "signal_ready" => "export_signal_agent_spec",
+                    "certified_candidates_available" => "export_signal_agent_spec",
+                    "final_candidates_available" => "run_scalping_certification",
+                    "robust_candidates_available" => "run_scalping_robustness_expansion",
+                    "candidates_found" => "run_scalping_robustness_expansion",
+                    "research_started" => "run_scalping_research",
+                    "data_ready_only" => "run_scalping_research",
+                    _ => "import_or_normalize_market_data"
+                },
+                Warnings: readiness.Warnings.ToList(),
+                Timeframes: readiness.Timeframes,
+                M1Available: readiness.M1Available,
+                M5Available: readiness.M5Available,
+                M15Available: readiness.M15Available));
         }
 
         var completedAt = DateTimeOffset.UtcNow;
-        var allAssets = requested.Concat(FutureAssets).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var allAssets = ReadyAssets.Concat(requested).Concat(FutureAssets).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var report = new MultiAssetScalpingResearchReport(
             ReportVersion: "multi_asset_scalping_research_v1",
             StartedAtUtc: startedAt,
@@ -266,84 +223,70 @@ public sealed class MultiAssetScalpingOrchestratorService
     public MultiAssetResearchStatusSnapshot BuildStatus()
     {
         var report = LoadReport();
-        var marketData = new MarketDataAvailabilityService(_storagePaths, _runtimeRoot);
-        var roadmapService = new ScalpingMultiAssetRoadmapService(_storagePaths, _runtimeRoot);
-        var inventoryService = new CertifiedCandidateInventoryService(_storagePaths, _runtimeRoot);
-        var registry = inventoryService.LoadRegistry() ?? inventoryService.BuildRegistry();
+        var readinessService = new ScalpingAssetReadinessService(_storagePaths, _runtimeRoot);
         var requested = report?.AssetsRequested?.Count > 0 ? report.AssetsRequested.ToList() : ReadyAssets.ToList();
         var assets = ReadyAssets
             .Concat(requested)
             .Concat(FutureAssets)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var perAssetResults = new List<MultiAssetResearchAssetStatus>();
+        var evaluated = assets.Select(readinessService.Evaluate).ToList();
+        var perAssetResults = evaluated
+            .Select(item => new MultiAssetResearchAssetStatus(
+                Asset: item.Asset,
+                HistoricalDataStatus: item.HistoricalDataStatus,
+                QuoteStatus: item.QuoteStatus,
+                ResearchStatus: item.ResearchStatus,
+                CandidatesTotal: item.CandidatesTotal,
+                RobustCandidates: item.RobustCandidates,
+                FinalCandidates: item.FinalCandidates,
+                CertifiedCandidates: item.CertifiedCandidates,
+                FailedCandidates: item.CandidatesTotal >= item.CertifiedCandidates ? item.CandidatesTotal - item.CertifiedCandidates : 0,
+                SetupCount: item.SetupCount,
+                BestSetup: item.BestSetup,
+                SignalAgentSpecStatus: item.SignalAgentSpecStatus,
+                NextAction: item.AssetStatus switch
+                {
+                    "bot_ready" => "maintain_signal_agent_exports",
+                    "setup_ready" => "maintain_signal_agent_exports",
+                    "signal_ready" => "export_signal_agent_spec",
+                    "certified_candidates_available" => "export_signal_agent_spec",
+                    "final_candidates_available" => "run_scalping_certification",
+                    "robust_candidates_available" => "run_scalping_robustness_expansion",
+                    "candidates_found" => "run_scalping_robustness_expansion",
+                    "research_started" => "run_scalping_research",
+                    "data_ready_only" => "run_scalping_research",
+                    _ => "import_or_normalize_market_data"
+                },
+                Warnings: item.Warnings,
+                Timeframes: item.Timeframes,
+                M1Available: item.M1Available,
+                M5Available: item.M5Available,
+                M15Available: item.M15Available))
+            .ToList();
 
-        foreach (var asset in assets)
-        {
-            var quality = marketData.BuildQuality(asset);
-            var timeframes = quality.TimeframesAvailable;
-            var historicalStatus = quality.CandleCount > 0 ? "historical_data_ready" : "data_missing";
-            var quoteStatus = QuoteStatus(asset, roadmapService);
-            var certCount = registry.SetupCountsByAsset.TryGetValue(asset, out var setupCount) ? setupCount : 0;
-            var bestSetup = registry.BestSetupByAsset.TryGetValue(asset, out var best) ? best : "-";
-            var matchingReport = report?.PerAssetResults.FirstOrDefault(item => item.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase));
-            var researchStatus = matchingReport?.ResearchStatus
-                ?? (certCount > 0 ? "certified_candidates_available"
-                    : quality.CandleCount > 0 ? "historical_data_ready"
-                    : "data_missing");
-            var signalStatus = matchingReport?.SignalAgentSpecStatus
-                ?? (certCount > 0 ? "ready" : "not_ready");
-            var setupReady = certCount > 0 && signalStatus == "ready";
-            var nextAction = matchingReport?.NextAction
-                ?? (quality.CandleCount == 0 ? "import_or_normalize_market_data"
-                    : certCount > 0 ? "maintain_signal_agent_exports"
-                    : "run_scalping_research");
-            var warnings = new List<string>();
-            if (quality.CandleCount == 0) warnings.Add("data_missing");
-            if (!timeframes.Contains("M1", StringComparer.OrdinalIgnoreCase)) warnings.Add("m1_data_missing");
-            if (!timeframes.Contains("M5", StringComparer.OrdinalIgnoreCase)) warnings.Add("m5_data_missing");
-            if (!timeframes.Contains("M15", StringComparer.OrdinalIgnoreCase)) warnings.Add("m15_data_missing");
-            if (matchingReport is null && quality.CandleCount > 0 && certCount == 0) warnings.Add("research_not_started");
-
-            perAssetResults.Add(new MultiAssetResearchAssetStatus(
-                Asset: asset,
-                HistoricalDataStatus: historicalStatus,
-                QuoteStatus: quoteStatus,
-                ResearchStatus: researchStatus,
-                CandidatesTotal: matchingReport?.CandidatesTotal ?? 0,
-                RobustCandidates: matchingReport?.RobustCandidates ?? 0,
-                FinalCandidates: matchingReport?.FinalCandidates ?? 0,
-                CertifiedCandidates: matchingReport?.CertifiedCandidates ?? 0,
-                FailedCandidates: matchingReport?.FailedCandidates ?? 0,
-                SetupCount: setupCount,
-                BestSetup: bestSetup,
-                SignalAgentSpecStatus: signalStatus,
-                NextAction: nextAction,
-                Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-                Timeframes: timeframes,
-                M1Available: timeframes.Contains("M1", StringComparer.OrdinalIgnoreCase),
-                M5Available: timeframes.Contains("M5", StringComparer.OrdinalIgnoreCase),
-                M15Available: timeframes.Contains("M15", StringComparer.OrdinalIgnoreCase)));
-        }
-
-        var assetsReady = perAssetResults
-            .Where(item => item.HistoricalDataStatus == "historical_data_ready" && item.CertifiedCandidates > 0)
+        var assetsReady = evaluated
+            .Where(item => item.AssetStatus is "signal_ready" or "setup_ready" or "bot_ready")
             .Select(item => item.Asset)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var assetsSetupReady = perAssetResults
-            .Where(item => item.SetupCount > 0 && item.SignalAgentSpecStatus == "ready")
+        var assetsSetupReady = evaluated
+            .Where(item => item.AssetStatus is "setup_ready" or "bot_ready")
             .Select(item => item.Asset)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var assetsDataReadyOnly = perAssetResults
-            .Where(item => item.HistoricalDataStatus == "historical_data_ready" && item.CertifiedCandidates == 0)
+        var assetsDataReadyOnly = evaluated
+            .Where(item => item.AssetStatus == "data_ready_only")
             .Select(item => item.Asset)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var assetsMissingData = perAssetResults
-            .Where(item => item.HistoricalDataStatus == "data_missing")
+        var assetsMissingData = evaluated
+            .Where(item => item.AssetStatus == "missing_data")
             .Select(item => item.Asset)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
             .ToList();
 

@@ -182,19 +182,27 @@ public sealed class ScalpingCertificationService
 
     public ScalpingCertificationReport? LoadReport(string candidateId)
     {
-        var path = Path.Combine(CertificationDirectory, candidateId, "certification_report.json");
-        return File.Exists(path)
-            ? JsonSerializer.Deserialize<ScalpingCertificationReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions)
-            : null;
+        foreach (var path in CandidateReportPaths(candidateId))
+        {
+            if (!File.Exists(path)) continue;
+            var report = JsonSerializer.Deserialize<ScalpingCertificationReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
+            if (report is not null) return report;
+        }
+
+        return null;
     }
 
     public IReadOnlyList<ScalpingCertificationReport> LoadReports()
     {
-        if (!Directory.Exists(CertificationDirectory)) return [];
-        return Directory.EnumerateFiles(CertificationDirectory, "certification_report.json", SearchOption.AllDirectories)
+        return CandidateReportDirectories()
+            .Where(Directory.Exists)
+            .SelectMany(directory => Directory.EnumerateFiles(directory, "certification_report.json", SearchOption.AllDirectories))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(path => JsonSerializer.Deserialize<ScalpingCertificationReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions))
             .Where(report => report is not null)
             .Select(report => report!)
+            .GroupBy(report => report.CandidateId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(report => report.CertifiedCandidate).First())
             .OrderByDescending(report => report.CertifiedCandidate)
             .ThenBy(report => report.CandidateId, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -226,6 +234,20 @@ public sealed class ScalpingCertificationService
         var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "scalping_research", "certification");
         Directory.CreateDirectory(fallback);
         return fallback;
+    }
+
+    private IEnumerable<string> CandidateReportDirectories()
+    {
+        yield return CertificationDirectory;
+        yield return Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "scalping_research", "certification");
+    }
+
+    private IEnumerable<string> CandidateReportPaths(string candidateId)
+    {
+        foreach (var directory in CandidateReportDirectories())
+        {
+            yield return Path.Combine(directory, candidateId, "certification_report.json");
+        }
     }
 
     private static IEnumerable<ScalpingPeriodValidationSegment> BuildPeriods(ScalpingStrategyCandidate candidate)

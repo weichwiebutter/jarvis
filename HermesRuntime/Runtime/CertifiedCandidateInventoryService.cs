@@ -191,30 +191,14 @@ public sealed class CertifiedCandidateInventoryService
 
     public CertifiedCandidateInventory? LoadInventory()
     {
-        if (!File.Exists(InventoryPath)) return null;
-        var inventory = JsonSerializer.Deserialize<CertifiedCandidateInventory>(File.ReadAllText(InventoryPath), JsonDefaults.SnapshotReadOptions);
-        if (inventory is null) return null;
-        var certifiedAssets = new ScalpingCertificationService(_storagePaths, _runtimeRoot).LoadReports()
-            .Where(report => report.Status == ScalpingCertificationStatus.certified_candidate)
-            .Select(report => report.Asset)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        return certifiedAssets.All(asset => inventory.AssetsByCount.ContainsKey(asset)) ? inventory : BuildInventory();
+        var inventories = LoadInventoryCandidates();
+        return inventories.Count == 0 ? null : MergeInventories(inventories);
     }
 
     public SetupRegistry? LoadRegistry()
     {
-        if (!File.Exists(SetupRegistryPath)) return null;
-        var registry = JsonSerializer.Deserialize<SetupRegistry>(File.ReadAllText(SetupRegistryPath), JsonDefaults.SnapshotReadOptions);
-        if (registry is null) return null;
-        var certifiedAssets = (LoadInventory() ?? BuildInventory()).Items.Select(item => item.Asset).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList();
-        var legacyShape = registry.Assets.Any(entry =>
-            string.IsNullOrWhiteSpace(entry.ExpectedSignalFrequency)
-            || entry.TradeCountRange == "-"
-            || entry.MinimumMemberTradeCount == 0 && entry.MaximumMemberTradeCount == 0
-            || entry.AverageQualityScore == 0 && entry.AverageProfitFactor == 0 && entry.AverageWinRate == 0)
-            || !certifiedAssets.All(asset => registry.SetupCountsByAsset.ContainsKey(asset));
-        return legacyShape ? BuildRegistry() : registry;
+        var registries = LoadRegistryCandidates();
+        return registries.Count == 0 ? null : MergeRegistries(registries);
     }
 
     public string ExplainSelection(string asset, string? timeframe)
@@ -264,6 +248,87 @@ public sealed class CertifiedCandidateInventoryService
     private static string NormalizeAsset(string asset)
         => asset.Trim().Equals("GOLD", StringComparison.OrdinalIgnoreCase) ? "XAUUSD" : asset.Trim().ToUpperInvariant();
 
+    private IReadOnlyList<CertifiedCandidateInventory> LoadInventoryCandidates()
+    {
+        var candidates = new List<CertifiedCandidateInventory>();
+        foreach (var path in CandidateInventoryPaths())
+        {
+            if (!File.Exists(path)) continue;
+            var inventory = JsonSerializer.Deserialize<CertifiedCandidateInventory>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
+            if (inventory is not null)
+            {
+                candidates.Add(inventory);
+            }
+        }
+
+        return candidates;
+    }
+
+    private IReadOnlyList<SetupRegistry> LoadRegistryCandidates()
+    {
+        var candidates = new List<SetupRegistry>();
+        foreach (var path in CandidateRegistryPaths())
+        {
+            if (!File.Exists(path)) continue;
+            var registry = JsonSerializer.Deserialize<SetupRegistry>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
+            if (registry is not null)
+            {
+                candidates.Add(registry);
+            }
+        }
+
+        return candidates;
+    }
+
+    private IEnumerable<string> CandidateInventoryPaths()
+    {
+        yield return InventoryPath;
+        yield return Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "setup_registry", "certified_candidate_inventory.json");
+    }
+
+    private IEnumerable<string> CandidateRegistryPaths()
+    {
+        yield return SetupRegistryPath;
+        yield return Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "setup_registry", "setup_registry.json");
+    }
+
+    private static CertifiedCandidateInventory MergeInventories(IReadOnlyList<CertifiedCandidateInventory> inventories)
+    {
+        var items = inventories.SelectMany(inventory => inventory.Items)
+            .GroupBy(item => item.CandidateId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(item => item.QualityScore ?? 0).First())
+            .ToList();
+
+        return new CertifiedCandidateInventory(
+            ReportVersion: "certified_candidate_inventory_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            Items: items,
+            AssetsByCount: items.GroupBy(item => item.Asset).ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase),
+            NoAutoTrading: true,
+            HumanReviewRequired: true,
+            BrokerOrdersEnabled: false,
+            LiveTradingEnabled: false);
+    }
+
+    private static SetupRegistry MergeRegistries(IReadOnlyList<SetupRegistry> registries)
+    {
+        var entries = registries.SelectMany(registry => registry.Assets)
+            .GroupBy(entry => entry.SetupId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(entry => entry.ConfidenceBaseline).First())
+            .ToList();
+
+        return new SetupRegistry(
+            ReportVersion: "setup_registry_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            Assets: entries,
+            SetupCountsByAsset: entries.GroupBy(entry => entry.Asset).ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase),
+            BestSetupByAsset: entries.GroupBy(entry => entry.Asset, StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.ConfidenceBaseline).First().SetupId, StringComparer.OrdinalIgnoreCase),
+            NoAutoTrading: true,
+            HumanReviewRequired: true,
+            BrokerOrdersEnabled: false,
+            LiveTradingEnabled: false);
+    }
+
     private static string CandidateDirection(string setupType)
         => setupType.Contains("breakout", StringComparison.OrdinalIgnoreCase) ? "long_short" : "long_short";
 
@@ -282,8 +347,8 @@ public sealed class CertifiedCandidateInventoryService
     {
         var minimumTrades = members.Min(SourceTradeCount);
         var frequency = Math.Max(1, members.Count * 4);
-        if (minimumTrades < 75) return "bot_review_required_low_trade_count";
-        if (frequency < 4) return "bot_review_required_low_signal_frequency";
+        if (minimumTrades < 75) return "needs_more_validation";
+        if (frequency < 4) return "signal_ready";
         return "bot_ready";
     }
 

@@ -61,7 +61,8 @@ public sealed class MasterStatusService
         var nightlyReport = LoadOrDefault(nightlyStatePath);
         var robustStrategies = LoadOrDefault(Path.Combine(strategyRoot, "robust_strategies.json"));
         var overfitReport = LoadOrDefault(Path.Combine(strategyRoot, "overfit_report.json"));
-        var goalState = new GoalProgressTracker(_storagePaths).LoadOrCreateState();
+        var goalTracker = new GoalProgressTracker(_storagePaths);
+        var goalState = goalTracker.LoadState() ?? goalTracker.LoadOrCreateState();
         if (overfitReport.ValueKind != JsonValueKind.Object)
         {
             overfitReport = LoadOrDefault(Path.Combine(simulationRoot, "overfit_report.json"));
@@ -73,7 +74,8 @@ public sealed class MasterStatusService
         var statusBuildWarnings = new List<string>();
         var marketDataAvailability = marketDataService.Scan();
         var xauusdQuality = marketDataService.BuildQuality(ScalpingResearchService.DefaultAsset);
-        var knowledgeQuality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
+        var knowledgeQualityEngine = new KnowledgeQualityEngine(_storagePaths);
+        var knowledgeQuality = knowledgeQualityEngine.LoadReport() ?? knowledgeQualityEngine.LoadOrCreateReport();
         var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
         var domainValidation = SafeBuildDomainValidation(statusBuildWarnings);
         var humanReview = SafeBuildHumanReview(statusBuildWarnings);
@@ -182,14 +184,15 @@ public sealed class MasterStatusService
         var scalpingRejectedCandidates = scalpingReport?.RejectedCandidates ?? 0;
         var scalpingNeedsMoreData = scalpingReport?.NeedsMoreData ?? 0;
         var bestScalpingCandidate = scalpingReport?.BestCandidateId;
-        var signalAgentSpecsReady = Directory.Exists(scalpingService.SignalSpecDirectory)
-            ? Directory.GetFiles(scalpingService.SignalSpecDirectory, "signal_agent_spec.json", SearchOption.AllDirectories).Length
-            : 0;
-        var latestSignalAgentSpec = Directory.Exists(scalpingService.SignalSpecDirectory)
-            ? Directory.GetFiles(scalpingService.SignalSpecDirectory, "signal_agent_spec.json", SearchOption.AllDirectories)
-                .OrderByDescending(File.GetLastWriteTimeUtc)
-                .FirstOrDefault()
-            : null;
+        var signalSpecDirectories = SignalSpecDirectories(scalpingService);
+        var signalAgentSpecFiles = signalSpecDirectories
+            .SelectMany(directory => Directory.GetFiles(directory, "signal_agent_spec.json", SearchOption.AllDirectories))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var signalAgentSpecsReady = signalAgentSpecFiles.Count;
+        var latestSignalAgentSpec = signalAgentSpecFiles
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
         var cTraderBotSpecsReady = Directory.Exists(scalpingService.BotSpecDirectory)
             ? Directory.GetFiles(scalpingService.BotSpecDirectory, "ctrader_bot_spec.json", SearchOption.AllDirectories).Length
             : 0;
@@ -260,13 +263,46 @@ public sealed class MasterStatusService
         var scalpingSignalDensityScore = portfolio?.Evaluation.SignalDensityScore ?? 0;
         var scalpingPortfolioDiversityScore = portfolio?.Evaluation.DiversityScore ?? 0;
         var scalpingNextCandidateSearchAction = portfolio?.Evaluation.NextCandidateSearchAction ?? "build_scalping_portfolio";
-        var multiAssetRoadmap = new ScalpingMultiAssetRoadmapService(_storagePaths, _runtimeRoot).Update();
+        var multiAssetRoadmap = new ScalpingMultiAssetRoadmapService(_storagePaths, _runtimeRoot).Load();
         var scalpingMultiAssetMode = multiAssetRoadmap?.Mode ?? "planned_research_only";
         var scalpingNextAssets = multiAssetRoadmap?.NextAssets ?? [];
         var scalpingAssetsWithData = multiAssetRoadmap?.AssetsWithData ?? [];
         var scalpingAssetsNeedingData = multiAssetRoadmap?.AssetsNeedingData ?? [];
         var scalpingMultiAssetRoadmapHealth = multiAssetRoadmap?.RoadmapHealth ?? "missing";
         var multiAssetStatus = new MultiAssetScalpingOrchestratorService(_storagePaths, _runtimeRoot).BuildStatus();
+        var readinessService = new ScalpingAssetReadinessService(_storagePaths, _runtimeRoot);
+        var readinessAssets = new[] { "GER40", "XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "NAS100", "US500" };
+        var readinessSnapshots = readinessAssets.Select(readinessService.Evaluate).ToList();
+        var dataReadyAssets = readinessSnapshots
+            .Where(item => item.HistoricalDataStatus == "historical_data_ready")
+            .Select(item => item.Asset)
+            .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var signalReadyAssets = readinessSnapshots
+            .Where(item => item.AssetStatus is "signal_ready" or "setup_ready" or "bot_ready")
+            .Select(item => item.Asset)
+            .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var setupReadyAssets = readinessSnapshots
+            .Where(item => item.AssetStatus is "setup_ready" or "bot_ready")
+            .Select(item => item.Asset)
+            .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var botReadyAssets = readinessSnapshots
+            .Where(item => item.AssetStatus == "bot_ready")
+            .Select(item => item.Asset)
+            .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var assetsNeedingValidation = readinessSnapshots
+            .Where(item => item.AssetStatus is "signal_ready" or "certified_candidates_available" or "final_candidates_available" or "robust_candidates_available" or "candidates_found" or "research_started" or "data_ready_only")
+            .Select(item => item.Asset)
+            .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var assetsMissingData = readinessSnapshots
+            .Where(item => item.AssetStatus == "missing_data")
+            .Select(item => item.Asset)
+            .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+            .ToList();
         var ger40Roadmap = multiAssetRoadmap?.Assets.FirstOrDefault(entry => entry.Asset.Equals("GER40", StringComparison.OrdinalIgnoreCase));
         var ger40QuoteMappingStatus = ger40Roadmap?.QuoteMappingStatus ?? "missing";
         var ger40HistoricalDataStatus = ger40Roadmap?.HistoricalDataStatus ?? "missing";
@@ -282,7 +318,7 @@ public sealed class MasterStatusService
         var bestXauusdSetup = setupRegistry.BestSetupByAsset.TryGetValue("XAUUSD", out var bestXauusd) ? bestXauusd : null;
         var bestEurusdSetup = setupRegistry.BestSetupByAsset.TryGetValue("EURUSD", out var bestEurusd) ? bestEurusd : null;
         var bestGer40Setup = setupRegistry.BestSetupByAsset.TryGetValue("GER40", out var bestGer40) ? bestGer40 : null;
-        var totalSetupReadyAssets = multiAssetStatus.AssetsSetupReady.Count;
+        var totalSetupReadyAssets = setupReadyAssets.Count;
         var totalSignalSpecsReady = signalAgentSpecsReady;
         var eurusdCertifiedCandidates = certificationReports.Count(report => report.Asset.Equals("EURUSD", StringComparison.OrdinalIgnoreCase) && report.Status == ScalpingCertificationStatus.certified_candidate);
         var ensembleCandidate = new ScalpingPortfolioService(_storagePaths, _runtimeRoot).LoadEnsembleCandidate();
@@ -310,21 +346,21 @@ public sealed class MasterStatusService
         var scalpingEnsembleExportHealth = scalpingEnsemblePackageReady ? "ok" : optimizedSelection?.Status == ScalpingOptimizedEnsembleStatus.ensemble_ready ? "needs_export" : "not_ready";
         var scalpingEnsembleHumanReviewReady = File.Exists(ensembleExportService.HumanReviewPackagePath);
         var reviewService = new ScalpingEnsembleReviewService(_storagePaths, _runtimeRoot);
-        var reviewState = reviewService.LoadOrCreate();
+        var reviewState = reviewService.LoadState() ?? reviewService.LoadOrCreate();
         var scalpingEnsembleReviewStatus = reviewState.ReviewStatus.ToString();
         var scalpingEnsembleApprovedForDemoSignalUse = reviewState.ReviewStatus == ScalpingEnsembleReviewStatus.approved_for_demo_signal_use;
         var scalpingEnsembleApprovedForForwardTestPreparation = reviewState.ReviewStatus == ScalpingEnsembleReviewStatus.approved_for_forward_test_preparation;
         var scalpingEnsembleReviewHealth = reviewState.Blockers.Count > 0 ? "needs_attention" : "ok";
         var latestScalpingEnsembleReview = File.Exists(reviewService.StatusPath) ? reviewService.StatusPath : null;
         var demoSignalFeedService = new DemoSignalFeedService(_storagePaths, _runtimeRoot);
-        var demoSignalFeed = demoSignalFeedService.LoadOrCreateStatus();
+        var demoSignalFeed = demoSignalFeedService.LoadStatus() ?? demoSignalFeedService.LoadOrCreateStatus();
         var demoSignalFeedStatus = demoSignalFeed.FeedStatus;
         var demoSignalsAvailable = demoSignalFeed.DemoSignalsAvailable;
         var latestDemoSignalCount = demoSignalFeed.SignalCount;
         var demoSignalFeedHealth = demoSignalFeed.Blockers.Count > 0 ? "needs_attention" : "ok";
         var demoSignalFeedMode = demoSignalFeed.FeedMode;
         var forwardTestService = new ForwardTestService(_storagePaths, _runtimeRoot);
-        var forwardTest = forwardTestService.LoadOrCreateStatus();
+        var forwardTest = forwardTestService.LoadStatus() ?? forwardTestService.LoadOrCreateStatus();
         var forwardTestStatus = forwardTest.ForwardTestStatus;
         var forwardTestMode = forwardTest.ForwardTestMode;
         var forwardTestAssets = forwardTest.ForwardTestAssets;
@@ -338,11 +374,11 @@ public sealed class MasterStatusService
         var forwardTestHealth = forwardTest.ForwardTestHealth;
         var forwardTestRequiresHumanReview = forwardTest.ForwardTestRequiresHumanReview;
         var currentMarketService = new CurrentMarketSnapshotService(_storagePaths, _runtimeRoot);
-        var currentMarket = currentMarketService.LoadOrCreateStatus();
-        var currentMarketSnapshotStatus = currentMarket.SnapshotStatus;
-        var currentMarketAssetsAvailable = currentMarket.AssetsAvailable;
-        var currentMarketSnapshotHealth = currentMarket.SnapshotHealth;
-        var currentMarketLatestUpdateUtc = currentMarket.LatestUpdateUtc;
+        var currentMarket = currentMarketService.LoadStatus();
+        var currentMarketSnapshotStatus = currentMarket?.SnapshotStatus ?? "missing";
+        var currentMarketAssetsAvailable = currentMarket?.AssetsAvailable ?? [];
+        var currentMarketSnapshotHealth = currentMarket?.SnapshotHealth ?? "missing";
+        var currentMarketLatestUpdateUtc = currentMarket?.LatestUpdateUtc;
 
         var noAutoTrading = schedulerStatus.NoAutoTrading
             && supervisorState.NoAutoTrading
@@ -828,6 +864,12 @@ public sealed class MasterStatusService
             MultiAssetAssetsSetupReady: multiAssetStatus.AssetsSetupReady,
             MultiAssetAssetsDataReadyOnly: multiAssetStatus.AssetsDataReadyOnly,
             MultiAssetAssetsMissingData: multiAssetStatus.AssetsMissingData,
+            DataReadyAssets: dataReadyAssets,
+            SignalReadyAssets: signalReadyAssets,
+            SetupReadyAssets: setupReadyAssets,
+            BotReadyAssets: botReadyAssets,
+            AssetsNeedingValidation: assetsNeedingValidation,
+            AssetsMissingData: assetsMissingData,
             Ger40QuoteMappingStatus: ger40QuoteMappingStatus,
             Ger40HistoricalDataStatus: ger40HistoricalDataStatus,
             Ger40ResearchStatus: ger40ResearchStatus,
@@ -1254,6 +1296,19 @@ public sealed class MasterStatusService
             NoBrokerAction: true,
             NoAutoTrading: true);
     }
+
+    private static IReadOnlyList<string> SignalSpecDirectories(ScalpingResearchService service)
+        => new[]
+        {
+            service.SignalSpecDirectory,
+            Path.Combine(service.Root, "signal_agent_specs"),
+            Path.Combine(service.Root, "..", "signal_agent_specs"),
+            Path.Combine(Directory.GetCurrentDirectory(), ".codex_artifacts", "reports", "signal_agent_specs")
+        }
+        .Select(Path.GetFullPath)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Where(Directory.Exists)
+        .ToList();
 
     private static string SanitizeMessage(string? message)
     {

@@ -248,17 +248,27 @@ public sealed class ScalpingResearchService
 
     public ScalpingResearchReport? LoadReport()
     {
-        if (!File.Exists(LatestReportPath)) return null;
-        return JsonSerializer.Deserialize<ScalpingResearchReport>(File.ReadAllText(LatestReportPath), JsonDefaults.SnapshotReadOptions);
+        foreach (var path in CandidateReportPaths())
+        {
+            if (!File.Exists(path)) continue;
+            var report = JsonSerializer.Deserialize<ScalpingResearchReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
+            if (report is not null) return report;
+        }
+
+        return null;
     }
 
     public ScalpingResearchReport? LoadAssetReport(string? asset)
     {
         var normalizedAsset = NormalizeAsset(asset);
-        var path = Path.Combine(AssetReportsDirectory, normalizedAsset, "latest_scalping_research.json");
-        return File.Exists(path)
-            ? JsonSerializer.Deserialize<ScalpingResearchReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions)
-            : null;
+        foreach (var path in CandidateAssetReportPaths(normalizedAsset))
+        {
+            if (!File.Exists(path)) continue;
+            var report = JsonSerializer.Deserialize<ScalpingResearchReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
+            if (report is not null) return report;
+        }
+
+        return null;
     }
 
     public ScalpingStrategyCandidate? FindCandidate(string id)
@@ -266,9 +276,9 @@ public sealed class ScalpingResearchService
         var current = LoadReport()?.Candidates.FirstOrDefault(candidate => candidate.CandidateId.Equals(id, StringComparison.OrdinalIgnoreCase));
         if (current is not null) return current;
 
-        if (!Directory.Exists(AssetReportsDirectory)) return null;
-        foreach (var assetDirectory in Directory.EnumerateDirectories(AssetReportsDirectory))
+        foreach (var assetDirectory in CandidateAssetReportDirectories())
         {
+            if (!Directory.Exists(assetDirectory)) continue;
             var path = Path.Combine(assetDirectory, "latest_scalping_research.json");
             if (!File.Exists(path)) continue;
             var report = JsonSerializer.Deserialize<ScalpingResearchReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
@@ -378,6 +388,24 @@ public sealed class ScalpingResearchService
         File.WriteAllText(jsonPath, JsonSerializer.Serialize(spec, JsonDefaults.WriteOptions));
         File.WriteAllText(markdownPath, SignalMarkdown(spec));
         return (jsonPath, markdownPath);
+    }
+
+    private IEnumerable<string> CandidateReportPaths()
+    {
+        yield return LatestReportPath;
+        yield return Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "scalping_research", "latest_scalping_research.json");
+    }
+
+    private IEnumerable<string> CandidateAssetReportPaths(string asset)
+    {
+        yield return Path.Combine(AssetReportsDirectory, asset, "latest_scalping_research.json");
+        yield return Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "scalping_research", "assets", asset, "latest_scalping_research.json");
+    }
+
+    private IEnumerable<string> CandidateAssetReportDirectories()
+    {
+        yield return AssetReportsDirectory;
+        yield return Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "scalping_research", "assets");
     }
 
     private ScalpingStrategyCandidate RequireCertifiedCandidate(string id)

@@ -626,6 +626,12 @@ internal sealed class HermesCli
         WriteMessages("multi_asset_assets_setup_ready", snapshot.MultiAssetAssetsSetupReady);
         WriteMessages("multi_asset_assets_data_ready_only", snapshot.MultiAssetAssetsDataReadyOnly);
         WriteMessages("multi_asset_assets_missing_data", snapshot.MultiAssetAssetsMissingData);
+        WriteMessages("data_ready_assets", snapshot.DataReadyAssets);
+        WriteMessages("signal_ready_assets", snapshot.SignalReadyAssets);
+        WriteMessages("setup_ready_assets", snapshot.SetupReadyAssets);
+        WriteMessages("bot_ready_assets", snapshot.BotReadyAssets);
+        WriteMessages("assets_needing_validation", snapshot.AssetsNeedingValidation);
+        WriteMessages("assets_missing_data", snapshot.AssetsMissingData);
         WriteField("certified_candidate_inventory_status", snapshot.CertifiedCandidateInventoryStatus);
         WriteField("setup_registry_status", snapshot.SetupRegistryStatus);
         WriteMessages("setup_registry_assets", snapshot.SetupRegistryAssets);
@@ -4145,7 +4151,13 @@ internal sealed class HermesCli
         WriteHeader("Hermes Setup Registry");
         var asset = ReadOption(_args, "--asset");
         var service = new CertifiedCandidateInventoryService(BuildStoragePaths(), _runtimeRoot);
-        var registry = service.LoadRegistry() ?? service.BuildRegistry();
+        var registry = service.LoadRegistry();
+        if (registry is null)
+        {
+            WriteWarning("setup_registry_missing");
+            WriteSafety();
+            return 0;
+        }
         WriteField("Registry Path", DisplayPath(service.SetupRegistryPath));
         WriteField("Assets", string.Join(", ", registry.SetupCountsByAsset.Keys.OrderBy(item => item, StringComparer.OrdinalIgnoreCase)));
         var entries = string.IsNullOrWhiteSpace(asset)
@@ -4372,10 +4384,20 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Signal Agent Specs");
         var service = new ScalpingResearchService(BuildStoragePaths(), _runtimeRoot);
-        var root = service.SignalSpecDirectory;
-        var specs = Directory.Exists(root)
-            ? Directory.GetFiles(root, "signal_agent_spec.json", SearchOption.AllDirectories).OrderByDescending(File.GetLastWriteTimeUtc).ToList()
-            : [];
+        var roots = new[]
+        {
+            service.SignalSpecDirectory,
+            Path.Combine(BuildStoragePaths().Root, "reports", "signal_agent_specs"),
+            Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "signal_agent_specs")
+        }
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Where(Directory.Exists)
+        .ToList();
+        var specs = roots
+            .SelectMany(root => Directory.GetFiles(root, "signal_agent_spec.json", SearchOption.AllDirectories))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .ToList();
         WriteField("Specs Ready", specs.Count.ToString());
         foreach (var spec in specs.Take(20))
         {
@@ -4503,19 +4525,23 @@ internal sealed class HermesCli
             return 1;
         }
 
-        var service = new ScalpingMultiAssetRoadmapService(BuildStoragePaths(), _runtimeRoot);
-        var roadmap = service.Update();
-        var entry = roadmap.Assets.FirstOrDefault(candidate =>
-            candidate.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase)
-            || candidate.Aliases.Any(alias => alias.Equals(asset, StringComparison.OrdinalIgnoreCase)));
-        if (entry is null)
-        {
-            WriteError($"asset_not_in_scalping_roadmap:{asset}");
-            WriteSafety();
-            return 1;
-        }
-
-        WriteScalpingAssetRoadmapEntry(entry);
+        var readiness = new ScalpingAssetReadinessService(BuildStoragePaths(), _runtimeRoot).Evaluate(asset);
+        WriteField("Asset", readiness.Asset);
+        WriteField("Historical Data Status", readiness.HistoricalDataStatus);
+        WriteField("Quote Status", readiness.QuoteStatus);
+        WriteField("Research Status", readiness.ResearchStatus);
+        WriteField("Signal Agent Spec Status", readiness.SignalAgentSpecStatus);
+        WriteField("Readiness Status", readiness.AssetStatus);
+        WriteField("Setup Ready Status", readiness.SetupReadyStatus);
+        WriteField("Bot Ready Status", readiness.BotReadyStatus);
+        WriteField("Setup Count", readiness.SetupCount.ToString());
+        WriteField("Best Setup", readiness.BestSetup);
+        WriteField("Candidates Total", readiness.CandidatesTotal.ToString());
+        WriteField("Robust Candidates", readiness.RobustCandidates.ToString());
+        WriteField("Final Candidates", readiness.FinalCandidates.ToString());
+        WriteField("Certified Candidates", readiness.CertifiedCandidates.ToString());
+        WriteMessages("Timeframes", readiness.Timeframes);
+        WriteMessages("Warnings", readiness.Warnings);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -7238,6 +7264,19 @@ internal sealed class HermesCli
 
     private void WriteScalpingSummary(ScalpingResearchService service, ScalpingResearchReport report)
     {
+        var signalSpecRoots = new[]
+        {
+            service.SignalSpecDirectory,
+            Path.Combine(BuildStoragePaths().Root, "reports", "signal_agent_specs"),
+            Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "signal_agent_specs")
+        }
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Where(Directory.Exists)
+        .ToList();
+        var signalSpecCount = signalSpecRoots
+            .SelectMany(root => Directory.GetFiles(root, "*.json", SearchOption.AllDirectories))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
         WriteField("Report", DisplayPath(service.LatestReportPath));
         WriteField("scalping_asset", report.Asset);
         WriteField("variants_tested", report.VariantsTested.ToString());
@@ -7247,7 +7286,7 @@ internal sealed class HermesCli
         WriteField("needs_more_data", report.NeedsMoreData.ToString());
         WriteField("best_candidate", report.BestCandidateId ?? "-");
         WriteField("bot_specs_ready", Directory.Exists(service.BotSpecDirectory) ? Directory.GetFiles(service.BotSpecDirectory, "*.json").Length.ToString() : "0");
-        WriteField("signal_specs_ready", Directory.Exists(service.SignalSpecDirectory) ? Directory.GetFiles(service.SignalSpecDirectory, "*.json").Length.ToString() : "0");
+        WriteField("signal_specs_ready", signalSpecCount.ToString());
         WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
         WriteField("broker_orders_enabled", report.BrokerOrdersEnabled.ToString().ToLowerInvariant());
@@ -7475,6 +7514,7 @@ internal sealed class HermesCli
         WriteField("Historical Data Status", entry.HistoricalDataStatus);
         WriteField("Research Status", entry.ResearchStatus);
         WriteField("Signal Agent Spec Status", entry.SignalAgentSpecStatus);
+        WriteField("Readiness Status", entry.ReadinessStatus);
         WriteField("Certified Candidates", entry.CertifiedCandidates.ToString());
         WriteField("Next Action", entry.NextAction);
         WriteMessages("Risk Notes", entry.RiskNotes);
