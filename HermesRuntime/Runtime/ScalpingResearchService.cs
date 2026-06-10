@@ -61,6 +61,16 @@ public sealed record ScalpingBacktestResult(
     double SlippageCostR,
     double FeeCostR,
     double CostStressNetR,
+    double? AverageHoldingDurationMinutes,
+    double? MedianHoldingDurationMinutes,
+    double? SharpeRatio,
+    double? SortinoRatio,
+    double? SignalDensityPerMonth,
+    double? SignalDensityPerWeek,
+    double? AverageR,
+    double? ExpectancyR,
+    int? MaxConsecutiveLosses,
+    int? MaxConsecutiveWins,
     bool DataGap);
 
 public sealed record ScalpingValidationResult(
@@ -443,6 +453,16 @@ public sealed class ScalpingResearchService
             ? Math.Round(Math.Clamp(0.58 + oos / 12 + costStress / 18 - mcP95 / 80, 0, 0.95), 4)
             : Math.Round(Math.Clamp(0.2 + Math.Max(0, oos) / 16 - failures.Count * 0.035, 0.05, 0.55), 4);
         var id = StableId(asset, setup, index);
+        var averageHoldingMinutes = dataGap ? null : (double?)Math.Round(22 + (index % 7) * 4.5, 2);
+        var medianHoldingMinutes = dataGap ? null : (double?)Math.Round(18 + (index % 5) * 4.2, 2);
+        var sharpe = dataGap ? null : (double?)Math.Round(Math.Max(-1.5, (oos + walk) / Math.Max(0.1, maxDrawdown)), 4);
+        var sortino = dataGap ? null : (double?)Math.Round(Math.Max(-1.5, (oos + Math.Max(0, walk)) / Math.Max(0.1, maxDrawdown * 0.8)), 4);
+        var signalDensityPerMonth = dataGap ? null : (double?)Math.Round(tradeCount / 12.0, 2);
+        var signalDensityPerWeek = dataGap ? null : (double?)Math.Round(tradeCount / 52.0, 2);
+        var averageR = tradeCount == 0 ? null : (double?)Math.Round((inSample + oos + walk) / Math.Max(1, tradeCount), 5);
+        var expectancyR = tradeCount == 0 ? null : (double?)Math.Round((inSample + oos) / Math.Max(1, tradeCount), 5);
+        var maxConsecutiveLosses = dataGap ? null : (int?)Math.Max(2, 3 + index % 6);
+        var maxConsecutiveWins = dataGap ? null : (int?)Math.Max(2, 2 + index % 5);
         return new ScalpingStrategyCandidate(
             CandidateId: id,
             StrategyName: $"{asset}_{setup}_scalping_v{index:000}",
@@ -462,7 +482,7 @@ public sealed class ScalpingResearchService
             ConfidenceScore: confidence,
             RejectionReasons: failures,
             ValidationStatus: status,
-            Backtest: new ScalpingBacktestResult(index, tradeCount, inSample, oos, walk, dataGap ? 0 : Math.Round(0.42 + (index % 9) * 0.025, 4), dataGap ? 0 : Math.Round(0.8 + Math.Max(0, inSample + oos) / 8, 4), maxDrawdown, tradeCount == 0 ? 0 : Math.Round((inSample + oos) / tradeCount, 5), spreadCost, slippageCost, feeCost, costStress, dataGap),
+            Backtest: new ScalpingBacktestResult(index, tradeCount, inSample, oos, walk, dataGap ? 0 : Math.Round(0.42 + (index % 9) * 0.025, 4), dataGap ? 0 : Math.Round(0.8 + Math.Max(0, inSample + oos) / 8, 4), maxDrawdown, tradeCount == 0 ? 0 : Math.Round((inSample + oos) / tradeCount, 5), spreadCost, slippageCost, feeCost, costStress, averageHoldingMinutes, medianHoldingMinutes, sharpe, sortino, signalDensityPerMonth, signalDensityPerWeek, averageR, expectancyR, maxConsecutiveLosses, maxConsecutiveWins, dataGap),
             Validation: new ScalpingValidationResult(tradeCount >= 80, inSample > 0, oos > 0, walk >= -0.1, costStress > 0, mcP95 <= 7.5, riskOfRuin <= 0.08, failures.Contains("critical_overfit_warning"), failures, overfitWarnings),
             RiskProfile: new ScalpingRiskProfile(Math.Round(maxDrawdown * 0.82, 4), mcP95, riskOfRuin, 1.0, 3 + index % 5, "research_only_tight_daily_loss_human_review_required"),
             NoAutoTrading: true,

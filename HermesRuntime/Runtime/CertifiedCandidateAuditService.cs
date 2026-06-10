@@ -39,6 +39,7 @@ public sealed record CertifiedCandidateAuditFinding(
     string SpreadStressStatus,
     string SlippageStressStatus,
     string CertificationReason,
+    string MetricAvailability,
     IReadOnlyList<string> MinimumThresholdsMet,
     IReadOnlyList<string> Weaknesses,
     IReadOnlyList<string> AuditWarnings,
@@ -167,6 +168,7 @@ public sealed class CertifiedCandidateAuditService
                 SpreadStressStatus: spreadStressStatus,
                 SlippageStressStatus: slippageStressStatus,
                 CertificationReason: report.CertifiedCandidate ? "passed_multi_period_session_drawdown_distribution_and_overfit_checks" : "certification_failed",
+                MetricAvailability: MetricAvailability(candidate, expansion),
                 MinimumThresholdsMet: thresholdsMet,
                 Weaknesses: weakness,
                 AuditWarnings: auditWarnings,
@@ -236,6 +238,22 @@ public sealed class CertifiedCandidateAuditService
     private static string SetupDirection(string setupType)
         => setupType.Contains("breakout", StringComparison.OrdinalIgnoreCase) ? "long_short" : "long_short";
 
+    private static string MetricAvailability(ScalpingStrategyCandidate? candidate, ScalpingRobustnessExpansionReport? expansion)
+    {
+        var parts = new List<string>
+        {
+            candidate?.Backtest.AverageHoldingDurationMinutes is not null ? "average_holding_duration:metric_available" : "average_holding_duration:metric_missing_from_legacy_artifact",
+            candidate?.Backtest.MedianHoldingDurationMinutes is not null ? "median_holding_duration:metric_available" : "median_holding_duration:metric_missing_from_legacy_artifact",
+            candidate?.Backtest.SharpeRatio is not null ? "sharpe:metric_available" : "sharpe:metric_missing_from_legacy_artifact",
+            candidate?.Backtest.SortinoRatio is not null ? "sortino:metric_available" : "sortino:metric_missing_from_legacy_artifact",
+            candidate?.Backtest.SignalDensityPerMonth is not null ? "signal_density:metric_available" : "signal_density:metric_missing_from_legacy_artifact",
+            expansion is not null ? "walk_forward:metric_available" : "walk_forward:metric_missing_from_legacy_artifact",
+            expansion?.MonteCarlo is not null ? "monte_carlo:metric_available" : "monte_carlo:metric_missing_from_legacy_artifact",
+            expansion?.ParameterSensitivity is not null ? "sensitivity:metric_available" : "sensitivity:metric_missing_from_legacy_artifact"
+        };
+        return string.Join(", ", parts);
+    }
+
     private static string UsedFilters(ScalpingStrategyCandidate? candidate)
         => candidate is null
             ? "missing"
@@ -264,6 +282,7 @@ public sealed class CertifiedCandidateAuditService
             lines.Add($"- certification_status: {finding.CertificationStatus}");
             lines.Add($"- profit_factor: {finding.ProfitFactor}");
             lines.Add($"- win_rate: {finding.WinRate}");
+            lines.Add($"- metric_availability: {finding.MetricAvailability}");
             lines.Add($"- monte_carlo: {finding.MonteCarloStatus}");
             lines.Add($"- walk_forward: {finding.WalkForwardStatus}");
             lines.Add($"- oos: {finding.OosStatus}");

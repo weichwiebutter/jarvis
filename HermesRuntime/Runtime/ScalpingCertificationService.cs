@@ -52,6 +52,20 @@ public sealed record ScalpingCertificationReport(
     string SetupType,
     ScalpingCertificationStatus Status,
     bool CertifiedCandidate,
+    double? TotalTrades,
+    double? TradesPerYear,
+    double? TradesPerMonth,
+    double? TradesPerWeek,
+    double? AverageHoldingDurationMinutes,
+    double? MedianHoldingDurationMinutes,
+    double? SharpeRatio,
+    double? SortinoRatio,
+    double? SignalDensityPerMonth,
+    double? SignalDensityPerWeek,
+    double? AverageR,
+    double? ExpectancyR,
+    int? MaxConsecutiveLosses,
+    int? MaxConsecutiveWins,
     IReadOnlyList<ScalpingPeriodValidationSegment> MultiPeriodValidation,
     IReadOnlyList<ScalpingSessionValidationResult> SessionValidation,
     ScalpingDrawdownCertification DrawdownCertification,
@@ -132,6 +146,20 @@ public sealed class ScalpingCertificationService
             SetupType: candidate.SetupType,
             Status: status,
             CertifiedCandidate: status == ScalpingCertificationStatus.certified_candidate,
+            TotalTrades: candidate.Backtest.TradeCount,
+            TradesPerYear: candidate.Backtest.TradeCount,
+            TradesPerMonth: Math.Max(1, candidate.Backtest.TradeCount / 12),
+            TradesPerWeek: Math.Max(1, candidate.Backtest.TradeCount / 52),
+            AverageHoldingDurationMinutes: candidate.Backtest.AverageHoldingDurationMinutes,
+            MedianHoldingDurationMinutes: candidate.Backtest.MedianHoldingDurationMinutes,
+            SharpeRatio: candidate.Backtest.SharpeRatio,
+            SortinoRatio: candidate.Backtest.SortinoRatio,
+            SignalDensityPerMonth: candidate.Backtest.SignalDensityPerMonth,
+            SignalDensityPerWeek: candidate.Backtest.SignalDensityPerWeek,
+            AverageR: candidate.Backtest.AverageR,
+            ExpectancyR: candidate.Backtest.ExpectancyR,
+            MaxConsecutiveLosses: candidate.Backtest.MaxConsecutiveLosses,
+            MaxConsecutiveWins: candidate.Backtest.MaxConsecutiveWins,
             MultiPeriodValidation: periods,
             SessionValidation: sessions,
             DrawdownCertification: drawdown,
@@ -275,6 +303,22 @@ public sealed class ScalpingCertificationService
 - human_review_required: true
 - broker_orders_enabled: false
 - live_trading_enabled: false
+
+## Backtest Metrics
+- total_trades: {report.TotalTrades?.ToString() ?? "not_captured"}
+- trades_per_year: {report.TradesPerYear?.ToString() ?? "not_captured"}
+- trades_per_month: {report.TradesPerMonth?.ToString() ?? "not_captured"}
+- trades_per_week: {report.TradesPerWeek?.ToString() ?? "not_captured"}
+- average_holding_duration_minutes: {report.AverageHoldingDurationMinutes?.ToString("0.##") ?? "not_captured"}
+- median_holding_duration_minutes: {report.MedianHoldingDurationMinutes?.ToString("0.##") ?? "not_captured"}
+- sharpe_ratio: {report.SharpeRatio?.ToString("0.####") ?? "not_captured"}
+- sortino_ratio: {report.SortinoRatio?.ToString("0.####") ?? "not_captured"}
+- signal_density_per_month: {report.SignalDensityPerMonth?.ToString("0.##") ?? "not_captured"}
+- signal_density_per_week: {report.SignalDensityPerWeek?.ToString("0.##") ?? "not_captured"}
+- average_r: {report.AverageR?.ToString("0.####") ?? "not_captured"}
+- expectancy_r: {report.ExpectancyR?.ToString("0.####") ?? "not_captured"}
+- max_consecutive_losses: {report.MaxConsecutiveLosses?.ToString() ?? "not_captured"}
+- max_consecutive_wins: {report.MaxConsecutiveWins?.ToString() ?? "not_captured"}
 
 ## Drawdown Certification
 - max_drawdown_r: {report.DrawdownCertification.MaxDrawdownR:0.####}

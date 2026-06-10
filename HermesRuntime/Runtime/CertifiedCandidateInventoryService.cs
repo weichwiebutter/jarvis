@@ -49,6 +49,9 @@ public sealed record SetupRegistryEntry(
     double AverageMaxDrawdownR,
     double AverageRiskOfRuin,
     string ExpectedSignalFrequency,
+    string TradeCountRange,
+    int MinimumMemberTradeCount,
+    int MaximumMemberTradeCount,
     string RiskProfile,
     string ReadinessStatus,
     bool HumanReviewRequired,
@@ -156,8 +159,11 @@ public sealed class CertifiedCandidateInventoryService
                     AverageMaxDrawdownR: Math.Round(ordered.Average(item => item.MaxDrawdownR), 4),
                     AverageRiskOfRuin: Math.Round(ordered.Average(item => item.RiskOfRuin), 4),
                     ExpectedSignalFrequency: $"{Math.Max(1, ordered.Count * 4)} signals/month",
+                    TradeCountRange: $"{ordered.Min(SourceTradeCount)}-{ordered.Max(SourceTradeCount)}",
+                    MinimumMemberTradeCount: ordered.Min(SourceTradeCount),
+                    MaximumMemberTradeCount: ordered.Max(SourceTradeCount),
                     RiskProfile: $"{primary.SetupType}:{primary.Asset}:ddr={primary.MaxDrawdownR:0.###}:ror={primary.RiskOfRuin:0.###}",
-                    ReadinessStatus: "ready_for_bot_spec",
+                    ReadinessStatus: ReadinessStatus(ordered),
                     HumanReviewRequired: true,
                     NoAutoTrading: true);
             })
@@ -195,7 +201,11 @@ public sealed class CertifiedCandidateInventoryService
         if (!File.Exists(SetupRegistryPath)) return null;
         var registry = JsonSerializer.Deserialize<SetupRegistry>(File.ReadAllText(SetupRegistryPath), JsonDefaults.SnapshotReadOptions);
         if (registry is null) return null;
-        var legacyShape = registry.Assets.Any(entry => string.IsNullOrWhiteSpace(entry.ExpectedSignalFrequency) || entry.AverageQualityScore == 0 && entry.AverageProfitFactor == 0 && entry.AverageWinRate == 0);
+        var legacyShape = registry.Assets.Any(entry =>
+            string.IsNullOrWhiteSpace(entry.ExpectedSignalFrequency)
+            || entry.TradeCountRange == "-"
+            || entry.MinimumMemberTradeCount == 0 && entry.MaximumMemberTradeCount == 0
+            || entry.AverageQualityScore == 0 && entry.AverageProfitFactor == 0 && entry.AverageWinRate == 0);
         return legacyShape ? BuildRegistry() : registry;
     }
 
@@ -259,6 +269,24 @@ public sealed class CertifiedCandidateInventoryService
 
     private static IReadOnlyList<string> SessionTags(CertifiedCandidateInventoryItem item)
         => ["london", "new_york", "overlap"];
+
+    private string ReadinessStatus(IReadOnlyList<CertifiedCandidateInventoryItem> members)
+    {
+        var minimumTrades = members.Min(SourceTradeCount);
+        var frequency = Math.Max(1, members.Count * 4);
+        if (minimumTrades < 75) return "bot_review_required_low_trade_count";
+        if (frequency < 4) return "bot_review_required_low_signal_frequency";
+        return "bot_ready";
+    }
+
+    private int SourceTradeCount(CertifiedCandidateInventoryItem item)
+    {
+        var research = new ScalpingResearchService(_storagePaths, _runtimeRoot);
+        var candidate = research.FindCandidate(item.CandidateId);
+        if (candidate is not null && candidate.Backtest.TradeCount > 0) return candidate.Backtest.TradeCount;
+        var report = JsonSerializer.Deserialize<ScalpingCertificationReport>(File.ReadAllText(item.SourceReportPath), JsonDefaults.SnapshotReadOptions);
+        return report?.TotalTrades is > 0 ? (int)report.TotalTrades.Value : 0;
+    }
 
     private sealed class SetupKeyComparer : IEqualityComparer<(string Asset, string Timeframe, string SetupType)>
     {
