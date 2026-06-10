@@ -204,6 +204,8 @@ internal sealed class HermesCli
             "generate-demo-signals" => GenerateDemoSignals(),
             "latest-demo-signals" => ShowLatestDemoSignals(),
             "demo-signal-feed-log" => ShowDemoSignalFeedLog(),
+            "signal-watch-status" => ShowSignalWatchStatus(),
+            "signal-watch-log" => ShowSignalWatchLog(),
             "export-missing-signal-agent-specs" => ExportMissingSignalAgentSpecs(),
             "validate-ensemble-signal-specs" => ValidateEnsembleSignalSpecs(),
             "create-forward-test-plan" => CreateForwardTestPlan(),
@@ -423,6 +425,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes generate-demo-signals read-only Demo-Signale erzeugen");
         Console.WriteLine("  hermes latest-demo-signals letzte Demo-Signale anzeigen");
         Console.WriteLine("  hermes demo-signal-feed-log Demo Signal Feed Log anzeigen");
+        Console.WriteLine("  hermes signal-watch-status read-only Signal-Watch-Lifecycle anzeigen");
+        Console.WriteLine("  hermes signal-watch-log Signal-Watch-Log anzeigen");
         Console.WriteLine("  hermes export-missing-signal-agent-specs fehlende Ensemble-Signal-Agent-Specs exportieren");
         Console.WriteLine("  hermes validate-ensemble-signal-specs Ensemble-Signal-Agent-Specs validieren");
         Console.WriteLine("  hermes create-forward-test-plan read-only Forward-Test-Plan erzeugen");
@@ -4431,6 +4435,47 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowSignalWatchStatus()
+    {
+        WriteHeader("Hermes Signal Watch Status");
+        var service = new SignalWatchService(BuildStoragePaths(), _runtimeRoot);
+        var snapshot = service.LoadOrCreateStatus();
+        var evaluations = service.LoadLatestEvaluations();
+        WriteSignalWatchStatus(snapshot);
+        foreach (var evaluation in evaluations.Take(10))
+        {
+            WriteSignalWatchEvaluation(evaluation);
+        }
+
+        Console.WriteLine();
+        WriteForwardTestSafety();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowSignalWatchLog()
+    {
+        WriteHeader("Hermes Signal Watch Log");
+        var service = new SignalWatchService(BuildStoragePaths(), _runtimeRoot);
+        if (!File.Exists(service.LogPath))
+        {
+            WriteWarning("Signal-Watch-Log nicht vorhanden.");
+        }
+        else
+        {
+            WriteField("Log", DisplayPath(service.LogPath));
+            foreach (var line in File.ReadLines(service.LogPath).TakeLast(20))
+            {
+                Console.WriteLine(line);
+            }
+        }
+
+        Console.WriteLine();
+        WriteForwardTestSafety();
+        WriteSafety();
+        return 0;
+    }
+
     private int ExportMissingSignalAgentSpecs()
     {
         WriteHeader("Hermes Export Missing Signal Agent Specs");
@@ -6823,6 +6868,7 @@ internal sealed class HermesCli
         WriteField("EURUSD Available", report.EurusdAvailable.ToString().ToLowerInvariant());
         WriteField("Candle Count", report.Files.Sum(file => file.CandleCount).ToString());
         WriteMessages("Data Gaps", report.DataGaps);
+        WriteMessages("Warnings", report.Warnings);
         WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
         WriteField("broker_orders_enabled", report.BrokerOrdersEnabled.ToString().ToLowerInvariant());
@@ -6841,6 +6887,7 @@ internal sealed class HermesCli
         WriteField("Invalid Candles", report.InvalidCandles.ToString());
         WriteMessages("Timeframes", report.TimeframesAvailable);
         WriteMessages("Data Gaps", report.DataGaps);
+        WriteMessages("Warnings", report.Warnings);
         WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
         WriteField("broker_orders_enabled", report.BrokerOrdersEnabled.ToString().ToLowerInvariant());
@@ -7106,9 +7153,12 @@ internal sealed class HermesCli
         WriteSubHeader($"{signal.Asset} {signal.Timeframe} / {signal.CandidateId}");
         WriteField("Signal ID", signal.SignalId);
         WriteField("Created UTC", signal.CreatedUtc.ToString("O"));
+        WriteField("Expires UTC", signal.ExpiresUtc?.ToString("O") ?? "n/a");
         WriteField("Setup", signal.SetupType);
         WriteField("Direction", signal.Direction);
         WriteField("Entry", $"{signal.EntryLevel:0.#####}");
+        WriteField("Entry Zone Lower", signal.EntryZoneLower.HasValue ? $"{signal.EntryZoneLower.Value:0.#####}" : "n/a");
+        WriteField("Entry Zone Upper", signal.EntryZoneUpper.HasValue ? $"{signal.EntryZoneUpper.Value:0.#####}" : "n/a");
         WriteField("Stop Loss", $"{signal.StopLoss:0.#####}");
         WriteField("Take Profit", $"{signal.TakeProfit:0.#####}");
         WriteField("Invalidation", $"{signal.InvalidationLevel:0.#####}");
@@ -7180,18 +7230,83 @@ internal sealed class HermesCli
         WriteField("live_trading_enabled", status.LiveTradingEnabled.ToString().ToLowerInvariant());
     }
 
+    private void WriteSignalWatchStatus(SignalWatchStatusSnapshot snapshot)
+    {
+        WriteField("Watch Status", snapshot.WatchStatus);
+        WriteField("Signals Evaluated", snapshot.SignalsEvaluated.ToString());
+        WriteField("waiting_for_trigger_count", snapshot.WaitingForTriggerCount.ToString());
+        WriteField("watching_count", snapshot.WatchingCount.ToString());
+        WriteField("armed_count", snapshot.ArmedCount.ToString());
+        WriteField("triggered_count", snapshot.TriggeredCount.ToString());
+        WriteField("active_count", snapshot.ActiveCount.ToString());
+        WriteField("near_miss_count", snapshot.NearMissCount.ToString());
+        WriteField("invalidated_count", snapshot.InvalidatedCount.ToString());
+        WriteField("expired_count", snapshot.ExpiredCount.ToString());
+        WriteField("completed_count", snapshot.CompletedCount.ToString());
+        WriteField("no_signal_count", snapshot.NoSignalCount.ToString());
+        WriteField("Using Current Market Snapshot", snapshot.UsingCurrentMarketSnapshot.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", snapshot.Warnings);
+        WriteField("Latest Signal Watch JSON", DisplayPath(snapshot.LatestEvaluationsJsonPath));
+        WriteField("Latest Signal Watch Markdown", DisplayPath(snapshot.LatestEvaluationsMarkdownPath));
+        WriteField("Signal Watch Log", DisplayPath(snapshot.LogPath));
+        WriteField("no_auto_trading", snapshot.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", snapshot.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", snapshot.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", snapshot.LiveTradingEnabled.ToString().ToLowerInvariant());
+    }
+
+    private static void WriteSignalWatchEvaluation(SignalWatchEvaluation evaluation)
+    {
+        WriteSubHeader($"{evaluation.Asset} {evaluation.Timeframe} / {evaluation.CandidateId}");
+        WriteField("Signal ID", evaluation.SignalId);
+        WriteField("Lifecycle Status", evaluation.SignalLifecycleStatus);
+        WriteField("Observed Price", evaluation.ObservedPrice.HasValue ? $"{evaluation.ObservedPrice.Value:0.#####}" : "n/a");
+        WriteField("Observed High", evaluation.ObservedHigh.HasValue ? $"{evaluation.ObservedHigh.Value:0.#####}" : "n/a");
+        WriteField("Observed Low", evaluation.ObservedLow.HasValue ? $"{evaluation.ObservedLow.Value:0.#####}" : "n/a");
+        WriteField("Entry Zone Lower", $"{evaluation.EntryZoneLower:0.#####}");
+        WriteField("Entry Zone Upper", $"{evaluation.EntryZoneUpper:0.#####}");
+        WriteField("Observed Entry Hit", evaluation.ObservedEntryHit.ToString().ToLowerInvariant());
+        WriteField("Observed Invalidation Hit", evaluation.ObservedInvalidationHit.ToString().ToLowerInvariant());
+        WriteField("Observed Stop Loss Hit", evaluation.ObservedStopLossHit.ToString().ToLowerInvariant());
+        WriteField("Observed Take Profit Hit", evaluation.ObservedTakeProfitHit.ToString().ToLowerInvariant());
+        WriteField("Observed Near Miss", evaluation.ObservedNearMiss.ToString().ToLowerInvariant());
+        WriteField("Observed Expired", evaluation.ObservedExpired.ToString().ToLowerInvariant());
+        WriteField("Outcome Pending", evaluation.OutcomePending.ToString().ToLowerInvariant());
+        WriteField("Hypothetical Result", evaluation.HypotheticalResult);
+        WriteField("r_multiple", evaluation.RMultiple.HasValue ? $"{evaluation.RMultiple.Value:0.####}" : "n/a");
+        WriteField("requires_human_review", evaluation.RequiresHumanReview.ToString().ToLowerInvariant());
+        WriteField("market_data_source", evaluation.MarketDataSource);
+        WriteField("Note", evaluation.Note);
+        WriteMessages("Warnings", evaluation.Warnings);
+    }
+
     private static void WriteForwardTestObservation(ForwardTestObservation observation)
     {
         WriteSubHeader($"{observation.Asset} / {observation.CandidateId}");
         WriteField("Observation ID", observation.ObservationId);
         WriteField("Created UTC", observation.CreatedUtc.ToString("O"));
         WriteField("Signal ID", observation.SignalId);
+        WriteField("Signal Lifecycle Status", observation.SignalLifecycleStatus);
         WriteField("Observed Status", observation.ObservedStatus);
         WriteField("Observed Price", observation.ObservedPrice.HasValue ? $"{observation.ObservedPrice.Value:0.#####}" : "n/a");
+        WriteField("Observed High", observation.ObservedHigh.HasValue ? $"{observation.ObservedHigh.Value:0.#####}" : "n/a");
+        WriteField("Observed Low", observation.ObservedLow.HasValue ? $"{observation.ObservedLow.Value:0.#####}" : "n/a");
         WriteField("Entry", $"{observation.EntryLevel:0.#####}");
+        WriteField("Entry Zone Lower", $"{observation.EntryZoneLower:0.#####}");
+        WriteField("Entry Zone Upper", $"{observation.EntryZoneUpper:0.#####}");
         WriteField("Stop Loss", $"{observation.StopLoss:0.#####}");
         WriteField("Take Profit", $"{observation.TakeProfit:0.#####}");
         WriteField("Invalidation", $"{observation.InvalidationLevel:0.#####}");
+        WriteField("Observed Entry Hit", observation.ObservedEntryHit.ToString().ToLowerInvariant());
+        WriteField("Observed Invalidation Hit", observation.ObservedInvalidationHit.ToString().ToLowerInvariant());
+        WriteField("Observed Stop Loss Hit", observation.ObservedStopLossHit.ToString().ToLowerInvariant());
+        WriteField("Observed Take Profit Hit", observation.ObservedTakeProfitHit.ToString().ToLowerInvariant());
+        WriteField("Observed Near Miss", observation.ObservedNearMiss.ToString().ToLowerInvariant());
+        WriteField("Observed Expired", observation.ObservedExpired.ToString().ToLowerInvariant());
+        WriteField("Outcome Pending", observation.OutcomePending.ToString().ToLowerInvariant());
+        WriteField("Hypothetical Result", observation.HypotheticalResult);
+        WriteField("r_multiple", observation.RMultiple.HasValue ? $"{observation.RMultiple.Value:0.####}" : "n/a");
+        WriteField("requires_human_review", observation.RequiresHumanReview.ToString().ToLowerInvariant());
         WriteField("Result", observation.Result);
         WriteField("Note", observation.Note);
         WriteField("Simulated", observation.Simulated.ToString().ToLowerInvariant());

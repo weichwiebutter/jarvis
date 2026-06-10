@@ -34,7 +34,7 @@ public sealed record CurrentMarketStatusSnapshot(
 
 public sealed class CurrentMarketSnapshotService
 {
-    private static readonly string[] SupportedAssets = ["EURUSD", "XAUUSD"];
+    private static readonly string[] SupportedAssets = ["GER40", "XAUUSD", "EURUSD"];
 
     private readonly StoragePaths _storagePaths;
     private readonly string _runtimeRoot;

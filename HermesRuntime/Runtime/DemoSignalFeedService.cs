@@ -6,12 +6,15 @@ namespace Hermes.Runtime;
 public sealed record DemoSignalFeedItem(
     string SignalId,
     DateTimeOffset CreatedUtc,
+    DateTimeOffset? ExpiresUtc,
     string Asset,
     string Timeframe,
     string CandidateId,
     string SetupType,
     string Direction,
     double EntryLevel,
+    double? EntryZoneLower,
+    double? EntryZoneUpper,
     double StopLoss,
     double TakeProfit,
     double InvalidationLevel,
@@ -312,9 +315,13 @@ public sealed class DemoSignalFeedService
         var riskUnit = RiskUnit(member.Asset);
         var isShort = direction.StartsWith("short", StringComparison.OrdinalIgnoreCase);
         var entry = RoundPrice(member.Asset, baseEntry);
+        var entryZoneLower = RoundPrice(member.Asset, entry - (riskUnit * 0.1));
+        var entryZoneUpper = RoundPrice(member.Asset, entry + (riskUnit * 0.1));
         var stop = RoundPrice(member.Asset, isShort ? entry + riskUnit : entry - riskUnit);
         var target = RoundPrice(member.Asset, isShort ? entry - (riskUnit * 1.5) : entry + (riskUnit * 1.5));
         var invalidation = stop;
+        var createdUtc = DateTimeOffset.UtcNow;
+        var expiresUtc = createdUtc.AddHours(12);
         var reasonParts = new List<string>
         {
             "simulated_demo_signal",
@@ -325,13 +332,16 @@ public sealed class DemoSignalFeedService
 
         return new DemoSignalFeedItem(
             SignalId: $"demo_signal_{member.CandidateId}_{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
-            CreatedUtc: DateTimeOffset.UtcNow,
+            CreatedUtc: createdUtc,
+            ExpiresUtc: expiresUtc,
             Asset: member.Asset,
             Timeframe: timeframe,
             CandidateId: member.CandidateId,
             SetupType: signalSpec?.SetupType ?? certification?.SetupType ?? member.SetupType,
             Direction: direction,
             EntryLevel: entry,
+            EntryZoneLower: entryZoneLower,
+            EntryZoneUpper: entryZoneUpper,
             StopLoss: stop,
             TakeProfit: target,
             InvalidationLevel: invalidation,
@@ -362,11 +372,15 @@ public sealed class DemoSignalFeedService
         var isShort = direction.StartsWith("short", StringComparison.OrdinalIgnoreCase);
         var candleRange = Math.Max(lastCandle.High - lastCandle.Low, RiskUnit(member.Asset));
         var entry = RoundPrice(member.Asset, lastCandle.Close);
+        var entryZoneLower = RoundPrice(member.Asset, entry - (candleRange * 0.15));
+        var entryZoneUpper = RoundPrice(member.Asset, entry + (candleRange * 0.15));
         var stop = RoundPrice(member.Asset, isShort ? entry + candleRange : entry - candleRange);
         var target = RoundPrice(member.Asset, isShort ? entry - (candleRange * 1.6) : entry + (candleRange * 1.6));
         var invalidation = stop;
         var stale = DateTimeOffset.UtcNow - lastCandle.TimestampUtc > TimeSpan.FromDays(7);
         var status = stale ? "watch" : "waiting_for_trigger";
+        var createdUtc = DateTimeOffset.UtcNow;
+        var expiresUtc = createdUtc.AddHours(ParseLifetimeHours(timeframe));
         var reason = stale
             ? "read_only_market_watch;market_data_stale_for_live_context_but_used_for_demo_watch_only"
             : "read_only_market_watch;latest_candle_loaded;no_order_execution";
@@ -377,13 +391,16 @@ public sealed class DemoSignalFeedService
 
         return new DemoSignalFeedItem(
             SignalId: $"demo_signal_{member.CandidateId}_{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
-            CreatedUtc: DateTimeOffset.UtcNow,
+            CreatedUtc: createdUtc,
+            ExpiresUtc: expiresUtc,
             Asset: member.Asset,
             Timeframe: timeframe,
             CandidateId: member.CandidateId,
             SetupType: signalSpec?.SetupType ?? certification?.SetupType ?? member.SetupType,
             Direction: direction,
             EntryLevel: entry,
+            EntryZoneLower: entryZoneLower,
+            EntryZoneUpper: entryZoneUpper,
             StopLoss: stop,
             TakeProfit: target,
             InvalidationLevel: invalidation,
@@ -455,9 +472,12 @@ public sealed class DemoSignalFeedService
             builder.AppendLine($"- setup_type: {signal.SetupType}");
             builder.AppendLine($"- direction: {signal.Direction}");
             builder.AppendLine($"- entry_level: {signal.EntryLevel}");
+            builder.AppendLine($"- entry_zone_lower: {(signal.EntryZoneLower.HasValue ? signal.EntryZoneLower.Value.ToString("0.#####") : "n/a")}");
+            builder.AppendLine($"- entry_zone_upper: {(signal.EntryZoneUpper.HasValue ? signal.EntryZoneUpper.Value.ToString("0.#####") : "n/a")}");
             builder.AppendLine($"- stop_loss: {signal.StopLoss}");
             builder.AppendLine($"- take_profit: {signal.TakeProfit}");
             builder.AppendLine($"- invalidation_level: {signal.InvalidationLevel}");
+            builder.AppendLine($"- expires_utc: {(signal.ExpiresUtc.HasValue ? signal.ExpiresUtc.Value.ToString("O") : "n/a")}");
             builder.AppendLine($"- confidence: {signal.Confidence:0.####}");
             builder.AppendLine($"- status: {signal.Status}");
             builder.AppendLine($"- reason: {signal.Reason}");
@@ -515,7 +535,18 @@ public sealed class DemoSignalFeedService
     {
         "EURUSD" => 0.0008,
         "XAUUSD" => 12.5,
+        "GER40" => 35.0,
         _ => 1.0
+    };
+
+    private static int ParseLifetimeHours(string timeframe) => timeframe.ToUpperInvariant() switch
+    {
+        "M1" => 4,
+        "M5" => 12,
+        "M15" => 24,
+        "M30" => 48,
+        "H1" => 72,
+        _ => 24
     };
 
     private static double RoundPrice(string asset, double value) => asset.ToUpperInvariant() switch

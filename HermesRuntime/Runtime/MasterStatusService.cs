@@ -70,13 +70,14 @@ public sealed class MasterStatusService
         var walkforward = LoadOrDefault(walkforwardPath);
         var botCandidateReport = LoadOrDefault(botCandidatePath);
         var scalpingReport = scalpingService.LoadReport();
+        var statusBuildWarnings = new List<string>();
         var marketDataAvailability = marketDataService.LoadAvailability() ?? marketDataService.Scan();
         var xauusdQuality = marketDataService.BuildQuality(ScalpingResearchService.DefaultAsset);
         var knowledgeQuality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
         var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
-        var domainValidation = new DomainKnowledgeValidationService(_storagePaths).BuildStatus();
-        var humanReview = new HumanReviewWorkflow(_storagePaths).BuildSummary();
-        var promotionStatus = new KnowledgePromotionEngine(_storagePaths).BuildStatus();
+        var domainValidation = SafeBuildDomainValidation(statusBuildWarnings);
+        var humanReview = SafeBuildHumanReview(statusBuildWarnings);
+        var promotionStatus = SafeBuildPromotionStatus(statusBuildWarnings);
 
         var activeDomains = CombineStringLists(
             GetStringArray(domainStatus, "active_domains", "activeDomains"),
@@ -110,6 +111,7 @@ public sealed class MasterStatusService
             domainValidation.SoftwareValidationPending > 0 ? [$"software_validation_pending:{domainValidation.SoftwareValidationPending}"] : [],
             domainValidation.ProcessValidationPending > 0 ? [$"process_validation_pending:{domainValidation.ProcessValidationPending}"] : [],
             domainValidation.ResearchValidationPending > 0 ? [$"research_validation_pending:{domainValidation.ResearchValidationPending}"] : [],
+            statusBuildWarnings,
             goalState.BlockedGoals.Select(item => $"blocked_goal:{item}"))
             .Take(10)
             .ToList();
@@ -337,6 +339,9 @@ public sealed class MasterStatusService
         warningReasons.AddRange(requiredReportStates
             .Where(reportState => reportState.Root.ValueKind != JsonValueKind.Object)
             .Select(reportState => $"report_missing:{reportState.Name}"));
+        warningReasons.AddRange(statusBuildWarnings);
+        warningReasons.AddRange(marketDataAvailability.Warnings ?? []);
+        warningReasons.AddRange(xauusdQuality.Warnings ?? []);
 
         if (!noAutoTrading)
         {
@@ -373,8 +378,8 @@ public sealed class MasterStatusService
             warningReasons.Add($"nightly_error:{nightlyState.LastError}");
         }
 
-        warningReasons.AddRange(schedulerStatus.Warnings.Select(warning => $"scheduler:{warning}"));
-        warningReasons.AddRange(schedulerStatus.Jobs
+        warningReasons.AddRange((schedulerStatus.Warnings ?? []).Select(warning => $"scheduler:{warning}"));
+        warningReasons.AddRange((schedulerStatus.Jobs ?? [])
             .Where(job => job.FailureCount > 0 || job.Status.Equals("failed", StringComparison.OrdinalIgnoreCase))
             .Select(job => $"scheduled_job_issue:{job.JobId}:{job.Status}"));
 
@@ -1055,5 +1060,127 @@ public sealed class MasterStatusService
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private DomainValidationStatusReport SafeBuildDomainValidation(List<string> warnings)
+    {
+        try
+        {
+            return new DomainKnowledgeValidationService(_storagePaths).BuildStatus();
+        }
+        catch (IOException ex)
+        {
+            warnings.Add($"domain_validation_status_unavailable:{SanitizeMessage(ex.Message)}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            warnings.Add($"domain_validation_status_unavailable:{SanitizeMessage(ex.Message)}");
+        }
+
+        return new DomainValidationStatusReport(
+            StatusVersion: "domain_validation_status_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            DomainValidationHealth: "unavailable",
+            DocumentationValidationPending: 0,
+            SoftwareValidationPending: 0,
+            ProcessValidationPending: 0,
+            ResearchValidationPending: 0,
+            DomainValidationWarnings: ["domain_validation_status_fallback_used"],
+            PlansPath: Path.Combine(_storagePaths.Root, "cognitive_core", "validation_plans.json"),
+            ExecutionLogPath: Path.Combine(_storagePaths.Root, "cognitive_core", "validation_execution_log.jsonl"),
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+    }
+
+    private HumanReviewSummary SafeBuildHumanReview(List<string> warnings)
+    {
+        try
+        {
+            return new HumanReviewWorkflow(_storagePaths).BuildSummary();
+        }
+        catch (IOException ex)
+        {
+            warnings.Add($"human_review_summary_unavailable:{SanitizeMessage(ex.Message)}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            warnings.Add($"human_review_summary_unavailable:{SanitizeMessage(ex.Message)}");
+        }
+
+        var root = Path.Combine(_storagePaths.Root, "cognitive_core");
+        return new HumanReviewSummary(
+            SummaryVersion: "human_review_summary_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            TotalReviewItems: 0,
+            PendingReviews: 0,
+            ApprovedReviews: 0,
+            RejectedReviews: 0,
+            NeedsMoreEvidenceReviews: 0,
+            DeferredReviews: 0,
+            HumanReviewedItems: 0,
+            ReviewCoverage: 0,
+            TopReviewPriorities: [],
+            QueuePath: Path.Combine(root, "human_review_queue.json"),
+            DecisionsPath: Path.Combine(root, "human_review_decisions.jsonl"),
+            EvidencePath: Path.Combine(root, "human_review_evidence.json"),
+            Warnings: ["human_review_summary_fallback_used"],
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+    }
+
+    private PromotionStatusReport SafeBuildPromotionStatus(List<string> warnings)
+    {
+        try
+        {
+            return new KnowledgePromotionEngine(_storagePaths).BuildStatus();
+        }
+        catch (IOException ex)
+        {
+            warnings.Add($"promotion_status_unavailable:{SanitizeMessage(ex.Message)}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            warnings.Add($"promotion_status_unavailable:{SanitizeMessage(ex.Message)}");
+        }
+
+        var root = Path.Combine(_storagePaths.Root, "cognitive_core");
+        return new PromotionStatusReport(
+            ReportVersion: "promotion_status_v1",
+            GeneratedAtUtc: DateTimeOffset.UtcNow,
+            WeakKnowledge: 0,
+            PromisingKnowledge: 0,
+            RobustKnowledge: 0,
+            TrustedKnowledge: 0,
+            DeprecatedKnowledge: 0,
+            RejectedKnowledge: 0,
+            PromotionHealth: "unavailable",
+            PromotionBlockers: ["promotion_status_fallback_used"],
+            RecentPromotions: [],
+            RecentDemotions: [],
+            TrustedCandidates: new TrustedCandidateReport(
+                ReportVersion: "trusted_candidates_v1",
+                GeneratedAtUtc: DateTimeOffset.UtcNow,
+                Candidates: [],
+                TotalCandidates: 0,
+                ReadyForPromotion: 0,
+                AwaitingHumanReview: 0,
+                BlockedCandidates: 0,
+                TopBlockers: ["trusted_candidates_unavailable"],
+                CandidatesPath: Path.Combine(root, "trusted_candidates.json")),
+            PromotionLogPath: Path.Combine(root, "promotion_log.jsonl"),
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true);
+    }
+
+    private static string SanitizeMessage(string? message)
+    {
+        return string.IsNullOrWhiteSpace(message)
+            ? "unknown_io_error"
+            : message.Replace(Environment.NewLine, " ", StringComparison.Ordinal).Trim();
     }
 }

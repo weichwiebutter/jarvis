@@ -32,10 +32,10 @@ public sealed class ScalpingMultiAssetRoadmapService
 {
     private static readonly (string Asset, string[] Aliases, int Priority, string MarketType, string[] RiskNotes)[] DefaultAssets =
     [
-        ("XAUUSD", ["Gold", "XAU/USD"], 1, "metal_cfd", ["high_volatility", "spread_and_news_sensitivity", "certified_candidate_exists_but_not_portfolio_ready"]),
-        ("GER40", ["DE40", "Germany40", "Germany 40", "DAX"], 2, "index_cfd", ["cash_index_session_gaps", "high_open_volatility", "requires_asset_specific_backtest"]),
-        ("DE40", ["GER40", "Germany40", "Germany 40", "DAX"], 3, "index_cfd_alias", ["alias_requires_data_mapping", "do_not_transfer_xauusd_strategy"]),
-        ("Germany40", ["GER40", "DE40", "Germany 40", "DAX"], 4, "index_cfd_alias", ["alias_requires_data_mapping", "do_not_transfer_xauusd_strategy"]),
+        ("GER40", ["DE40", "Germany40", "Germany 40", "DAX"], 1, "index_cfd", ["priority_data_integration_target", "cash_index_session_gaps", "high_open_volatility", "requires_asset_specific_backtest"]),
+        ("DE40", ["GER40", "Germany40", "Germany 40", "DAX"], 2, "index_cfd_alias", ["priority_alias_validation_target", "alias_requires_data_mapping", "do_not_transfer_xauusd_strategy"]),
+        ("Germany40", ["GER40", "DE40", "Germany 40", "DAX"], 3, "index_cfd_alias", ["alias_requires_data_mapping", "do_not_transfer_xauusd_strategy"]),
+        ("XAUUSD", ["Gold", "XAU/USD"], 4, "metal_cfd", ["baseline_certified_research_track", "high_volatility", "spread_and_news_sensitivity", "certified_candidate_exists_but_not_portfolio_ready"]),
         ("EURUSD", ["EUR/USD", "Euro Dollar"], 5, "forex_major", ["lower_spread_than_gold", "session_specific_liquidity", "requires_independent_certification"]),
         ("GBPUSD", ["GBP/USD", "Cable"], 6, "forex_major_optional", ["higher_news_sensitivity", "requires_independent_certification"]),
         ("USDJPY", ["USD/JPY", "Dollar Yen"], 7, "forex_major_optional", ["asia_session_relevance", "requires_independent_certification"]),
@@ -74,7 +74,7 @@ public sealed class ScalpingMultiAssetRoadmapService
         var roadmap = new ScalpingMultiAssetRoadmap(
             ReportVersion: "scalping_multi_asset_roadmap_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
-            Mode: "planned_research_only",
+            Mode: "trading_intelligence_research_only",
             Assets: entries,
             NextAssets: nextAssets,
             AssetsWithData: assetsWithData,
@@ -146,6 +146,13 @@ public sealed class ScalpingMultiAssetRoadmapService
 - human_review_required: true
 - broker_orders_enabled: false
 - live_trading_enabled: false
+
+## Strategic Focus
+- lane_1: scalping_bot_research_engine
+- lane_2: signal_agent_export_engine
+- priority_1: integrate_ger40_de40_data
+- priority_2: expand_read_only_signal_watch_and_forward_test_tracking
+- priority_3: continue_multi_asset_certification_before_any_bot_spec_execution_work
 
 ## Asset Roadmap
 {string.Join(Environment.NewLine, roadmap.Assets.Select(entry => $"- {entry.Asset}: priority={entry.Priority}, type={entry.MarketType}, data_available={entry.DataAvailable.ToString().ToLowerInvariant()}, certified={entry.CertifiedCandidates}, status={entry.ResearchStatus}, next_action={entry.NextAction}, data_gap={entry.DataGap}"))}

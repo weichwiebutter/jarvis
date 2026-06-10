@@ -523,7 +523,6 @@ public sealed class DomainKnowledgeValidationService
 
     public DomainValidationStatusReport BuildStatus()
     {
-        Directory.CreateDirectory(Root);
         var strategy = new KnowledgeValidationStrategy(_storagePaths);
         var report = strategy.LoadPlanReport() ?? strategy.GeneratePlans(50);
         var warnings = new List<string>();
@@ -560,7 +559,21 @@ public sealed class DomainKnowledgeValidationService
             NoBrokerAction: true,
             NoAutoTrading: true,
             HumanReviewRequired: true);
-        File.WriteAllText(StatusPath, System.Text.Json.JsonSerializer.Serialize(status, JsonDefaults.WriteOptions));
+        try
+        {
+            Directory.CreateDirectory(Root);
+            File.WriteAllText(StatusPath, System.Text.Json.JsonSerializer.Serialize(status, JsonDefaults.WriteOptions));
+        }
+        catch (IOException ex)
+        {
+            warnings.Add($"domain_validation_status_write_failed:{SanitizeMessage(ex.Message)}");
+            status = status with { DomainValidationWarnings = warnings };
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            warnings.Add($"domain_validation_status_write_failed:{SanitizeMessage(ex.Message)}");
+            status = status with { DomainValidationWarnings = warnings };
+        }
         return status;
     }
 
@@ -569,4 +582,11 @@ public sealed class DomainKnowledgeValidationService
             .Where(plan => plan.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase))
             .SelectMany(plan => plan.Requirements)
             .Count(requirement => !requirement.Status.Equals("satisfied", StringComparison.OrdinalIgnoreCase));
+
+    private static string SanitizeMessage(string? message)
+    {
+        return string.IsNullOrWhiteSpace(message)
+            ? "unknown_io_error"
+            : message.Replace(Environment.NewLine, " ", StringComparison.Ordinal).Trim();
+    }
 }

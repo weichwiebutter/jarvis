@@ -48,12 +48,27 @@ public sealed record ForwardTestObservation(
     string SignalId,
     string Asset,
     string CandidateId,
+    string SignalLifecycleStatus,
     string ObservedStatus,
     double? ObservedPrice,
+    double? ObservedHigh,
+    double? ObservedLow,
     double EntryLevel,
+    double EntryZoneLower,
+    double EntryZoneUpper,
     double StopLoss,
     double TakeProfit,
     double InvalidationLevel,
+    bool ObservedEntryHit,
+    bool ObservedInvalidationHit,
+    bool ObservedStopLossHit,
+    bool ObservedTakeProfitHit,
+    bool ObservedNearMiss,
+    bool ObservedExpired,
+    bool OutcomePending,
+    string HypotheticalResult,
+    double? RMultiple,
+    bool RequiresHumanReview,
     string Result,
     string Note,
     bool Simulated,
@@ -112,9 +127,16 @@ public sealed class ForwardTestService
     private static readonly HashSet<string> AllowedObservationResults =
     [
         "still_waiting",
+        "waiting_for_trigger",
+        "watching",
+        "armed",
         "triggered",
+        "active",
+        "near_miss",
         "invalidated",
         "expired",
+        "completed",
+        "no_signal",
         "hypothetical_win",
         "hypothetical_loss",
         "manual_review_required",
@@ -271,14 +293,33 @@ public sealed class ForwardTestService
                 SignalId: item.GetProperty("signal_id").GetString() ?? string.Empty,
                 Asset: item.GetProperty("asset").GetString() ?? string.Empty,
                 CandidateId: item.GetProperty("candidate_id").GetString() ?? string.Empty,
+                SignalLifecycleStatus: item.TryGetProperty("signal_lifecycle_status", out var signalLifecycleStatus) ? signalLifecycleStatus.GetString() ?? string.Empty : string.Empty,
                 ObservedStatus: item.GetProperty("observed_status").GetString() ?? string.Empty,
                 ObservedPrice: item.TryGetProperty("observed_price", out var observedPrice) && observedPrice.ValueKind != JsonValueKind.Null
                     ? observedPrice.GetDouble()
                     : null,
+                ObservedHigh: item.TryGetProperty("observed_high", out var observedHigh) && observedHigh.ValueKind != JsonValueKind.Null
+                    ? observedHigh.GetDouble()
+                    : null,
+                ObservedLow: item.TryGetProperty("observed_low", out var observedLow) && observedLow.ValueKind != JsonValueKind.Null
+                    ? observedLow.GetDouble()
+                    : null,
                 EntryLevel: item.GetProperty("entry_level").GetDouble(),
+                EntryZoneLower: item.TryGetProperty("entry_zone_lower", out var entryZoneLower) ? entryZoneLower.GetDouble() : item.GetProperty("entry_level").GetDouble(),
+                EntryZoneUpper: item.TryGetProperty("entry_zone_upper", out var entryZoneUpper) ? entryZoneUpper.GetDouble() : item.GetProperty("entry_level").GetDouble(),
                 StopLoss: item.GetProperty("stop_loss").GetDouble(),
                 TakeProfit: item.GetProperty("take_profit").GetDouble(),
                 InvalidationLevel: item.GetProperty("invalidation_level").GetDouble(),
+                ObservedEntryHit: item.TryGetProperty("observed_entry_hit", out var observedEntryHit) && observedEntryHit.GetBoolean(),
+                ObservedInvalidationHit: item.TryGetProperty("observed_invalidation_hit", out var observedInvalidationHit) && observedInvalidationHit.GetBoolean(),
+                ObservedStopLossHit: item.TryGetProperty("observed_stop_loss_hit", out var observedStopLossHit) && observedStopLossHit.GetBoolean(),
+                ObservedTakeProfitHit: item.TryGetProperty("observed_take_profit_hit", out var observedTakeProfitHit) && observedTakeProfitHit.GetBoolean(),
+                ObservedNearMiss: item.TryGetProperty("observed_near_miss", out var observedNearMiss) && observedNearMiss.GetBoolean(),
+                ObservedExpired: item.TryGetProperty("observed_expired", out var observedExpired) && observedExpired.GetBoolean(),
+                OutcomePending: item.TryGetProperty("outcome_pending", out var outcomePending) ? outcomePending.GetBoolean() : true,
+                HypotheticalResult: item.TryGetProperty("hypothetical_result", out var hypotheticalResult) ? hypotheticalResult.GetString() ?? string.Empty : string.Empty,
+                RMultiple: item.TryGetProperty("r_multiple", out var rMultiple) && rMultiple.ValueKind != JsonValueKind.Null ? rMultiple.GetDouble() : null,
+                RequiresHumanReview: item.TryGetProperty("requires_human_review", out var requiresHumanReview) ? requiresHumanReview.GetBoolean() : true,
                 Result: item.GetProperty("result").GetString() ?? string.Empty,
                 Note: item.GetProperty("note").GetString() ?? string.Empty,
                 Simulated: item.GetProperty("simulated").GetBoolean(),
@@ -394,26 +435,26 @@ public sealed class ForwardTestService
     private static ForwardTestMetrics BuildMetrics(IReadOnlyList<ForwardTestObservation> observations)
     {
         var uniqueSignals = observations.Select(observation => observation.SignalId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-        var triggered = observations.Count(observation => observation.Result == "triggered");
+        var triggered = observations.Count(observation => observation.SignalLifecycleStatus is "triggered" or "active" or "completed");
         var invalidated = observations.Count(observation => observation.Result == "invalidated");
         var expired = observations.Count(observation => observation.Result == "expired");
-        var wins = observations.Count(observation => observation.Result == "hypothetical_win");
-        var losses = observations.Count(observation => observation.Result == "hypothetical_loss");
-        var manualReviews = observations.Count(observation => observation.Result == "manual_review_required");
+        var wins = observations.Count(observation => observation.HypotheticalResult == "hypothetical_win");
+        var losses = observations.Count(observation => observation.HypotheticalResult == "hypothetical_loss");
+        var manualReviews = observations.Count(observation => observation.RequiresHumanReview);
         var simulated = observations.Count(observation => observation.Result == "simulated_observation");
         var completedHypotheticals = wins + losses;
         var winRate = completedHypotheticals == 0 ? 0 : Math.Round((double)wins / completedHypotheticals, 4);
-        var averageR = completedHypotheticals == 0 ? 0 : Math.Round((wins - losses) / (double)completedHypotheticals, 4);
+        var averageR = observations.Where(observation => observation.RMultiple.HasValue).Select(observation => observation.RMultiple!.Value).DefaultIfEmpty(0).Average();
         var runningDrawdown = 0.0;
         var maxDrawdown = 0.0;
         foreach (var observation in observations)
         {
-            if (observation.Result == "hypothetical_loss")
+            if (observation.HypotheticalResult == "hypothetical_loss")
             {
                 runningDrawdown += 1.0;
                 maxDrawdown = Math.Max(maxDrawdown, runningDrawdown);
             }
-            else if (observation.Result == "hypothetical_win")
+            else if (observation.HypotheticalResult == "hypothetical_win")
             {
                 runningDrawdown = Math.Max(0, runningDrawdown - 1.0);
             }
@@ -431,13 +472,13 @@ public sealed class ForwardTestService
             ManualReviewCount: manualReviews,
             SimulatedObservationCount: simulated,
             WinRate: winRate,
-            AverageR: averageR,
+            AverageR: Math.Round(averageR, 4),
             MaxDrawdownR: Math.Round(maxDrawdown, 4),
             MaxDailyDrawdownR: Math.Round(maxDrawdown, 4),
             SlippageNotes: observations.Where(observation => observation.Note.Contains("slippage", StringComparison.OrdinalIgnoreCase)).Select(observation => observation.Note).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             SpreadNotes: observations.Where(observation => observation.Note.Contains("spread", StringComparison.OrdinalIgnoreCase)).Select(observation => observation.Note).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MissedSignalNotes: observations.Where(observation => observation.Note.Contains("missed", StringComparison.OrdinalIgnoreCase)).Select(observation => observation.Note).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-            ManualReviewNotes: observations.Where(observation => observation.Result == "manual_review_required").Select(observation => observation.Note).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
+            ManualReviewNotes: observations.Where(observation => observation.RequiresHumanReview).Select(observation => observation.Note).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
     }
 
     private IReadOnlyList<ForwardTestObservationLogEntry> ReadObservationLogEntries()
@@ -477,65 +518,19 @@ public sealed class ForwardTestService
 
     private ForwardTestObservation BuildObservation(DemoSignalFeedItem signal, List<string> warnings)
     {
-        var marketSnapshot = new CurrentMarketSnapshotService(_storagePaths, _runtimeRoot).FindSnapshot(signal.Asset);
-        if (marketSnapshot is not null
-            && marketSnapshot.Status == "available"
-            && marketSnapshot.IsLiveReadonly
-            && !marketSnapshot.IsPlaceholder
-            && marketSnapshot.Mid.HasValue)
+        var evaluation = new SignalWatchService(_storagePaths, _runtimeRoot).EvaluateSignal(signal, warnings);
+        var result = evaluation.HypotheticalResult switch
         {
-            var snapshotResult = EvaluateSnapshotObservation(signal, marketSnapshot);
-            return new ForwardTestObservation(
-                ObservationId: $"observation_{signal.SignalId}_{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
-                CreatedUtc: DateTimeOffset.UtcNow,
-                SignalId: signal.SignalId,
-                Asset: signal.Asset,
-                CandidateId: signal.CandidateId,
-                ObservedStatus: snapshotResult.ObservedStatus,
-                ObservedPrice: RoundPrice(signal.Asset, marketSnapshot.Mid.Value),
-                EntryLevel: signal.EntryLevel,
-                StopLoss: signal.StopLoss,
-                TakeProfit: signal.TakeProfit,
-                InvalidationLevel: signal.InvalidationLevel,
-                Result: snapshotResult.Result,
-                Note: snapshotResult.Note,
-                Simulated: false,
-                HumanReviewRequired: true,
-                NoAutoTrading: true);
-        }
-
-        if (marketSnapshot is not null && marketSnapshot.Status != "unavailable")
-        {
-            warnings.Add($"current_market_snapshot_not_usable:{signal.Asset}:{marketSnapshot.Status}");
-        }
-
-        var candle = LoadLatestCandle(signal.Asset, signal.Timeframe);
-        if (candle is null)
-        {
-            return new ForwardTestObservation(
-                ObservationId: $"observation_{signal.SignalId}_{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
-                CreatedUtc: DateTimeOffset.UtcNow,
-                SignalId: signal.SignalId,
-                Asset: signal.Asset,
-                CandidateId: signal.CandidateId,
-                ObservedStatus: "simulated_observation",
-                ObservedPrice: null,
-                EntryLevel: signal.EntryLevel,
-                StopLoss: signal.StopLoss,
-                TakeProfit: signal.TakeProfit,
-                InvalidationLevel: signal.InvalidationLevel,
-                Result: "simulated_observation",
-                Note: "simulated_observation:no_current_market_data_available;tracking_structure_only;no_real_performance_claim",
-                Simulated: true,
-                HumanReviewRequired: true,
-                NoAutoTrading: true);
-        }
-
-        var result = EvaluateSignalObservation(signal, candle);
-        if (DateTimeOffset.UtcNow - candle.TimestampUtc > TimeSpan.FromDays(7))
-        {
-            warnings.Add($"market_data_stale_for_observation:{signal.Asset}:{signal.Timeframe}:{candle.TimestampUtc:O}");
-        }
+            "hypothetical_win" => "hypothetical_win",
+            "hypothetical_loss" => "hypothetical_loss",
+            "expired" => "expired",
+            "near_miss" => "near_miss",
+            "invalidated" => "invalidated",
+            "no_signal" => "no_signal",
+            _ when evaluation.Simulated => "simulated_observation",
+            _ when evaluation.RequiresHumanReview => "manual_review_required",
+            _ => evaluation.SignalLifecycleStatus
+        };
 
         return new ForwardTestObservation(
             ObservationId: $"observation_{signal.SignalId}_{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
@@ -543,113 +538,32 @@ public sealed class ForwardTestService
             SignalId: signal.SignalId,
             Asset: signal.Asset,
             CandidateId: signal.CandidateId,
-            ObservedStatus: result.ObservedStatus,
-            ObservedPrice: RoundPrice(signal.Asset, candle.Close),
+            SignalLifecycleStatus: evaluation.SignalLifecycleStatus,
+            ObservedStatus: evaluation.SignalLifecycleStatus,
+            ObservedPrice: evaluation.ObservedPrice,
+            ObservedHigh: evaluation.ObservedHigh,
+            ObservedLow: evaluation.ObservedLow,
             EntryLevel: signal.EntryLevel,
+            EntryZoneLower: evaluation.EntryZoneLower,
+            EntryZoneUpper: evaluation.EntryZoneUpper,
             StopLoss: signal.StopLoss,
             TakeProfit: signal.TakeProfit,
             InvalidationLevel: signal.InvalidationLevel,
-            Result: result.Result,
-            Note: result.Note,
-            Simulated: false,
+            ObservedEntryHit: evaluation.ObservedEntryHit,
+            ObservedInvalidationHit: evaluation.ObservedInvalidationHit,
+            ObservedStopLossHit: evaluation.ObservedStopLossHit,
+            ObservedTakeProfitHit: evaluation.ObservedTakeProfitHit,
+            ObservedNearMiss: evaluation.ObservedNearMiss,
+            ObservedExpired: evaluation.ObservedExpired,
+            OutcomePending: evaluation.OutcomePending,
+            HypotheticalResult: evaluation.HypotheticalResult,
+            RMultiple: evaluation.RMultiple,
+            RequiresHumanReview: evaluation.RequiresHumanReview,
+            Result: result,
+            Note: $"{evaluation.Note};source={evaluation.MarketDataSource}",
+            Simulated: evaluation.Simulated,
             HumanReviewRequired: true,
             NoAutoTrading: true);
-    }
-
-    private static (string ObservedStatus, string Result, string Note) EvaluateSnapshotObservation(
-        DemoSignalFeedItem signal,
-        CurrentMarketAssetSnapshot snapshot)
-    {
-        var price = snapshot.Mid ?? snapshot.Bid ?? snapshot.Ask ?? 0;
-        var direction = signal.Direction.ToLowerInvariant();
-        var isShort = direction.Contains("short", StringComparison.OrdinalIgnoreCase);
-        var isLong = direction.Contains("long", StringComparison.OrdinalIgnoreCase) || !isShort;
-
-        if (isLong)
-        {
-            if (price <= signal.InvalidationLevel || price <= signal.StopLoss)
-            {
-                return ("invalidated", "invalidated", $"read_only_snapshot_observation:invalidation_level_reached;source={snapshot.Source};no_order");
-            }
-
-            if (price >= signal.EntryLevel)
-            {
-                return ("triggered", "triggered", $"read_only_snapshot_observation:entry_level_reached;source={snapshot.Source};no_order");
-            }
-        }
-        else
-        {
-            if (price >= signal.InvalidationLevel || price >= signal.StopLoss)
-            {
-                return ("invalidated", "invalidated", $"read_only_snapshot_observation:invalidation_level_reached;source={snapshot.Source};no_order");
-            }
-
-            if (price <= signal.EntryLevel)
-            {
-                return ("triggered", "triggered", $"read_only_snapshot_observation:entry_level_reached;source={snapshot.Source};no_order");
-            }
-        }
-
-        var age = DateTimeOffset.UtcNow - signal.CreatedUtc;
-        if (age > TimeSpan.FromDays(2))
-        {
-            return ("expired", "expired", $"read_only_snapshot_observation:signal_age_expired;source={snapshot.Source};no_order");
-        }
-
-        return ("still_waiting", "still_waiting", $"read_only_snapshot_observation:still_waiting;source={snapshot.Source};no_order");
-    }
-
-    private static (string ObservedStatus, string Result, string Note) EvaluateSignalObservation(DemoSignalFeedItem signal, MarketDataCandle candle)
-    {
-        var close = candle.Close;
-        var high = candle.High;
-        var low = candle.Low;
-        var direction = signal.Direction.ToLowerInvariant();
-        var isShort = direction.Contains("short", StringComparison.OrdinalIgnoreCase);
-        var isLong = direction.Contains("long", StringComparison.OrdinalIgnoreCase);
-
-        if (isLong)
-        {
-            if (low <= signal.StopLoss)
-            {
-                return ("invalidated", "invalidated", "read_only_observation:stop_level_touched;no_order");
-            }
-
-            if (high >= signal.TakeProfit)
-            {
-                return ("triggered", "hypothetical_win", "read_only_observation:take_profit_zone_reached;no_order");
-            }
-
-            if (close >= signal.EntryLevel)
-            {
-                return ("triggered", "triggered", "read_only_observation:entry_zone_reached;no_order");
-            }
-        }
-        else if (isShort)
-        {
-            if (high >= signal.StopLoss)
-            {
-                return ("invalidated", "invalidated", "read_only_observation:stop_level_touched;no_order");
-            }
-
-            if (low <= signal.TakeProfit)
-            {
-                return ("triggered", "hypothetical_win", "read_only_observation:take_profit_zone_reached;no_order");
-            }
-
-            if (close <= signal.EntryLevel)
-            {
-                return ("triggered", "triggered", "read_only_observation:entry_zone_reached;no_order");
-            }
-        }
-
-        var age = DateTimeOffset.UtcNow - signal.CreatedUtc;
-        if (age > TimeSpan.FromDays(2))
-        {
-            return ("expired", "expired", "read_only_observation:signal_age_expired;no_order");
-        }
-
-        return ("still_waiting", "still_waiting", "read_only_observation:still_waiting;no_order");
     }
 
     private static ForwardTestObservation BuildManualObservation(DemoSignalFeedItem signal, string result, string note)
@@ -660,12 +574,27 @@ public sealed class ForwardTestService
             SignalId: signal.SignalId,
             Asset: signal.Asset,
             CandidateId: signal.CandidateId,
+            SignalLifecycleStatus: result,
             ObservedStatus: result,
             ObservedPrice: null,
+            ObservedHigh: null,
+            ObservedLow: null,
             EntryLevel: signal.EntryLevel,
+            EntryZoneLower: signal.EntryZoneLower ?? signal.EntryLevel,
+            EntryZoneUpper: signal.EntryZoneUpper ?? signal.EntryLevel,
             StopLoss: signal.StopLoss,
             TakeProfit: signal.TakeProfit,
             InvalidationLevel: signal.InvalidationLevel,
+            ObservedEntryHit: result is "triggered" or "active" or "completed",
+            ObservedInvalidationHit: result == "invalidated",
+            ObservedStopLossHit: result == "hypothetical_loss",
+            ObservedTakeProfitHit: result == "hypothetical_win",
+            ObservedNearMiss: result == "near_miss",
+            ObservedExpired: result == "expired",
+            OutcomePending: result is "waiting_for_trigger" or "watching" or "armed" or "triggered" or "active",
+            HypotheticalResult: result is "hypothetical_win" or "hypothetical_loss" ? result : result == "expired" ? "expired" : "outcome_pending",
+            RMultiple: null,
+            RequiresHumanReview: true,
             Result: result,
             Note: string.IsNullOrWhiteSpace(note) ? "manual_forward_test_observation" : note,
             Simulated: result == "simulated_observation",
@@ -682,28 +611,6 @@ public sealed class ForwardTestService
         }
 
         return normalizedResult;
-    }
-
-    private MarketDataCandle? LoadLatestCandle(string asset, string timeframe)
-    {
-        var directory = Path.Combine(_storagePaths.Root, "market_data", "candles", asset, timeframe);
-        if (!Directory.Exists(directory))
-        {
-            return null;
-        }
-
-        var latestFile = Directory.GetFiles(directory, "*.candles.jsonl", SearchOption.TopDirectoryOnly)
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault();
-        if (latestFile is null)
-        {
-            return null;
-        }
-
-        var line = File.ReadLines(latestFile).Reverse().FirstOrDefault(item => !string.IsNullOrWhiteSpace(item));
-        return string.IsNullOrWhiteSpace(line)
-            ? null
-            : JsonSerializer.Deserialize<MarketDataCandle>(line, JsonDefaults.SnapshotReadOptions);
     }
 
     private (EnsembleSignalAgentPackage? Package, List<string> Blockers) ValidateForwardTestGates()
@@ -771,6 +678,8 @@ public sealed class ForwardTestService
 - observations_total
 - triggered_count
 - invalidated_count
+- near_miss_count
+- completed_count
 - expired_count
 - hypothetical_wins
 - hypothetical_losses
@@ -811,8 +720,18 @@ public sealed class ForwardTestService
             builder.AppendLine($"- signal_id: {observation.SignalId}");
             builder.AppendLine($"- asset: {observation.Asset}");
             builder.AppendLine($"- candidate_id: {observation.CandidateId}");
+            builder.AppendLine($"- signal_lifecycle_status: {observation.SignalLifecycleStatus}");
             builder.AppendLine($"- observed_status: {observation.ObservedStatus}");
             builder.AppendLine($"- observed_price: {(observation.ObservedPrice.HasValue ? observation.ObservedPrice.Value.ToString("0.#####") : "n/a")}");
+            builder.AppendLine($"- observed_entry_hit: {observation.ObservedEntryHit.ToString().ToLowerInvariant()}");
+            builder.AppendLine($"- observed_invalidation_hit: {observation.ObservedInvalidationHit.ToString().ToLowerInvariant()}");
+            builder.AppendLine($"- observed_stop_loss_hit: {observation.ObservedStopLossHit.ToString().ToLowerInvariant()}");
+            builder.AppendLine($"- observed_take_profit_hit: {observation.ObservedTakeProfitHit.ToString().ToLowerInvariant()}");
+            builder.AppendLine($"- observed_near_miss: {observation.ObservedNearMiss.ToString().ToLowerInvariant()}");
+            builder.AppendLine($"- observed_expired: {observation.ObservedExpired.ToString().ToLowerInvariant()}");
+            builder.AppendLine($"- outcome_pending: {observation.OutcomePending.ToString().ToLowerInvariant()}");
+            builder.AppendLine($"- hypothetical_result: {observation.HypotheticalResult}");
+            builder.AppendLine($"- r_multiple: {(observation.RMultiple.HasValue ? observation.RMultiple.Value.ToString("0.####") : "n/a")}");
             builder.AppendLine($"- result: {observation.Result}");
             builder.AppendLine($"- simulated: {observation.Simulated}");
             builder.AppendLine($"- note: {observation.Note}");

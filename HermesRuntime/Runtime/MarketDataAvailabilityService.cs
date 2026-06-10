@@ -33,6 +33,7 @@ public sealed record MarketDataAvailability(
     IReadOnlyList<MarketDataFile> Files,
     IReadOnlyList<string> AssetsAvailable,
     IReadOnlyList<string> DataGaps,
+    IReadOnlyList<string> Warnings,
     bool XauusdAvailable,
     bool EurusdAvailable,
     bool NoAutoTrading,
@@ -52,6 +53,7 @@ public sealed record MarketDataQualityReport(
     string QualityHealth,
     IReadOnlyList<string> TimeframesAvailable,
     IReadOnlyList<string> DataGaps,
+    IReadOnlyList<string> Warnings,
     IReadOnlyList<MarketDataFile> Files,
     bool NoAutoTrading,
     bool HumanReviewRequired,
@@ -90,6 +92,7 @@ public sealed class MarketDataAvailabilityService
     private static readonly string[] SupportedAssets = ["XAUUSD", "GOLD", "EURUSD"];
     private readonly StoragePaths _storagePaths;
     private readonly string _runtimeRoot;
+    private string? _resolvedReportsDirectory;
 
     public MarketDataAvailabilityService(StoragePaths storagePaths, string runtimeRoot)
     {
@@ -97,7 +100,7 @@ public sealed class MarketDataAvailabilityService
         _runtimeRoot = runtimeRoot;
     }
 
-    public string ReportsDirectory => Path.Combine(_storagePaths.Root, "reports", "market_data");
+    public string ReportsDirectory => _resolvedReportsDirectory ??= ResolveReportsDirectory();
     public string AvailabilityPath => Path.Combine(ReportsDirectory, "market_data_availability.json");
     public string QualityPath => Path.Combine(ReportsDirectory, "market_data_quality.json");
     public string NormalizedDirectory => Path.Combine(_storagePaths.Root, "market_data", "normalized");
@@ -105,6 +108,7 @@ public sealed class MarketDataAvailabilityService
     public MarketDataAvailability Scan()
     {
         var scannedAt = DateTimeOffset.UtcNow;
+        var warnings = new List<string>();
         var sources = ScanRoots(scannedAt).ToList();
         var files = sources
             .Where(source => source.Exists)
@@ -135,15 +139,14 @@ public sealed class MarketDataAvailabilityService
             Files: files,
             AssetsAvailable: assetsAvailable,
             DataGaps: dataGaps,
+            Warnings: warnings,
             XauusdAvailable: assetsAvailable.Contains("XAUUSD", StringComparer.OrdinalIgnoreCase),
             EurusdAvailable: assetsAvailable.Contains("EURUSD", StringComparer.OrdinalIgnoreCase),
             NoAutoTrading: true,
             HumanReviewRequired: true,
             BrokerOrdersEnabled: false,
             LiveTradingEnabled: false);
-        Directory.CreateDirectory(ReportsDirectory);
-        File.WriteAllText(AvailabilityPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
-        return report;
+        return TryWriteAvailability(report, warnings);
     }
 
     public MarketDataQualityReport BuildQuality(string asset)
@@ -163,6 +166,7 @@ public sealed class MarketDataAvailabilityService
         var duplicates = files.Sum(file => file.DuplicateCandles);
         var candles = files.Sum(file => file.CandleCount);
         var health = files.Count == 0 ? "missing" : dataGaps.Count > 0 ? "needs_more_data" : invalid > candles * 0.02 ? "quality_warning" : "ok";
+        var warnings = availability.Warnings.ToList();
         var report = new MarketDataQualityReport(
             ReportVersion: "market_data_quality_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -175,14 +179,13 @@ public sealed class MarketDataAvailabilityService
             QualityHealth: health,
             TimeframesAvailable: files.Select(file => file.Timeframe).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList(),
             DataGaps: dataGaps,
+            Warnings: warnings,
             Files: files,
             NoAutoTrading: true,
             HumanReviewRequired: true,
             BrokerOrdersEnabled: false,
             LiveTradingEnabled: false);
-        Directory.CreateDirectory(ReportsDirectory);
-        File.WriteAllText(QualityPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
-        return report;
+        return TryWriteQuality(report);
     }
 
     public MarketDataNormalizationResult Normalize(string asset)
@@ -225,6 +228,79 @@ public sealed class MarketDataAvailabilityService
     {
         if (!File.Exists(AvailabilityPath)) return null;
         return JsonSerializer.Deserialize<MarketDataAvailability>(File.ReadAllText(AvailabilityPath), JsonDefaults.SnapshotReadOptions);
+    }
+
+    private MarketDataAvailability TryWriteAvailability(MarketDataAvailability report, List<string> warnings)
+    {
+        try
+        {
+            Directory.CreateDirectory(ReportsDirectory);
+            File.WriteAllText(AvailabilityPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
+            return report;
+        }
+        catch (IOException ex)
+        {
+            warnings.Add($"market_data_report_write_failed:{SanitizeMessage(ex.Message)}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            warnings.Add($"market_data_report_write_failed:{SanitizeMessage(ex.Message)}");
+        }
+
+        return report with { Warnings = warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList() };
+    }
+
+    private MarketDataQualityReport TryWriteQuality(MarketDataQualityReport report)
+    {
+        var warnings = report.Warnings.ToList();
+        try
+        {
+            Directory.CreateDirectory(ReportsDirectory);
+            File.WriteAllText(QualityPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
+            return report;
+        }
+        catch (IOException ex)
+        {
+            warnings.Add($"market_data_quality_write_failed:{SanitizeMessage(ex.Message)}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            warnings.Add($"market_data_quality_write_failed:{SanitizeMessage(ex.Message)}");
+        }
+
+        return report with { Warnings = warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList() };
+    }
+
+    private string ResolveReportsDirectory()
+    {
+        var preferred = Path.Combine(_storagePaths.Root, "reports", "market_data");
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            return preferred;
+        }
+        catch (IOException)
+        {
+            return ResolveFallbackReportsDirectory(preferred);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ResolveFallbackReportsDirectory(preferred);
+        }
+    }
+
+    private string ResolveFallbackReportsDirectory(string preferred)
+    {
+        var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "market_data");
+        Directory.CreateDirectory(fallback);
+        return fallback;
+    }
+
+    private static string SanitizeMessage(string? message)
+    {
+        return string.IsNullOrWhiteSpace(message)
+            ? "unknown_io_error"
+            : message.Replace(Environment.NewLine, " ", StringComparison.Ordinal).Trim();
     }
 
     public IReadOnlyList<string> ExplainGap(string asset)
