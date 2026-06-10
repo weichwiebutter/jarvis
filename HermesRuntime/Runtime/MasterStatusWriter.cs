@@ -14,6 +14,22 @@ public sealed class MasterStatusWriter
 
     public string SnapshotPath => _resolvedSnapshotPath ?? _service.SnapshotPath;
 
+    public MasterStatusSnapshot? LoadSnapshot()
+    {
+        foreach (var path in CandidateSnapshotPaths())
+        {
+            if (!File.Exists(path)) continue;
+            var snapshot = JsonSerializer.Deserialize<MasterStatusSnapshot>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
+            if (snapshot is not null)
+            {
+                _resolvedSnapshotPath = path;
+                return snapshot;
+            }
+        }
+
+        return null;
+    }
+
     public MasterStatusSnapshot WriteSnapshot()
     {
         var snapshot = _service.BuildSnapshot();
@@ -42,5 +58,11 @@ public sealed class MasterStatusWriter
         var fallbackPath = Path.Combine(fallbackDirectory, "master_status.json");
         File.WriteAllText(fallbackPath, JsonSerializer.Serialize(snapshot, JsonDefaults.WriteOptions));
         return fallbackPath;
+    }
+
+    private IEnumerable<string> CandidateSnapshotPaths()
+    {
+        yield return _service.SnapshotPath;
+        yield return Path.Combine(Directory.GetCurrentDirectory(), ".codex_artifacts", "reports", "master-status", "master_status.json");
     }
 }

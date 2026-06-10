@@ -18,6 +18,8 @@ public sealed record MasterStatusSnapshot(
     MasterStatusSection TradingDomainStatus,
     MasterStatusSafetyFlags SafetyFlags,
     IReadOnlyList<string> Warnings,
+    IReadOnlyDictionary<string, long> SectionTimingsMs,
+    IReadOnlyList<string> SlowSections,
     IReadOnlyList<string> TopBlockers,
     IReadOnlyList<string> NextRecommendedActions,
     int QueuedTasks,

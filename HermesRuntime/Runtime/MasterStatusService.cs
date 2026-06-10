@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace Hermes.Runtime;
@@ -19,6 +20,22 @@ public sealed class MasterStatusService
 
     public MasterStatusSnapshot BuildSnapshot()
     {
+        var sectionTimings = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var slowSections = new List<string>();
+        T Measure<T>(string section, Func<T> func)
+        {
+            var sw = Stopwatch.StartNew();
+            var result = func();
+            sw.Stop();
+            sectionTimings[section] = sw.ElapsedMilliseconds;
+            if (sw.ElapsedMilliseconds > 500)
+            {
+                slowSections.Add($"{section}:{sw.ElapsedMilliseconds}ms");
+            }
+
+            return result;
+        }
+
         var scheduleConfigPath = Path.Combine(_runtimeRoot, "config", "schedules.json");
         var nightlyConfigPath = Path.Combine(_runtimeRoot, "config", "nightly.research.json");
         var schedulerStatus = new HermesInternalScheduler(_storagePaths, scheduleConfigPath).GetStatus();
@@ -62,7 +79,7 @@ public sealed class MasterStatusService
         var robustStrategies = LoadOrDefault(Path.Combine(strategyRoot, "robust_strategies.json"));
         var overfitReport = LoadOrDefault(Path.Combine(strategyRoot, "overfit_report.json"));
         var goalTracker = new GoalProgressTracker(_storagePaths);
-        var goalState = goalTracker.LoadState() ?? goalTracker.LoadOrCreateState();
+        var goalState = Measure("goal_state", goalTracker.LoadState);
         if (overfitReport.ValueKind != JsonValueKind.Object)
         {
             overfitReport = LoadOrDefault(Path.Combine(simulationRoot, "overfit_report.json"));
@@ -75,7 +92,7 @@ public sealed class MasterStatusService
         var marketDataAvailability = marketDataService.Scan();
         var xauusdQuality = marketDataService.BuildQuality(ScalpingResearchService.DefaultAsset);
         var knowledgeQualityEngine = new KnowledgeQualityEngine(_storagePaths);
-        var knowledgeQuality = knowledgeQualityEngine.LoadReport() ?? knowledgeQualityEngine.LoadOrCreateReport();
+        var knowledgeQuality = Measure("knowledge_quality", knowledgeQualityEngine.LoadReport);
         var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
         var domainValidation = SafeBuildDomainValidation(statusBuildWarnings);
         var humanReview = SafeBuildHumanReview(statusBuildWarnings);
@@ -269,7 +286,24 @@ public sealed class MasterStatusService
         var scalpingAssetsWithData = multiAssetRoadmap?.AssetsWithData ?? [];
         var scalpingAssetsNeedingData = multiAssetRoadmap?.AssetsNeedingData ?? [];
         var scalpingMultiAssetRoadmapHealth = multiAssetRoadmap?.RoadmapHealth ?? "missing";
-        var multiAssetStatus = new MultiAssetScalpingOrchestratorService(_storagePaths, _runtimeRoot).BuildStatus();
+        var multiAssetStatusService = new MultiAssetScalpingOrchestratorService(_storagePaths, _runtimeRoot);
+        var multiAssetStatus = Measure("multi_asset_readiness", multiAssetStatusService.LoadReport);
+        var multiAssetStatusFallback = multiAssetStatus ?? new MultiAssetScalpingResearchReport(
+            ReportVersion: "multi_asset_scalping_research_v1",
+            StartedAtUtc: DateTimeOffset.UtcNow,
+            CompletedAtUtc: null,
+            AssetsRequested: [],
+            AssetsProcessed: [],
+            AssetsSkipped: [],
+            PerAssetResults: [],
+            SafetyFlags: [],
+            Warnings: ["multi_asset_readiness_report_missing"],
+            NextRecommendedActions: ["run-multi-asset-scalping-research --all-ready-assets --max-variants 100"],
+            NoAutoTrading: true,
+            HumanReviewRequired: true,
+            BrokerOrdersEnabled: false,
+            LiveTradingEnabled: false,
+            ResearchOnly: true);
         var readinessService = new ScalpingAssetReadinessService(_storagePaths, _runtimeRoot);
         var readinessAssets = new[] { "GER40", "XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "NAS100", "US500" };
         var readinessSnapshots = readinessAssets.Select(readinessService.Evaluate).ToList();
@@ -310,7 +344,7 @@ public sealed class MasterStatusService
         var ger40SignalAgentSpecStatus = ger40Roadmap?.SignalAgentSpecStatus ?? "missing";
         var registryService = new CertifiedCandidateInventoryService(_storagePaths, _runtimeRoot);
         var inventory = registryService.LoadInventory() ?? registryService.BuildInventory();
-        var setupRegistry = registryService.LoadRegistry() ?? registryService.BuildRegistry();
+        var setupRegistry = Measure("setup_registry", registryService.LoadRegistry);
         var setupRegistryAssets = setupRegistry.SetupCountsByAsset.Keys.OrderBy(asset => asset, StringComparer.OrdinalIgnoreCase).ToList();
         var xauusdSetupCount = setupRegistry.SetupCountsByAsset.TryGetValue("XAUUSD", out var xauusdCount) ? xauusdCount : 0;
         var eurusdSetupCount = setupRegistry.SetupCountsByAsset.TryGetValue("EURUSD", out var eurusdCount) ? eurusdCount : 0;
@@ -321,13 +355,13 @@ public sealed class MasterStatusService
         var totalSetupReadyAssets = setupReadyAssets.Count;
         var totalSignalSpecsReady = signalAgentSpecsReady;
         var eurusdCertifiedCandidates = certificationReports.Count(report => report.Asset.Equals("EURUSD", StringComparison.OrdinalIgnoreCase) && report.Status == ScalpingCertificationStatus.certified_candidate);
-        var ensembleCandidate = new ScalpingPortfolioService(_storagePaths, _runtimeRoot).LoadEnsembleCandidate();
+        var ensembleCandidate = Measure("ensemble_candidate", () => new ScalpingPortfolioService(_storagePaths, _runtimeRoot).LoadEnsembleCandidate());
         var ensembleCandidateStatus = ensembleCandidate?.Status ?? "missing";
         var ensembleCandidateMembers = ensembleCandidate?.Members.Count ?? 0;
         var ensembleCandidateHealth = ensembleCandidate is null
             ? "missing"
             : ensembleCandidate.Status == "ensemble_candidate_v1" ? "ok" : "building";
-        var optimizerReport = new ScalpingEnsembleOptimizerService(_storagePaths, _runtimeRoot).LoadReport();
+        var optimizerReport = Measure("ensemble_optimizer", () => new ScalpingEnsembleOptimizerService(_storagePaths, _runtimeRoot).LoadReport());
         var optimizedSelection = optimizerReport?.SelectedEnsemble;
         var scalpingEnsembleOptimizerHealth = optimizerReport?.OptimizerHealth ?? "missing";
         var scalpingOptimizedEnsembleStatus = optimizedSelection?.Status.ToString() ?? "missing";
@@ -337,7 +371,7 @@ public sealed class MasterStatusService
         var scalpingOptimizedEnsembleSignalDensity = optimizedSelection?.OptimizedSignalDensity ?? 0;
         var scalpingOptimizedEnsembleReadiness = optimizedSelection?.Readiness ?? "missing";
         var ensembleExportService = new ScalpingEnsembleExportService(_storagePaths, _runtimeRoot);
-        var ensembleManifest = ensembleExportService.LoadManifest();
+        var ensembleManifest = Measure("ensemble_manifest", ensembleExportService.LoadManifest);
         var scalpingEnsemblePackageReady = ensembleManifest is not null
             && File.Exists(ensembleExportService.SignalAgentJsonPath)
             && File.Exists(ensembleExportService.BotPortfolioJsonPath)
@@ -346,21 +380,21 @@ public sealed class MasterStatusService
         var scalpingEnsembleExportHealth = scalpingEnsemblePackageReady ? "ok" : optimizedSelection?.Status == ScalpingOptimizedEnsembleStatus.ensemble_ready ? "needs_export" : "not_ready";
         var scalpingEnsembleHumanReviewReady = File.Exists(ensembleExportService.HumanReviewPackagePath);
         var reviewService = new ScalpingEnsembleReviewService(_storagePaths, _runtimeRoot);
-        var reviewState = reviewService.LoadState() ?? reviewService.LoadOrCreate();
+        var reviewState = Measure("ensemble_review", reviewService.LoadState);
         var scalpingEnsembleReviewStatus = reviewState.ReviewStatus.ToString();
         var scalpingEnsembleApprovedForDemoSignalUse = reviewState.ReviewStatus == ScalpingEnsembleReviewStatus.approved_for_demo_signal_use;
         var scalpingEnsembleApprovedForForwardTestPreparation = reviewState.ReviewStatus == ScalpingEnsembleReviewStatus.approved_for_forward_test_preparation;
         var scalpingEnsembleReviewHealth = reviewState.Blockers.Count > 0 ? "needs_attention" : "ok";
         var latestScalpingEnsembleReview = File.Exists(reviewService.StatusPath) ? reviewService.StatusPath : null;
         var demoSignalFeedService = new DemoSignalFeedService(_storagePaths, _runtimeRoot);
-        var demoSignalFeed = demoSignalFeedService.LoadStatus() ?? demoSignalFeedService.LoadOrCreateStatus();
+        var demoSignalFeed = Measure("demo_signal_feed", demoSignalFeedService.LoadStatus);
         var demoSignalFeedStatus = demoSignalFeed.FeedStatus;
         var demoSignalsAvailable = demoSignalFeed.DemoSignalsAvailable;
         var latestDemoSignalCount = demoSignalFeed.SignalCount;
         var demoSignalFeedHealth = demoSignalFeed.Blockers.Count > 0 ? "needs_attention" : "ok";
         var demoSignalFeedMode = demoSignalFeed.FeedMode;
         var forwardTestService = new ForwardTestService(_storagePaths, _runtimeRoot);
-        var forwardTest = forwardTestService.LoadStatus() ?? forwardTestService.LoadOrCreateStatus();
+        var forwardTest = Measure("forward_test", forwardTestService.LoadStatus);
         var forwardTestStatus = forwardTest.ForwardTestStatus;
         var forwardTestMode = forwardTest.ForwardTestMode;
         var forwardTestAssets = forwardTest.ForwardTestAssets;
@@ -374,7 +408,7 @@ public sealed class MasterStatusService
         var forwardTestHealth = forwardTest.ForwardTestHealth;
         var forwardTestRequiresHumanReview = forwardTest.ForwardTestRequiresHumanReview;
         var currentMarketService = new CurrentMarketSnapshotService(_storagePaths, _runtimeRoot);
-        var currentMarket = currentMarketService.LoadStatus();
+        var currentMarket = Measure("current_market_snapshot", currentMarketService.LoadStatus);
         var currentMarketSnapshotStatus = currentMarket?.SnapshotStatus ?? "missing";
         var currentMarketAssetsAvailable = currentMarket?.AssetsAvailable ?? [];
         var currentMarketSnapshotHealth = currentMarket?.SnapshotHealth ?? "missing";
@@ -780,6 +814,8 @@ public sealed class MasterStatusService
                 NoBrokerOrders: true,
                 NoTradingExecution: true),
             Warnings: warningReasons,
+            SectionTimingsMs: sectionTimings,
+            SlowSections: slowSections.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             TopBlockers: topBlockers,
             NextRecommendedActions: nextRecommendedActions,
             QueuedTasks: queuedTasks,
@@ -859,11 +895,11 @@ public sealed class MasterStatusService
             ScalpingAssetsWithData: scalpingAssetsWithData,
             ScalpingAssetsNeedingData: scalpingAssetsNeedingData,
             ScalpingMultiAssetRoadmapHealth: scalpingMultiAssetRoadmapHealth,
-            MultiAssetResearchStatus: multiAssetStatus.PerAssetResults.Any() ? "ready" : "missing",
-            MultiAssetAssetsReady: multiAssetStatus.AssetsReady,
-            MultiAssetAssetsSetupReady: multiAssetStatus.AssetsSetupReady,
-            MultiAssetAssetsDataReadyOnly: multiAssetStatus.AssetsDataReadyOnly,
-            MultiAssetAssetsMissingData: multiAssetStatus.AssetsMissingData,
+            MultiAssetResearchStatus: multiAssetStatusFallback.PerAssetResults.Any() ? "ready" : "missing",
+            MultiAssetAssetsReady: readinessSnapshots.Where(item => item.AssetStatus is "signal_ready" or "setup_ready" or "bot_ready").Select(item => item.Asset).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList(),
+            MultiAssetAssetsSetupReady: readinessSnapshots.Where(item => item.AssetStatus is "setup_ready" or "bot_ready").Select(item => item.Asset).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList(),
+            MultiAssetAssetsDataReadyOnly: readinessSnapshots.Where(item => item.AssetStatus == "data_ready_only").Select(item => item.Asset).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList(),
+            MultiAssetAssetsMissingData: readinessSnapshots.Where(item => item.AssetStatus == "missing_data").Select(item => item.Asset).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList(),
             DataReadyAssets: dataReadyAssets,
             SignalReadyAssets: signalReadyAssets,
             SetupReadyAssets: setupReadyAssets,

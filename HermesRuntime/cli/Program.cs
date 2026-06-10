@@ -490,7 +490,7 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Master Status Snapshot");
         var writer = BuildMasterStatusWriter(BuildStoragePaths());
-        var snapshot = writer.WriteSnapshot();
+        var snapshot = writer.LoadSnapshot() ?? writer.WriteSnapshot();
 
         PrintMasterStatusSnapshot(snapshot, writer.SnapshotPath);
         Console.WriteLine();
@@ -502,7 +502,7 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Master Status");
         var writer = BuildMasterStatusWriter(BuildStoragePaths());
-        var snapshot = writer.WriteSnapshot();
+        var snapshot = writer.LoadSnapshot() ?? writer.WriteSnapshot();
 
         PrintMasterStatusSnapshot(snapshot, writer.SnapshotPath);
         Console.WriteLine();
@@ -537,6 +537,10 @@ internal sealed class HermesCli
     {
         WriteField("overall_status", snapshot.OverallStatus);
         WriteField("current_focus", snapshot.CurrentFocus);
+        var sectionTimings = snapshot.SectionTimingsMs ?? new Dictionary<string, long>();
+        var slowSections = snapshot.SlowSections ?? [];
+        WriteField("master_status_section_timings", sectionTimings.Count == 0 ? "-" : string.Join(", ", sectionTimings.OrderByDescending(item => item.Value).Select(item => $"{item.Key}={item.Value}ms")));
+        WriteMessages("slow_sections", slowSections);
         WriteField("active_domains", string.Join(", ", snapshot.ActiveDomains));
         WriteField("queued_tasks", snapshot.QueuedTasks.ToString());
         WriteField("last_nightly_run", snapshot.LastNightlyRun ?? "-");
