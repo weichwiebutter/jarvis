@@ -184,7 +184,18 @@ public sealed class ScalpingMultiAssetRoadmapService
         var finalCandidates = expansions.Count(report => report.Status == ScalpingExpansionStatus.final_candidate);
         var robustCandidates = research?.Candidates.Count(candidate => candidate.ValidationStatus == ScalpingValidationStatus.robust_candidate) ?? 0;
         var totalCandidates = research?.Candidates.Count ?? 0;
-        var signalAgentSpecStatus = certified > 0 ? "signal_agent_spec_pending" : "not_ready";
+        var signalAgentSpecCount = certifications.Count(report =>
+            report.Asset.Equals(asset.Asset, StringComparison.OrdinalIgnoreCase)
+            || asset.Aliases.Any(alias => report.Asset.Equals(alias, StringComparison.OrdinalIgnoreCase)))
+            > 0
+            ? certifications.Count(report =>
+                (report.Asset.Equals(asset.Asset, StringComparison.OrdinalIgnoreCase)
+                 || asset.Aliases.Any(alias => report.Asset.Equals(alias, StringComparison.OrdinalIgnoreCase)))
+                && File.Exists(Path.Combine(new ScalpingResearchService(marketData.StoragePaths, marketData.RuntimeRoot).SignalSpecDirectory, report.CandidateId, "signal_agent_spec.json")))
+            : 0;
+        var signalAgentSpecStatus = certified > 0
+            ? signalAgentSpecCount > 0 ? "ready" : "signal_agent_spec_pending"
+            : "not_ready";
         var researchStatus = certified > 0
             ? "certified_candidates_available"
             : finalCandidates > 0 ? "certification_pending"

@@ -271,6 +271,16 @@ public sealed class MasterStatusService
         var ger40HistoricalDataStatus = ger40Roadmap?.HistoricalDataStatus ?? "missing";
         var ger40ResearchStatus = ger40Roadmap?.ResearchStatus ?? "missing";
         var ger40SignalAgentSpecStatus = ger40Roadmap?.SignalAgentSpecStatus ?? "missing";
+        var registryService = new CertifiedCandidateInventoryService(_storagePaths, _runtimeRoot);
+        var inventory = registryService.LoadInventory() ?? registryService.BuildInventory();
+        var setupRegistry = registryService.LoadRegistry() ?? registryService.BuildRegistry();
+        var setupRegistryAssets = setupRegistry.SetupCountsByAsset.Keys.OrderBy(asset => asset, StringComparer.OrdinalIgnoreCase).ToList();
+        var xauusdSetupCount = setupRegistry.SetupCountsByAsset.TryGetValue("XAUUSD", out var xauusdCount) ? xauusdCount : 0;
+        var eurusdSetupCount = setupRegistry.SetupCountsByAsset.TryGetValue("EURUSD", out var eurusdCount) ? eurusdCount : 0;
+        var ger40SetupCount = setupRegistry.SetupCountsByAsset.TryGetValue("GER40", out var ger40Count) ? ger40Count : 0;
+        var bestXauusdSetup = setupRegistry.BestSetupByAsset.TryGetValue("XAUUSD", out var bestXauusd) ? bestXauusd : null;
+        var bestEurusdSetup = setupRegistry.BestSetupByAsset.TryGetValue("EURUSD", out var bestEurusd) ? bestEurusd : null;
+        var bestGer40Setup = setupRegistry.BestSetupByAsset.TryGetValue("GER40", out var bestGer40) ? bestGer40 : null;
         var eurusdCertifiedCandidates = certificationReports.Count(report => report.Asset.Equals("EURUSD", StringComparison.OrdinalIgnoreCase) && report.Status == ScalpingCertificationStatus.certified_candidate);
         var ensembleCandidate = new ScalpingPortfolioService(_storagePaths, _runtimeRoot).LoadEnsembleCandidate();
         var ensembleCandidateStatus = ensembleCandidate?.Status ?? "missing";
@@ -643,6 +653,15 @@ public sealed class MasterStatusService
                     ["ger40_historical_data_status"] = ger40HistoricalDataStatus,
                     ["ger40_research_status"] = ger40ResearchStatus,
                     ["ger40_signal_agent_spec_status"] = ger40SignalAgentSpecStatus,
+                    ["certified_candidate_inventory_status"] = inventory.Items.Count > 0 ? "ok" : "missing",
+                    ["setup_registry_status"] = setupRegistry.Assets.Count > 0 ? "ok" : "missing",
+                    ["setup_registry_assets"] = setupRegistryAssets,
+                    ["xauusd_setup_count"] = xauusdSetupCount,
+                    ["eurusd_setup_count"] = eurusdSetupCount,
+                    ["ger40_setup_count"] = ger40SetupCount,
+                    ["best_xauusd_setup"] = bestXauusdSetup,
+                    ["best_eurusd_setup"] = bestEurusdSetup,
+                    ["best_ger40_setup"] = bestGer40Setup,
                     ["eurusd_certified_candidates"] = eurusdCertifiedCandidates,
                     ["ensemble_candidate_status"] = ensembleCandidateStatus,
                     ["ensemble_candidate_members"] = ensembleCandidateMembers,
@@ -805,6 +824,15 @@ public sealed class MasterStatusService
             Ger40HistoricalDataStatus: ger40HistoricalDataStatus,
             Ger40ResearchStatus: ger40ResearchStatus,
             Ger40SignalAgentSpecStatus: ger40SignalAgentSpecStatus,
+            CertifiedCandidateInventoryStatus: inventory.Items.Count > 0 ? "ok" : "missing",
+            SetupRegistryStatus: setupRegistry.Assets.Count > 0 ? "ok" : "missing",
+            SetupRegistryAssets: setupRegistryAssets,
+            XauusdSetupCount: xauusdSetupCount,
+            EurusdSetupCount: eurusdSetupCount,
+            Ger40SetupCount: ger40SetupCount,
+            BestXauusdSetup: bestXauusdSetup,
+            BestEurusdSetup: bestEurusdSetup,
+            BestGer40Setup: bestGer40Setup,
             EurusdCertifiedCandidates: eurusdCertifiedCandidates,
             EnsembleCandidateStatus: ensembleCandidateStatus,
             EnsembleCandidateMembers: ensembleCandidateMembers,

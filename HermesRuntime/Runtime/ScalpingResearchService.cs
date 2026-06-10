@@ -196,7 +196,8 @@ public sealed class ScalpingResearchService
     public string LatestReportPath => Path.Combine(Root, "latest_scalping_research.json");
     public string AssetReportsDirectory => Path.Combine(Root, "assets");
     public string BotSpecDirectory => Path.Combine(_storagePaths.Root, "reports", "scalping_bot_specs");
-    public string SignalSpecDirectory => Path.Combine(_storagePaths.Root, "reports", "signal_agent_specs");
+    public string SignalSpecDirectory => _resolvedSignalSpecDirectory ??= ResolveSignalSpecDirectory();
+    private string? _resolvedSignalSpecDirectory;
 
     public ScalpingResearchReport RunResearch(string? asset, int maxVariants)
     {
@@ -506,6 +507,34 @@ public sealed class ScalpingResearchService
     private string ResolveFallbackRoot()
     {
         var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "scalping_research");
+        Directory.CreateDirectory(fallback);
+        return fallback;
+    }
+
+    private string ResolveSignalSpecDirectory()
+    {
+        var preferred = Path.Combine(_storagePaths.Root, "reports", "signal_agent_specs");
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            var probePath = Path.Combine(preferred, ".write_probe");
+            File.WriteAllText(probePath, "probe");
+            File.Delete(probePath);
+            return preferred;
+        }
+        catch (IOException)
+        {
+            return ResolveFallbackSignalSpecDirectory();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ResolveFallbackSignalSpecDirectory();
+        }
+    }
+
+    private string ResolveFallbackSignalSpecDirectory()
+    {
+        var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "signal_agent_specs");
         Directory.CreateDirectory(fallback);
         return fallback;
     }

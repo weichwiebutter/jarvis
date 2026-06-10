@@ -31,6 +31,7 @@ public sealed class ScalpingEnsembleExportService
 {
     private readonly StoragePaths _storagePaths;
     private readonly string _runtimeRoot;
+    private string? _resolvedExportDirectory;
 
     public ScalpingEnsembleExportService(StoragePaths storagePaths, string runtimeRoot)
     {
@@ -38,7 +39,7 @@ public sealed class ScalpingEnsembleExportService
         _runtimeRoot = runtimeRoot;
     }
 
-    public string ExportDirectory => Path.Combine(_storagePaths.Root, "reports", "scalping_portfolio", "ensemble_export");
+    public string ExportDirectory => _resolvedExportDirectory ??= ResolveExportDirectory();
     public string ManifestPath => Path.Combine(ExportDirectory, "manifest.json");
     public string SignalAgentJsonPath => Path.Combine(ExportDirectory, "ensemble_signal_agent_package.json");
     public string SignalAgentMarkdownPath => Path.Combine(ExportDirectory, "ensemble_signal_agent_package.md");
@@ -155,6 +156,34 @@ public sealed class ScalpingEnsembleExportService
         return File.Exists(ManifestPath)
             ? JsonSerializer.Deserialize<ScalpingEnsemblePackageManifest>(File.ReadAllText(ManifestPath), JsonDefaults.SnapshotReadOptions)
             : null;
+    }
+
+    private string ResolveExportDirectory()
+    {
+        var preferred = Path.Combine(_storagePaths.Root, "reports", "scalping_portfolio", "ensemble_export");
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            var probePath = Path.Combine(preferred, ".write_probe");
+            File.WriteAllText(probePath, "probe");
+            File.Delete(probePath);
+            return preferred;
+        }
+        catch (IOException)
+        {
+            return ResolveFallbackExportDirectory();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ResolveFallbackExportDirectory();
+        }
+    }
+
+    private string ResolveFallbackExportDirectory()
+    {
+        var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "scalping_portfolio", "ensemble_export");
+        Directory.CreateDirectory(fallback);
+        return fallback;
     }
 
     private static string BuildSignalMarkdown(string packageId, ScalpingOptimizedEnsembleSelection selection) => $"""

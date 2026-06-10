@@ -173,7 +173,13 @@ internal sealed class HermesCli
             "scalping-final-candidates" => ShowScalpingFinalCandidates(),
             "run-scalping-certification" => RunScalpingCertification(),
             "scalping-certification-report" => ShowScalpingCertificationReport(),
+            "certification-report" => ShowCertificationReport(),
             "scalping-certified-candidates" => ShowScalpingCertifiedCandidates(),
+            "candidate-audit-report" => ShowCandidateAuditReport(),
+            "candidate-details" => ShowCandidateDetails(),
+            "certified-candidate-inventory" => ShowCertifiedCandidateInventory(),
+            "setup-registry" => ShowSetupRegistry(),
+            "explain-setup-selection" => ExplainSetupSelection(),
             "scalping-human-review-package" => ShowScalpingHumanReviewPackage(),
             "export-scalping-bot-spec" => ExportScalpingBotSpec(),
             "scalping-bot-spec" => ShowScalpingBotSpec(),
@@ -395,6 +401,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes run-scalping-certification --id <ID>|--all-final finale Scalping-Kandidaten zertifizieren");
         Console.WriteLine("  hermes scalping-certification-report --id <ID> Certification Report anzeigen");
         Console.WriteLine("  hermes scalping-certified-candidates zertifizierte Scalping-Kandidaten anzeigen");
+        Console.WriteLine("  hermes candidate-audit-report vollständigen Kandidaten-Audit anzeigen");
+        Console.WriteLine("  hermes candidate-details --id <ID> Kandidaten-Details anzeigen");
         Console.WriteLine("  hermes scalping-human-review-package --id <ID> Human Review Package anzeigen");
         Console.WriteLine("  hermes export-scalping-bot-spec --id <ID> cTrader-Spezifikationsreport exportieren");
         Console.WriteLine("  hermes scalping-bot-spec --id <ID> cTrader-Spezifikation anzeigen");
@@ -609,6 +617,15 @@ internal sealed class HermesCli
         WriteMessages("scalping_assets_with_data", snapshot.ScalpingAssetsWithData);
         WriteMessages("scalping_assets_needing_data", snapshot.ScalpingAssetsNeedingData);
         WriteField("scalping_multi_asset_roadmap_health", snapshot.ScalpingMultiAssetRoadmapHealth);
+        WriteField("certified_candidate_inventory_status", snapshot.CertifiedCandidateInventoryStatus);
+        WriteField("setup_registry_status", snapshot.SetupRegistryStatus);
+        WriteMessages("setup_registry_assets", snapshot.SetupRegistryAssets);
+        WriteField("xauusd_setup_count", snapshot.XauusdSetupCount.ToString());
+        WriteField("eurusd_setup_count", snapshot.EurusdSetupCount.ToString());
+        WriteField("ger40_setup_count", snapshot.Ger40SetupCount.ToString());
+        WriteField("best_xauusd_setup", snapshot.BestXauusdSetup ?? "-");
+        WriteField("best_eurusd_setup", snapshot.BestEurusdSetup ?? "-");
+        WriteField("best_ger40_setup", snapshot.BestGer40Setup ?? "-");
         WriteField("eurusd_certified_candidates", snapshot.EurusdCertifiedCandidates.ToString());
         WriteField("ensemble_candidate_status", snapshot.EnsembleCandidateStatus);
         WriteField("ensemble_candidate_members", snapshot.EnsembleCandidateMembers.ToString());
@@ -3812,6 +3829,17 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowCertificationReport()
+    {
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return ShowScalpingCertifiedCandidates();
+        }
+
+        return ShowScalpingCertificationReport();
+    }
+
     private int ShowScalpingCertifiedCandidates()
     {
         WriteHeader("Hermes Scalping Certified Candidates");
@@ -3825,6 +3853,215 @@ internal sealed class HermesCli
         }
 
         Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCandidateAuditReport()
+    {
+        WriteHeader("Hermes Certified Candidate Audit Report");
+        var asset = ReadOption(_args, "--asset");
+        var service = new CertifiedCandidateAuditService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadReport() ?? service.BuildReport(string.IsNullOrWhiteSpace(asset) ? "GER40" : asset);
+        WriteField("Report Path", DisplayPath(service.ReportPath));
+        WriteField("Markdown Path", DisplayPath(service.MarkdownPath));
+        WriteField("Asset", report.Asset);
+        WriteField("Audit Warnings", report.AuditWarnings.Count.ToString());
+        foreach (var finding in report.Findings)
+        {
+            WriteSubHeader(finding.CandidateId);
+            WriteField("Asset", finding.Asset);
+            WriteField("Timeframe", finding.Timeframe);
+            WriteField("Setup", finding.SetupType);
+            WriteField("Direction", finding.Direction);
+            WriteField("Certification Status", finding.CertificationStatus);
+            WriteField("Indicators", finding.UsedIndicators);
+            WriteField("Filters", finding.UsedFilters);
+            WriteField("Session Filter", finding.SessionFilter);
+            WriteField("Market Regime Filter", finding.MarketRegimeFilter);
+            WriteField("Entry Rules", finding.EntryRules);
+            WriteField("Exit Rules", finding.ExitRules);
+            WriteField("Stop-Loss Logic", finding.StopLossLogic);
+            WriteField("Take-Profit Logic", finding.TakeProfitLogic);
+            WriteField("Invalidation Rules", finding.InvalidationRules);
+            WriteField("Trades Total", finding.TradesTotal);
+            WriteField("Trades Per Year", finding.TradesPerYear);
+            WriteField("Trades Per Month", finding.TradesPerMonth);
+            WriteField("Trades Per Week", finding.TradesPerWeek);
+            WriteField("Average Holding Duration", finding.AverageHoldingDuration);
+            WriteField("Win Rate", finding.WinRate);
+            WriteField("Profit Factor", finding.ProfitFactor);
+            WriteField("Expectancy", finding.Expectancy);
+            WriteField("Sharpe", finding.Sharpe);
+            WriteField("Sortino", finding.Sortino);
+            WriteField("Max Drawdown", finding.MaxDrawdown);
+            WriteField("Max Daily Drawdown", finding.MaxDailyDrawdown);
+            WriteField("Risk Of Ruin", finding.RiskOfRuin);
+            WriteField("Signal Density", finding.SignalDensity);
+            WriteField("Walk Forward Status", finding.WalkForwardStatus);
+            WriteField("OOS Status", finding.OosStatus);
+            WriteField("Monte Carlo Status", finding.MonteCarloStatus);
+            WriteField("Sensitivity Status", finding.SensitivityStatus);
+            WriteField("Spread Stress Status", finding.SpreadStressStatus);
+            WriteField("Slippage Stress Status", finding.SlippageStressStatus);
+            WriteField("Certification Reason", finding.CertificationReason);
+            WriteMessages("Thresholds Met", finding.MinimumThresholdsMet);
+            WriteMessages("Weaknesses", finding.Weaknesses);
+            WriteMessages("Audit Warnings", finding.AuditWarnings);
+            WriteField("Source Certification", DisplayPath(finding.SourceCertificationPath));
+            WriteField("Source Expansion", DisplayPath(finding.SourceExpansionPath));
+            WriteField("human_review_required", finding.HumanReviewRequired.ToString().ToLowerInvariant());
+        }
+
+        WriteMessages("Audit Warnings", report.AuditWarnings);
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCandidateDetails()
+    {
+        WriteHeader("Hermes Candidate Details");
+        var id = ReadOption(_args, "--id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            WriteError("--id fehlt");
+            WriteSafety();
+            return 1;
+        }
+
+        var research = new ScalpingResearchService(BuildStoragePaths(), _runtimeRoot);
+        var candidate = research.FindCandidate(id);
+        if (candidate is null)
+        {
+            WriteError($"Kandidat nicht gefunden: {id}");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteField("Candidate", candidate.CandidateId);
+        WriteField("Asset", candidate.Asset);
+        WriteField("Timeframe", candidate.Timeframe);
+        WriteField("Setup", candidate.SetupType);
+        WriteField("Validation Status", candidate.ValidationStatus.ToString());
+        WriteField("Confidence Score", candidate.ConfidenceScore.ToString("0.####"));
+        WriteMessages("Entry Rules", candidate.EntryRules);
+        WriteMessages("Exit Rules", candidate.ExitRules);
+        WriteMessages("Stop Loss Rules", candidate.StopLossRules);
+        WriteMessages("Take Profit Rules", candidate.TakeProfitRules);
+        WriteField("Session Filter", candidate.SessionFilter);
+        WriteField("Spread Filter", candidate.SpreadFilter);
+        WriteField("News Filter", candidate.NewsFilterStub);
+        WriteField("Risk Per Trade", candidate.RiskPerTrade.ToString("0.####"));
+        WriteField("Max Daily Loss", candidate.MaxDailyLoss.ToString("0.####"));
+        WriteField("Max Trades Per Day", candidate.MaxTradesPerDay.ToString());
+        WriteField("Trades", candidate.Backtest.TradeCount.ToString());
+        WriteField("OOS Net R", candidate.Backtest.OosNetR.ToString("0.####"));
+        WriteField("Walk Forward Net R", candidate.Backtest.WalkForwardNetR.ToString("0.####"));
+        WriteField("Profit Factor", candidate.Backtest.ProfitFactor.ToString("0.####"));
+        WriteField("Win Rate", candidate.Backtest.WinRate.ToString("0.####"));
+        WriteField("Max Drawdown R", candidate.Backtest.MaxDrawdownR.ToString("0.####"));
+        WriteField("Cost Stress Net R", candidate.Backtest.CostStressNetR.ToString("0.####"));
+        WriteField("Monte Carlo Median Drawdown R", candidate.RiskProfile.MonteCarloMedianDrawdownR.ToString("0.####"));
+        WriteField("Monte Carlo P95 Drawdown R", candidate.RiskProfile.MonteCarloP95DrawdownR.ToString("0.####"));
+        WriteField("Risk Of Ruin", candidate.RiskProfile.RiskOfRuinProbability.ToString("0.####"));
+        WriteField("no_auto_trading", candidate.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", candidate.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("broker_orders_enabled", candidate.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("live_trading_enabled", candidate.LiveTradingEnabled.ToString().ToLowerInvariant());
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCertifiedCandidateInventory()
+    {
+        WriteHeader("Hermes Certified Candidate Inventory");
+        var service = new CertifiedCandidateInventoryService(BuildStoragePaths(), _runtimeRoot);
+        var inventory = service.LoadInventory() ?? service.BuildInventory();
+        WriteField("Inventory Path", DisplayPath(service.InventoryPath));
+        WriteField("Items", inventory.Items.Count.ToString());
+        foreach (var group in inventory.Items.GroupBy(item => item.Asset, StringComparer.OrdinalIgnoreCase).OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            WriteSubHeader(group.Key);
+            foreach (var item in group.OrderByDescending(item => item.QualityScore ?? 0).ThenBy(item => item.CandidateId, StringComparer.OrdinalIgnoreCase))
+            {
+                WriteField("Candidate", item.CandidateId);
+                WriteField("Timeframe", item.Timeframe);
+                WriteField("Setup", item.SetupType);
+                WriteField("Direction", item.Direction);
+                WriteField("Certification Status", item.CertificationStatus);
+                WriteField("Quality Score", item.QualityScore?.ToString("0.####") ?? "-");
+                WriteField("Trust Score", item.TrustScore?.ToString("0.####") ?? "-");
+                WriteField("Profit Factor", item.ProfitFactor?.ToString("0.####") ?? "-");
+                WriteField("Win Rate", item.WinRate?.ToString("0.####") ?? "-");
+                WriteField("Max Drawdown R", item.MaxDrawdownR.ToString("0.####"));
+                WriteField("Max Daily Drawdown R", item.MaxDailyDrawdownR.ToString("0.####"));
+                WriteField("Risk Of Ruin", item.RiskOfRuin.ToString("0.####"));
+                WriteField("Signal Density", item.SignalDensity.ToString("0.####"));
+                WriteField("Stability", item.StabilityStatus);
+                WriteField("Source Report", DisplayPath(item.SourceReportPath));
+                WriteField("Human Review Required", item.HumanReviewRequired.ToString().ToLowerInvariant());
+            }
+        }
+
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowSetupRegistry()
+    {
+        WriteHeader("Hermes Setup Registry");
+        var asset = ReadOption(_args, "--asset");
+        var service = new CertifiedCandidateInventoryService(BuildStoragePaths(), _runtimeRoot);
+        var registry = service.LoadRegistry() ?? service.BuildRegistry();
+        WriteField("Registry Path", DisplayPath(service.SetupRegistryPath));
+        WriteField("Assets", string.Join(", ", registry.SetupCountsByAsset.Keys.OrderBy(item => item, StringComparer.OrdinalIgnoreCase)));
+        var entries = string.IsNullOrWhiteSpace(asset)
+            ? registry.Assets
+            : registry.Assets.Where(entry => entry.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase)).ToList();
+        foreach (var entry in entries)
+        {
+            WriteSubHeader(entry.SetupId);
+            WriteField("Asset", entry.Asset);
+            WriteField("Primary Timeframe", entry.PrimaryTimeframe);
+            WriteField("Setup Type", entry.SetupType);
+            WriteField("Allowed Directions", string.Join(", ", entry.AllowedDirections));
+            WriteField("Primary Candidate", entry.PrimaryCandidate);
+            WriteMessages("Backup Candidates", entry.BackupCandidates);
+            WriteMessages("Market Regime Tags", entry.MarketRegimeTags);
+            WriteMessages("Session Tags", entry.SessionTags);
+            WriteField("Confidence Baseline", entry.ConfidenceBaseline.ToString("0.####"));
+            WriteField("Average Quality Score", entry.AverageQualityScore.ToString("0.####"));
+            WriteField("Average Profit Factor", entry.AverageProfitFactor.ToString("0.####"));
+            WriteField("Average Win Rate", entry.AverageWinRate.ToString("0.####"));
+            WriteField("Average Max Drawdown R", entry.AverageMaxDrawdownR.ToString("0.####"));
+            WriteField("Average Risk Of Ruin", entry.AverageRiskOfRuin.ToString("0.####"));
+            WriteField("Expected Signal Frequency", entry.ExpectedSignalFrequency);
+            WriteField("Risk Profile", entry.RiskProfile);
+            WriteField("Readiness Status", entry.ReadinessStatus);
+            WriteField("human_review_required", entry.HumanReviewRequired.ToString().ToLowerInvariant());
+            WriteField("no_auto_trading", entry.NoAutoTrading.ToString().ToLowerInvariant());
+        }
+
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainSetupSelection()
+    {
+        WriteHeader("Hermes Setup Selection Explanation");
+        var asset = ReadOption(_args, "--asset");
+        if (string.IsNullOrWhiteSpace(asset))
+        {
+            WriteError("--asset fehlt");
+            WriteSafety();
+            return 1;
+        }
+
+        var timeframe = ReadOption(_args, "--timeframe");
+        var service = new CertifiedCandidateInventoryService(BuildStoragePaths(), _runtimeRoot);
+        WriteField("Asset", asset.ToUpperInvariant());
+        WriteField("Timeframe", string.IsNullOrWhiteSpace(timeframe) ? "-" : timeframe.ToUpperInvariant());
+        WriteField("Explanation", service.ExplainSelection(asset, timeframe));
         WriteSafety();
         return 0;
     }
@@ -3998,7 +4235,8 @@ internal sealed class HermesCli
     private int ShowSignalAgentSpecs()
     {
         WriteHeader("Hermes Signal Agent Specs");
-        var root = Path.Combine(BuildStoragePaths().Root, "reports", "signal_agent_specs");
+        var service = new ScalpingResearchService(BuildStoragePaths(), _runtimeRoot);
+        var root = service.SignalSpecDirectory;
         var specs = Directory.Exists(root)
             ? Directory.GetFiles(root, "signal_agent_spec.json", SearchOption.AllDirectories).OrderByDescending(File.GetLastWriteTimeUtc).ToList()
             : [];
