@@ -6,6 +6,21 @@ public sealed record CleanupCandidate(
     long EstimatedBytes,
     bool SafeToDelete);
 
+public sealed record StoragePolicyStatus(
+    string PolicyVersion,
+    bool AutoCleanupPolicyEnabled,
+    bool AutoCleanupAllowed,
+    string SafetyMode,
+    double DiskUsagePercent,
+    double FreeDiskPercent,
+    string PolicyAction,
+    DateTimeOffset? AutoCleanupLastRun,
+    string AutoCleanupLastResult,
+    int CleanupCandidates,
+    long EstimatedFreeBytes,
+    int ProtectedPathsCount,
+    IReadOnlyList<string> Warnings);
+
 public sealed record CleanupPlan(
     string PlanId,
     DateTimeOffset CreatedAtUtc,
@@ -13,6 +28,7 @@ public sealed record CleanupPlan(
     IReadOnlyList<string> ProtectedPaths,
     IReadOnlyList<CleanupCandidate> Candidates,
     long EstimatedBytesToFree,
+    StoragePolicyStatus PolicyStatus,
     bool SafeToApply,
     bool NoAutoTrading,
     bool HumanReviewRequired);

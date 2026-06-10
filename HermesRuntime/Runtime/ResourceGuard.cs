@@ -7,6 +7,7 @@ public sealed class ResourceGuard
 {
     private readonly StoragePaths _storagePaths;
     private readonly ResourceGuardPolicy _policy;
+    private string? _resolvedReportDirectory;
 
     public ResourceGuard(StoragePaths storagePaths, ResourceGuardPolicy? policy = null)
     {
@@ -14,19 +15,19 @@ public sealed class ResourceGuard
         _policy = policy ?? ResourceGuardPolicy.Default;
     }
 
-    public string ReportDirectory => Path.Combine(_storagePaths.Root, "reports", "resource");
+    public string ReportDirectory => _resolvedReportDirectory ??= ResolveReportDirectory();
 
     public string StatusPath => Path.Combine(ReportDirectory, "resource_status.json");
 
     public ResourceSnapshot Check()
     {
-        Directory.CreateDirectory(ReportDirectory);
         var previous = LoadPreviousSnapshot();
         var now = DateTimeOffset.UtcNow;
         var warnings = new List<string>();
         var cpu = ReadCpuUsagePercent();
         var memory = ReadMemory();
         var disk = ReadDisk();
+        var storageStatus = new StorageHygieneService(_storagePaths).LoadStatus();
         var shouldPause = false;
         var shouldStop = false;
         var action = "continue";
@@ -66,6 +67,11 @@ public sealed class ResourceGuard
             action = "safe_stop";
         }
 
+        if (storageStatus?.AutoCleanupAllowed == true)
+        {
+            warnings.Add("auto_storage_hygiene_safe_cleanup_allowed_for_safe_candidates_only");
+        }
+
         var snapshot = new ResourceSnapshot(
             TimestampUtc: now,
             CpuUsagePercent: Math.Round(cpu, 2),
@@ -77,13 +83,55 @@ public sealed class ResourceGuard
             StorageRoot: _storagePaths.Root,
             Action: action,
             Warnings: warnings,
+            AutoCleanupPolicyEnabled: storageStatus?.AutoCleanupPolicyEnabled ?? true,
+            AutoCleanupAllowed: storageStatus?.AutoCleanupAllowed ?? false,
+            AutoCleanupLastRun: storageStatus?.AutoCleanupLastRun,
+            AutoCleanupLastResult: storageStatus?.AutoCleanupLastResult ?? "never_run",
+            CleanupCandidates: storageStatus?.CleanupCandidates ?? 0,
+            EstimatedFreeBytes: storageStatus?.EstimatedFreeBytes ?? 0,
+            ProtectedPathsCount: storageStatus?.ProtectedPathsCount ?? 0,
+            SafetyMode: storageStatus?.SafetyMode ?? "monitor_only",
             ShouldPause: shouldPause,
             ShouldStop: shouldStop,
             NoAutoTrading: true,
             HumanReviewRequired: true);
 
-        File.WriteAllText(StatusPath, JsonSerializer.Serialize(snapshot, JsonDefaults.WriteOptions));
+        try
+        {
+            Directory.CreateDirectory(ReportDirectory);
+            File.WriteAllText(StatusPath, JsonSerializer.Serialize(snapshot, JsonDefaults.WriteOptions));
+        }
+        catch (IOException)
+        {
+            _resolvedReportDirectory = Path.Combine(Directory.GetCurrentDirectory(), ".codex_artifacts", "reports", "resource");
+            Directory.CreateDirectory(ReportDirectory);
+            File.WriteAllText(StatusPath, JsonSerializer.Serialize(snapshot, JsonDefaults.WriteOptions));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _resolvedReportDirectory = Path.Combine(Directory.GetCurrentDirectory(), ".codex_artifacts", "reports", "resource");
+            Directory.CreateDirectory(ReportDirectory);
+            File.WriteAllText(StatusPath, JsonSerializer.Serialize(snapshot, JsonDefaults.WriteOptions));
+        }
         return snapshot;
+    }
+
+    private string ResolveReportDirectory()
+    {
+        var preferred = Path.Combine(_storagePaths.Root, "reports", "resource");
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            return preferred;
+        }
+        catch (IOException)
+        {
+            return Path.Combine(Directory.GetCurrentDirectory(), ".codex_artifacts", "reports", "resource");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Path.Combine(Directory.GetCurrentDirectory(), ".codex_artifacts", "reports", "resource");
+        }
     }
 
     private ResourceSnapshot? LoadPreviousSnapshot()

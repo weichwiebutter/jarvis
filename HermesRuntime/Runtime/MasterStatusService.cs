@@ -152,6 +152,17 @@ public sealed class MasterStatusService
         var cleanupCandidates = FirstPositive(
             GetArrayCount(storagePlan, "candidates"),
             GetInt(storageStatus, "cleanup_candidates", "cleanupCandidates"));
+        var estimatedFreeBytes = (long)FirstPositive(
+            GetInt(storagePlan, "estimated_bytes_to_free", "estimatedBytesToFree"),
+            GetInt(storageStatus, "estimated_free_bytes", "estimatedFreeBytes"));
+        var autoCleanupPolicyEnabled = JsonBool(storageStatus, true, "auto_cleanup_policy_enabled", "autoCleanupPolicyEnabled");
+        var autoCleanupAllowed = JsonBool(storageStatus, false, "auto_cleanup_allowed", "autoCleanupAllowed");
+        var autoCleanupLastRun = GetString(storageStatus, "auto_cleanup_last_run", "autoCleanupLastRun");
+        var autoCleanupLastResult = FirstNonEmpty(GetString(storageStatus, "auto_cleanup_last_result", "autoCleanupLastResult"), "never_run");
+        var protectedPathsCount = FirstPositive(
+            GetInt(storageStatus, "protected_paths_count", "protectedPathsCount"),
+            GetArrayCount(storagePlan, "protected_paths", "protectedPaths"));
+        var safetyMode = FirstNonEmpty(GetString(storageStatus, "safety_mode", "safetyMode"), "monitor_only");
         var robustCount = GetArrayCount(robustStrategies, "robust_strategies", "robustStrategies");
         var overfitCount = FirstPositive(
             GetInt(overfitReport, "overfit_suspected_strategies", "overfitSuspectedStrategies"),
@@ -578,7 +589,13 @@ public sealed class MasterStatusService
                     ["storage_root"] = FirstNonEmpty(GetString(storagePlan, "storage_root", "storageRoot"), GetString(storageStatus, "storage_root", "storageRoot"), _storagePaths.Root),
                     ["cleanup_candidates"] = cleanupCandidates,
                     ["safe_to_apply"] = JsonBool(storagePlan, true, "safe_to_apply", "safeToApply"),
-                    ["estimated_bytes_to_free"] = GetInt(storagePlan, "estimated_bytes_to_free", "estimatedBytesToFree")
+                    ["estimated_bytes_to_free"] = estimatedFreeBytes,
+                    ["auto_cleanup_policy_enabled"] = autoCleanupPolicyEnabled,
+                    ["auto_cleanup_allowed"] = autoCleanupAllowed,
+                    ["auto_cleanup_last_run"] = autoCleanupLastRun,
+                    ["auto_cleanup_last_result"] = autoCleanupLastResult,
+                    ["protected_paths_count"] = protectedPathsCount,
+                    ["safety_mode"] = safetyMode
                 },
                 Warnings: CombineStringLists(GetStringArray(storageStatus, "warnings"), GetStringArray(storagePlan, "warnings"))),
             TradingDomainStatus: new MasterStatusSection(
@@ -706,6 +723,14 @@ public sealed class MasterStatusService
             SchedulerEnabled: schedulerStatus.Jobs.Count(job => job.Enabled),
             ResourceAction: resourceAction,
             StorageCleanup: cleanupCandidates,
+            AutoCleanupPolicyEnabled: autoCleanupPolicyEnabled,
+            AutoCleanupAllowed: autoCleanupAllowed,
+            AutoCleanupLastRun: autoCleanupLastRun,
+            AutoCleanupLastResult: autoCleanupLastResult,
+            CleanupCandidates: cleanupCandidates,
+            EstimatedFreeBytes: estimatedFreeBytes,
+            ProtectedPathsCount: protectedPathsCount,
+            SafetyMode: safetyMode,
             RobustStrategies: robustCount,
             DemoBotCandidates: demoBotCandidates,
             TrustedKnowledge: knowledgeQuality.TrustedKnowledge,

@@ -6,8 +6,11 @@ public sealed record CleanupReport(
     string PlanId,
     int FilesDeleted,
     long BytesFreed,
+    int UnsafeCandidatesSkipped,
+    int ProtectedCandidatesSkipped,
     IReadOnlyList<string> DeletedPaths,
     IReadOnlyList<string> SkippedPaths,
+    string AuditLogPath,
     bool SafeMode,
     bool NoAutoTrading,
     bool HumanReviewRequired);

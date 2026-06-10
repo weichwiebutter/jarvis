@@ -535,6 +535,14 @@ internal sealed class HermesCli
         WriteField("scheduler_enabled", snapshot.SchedulerEnabled.ToString());
         WriteField("resource_action", snapshot.ResourceAction);
         WriteField("storage_cleanup", snapshot.StorageCleanup.ToString());
+        WriteField("auto_cleanup_policy_enabled", snapshot.AutoCleanupPolicyEnabled.ToString().ToLowerInvariant());
+        WriteField("auto_cleanup_allowed", snapshot.AutoCleanupAllowed.ToString().ToLowerInvariant());
+        WriteField("auto_cleanup_last_run", snapshot.AutoCleanupLastRun ?? "-");
+        WriteField("auto_cleanup_last_result", snapshot.AutoCleanupLastResult);
+        WriteField("cleanup_candidates", snapshot.CleanupCandidates.ToString());
+        WriteField("estimated_free_bytes", snapshot.EstimatedFreeBytes.ToString());
+        WriteField("protected_paths_count", snapshot.ProtectedPathsCount.ToString());
+        WriteField("safety_mode", snapshot.SafetyMode);
         WriteField("robust_strategies", snapshot.RobustStrategies.ToString());
         WriteField("demo_bot_candidates", snapshot.DemoBotCandidates.ToString());
         WriteField("trusted_knowledge", snapshot.TrustedKnowledge.ToString());
@@ -2508,10 +2516,13 @@ internal sealed class HermesCli
         var resource = guard.Check();
         var hygiene = new StorageHygieneService(storagePaths);
         var plan = hygiene.BuildPlan();
+        var status = hygiene.LoadStatus() ?? hygiene.BuildStatus();
         WriteField("Storage Root", DisplayPath(storagePaths.Root));
         WriteField("Free Disk", $"{resource.FreeDiskMb / 1024.0:0.##} GB ({resource.FreeDiskPercent:0.##}%)");
         WriteField("Resource Action", resource.Action);
         WriteField("Cleanup Plan", DisplayPath(hygiene.CleanupPlanPath));
+        WriteField("Storage Status", DisplayPath(hygiene.StatusPath));
+        WriteStorageStatus(status);
         WriteCleanupPlan(plan, limit: 8);
         Console.WriteLine();
         WriteSafety();
@@ -2545,6 +2556,9 @@ internal sealed class HermesCli
         WriteField("Cleanup Report", DisplayPath(hygiene.CleanupReportPath));
         WriteField("Files Deleted", report.FilesDeleted.ToString());
         WriteField("Bytes Freed", report.BytesFreed.ToString());
+        WriteField("Unsafe Candidates Skipped", report.UnsafeCandidatesSkipped.ToString());
+        WriteField("Protected Candidates Skipped", report.ProtectedCandidatesSkipped.ToString());
+        WriteField("Audit Log", DisplayPath(report.AuditLogPath));
         WriteField("Safe Mode", report.SafeMode.ToString().ToLowerInvariant());
         WriteMessages("Skipped", report.SkippedPaths.Take(12).ToList());
         Console.WriteLine();
@@ -8346,11 +8360,33 @@ internal sealed class HermesCli
         WriteField("Free Disk", $"{snapshot.FreeDiskMb / 1024.0:0.##} GB ({snapshot.FreeDiskPercent:0.##}%)");
         WriteField("Storage Root", DisplayPath(snapshot.StorageRoot));
         WriteField("Action", snapshot.Action);
+        WriteField("auto_cleanup_policy_enabled", snapshot.AutoCleanupPolicyEnabled.ToString().ToLowerInvariant());
+        WriteField("auto_cleanup_allowed", snapshot.AutoCleanupAllowed.ToString().ToLowerInvariant());
+        WriteField("auto_cleanup_last_run", snapshot.AutoCleanupLastRun?.ToString("O") ?? "-");
+        WriteField("auto_cleanup_last_result", snapshot.AutoCleanupLastResult);
+        WriteField("cleanup_candidates", snapshot.CleanupCandidates.ToString());
+        WriteField("estimated_free_bytes", snapshot.EstimatedFreeBytes.ToString());
+        WriteField("protected_paths_count", snapshot.ProtectedPathsCount.ToString());
+        WriteField("safety_mode", snapshot.SafetyMode);
         WriteField("Should Pause", snapshot.ShouldPause.ToString().ToLowerInvariant());
         WriteField("Should Stop", snapshot.ShouldStop.ToString().ToLowerInvariant());
         WriteMessages("Warnings", snapshot.Warnings);
         WriteField("no_auto_trading", snapshot.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", snapshot.HumanReviewRequired.ToString().ToLowerInvariant());
+    }
+
+    private void WriteStorageStatus(StorageStatusSnapshot status)
+    {
+        WriteField("auto_cleanup_policy_enabled", status.AutoCleanupPolicyEnabled.ToString().ToLowerInvariant());
+        WriteField("auto_cleanup_allowed", status.AutoCleanupAllowed.ToString().ToLowerInvariant());
+        WriteField("auto_cleanup_last_run", status.AutoCleanupLastRun?.ToString("O") ?? "-");
+        WriteField("auto_cleanup_last_result", status.AutoCleanupLastResult);
+        WriteField("cleanup_candidates", status.CleanupCandidates.ToString());
+        WriteField("estimated_free_bytes", status.EstimatedFreeBytes.ToString());
+        WriteField("protected_paths_count", status.ProtectedPathsCount.ToString());
+        WriteField("safety_mode", status.SafetyMode);
+        WriteField("policy_action", status.PolicyAction);
+        WriteMessages("storage_warnings", status.Warnings);
     }
 
     private void WriteCleanupPlan(CleanupPlan plan, int limit)
@@ -8360,6 +8396,14 @@ internal sealed class HermesCli
         WriteField("Candidates", plan.Candidates.Count.ToString());
         WriteField("Estimated Free", $"{plan.EstimatedBytesToFree / 1024.0 / 1024.0:0.##} MB");
         WriteField("Safe To Apply", plan.SafeToApply.ToString().ToLowerInvariant());
+        WriteField("auto_cleanup_policy_enabled", plan.PolicyStatus.AutoCleanupPolicyEnabled.ToString().ToLowerInvariant());
+        WriteField("auto_cleanup_allowed", plan.PolicyStatus.AutoCleanupAllowed.ToString().ToLowerInvariant());
+        WriteField("auto_cleanup_last_run", plan.PolicyStatus.AutoCleanupLastRun?.ToString("O") ?? "-");
+        WriteField("auto_cleanup_last_result", plan.PolicyStatus.AutoCleanupLastResult);
+        WriteField("cleanup_candidates", plan.PolicyStatus.CleanupCandidates.ToString());
+        WriteField("estimated_free_bytes", plan.PolicyStatus.EstimatedFreeBytes.ToString());
+        WriteField("protected_paths_count", plan.PolicyStatus.ProtectedPathsCount.ToString());
+        WriteField("safety_mode", plan.PolicyStatus.SafetyMode);
         foreach (var candidate in plan.Candidates.Take(limit))
         {
             WriteSubHeader(candidate.Reason);
@@ -8369,6 +8413,7 @@ internal sealed class HermesCli
         }
 
         WriteField("Protected Paths", plan.ProtectedPaths.Count.ToString());
+        WriteMessages("Policy Warnings", plan.PolicyStatus.Warnings);
         WriteField("no_auto_trading", plan.NoAutoTrading.ToString().ToLowerInvariant());
         WriteField("human_review_required", plan.HumanReviewRequired.ToString().ToLowerInvariant());
     }
