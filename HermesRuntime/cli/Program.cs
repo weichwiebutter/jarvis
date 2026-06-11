@@ -193,6 +193,8 @@ internal sealed class HermesCli
             "build-scalping-portfolio" => BuildScalpingPortfolio(),
             "scalping-ensemble-plan" => ShowScalpingEnsemblePlan(),
             "scalping-portfolio-candidates" => ShowScalpingPortfolioCandidates(),
+            "ensemble-portfolio-status" => ShowEnsemblePortfolioStatus(),
+            "explain-ensemble-selection" => ExplainEnsembleSelection(),
             "search-more-scalping-candidates" => SearchMoreScalpingCandidates(),
             "scalping-multi-asset-roadmap" => ShowScalpingMultiAssetRoadmap(),
             "update-scalping-multi-asset-roadmap" => UpdateScalpingMultiAssetRoadmap(),
@@ -418,6 +420,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes scalping-portfolio-status Scalping-Portfolio-Status anzeigen");
         Console.WriteLine("  hermes scalping-ensemble-plan Scalping-Ensemble-Plan anzeigen");
         Console.WriteLine("  hermes scalping-portfolio-candidates Portfolio-Kandidaten anzeigen");
+        Console.WriteLine("  hermes ensemble-portfolio-status Ensemble-Portfolio-Status anzeigen");
+        Console.WriteLine("  hermes explain-ensemble-selection --asset GER40 Ensemble-Auswahl begruenden");
         Console.WriteLine("  hermes search-more-scalping-candidates --asset XAUUSD --max-variants 100 weitere Kandidaten suchen");
         Console.WriteLine("  hermes update-scalping-multi-asset-roadmap Multi-Asset-Roadmap aktualisieren");
         Console.WriteLine("  hermes scalping-multi-asset-roadmap Multi-Asset-Roadmap anzeigen");
@@ -4477,6 +4481,86 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowEnsemblePortfolioStatus()
+    {
+        WriteHeader("Hermes Ensemble Portfolio Status");
+        var service = new ScalpingEnsemblePortfolioService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Load();
+        if (report is null)
+        {
+            WriteWarning("ensemble_portfolio_missing");
+            WriteSafety();
+            return 0;
+        }
+        WriteField("Portfolio Readiness", report.PortfolioReadiness);
+        WriteField("Assets", string.Join(", ", report.Assets));
+        WriteField("Setup Count Total", report.SetupCountTotal.ToString());
+        WriteField("Certified Candidate Count Total", report.CertifiedCandidateCountTotal.ToString());
+        WriteField("Signal Spec Count Total", report.SignalSpecCountTotal.ToString());
+        WriteMessages("Warnings", report.Warnings);
+        foreach (var entry in report.Entries)
+        {
+            WriteSubHeader(entry.Asset);
+            WriteField("Setup Count", entry.SetupCount.ToString());
+            WriteField("Certified Candidate Count", entry.CertifiedCandidateCount.ToString());
+            WriteField("Signal Spec Count", entry.SignalSpecCount.ToString());
+            WriteField("Primary Setup", entry.PrimarySetup);
+            WriteMessages("Backup Setups", entry.BackupSetups);
+            WriteField("Primary Candidate", entry.PrimaryCandidate);
+            WriteMessages("Backup Candidates", entry.BackupCandidates);
+            WriteField("Confidence Baseline", $"{entry.ConfidenceBaseline:0.####}");
+            WriteField("Readiness", entry.Readiness);
+            WriteField("Portfolio Readiness", entry.PortfolioReadiness);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExplainEnsembleSelection()
+    {
+        WriteHeader("Hermes Ensemble Selection Explanation");
+        var asset = ReadOption(_args, "--asset");
+        var service = new ScalpingEnsemblePortfolioService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Load();
+        if (report is null)
+        {
+            WriteWarning("ensemble_portfolio_missing");
+            WriteSafety();
+            return 0;
+        }
+        if (string.IsNullOrWhiteSpace(asset))
+        {
+            foreach (var entry in report.Entries.OrderByDescending(item => item.ConfidenceBaseline))
+            {
+                WriteSubHeader(entry.Asset);
+                WriteField("Selected", entry.PrimarySetup);
+                WriteMessages("Backups", entry.BackupSetups);
+                WriteField("Reason", service.ExplainSelection(entry.Asset));
+            }
+        }
+        else
+        {
+            var entry = report.Entries.FirstOrDefault(item => item.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase));
+            if (entry is null)
+            {
+                WriteError($"ensemble_asset_not_found:{asset}");
+                WriteSafety();
+                return 1;
+            }
+
+            WriteField("Asset", entry.Asset);
+            WriteField("Selected", entry.PrimarySetup);
+            WriteMessages("Backups", entry.BackupSetups);
+            WriteField("Reason", service.ExplainSelection(entry.Asset));
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int SearchMoreScalpingCandidates()
     {
         WriteHeader("Hermes Search More Scalping Candidates");
@@ -4616,8 +4700,11 @@ internal sealed class HermesCli
         WriteHeader("Hermes Scalping Ensemble Export Package");
         try
         {
-            var result = new ScalpingEnsembleExportService(BuildStoragePaths(), _runtimeRoot).Export();
-            WriteScalpingEnsembleExportResult(result);
+            var result = new ScalpingEnsemblePortfolioService(BuildStoragePaths(), _runtimeRoot).Export();
+            WriteField("Package ID", result.PackageId);
+            WriteField("Status", result.Status);
+            WriteField("JSON", DisplayPath(new ScalpingEnsemblePortfolioService(BuildStoragePaths(), _runtimeRoot).PackagePath));
+            WriteField("Markdown", DisplayPath(new ScalpingEnsemblePortfolioService(BuildStoragePaths(), _runtimeRoot).PackageMarkdownPath));
             Console.WriteLine();
             WriteSafety();
             return 0;
@@ -4633,25 +4720,25 @@ internal sealed class HermesCli
     private int ShowScalpingEnsemblePackage()
     {
         WriteHeader("Hermes Scalping Ensemble Package");
-        var service = new ScalpingEnsembleExportService(BuildStoragePaths(), _runtimeRoot);
-        var manifest = service.LoadManifest();
-        if (manifest is null)
+        var service = new ScalpingEnsemblePortfolioService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Load();
+        if (report is null)
         {
             WriteError("scalping_ensemble_package_missing");
             WriteSafety();
             return 1;
         }
 
-        WriteField("Package", manifest.PackageId);
-        WriteField("Status", manifest.Status);
-        WriteMessages("Members", manifest.Members);
-        foreach (var file in manifest.Files)
-        {
-            WriteField(file.Key, DisplayPath(file.Value));
-        }
-
-        WriteField("no_auto_trading", manifest.NoAutoTrading.ToString().ToLowerInvariant());
-        WriteField("human_review_required", manifest.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Portfolio Readiness", report.PortfolioReadiness);
+        WriteField("Setup Count Total", report.SetupCountTotal.ToString());
+        WriteField("Certified Candidate Count Total", report.CertifiedCandidateCountTotal.ToString());
+        WriteField("Signal Spec Count Total", report.SignalSpecCountTotal.ToString());
+        WriteMessages("Assets", report.Assets);
+        WriteMessages("Warnings", report.Warnings);
+        WriteField("JSON", DisplayPath(service.PackagePath));
+        WriteField("Markdown", DisplayPath(service.PackageMarkdownPath));
+        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -10256,7 +10343,7 @@ internal sealed class HermesCli
 
     private static void WriteMessages(string label, IReadOnlyList<string> messages)
     {
-        if (messages.Count == 0)
+        if (messages is null || messages.Count == 0)
         {
             return;
         }
