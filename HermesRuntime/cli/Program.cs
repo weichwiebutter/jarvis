@@ -205,6 +205,7 @@ internal sealed class HermesCli
             "export-scalping-ensemble-package" => ExportScalpingEnsemblePackage(),
             "scalping-ensemble-package" => ShowScalpingEnsemblePackage(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
+            "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
             "scalping-ensemble-human-review-package" => ShowScalpingEnsembleHumanReviewPackage(),
             "scalping-ensemble-review-status" => ShowScalpingEnsembleReviewStatus(),
             "approve-scalping-ensemble" => ApproveScalpingEnsemble(),
@@ -433,6 +434,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes export-scalping-ensemble-package Ensemble Export Package erzeugen");
         Console.WriteLine("  hermes scalping-ensemble-package Ensemble Export Package anzeigen");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
+        Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
         Console.WriteLine("  hermes scalping-ensemble-human-review-package Ensemble Human Review Package anzeigen");
         Console.WriteLine("  hermes scalping-ensemble-review-status Ensemble Review Status anzeigen");
         Console.WriteLine("  hermes approve-scalping-ensemble --mode demo_signal_use|forward_test_preparation Ensemble freigeben");
@@ -4814,6 +4816,32 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return blockers.Count > 0 ? 1 : 0;
+    }
+
+    private int ShowSystemBHandoffBundle()
+    {
+        WriteHeader("Hermes System B Handoff Bundle");
+        var service = new SystemBHandoffBundleService(BuildStoragePaths(), _runtimeRoot);
+        var manifest = service.Export();
+        var portfolio = new ScalpingEnsemblePortfolioService(BuildStoragePaths(), _runtimeRoot).Load();
+
+        WriteField("Bundle Path", DisplayPath(service.ResolveBundlePath()));
+        WriteField("Files Included", manifest.IncludedFiles.Count.ToString());
+        WriteField("Portfolio Status", portfolio?.PortfolioReadiness ?? "unknown");
+        WriteField("Asset Count", portfolio?.Assets.Count.ToString() ?? "0");
+        WriteField("Safety Validation", service.ValidateSafety() ?? "ok");
+        WriteMessages("Files", manifest.IncludedFiles);
+        WriteMessages("Safety Flags", new[]
+        {
+            "no_auto_trading=true",
+            "human_review_required=true",
+            "broker_orders_enabled=false",
+            "live_trading_enabled=false",
+            "research_only=true"
+        });
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
     }
 
     private int ShowScalpingEnsembleHumanReviewPackage()
