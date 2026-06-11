@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Hermes.Runtime;
 
@@ -7,6 +8,30 @@ public sealed record ScheduleConfig(
     int CheckIntervalSeconds,
     IReadOnlyList<ScheduledJobDefinition> Jobs)
 {
+    public string TimeZone { get; init; } = "Europe/Berlin";
+
+    public SchedulerWindowConfig WorkWindow { get; init; } = new("08:00", "18:00", true);
+
+    public SchedulerWindowConfig NightlyWindow { get; init; } = new("23:00", "05:00", true);
+
+    public SchedulerWindowConfig LearningWindow { get; init; } = new("05:30", "07:00", true);
+
+    public SchedulerWindowConfig HumanReviewWindow { get; init; } = new("08:00", "18:00", true);
+
+    public IReadOnlyList<string> ActiveWeekdays { get; init; } =
+    [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday"
+    ];
+
+    [JsonIgnore]
+    public IReadOnlyList<string> InactiveWeekdays => AllWeekdays
+        .Where(day => !NormalizeWeekdays(ActiveWeekdays).Contains(day, StringComparer.OrdinalIgnoreCase))
+        .ToList();
+
     public static ScheduleConfig Default => new(
         ScheduleVersion: "schedules_v1",
         CheckIntervalSeconds: 60,
@@ -209,7 +234,15 @@ public sealed record ScheduleConfig(
                 ScheduleType: "daily",
                 Command: "download-history",
                 DailyAt: "22:30")
-        ]);
+        ])
+    {
+        TimeZone = "Europe/Berlin",
+        WorkWindow = new SchedulerWindowConfig("08:00", "18:00", true),
+        NightlyWindow = new SchedulerWindowConfig("23:00", "05:00", true),
+        LearningWindow = new SchedulerWindowConfig("05:30", "07:00", true),
+        HumanReviewWindow = new SchedulerWindowConfig("08:00", "18:00", true),
+        ActiveWeekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    };
 
     public static ScheduleConfig LoadOrDefault(string path)
     {
@@ -229,4 +262,188 @@ public sealed record ScheduleConfig(
             return Default;
         }
     }
+
+    public void Save(string path)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var tempPath = $"{path}.tmp";
+        File.WriteAllText(tempPath, JsonSerializer.Serialize(this, JsonDefaults.WriteOptions));
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+
+        File.Move(tempPath, path);
+    }
+
+    public ScheduleConfig WithTimeControl(ScheduleTimeControlUpdate update)
+    {
+        var activeWeekdays = NormalizeWeekdays(update.ActiveWeekdays);
+
+        return this with
+        {
+            TimeZone = string.IsNullOrWhiteSpace(update.TimeZone) ? TimeZone : update.TimeZone.Trim(),
+            WorkWindow = update.WorkWindow ?? WorkWindow,
+            NightlyWindow = update.NightlyWindow ?? NightlyWindow,
+            LearningWindow = update.LearningWindow ?? LearningWindow,
+            HumanReviewWindow = update.HumanReviewWindow ?? HumanReviewWindow,
+            ActiveWeekdays = activeWeekdays.Count > 0 ? activeWeekdays : ActiveWeekdays
+        };
+    }
+
+    public ScheduleTimeControlStatus BuildTimeControlStatus(DateTimeOffset nowUtc, string configPath)
+    {
+        var warnings = new List<string>();
+        var timeZone = ResolveTimeZone(TimeZone, warnings);
+        var currentLocal = TimeZoneInfo.ConvertTime(nowUtc, timeZone);
+        var activeWeekdays = NormalizeWeekdays(ActiveWeekdays);
+        var inWorkWeekday = activeWeekdays.Contains(currentLocal.DayOfWeek.ToString(), StringComparer.OrdinalIgnoreCase);
+
+        var workWindowActive = EvaluateWindow(WorkWindow, "Arbeitszeit", currentLocal, inWorkWeekday);
+        var nightlyWindowActive = EvaluateWindow(NightlyWindow, "Nightly", currentLocal, true);
+        var learningWindowActive = EvaluateWindow(LearningWindow, "Lernfenster", currentLocal, true);
+        var humanReviewWindowActive = EvaluateWindow(HumanReviewWindow, "Human-Review", currentLocal, true);
+
+        return new ScheduleTimeControlStatus(
+            ConfigPath: configPath,
+            TimeZone: timeZone.Id,
+            CurrentUtc: nowUtc,
+            CurrentLocal: currentLocal,
+            StatusLabel: workWindowActive.ActiveNow ? "Derzeit im Arbeitsfenster" : "Außerhalb des Arbeitsfensters",
+            InWorkWindow: workWindowActive.ActiveNow,
+            WorkWindow: workWindowActive,
+            NightlyWindow: nightlyWindowActive,
+            LearningWindow: learningWindowActive,
+            HumanReviewWindow: humanReviewWindowActive,
+            Weekdays: AllWeekdays.Select(day => new ScheduleWeekdayStatus(day, activeWeekdays.Contains(day, StringComparer.OrdinalIgnoreCase))).ToList(),
+            ActiveWeekdays: activeWeekdays,
+            InactiveWeekdays: AllWeekdays.Where(day => !activeWeekdays.Contains(day, StringComparer.OrdinalIgnoreCase)).ToList(),
+            Warnings: warnings,
+            NoAutoTrading: true,
+            HumanReviewRequired: true);
+    }
+
+    private static SchedulerWindowStatus EvaluateWindow(
+        SchedulerWindowConfig window,
+        string label,
+        DateTimeOffset currentLocal,
+        bool dayAllowed)
+    {
+        var active = window.Enabled && dayAllowed && IsInsideWindow(TimeOnly.FromTimeSpan(currentLocal.TimeOfDay), ParseTime(window.Start), ParseTime(window.End));
+        return new SchedulerWindowStatus(
+            Label: label,
+            Enabled: window.Enabled,
+            Start: window.Start,
+            End: window.End,
+            ActiveNow: active,
+            Summary: active ? "aktiv" : "inaktiv");
+    }
+
+    private static IReadOnlyList<string> NormalizeWeekdays(IReadOnlyList<string>? weekdays)
+    {
+        var normalized = weekdays?
+            .Select(day => day.Trim())
+            .Where(day => !string.IsNullOrWhiteSpace(day))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? [];
+
+        return normalized;
+    }
+
+    private static TimeOnly ParseTime(string? value)
+    {
+        if (TimeOnly.TryParse(value, out var time))
+        {
+            return time;
+        }
+
+        return new TimeOnly(0, 0);
+    }
+
+    private static bool IsInsideWindow(TimeOnly current, TimeOnly start, TimeOnly end)
+    {
+        return start <= end
+            ? current >= start && current < end
+            : current >= start || current < end;
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string? timeZone, List<string> warnings)
+    {
+        if (!string.IsNullOrWhiteSpace(timeZone))
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(timeZone);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                warnings.Add($"time_zone_not_found:{timeZone}");
+            }
+            catch (InvalidTimeZoneException)
+            {
+                warnings.Add($"time_zone_invalid:{timeZone}");
+            }
+        }
+
+        return TimeZoneInfo.Local;
+    }
+
+    private static readonly IReadOnlyList<string> AllWeekdays =
+    [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday"
+    ];
 }
+
+public sealed record SchedulerWindowConfig(
+    string Start,
+    string End,
+    bool Enabled);
+
+public sealed record ScheduleTimeControlUpdate(
+    string? TimeZone,
+    SchedulerWindowConfig? WorkWindow,
+    SchedulerWindowConfig? NightlyWindow,
+    SchedulerWindowConfig? LearningWindow,
+    SchedulerWindowConfig? HumanReviewWindow,
+    IReadOnlyList<string>? ActiveWeekdays);
+
+public sealed record SchedulerWindowStatus(
+    string Label,
+    bool Enabled,
+    string Start,
+    string End,
+    bool ActiveNow,
+    string Summary);
+
+public sealed record ScheduleWeekdayStatus(
+    string Day,
+    bool Active);
+
+public sealed record ScheduleTimeControlStatus(
+    string ConfigPath,
+    string TimeZone,
+    DateTimeOffset CurrentUtc,
+    DateTimeOffset CurrentLocal,
+    string StatusLabel,
+    bool InWorkWindow,
+    SchedulerWindowStatus WorkWindow,
+    SchedulerWindowStatus NightlyWindow,
+    SchedulerWindowStatus LearningWindow,
+    SchedulerWindowStatus HumanReviewWindow,
+    IReadOnlyList<ScheduleWeekdayStatus> Weekdays,
+    IReadOnlyList<string> ActiveWeekdays,
+    IReadOnlyList<string> InactiveWeekdays,
+    IReadOnlyList<string> Warnings,
+    bool NoAutoTrading,
+    bool HumanReviewRequired);

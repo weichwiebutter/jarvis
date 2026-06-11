@@ -436,6 +436,136 @@ function cleanOperatorEventText(value) {
   return truncateText(text, 92);
 }
 
+function warningFingerprint(text) {
+  const normalized = String(text || '')
+    .toLowerCase()
+    .replace(/\[[^\]]+\]/g, '')
+    .replace(/\/[^\s]+/g, '[path]')
+    .replace(/[0-9a-f]{8,}/g, '[id]')
+    .replace(/\d{4}-\d{2}-\d{2}[^\s]*/g, '[date]')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (/runtime report|runtime.*fehlt|runtime.*missing/i.test(normalized)) {
+    return 'missing-runtime-report';
+  }
+
+  if (/setup watch/i.test(normalized)) {
+    return 'missing-setup-watch-report';
+  }
+
+  return normalized;
+}
+
+function warningToneInfo(tone) {
+  if (tone === 'danger') {
+    return { icon: '🔴', label: 'Kritisch' };
+  }
+
+  if (tone === 'warn') {
+    return { icon: '🟡', label: 'Warnung' };
+  }
+
+  return { icon: '🔵', label: 'Hinweis' };
+}
+
+function classifyOperatorWarning(rawWarning) {
+  const text = cleanOperatorEventText(rawWarning);
+  if (!text) {
+    return null;
+  }
+
+  const lower = text.toLowerCase();
+  if (/no_auto_trading=false|broker_orders_enabled=true|live_trading_enabled=true|safety.*false|human_review_required=false/.test(lower)) {
+    return {
+      key: warningFingerprint(text),
+      label: 'Safety-Verstoß',
+      detail: 'Eine Sicherheitsregel ist verletzt.',
+      tone: 'danger',
+      action: 'Sofort stoppen und Safety-Status prüfen.',
+    };
+  }
+
+  if (/bridge.*offline|bridge.*nicht erreichbar|read-only bridge nicht erreichbar|failed to fetch|networkerror/.test(lower)) {
+    return {
+      key: 'bridge-offline',
+      label: 'Bridge offline',
+      detail: 'Die UI kann die Hermes Bridge nicht erreichen.',
+      tone: 'danger',
+      action: 'Read-only Bridge neu starten und Statusleiste prüfen.',
+    };
+  }
+
+  if (/review|human review|signal|trading|ensemble|package|certification|bot_ready|needs_more_validation/.test(lower)) {
+    return {
+      key: warningFingerprint(text),
+      label: 'Trading/Signal/Review prüfen',
+      detail: text,
+      tone: 'warn',
+      action: 'Prüfzentrum oder Handelsintelligenz öffnen.',
+    };
+  }
+
+  if (/setup watch/i.test(text)) {
+    return {
+      key: 'missing-setup-watch-report',
+      label: 'fehlender Setup Watch Report',
+      detail: 'Setup Watch Snapshot fehlt oder ist veraltet.',
+      tone: 'info',
+      action: 'Bei Bedarf Setup Watch Status aktualisieren.',
+    };
+  }
+
+  if (/missing|fehlt|nicht gefunden|unavailable|nicht verfuegbar|nicht verfügbar|snapshot|report/i.test(text)) {
+    return {
+      key: warningFingerprint(text),
+      label: /runtime/i.test(text) ? 'fehlender Runtime Report' : 'optionaler Report fehlt',
+      detail: /runtime/i.test(text)
+        ? 'Ein Runtime Report fehlt oder wurde noch nicht erzeugt.'
+        : 'Ein optionaler Report fehlt oder ein Snapshot ist alt.',
+      tone: 'info',
+      action: 'Nur prüfen, wenn das zugehörige Panel Daten benötigt.',
+    };
+  }
+
+  return {
+    key: warningFingerprint(text),
+    label: 'Hinweis',
+    detail: text,
+    tone: 'info',
+    action: 'Keine Sofortaktion nötig.',
+  };
+}
+
+function consolidateOperatorWarnings(rawWarnings) {
+  const byKey = new Map();
+  rawWarnings
+    .map(classifyOperatorWarning)
+    .filter(Boolean)
+    .forEach((warning) => {
+      const current = byKey.get(warning.key);
+      if (!current) {
+        byKey.set(warning.key, { ...warning, count: 1 });
+        return;
+      }
+
+      byKey.set(warning.key, {
+        ...current,
+        count: current.count + 1,
+        tone: current.tone === 'danger' || warning.tone === 'danger'
+          ? 'danger'
+          : current.tone === 'warn' || warning.tone === 'warn'
+            ? 'warn'
+            : 'info',
+      });
+    });
+
+  return [...byKey.values()].sort((left, right) => {
+    const rank = { danger: 0, warn: 1, info: 2, good: 3 };
+    return (rank[left.tone] ?? 9) - (rank[right.tone] ?? 9);
+  });
+}
+
 function operatorLogView(operatorState) {
   const systemEvents = [
     {
@@ -464,27 +594,15 @@ function operatorLogView(operatorState) {
       tone: operatorState.humanReview?.pending_reviews ? 'warn' : 'good',
     },
   ];
-  const reportWarnings = [
+  const reportWarnings = consolidateOperatorWarnings([
     ...operatorState.warnings,
     ...operatorState.storage.warnings,
     ...operatorState.storage.errors,
-  ]
-    .map(cleanOperatorEventText)
-    .filter(Boolean)
-    .filter((warning) =>
-      /missing|fehlt|nicht gefunden|unavailable|nicht verfuegbar|nicht verfügbar|setup watch|runtime report/i.test(warning),
-    )
-    .map((warning) => {
-      if (/setup watch/i.test(warning)) {
-        return { label: 'fehlender Setup Watch Report', detail: 'Setup Watch Report fehlt oder ist nicht lesbar.', tone: 'warn' };
-      }
-
-      return { label: 'fehlender Runtime Report', detail: warning, tone: 'warn' };
-    });
+  ]);
 
   return {
     systemEvents,
-    warnings: reportWarnings.length ? reportWarnings : [{ label: 'Keine relevanten Warnungen', detail: 'Runtime-Reports sind ausreichend verfügbar.', tone: 'good' }],
+    warnings: reportWarnings.length ? reportWarnings : [{ label: 'Keine relevanten Hinweise', detail: 'Runtime-Reports sind ausreichend verfügbar.', tone: 'good', action: 'Keine Aktion nötig.', count: 1 }],
   };
 }
 
@@ -551,7 +669,25 @@ function GoalSystemCard({ masterStatus }) {
   );
 }
 
-function KnowledgeHealthCard({ masterStatus }) {
+function KnowledgeHealthCard({ operatorState }) {
+  const masterStatus = operatorState.masterStatus;
+  const audit = reportByKey(operatorState, 'knowledgeValidationAudit')?.raw || {};
+  const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
+  const criticalGaps = audit.critical_knowledge_gaps ?? audit.criticalKnowledgeGaps ?? masterStatus.knowledge_items_needing_oos;
+  const oldestOpenValidationAgeDays = audit.oldest_open_validation_age_days ?? audit.oldestOpenValidationAgeDays ?? 0;
+  const validationCompletionPercent =
+    audit.validation_completion_percent
+    ?? audit.validationCompletionPercent
+    ?? Math.max(
+      0,
+      Math.round(
+        (1 - (openValidations / Math.max(1, openValidations + criticalGaps))) * 100,
+      ),
+    );
+  const validationCompletion =
+    audit.validation_completion_label
+    || audit.validationCompletionLabel
+    || `${validationCompletionPercent}% abgeschlossen`;
   const health = masterStatus.knowledge_health || 'unbekannt';
   const tone = health.includes('critical')
     ? 'danger'
@@ -569,6 +705,10 @@ function KnowledgeHealthCard({ masterStatus }) {
         <StatusPill tone={tone}>{masterStatus.knowledge_trend || '-'}</StatusPill>
       </summary>
       <div className="goal-system-metrics">
+        <Metric label="Validierung" value={validationCompletion} tone={criticalGaps ? 'warn' : 'good'} />
+        <Metric label="Offene Validierungen" value={formatNumber(openValidations)} tone={openValidations ? 'warn' : 'good'} />
+        <Metric label="Kritische Wissenslücken" value={formatNumber(criticalGaps)} tone={criticalGaps ? 'warn' : 'good'} />
+        <Metric label="Älteste offene Validierung" value={`${formatNumber(oldestOpenValidationAgeDays)} Tage`} tone={oldestOpenValidationAgeDays >= 14 ? 'warn' : 'info'} />
         <Metric label="Vertrauenswürdig" value={formatNumber(masterStatus.trusted_knowledge)} tone="good" />
         <Metric label="Schwach" value={formatNumber(masterStatus.weak_knowledge)} tone={masterStatus.weak_knowledge ? 'warn' : 'good'} />
         <Metric label="Veraltet" value={formatNumber(masterStatus.deprecated_knowledge)} tone={masterStatus.deprecated_knowledge ? 'warn' : 'good'} />
@@ -749,6 +889,14 @@ function buildCommandCenterModules(operatorState) {
       meta: `Aktivität ${shortDateTime(operatorState.masterStatus.last_meta_review || operatorState.lastUpdatedAt)}`,
     },
     {
+      id: 'time-control',
+      title: 'Zeitsteuerung',
+      value: operatorState.timeControl?.status_label || 'Außerhalb des Arbeitsfensters',
+      detail: `${operatorState.timeControl?.work_window?.start || '08:00'} - ${operatorState.timeControl?.work_window?.end || '18:00'}`,
+      tone: operatorState.timeControl?.in_work_window ? 'good' : 'warn',
+      meta: `${operatorState.timeControl?.time_zone || 'Europe/Berlin'} · ${truncateText((operatorState.timeControl?.active_weekdays || []).join(', '), 26)}`,
+    },
+    {
       id: 'roles',
       title: 'Rollen & Aufgaben',
       value: `${formatNumber(operatorState.roles?.length || 0)} Rollen`,
@@ -900,7 +1048,7 @@ function MasterStatusOverview({ masterStatus, source }) {
         <Metric label="live_trading" value={String(masterStatus.live_trading_enabled)} tone={masterStatus.live_trading_enabled ? 'danger' : 'good'} />
       </div>
       <GoalSystemCard masterStatus={masterStatus} />
-      <KnowledgeHealthCard masterStatus={masterStatus} />
+      <KnowledgeHealthCard operatorState={operatorState} />
       <ScalpingProgressPanel masterStatus={masterStatus} />
     </section>
   );
@@ -917,6 +1065,133 @@ function compactStatusLabel(status) {
   if (normalized.includes('warning')) return 'Warnung';
   if (normalized.includes('critical')) return 'Kritisch';
   return statusDeutsch(status);
+}
+
+const TIME_CONTROL_WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+const TIME_CONTROL_PRESETS = [
+  {
+    id: 'normal',
+    label: 'Normal',
+    description: 'Arbeitszeit tagsüber, Nightly nachts, Lernen am frühen Morgen.',
+    apply: () => ({
+      timeZone: 'Europe/Berlin',
+      workEnabled: true,
+      workStart: '08:00',
+      workEnd: '18:00',
+      nightlyEnabled: true,
+      nightlyStart: '23:00',
+      nightlyEnd: '05:00',
+      learningEnabled: true,
+      learningStart: '05:30',
+      learningEnd: '07:00',
+      reviewEnabled: true,
+      reviewStart: '08:00',
+      reviewEnd: '18:00',
+      activeWeekdays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+    }),
+  },
+  {
+    id: 'intensiv',
+    label: 'Intensiv',
+    description: 'Längeres Arbeitsfenster und engeres Review-Fenster für aktive Tage.',
+    apply: () => ({
+      timeZone: 'Europe/Berlin',
+      workEnabled: true,
+      workStart: '07:00',
+      workEnd: '19:30',
+      nightlyEnabled: true,
+      nightlyStart: '22:30',
+      nightlyEnd: '05:30',
+      learningEnabled: true,
+      learningStart: '05:00',
+      learningEnd: '06:30',
+      reviewEnabled: true,
+      reviewStart: '07:00',
+      reviewEnd: '19:30',
+      activeWeekdays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+    }),
+  },
+  {
+    id: 'away-3-days',
+    label: '3 Tage abwesend',
+    description: 'Arbeitsfenster reduziert, Review nur kurz erreichbar, Lernen aus.',
+    apply: () => ({
+      timeZone: 'Europe/Berlin',
+      workEnabled: false,
+      workStart: '09:00',
+      workEnd: '09:00',
+      nightlyEnabled: true,
+      nightlyStart: '23:00',
+      nightlyEnd: '05:00',
+      learningEnabled: false,
+      learningStart: '05:30',
+      learningEnd: '07:00',
+      reviewEnabled: true,
+      reviewStart: '10:00',
+      reviewEnd: '11:00',
+      activeWeekdays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+    }),
+  },
+  {
+    id: 'observe-only',
+    label: 'Nur Beobachten',
+    description: 'Nur Sichtfenster aktiv, keine Lern- oder Arbeitsfenster.',
+    apply: () => ({
+      timeZone: 'Europe/Berlin',
+      workEnabled: false,
+      workStart: '08:00',
+      workEnd: '08:00',
+      nightlyEnabled: false,
+      nightlyStart: '23:00',
+      nightlyEnd: '05:00',
+      learningEnabled: false,
+      learningStart: '05:30',
+      learningEnd: '07:00',
+      reviewEnabled: true,
+      reviewStart: '12:00',
+      reviewEnd: '12:00',
+      activeWeekdays: [],
+    }),
+  },
+];
+
+function createTimeControlDraft(timeControl = {}) {
+  return {
+    timeZone: timeControl.time_zone || 'Europe/Berlin',
+    workEnabled: Boolean(timeControl.work_window?.enabled ?? true),
+    workStart: timeControl.work_window?.start || '08:00',
+    workEnd: timeControl.work_window?.end || '18:00',
+    nightlyEnabled: Boolean(timeControl.nightly_window?.enabled ?? true),
+    nightlyStart: timeControl.nightly_window?.start || '23:00',
+    nightlyEnd: timeControl.nightly_window?.end || '05:00',
+    learningEnabled: Boolean(timeControl.learning_window?.enabled ?? true),
+    learningStart: timeControl.learning_window?.start || '05:30',
+    learningEnd: timeControl.learning_window?.end || '07:00',
+    reviewEnabled: Boolean(timeControl.human_review_window?.enabled ?? true),
+    reviewStart: timeControl.human_review_window?.start || '08:00',
+    reviewEnd: timeControl.human_review_window?.end || '18:00',
+    activeWeekdays: Array.isArray(timeControl.active_weekdays) && timeControl.active_weekdays.length
+      ? [...timeControl.active_weekdays]
+      : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+  };
+}
+
+function timeControlPayload(draft) {
+  return {
+    time_zone: draft.timeZone,
+    work_window: { start: draft.workStart, end: draft.workEnd, enabled: draft.workEnabled },
+    nightly_window: { start: draft.nightlyStart, end: draft.nightlyEnd, enabled: draft.nightlyEnabled },
+    learning_window: { start: draft.learningStart, end: draft.learningEnd, enabled: draft.learningEnabled },
+    human_review_window: { start: draft.reviewStart, end: draft.reviewEnd, enabled: draft.reviewEnabled },
+    active_weekdays: draft.activeWeekdays,
+  };
+}
+
+function timeControlWindowWarning(start, end, enabled) {
+  return start && end && start === end
+    ? `Startzeit und Endzeit sind identisch${enabled ? '.' : ' (Fenster ist inaktiv).'}`
+    : '';
 }
 
 function DashboardSystemStatus({ operatorState }) {
@@ -1041,11 +1316,14 @@ function HudPanelStack({ title, modules, ids, onOpen }) {
 }
 
 function HudOperationsTimeline({ operatorState, modules, onOpen }) {
-  const warnings = [
+  const warnings = consolidateOperatorWarnings([
     ...operatorState.warnings,
     ...operatorState.storage.warnings,
     ...operatorState.storage.errors,
-  ].filter(Boolean);
+  ]);
+  const criticalCount = warnings.filter((warning) => warning.tone === 'danger').length;
+  const warningCount = warnings.filter((warning) => warning.tone === 'warn').length;
+  const hintCount = warnings.filter((warning) => warning.tone === 'info').length;
   const packageModule = moduleById(modules, 'signal-package');
   const review = operatorState.humanReview || {};
   const events = [
@@ -1056,8 +1334,14 @@ function HudOperationsTimeline({ operatorState, modules, onOpen }) {
     },
     {
       label: 'Warnungen',
-      value: warnings.length ? `${formatNumber(warnings.length)} aktiv` : 'keine kritischen Warnungen',
-      tone: warnings.length ? 'warn' : 'good',
+      value: criticalCount
+        ? `${formatNumber(criticalCount)} kritisch`
+        : warningCount
+          ? `${formatNumber(warningCount)} Warnungen`
+          : hintCount
+            ? `${formatNumber(hintCount)} Hinweise`
+            : 'keine relevanten Hinweise',
+      tone: criticalCount ? 'danger' : warningCount ? 'warn' : hintCount ? 'info' : 'good',
     },
     {
       label: 'Letzte Review-Aktion',
@@ -1114,7 +1398,7 @@ function HudCommandGrid({ operatorState, modules, onOpen }) {
       <HudPanelStack
         title="Trading & Betrieb"
         modules={modules}
-        ids={['trading', 'signal-package', 'system', 'storage']}
+        ids={['trading', 'signal-package', 'time-control', 'system', 'storage']}
         onOpen={onOpen}
       />
 
@@ -1134,6 +1418,9 @@ function CommandCenterStatusBar({ operatorState }) {
       <StatusPill tone="good">Auto-Trading deaktiviert</StatusPill>
       <StatusPill tone="warn">Menschliche Freigabe erforderlich</StatusPill>
       <StatusPill tone="good">Research-only aktiv</StatusPill>
+      <StatusPill tone={operatorState.timeControl?.in_work_window ? 'good' : 'warn'}>
+        {operatorState.timeControl?.status_label || 'Außerhalb des Arbeitsfensters'}
+      </StatusPill>
     </div>
   );
 }
@@ -1164,19 +1451,6 @@ function DashboardTradingIntelligence({ operatorState }) {
       ];
 
   const exportBotSpec = async (action) => {
-    const confirmText = [
-      'cTrader Bot-Spezifikation erzeugen?',
-      `Asset: ${action.asset}`,
-      `Setup: ${action.setup_id}`,
-      `Kandidat: ${action.candidate_id}`,
-      'Es wird nur eine Spezifikation erzeugt.',
-      'Kein Bot-Code. Keine Orders. Keine cTrader Order API.',
-    ].join('\n');
-
-    if (!window.confirm(confirmText)) {
-      return;
-    }
-
     setBusyCandidate(action.candidate_id);
     setBotSpecStatus('');
     try {
@@ -1301,6 +1575,202 @@ function DashboardSignalPackage({ operatorState }) {
   );
 }
 
+function DashboardTimeControl({ operatorState, onRefresh }) {
+  const timeControl = operatorState.timeControl || {};
+  const [draft, setDraft] = useState(() => createTimeControlDraft(timeControl));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setDraft(createTimeControlDraft(timeControl));
+  }, [timeControl]);
+
+  const toggleWeekday = (day) => {
+    setDraft((current) => {
+      const nextActive = current.activeWeekdays.includes(day)
+        ? current.activeWeekdays.filter((item) => item !== day)
+        : [...current.activeWeekdays, day];
+      return { ...current, activeWeekdays: nextActive };
+    });
+  };
+
+  const saveTimeControl = async () => {
+    setSaving(true);
+    setMessage('');
+    setError('');
+    try {
+      const response = await fetch(`${__HERMES_READONLY_BRIDGE_URL__}/bridge/time-control/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(timeControlPayload(draft)),
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.warnings?.[0] || payload?.error || payload?.message || `${response.status} ${response.statusText}`.trim());
+      }
+
+      const result = payload?.data || payload;
+      setMessage(result?.status_label || 'Zeitsteuerung gespeichert.');
+      await onRefresh?.();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : String(saveError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const workWindowWarning = timeControlWindowWarning(draft.workStart, draft.workEnd, draft.workEnabled);
+  const nightlyWindowWarning = timeControlWindowWarning(draft.nightlyStart, draft.nightlyEnd, draft.nightlyEnabled);
+  const learningWindowWarning = timeControlWindowWarning(draft.learningStart, draft.learningEnd, draft.learningEnabled);
+  const reviewWindowWarning = timeControlWindowWarning(draft.reviewStart, draft.reviewEnd, draft.reviewEnabled);
+
+  return (
+    <div className="time-control-detail">
+      <div className="time-control-summary">
+        <Metric label="Status" value={timeControl.status_label || 'Außerhalb des Arbeitsfensters'} tone={timeControl.in_work_window ? 'good' : 'warn'} />
+        <Metric label="Zeitzone" value={timeControl.time_zone || draft.timeZone} tone="info" />
+        <Metric label="Arbeitszeit" value={`${draft.workStart} - ${draft.workEnd}`} tone="info" />
+        <Metric label="Nightly" value={`${draft.nightlyStart} - ${draft.nightlyEnd}`} tone="info" />
+        <Metric label="Lernfenster" value={`${draft.learningStart} - ${draft.learningEnd}`} tone="info" />
+        <Metric label="Human-Review" value={`${draft.reviewStart} - ${draft.reviewEnd}`} tone="info" />
+      </div>
+
+      <div className="time-control-help">
+        <p>Arbeitszeit = normale Aufgaben</p>
+        <p>Nightly = schwere Nachtläufe</p>
+        <p>Lernfenster = autonomes Lernen</p>
+        <p>Human-Review = Zeitfenster für Frank-Entscheidungen</p>
+      </div>
+
+      <div className="time-control-presets">
+        <span>Presets</span>
+        <div>
+          {TIME_CONTROL_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => setDraft((current) => ({ ...current, ...preset.apply() }))}
+            >
+              <strong>{preset.label}</strong>
+              <small>{preset.description}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="time-control-form">
+        <label>
+          <span>Zeitzone</span>
+          <input value={draft.timeZone} onChange={(event) => setDraft((current) => ({ ...current, timeZone: event.target.value }))} />
+        </label>
+        <label>
+          <span>Arbeitszeit von</span>
+          <input type="time" value={draft.workStart} onChange={(event) => setDraft((current) => ({ ...current, workStart: event.target.value }))} />
+        </label>
+        <label>
+          <span>Arbeitszeit bis</span>
+          <input type="time" value={draft.workEnd} onChange={(event) => setDraft((current) => ({ ...current, workEnd: event.target.value }))} />
+        </label>
+        <label className="time-control-toggle">
+          <span>Arbeitszeit aktiv</span>
+          <button type="button" className={draft.workEnabled ? 'is-active' : ''} onClick={() => setDraft((current) => ({ ...current, workEnabled: !current.workEnabled }))}>
+            {draft.workEnabled ? 'aktiv' : 'inaktiv'}
+          </button>
+        </label>
+        <label>
+          <span>Nightly von</span>
+          <input type="time" value={draft.nightlyStart} onChange={(event) => setDraft((current) => ({ ...current, nightlyStart: event.target.value }))} />
+        </label>
+        <label>
+          <span>Nightly bis</span>
+          <input type="time" value={draft.nightlyEnd} onChange={(event) => setDraft((current) => ({ ...current, nightlyEnd: event.target.value }))} />
+        </label>
+        <label className="time-control-toggle">
+          <span>Nightly aktiv</span>
+          <button type="button" className={draft.nightlyEnabled ? 'is-active' : ''} onClick={() => setDraft((current) => ({ ...current, nightlyEnabled: !current.nightlyEnabled }))}>
+            {draft.nightlyEnabled ? 'aktiv' : 'inaktiv'}
+          </button>
+        </label>
+        <label>
+          <span>Lernfenster von</span>
+          <input type="time" value={draft.learningStart} onChange={(event) => setDraft((current) => ({ ...current, learningStart: event.target.value }))} />
+        </label>
+        <label>
+          <span>Lernfenster bis</span>
+          <input type="time" value={draft.learningEnd} onChange={(event) => setDraft((current) => ({ ...current, learningEnd: event.target.value }))} />
+        </label>
+        <label className="time-control-toggle">
+          <span>Lernen aktiv</span>
+          <button type="button" className={draft.learningEnabled ? 'is-active' : ''} onClick={() => setDraft((current) => ({ ...current, learningEnabled: !current.learningEnabled }))}>
+            {draft.learningEnabled ? 'aktiv' : 'inaktiv'}
+          </button>
+        </label>
+        <label>
+          <span>Human-Review von</span>
+          <input type="time" value={draft.reviewStart} onChange={(event) => setDraft((current) => ({ ...current, reviewStart: event.target.value }))} />
+        </label>
+        <label>
+          <span>Human-Review bis</span>
+          <input type="time" value={draft.reviewEnd} onChange={(event) => setDraft((current) => ({ ...current, reviewEnd: event.target.value }))} />
+        </label>
+        <label className="time-control-toggle">
+          <span>Human-Review aktiv</span>
+          <button type="button" className={draft.reviewEnabled ? 'is-active' : ''} onClick={() => setDraft((current) => ({ ...current, reviewEnabled: !current.reviewEnabled }))}>
+            {draft.reviewEnabled ? 'aktiv' : 'inaktiv'}
+          </button>
+        </label>
+      </div>
+
+      <div className="time-control-weekdays">
+        <span>Wochentage</span>
+        <div>
+          {TIME_CONTROL_WEEKDAYS.map((day) => {
+            const active = draft.activeWeekdays.includes(day);
+            return (
+              <button
+                key={day}
+                type="button"
+                className={active ? 'is-active' : ''}
+                onClick={() => toggleWeekday(day)}
+              >
+                {day}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {(workWindowWarning || nightlyWindowWarning || learningWindowWarning || reviewWindowWarning) ? (
+        <div className="time-control-warnings">
+          {workWindowWarning ? <p>{workWindowWarning}</p> : null}
+          {nightlyWindowWarning ? <p>{nightlyWindowWarning}</p> : null}
+          {learningWindowWarning ? <p>{learningWindowWarning}</p> : null}
+          {reviewWindowWarning ? <p>{reviewWindowWarning}</p> : null}
+        </div>
+      ) : null}
+
+      <div className="time-control-actions">
+        <button disabled={saving || !operatorState.bridgeAvailable} onClick={saveTimeControl} type="button">
+          {saving ? 'Speichere...' : 'Zeitsteuerung speichern'}
+        </button>
+        <span>{operatorState.bridgeAvailable ? 'Änderungen werden zentral in `config/schedules.json` gespeichert.' : 'Bridge nicht erreichbar - nur Anzeige.'}</span>
+      </div>
+
+      {message ? <p className="time-control-message is-good">{message}</p> : null}
+      {error ? <p className="time-control-message is-danger">Zeitsteuerung konnte nicht gespeichert werden: {error}</p> : null}
+      <div className="operator-safety-flags">
+        <StatusPill tone="good">no_auto_trading=true</StatusPill>
+        <StatusPill tone="warn">human_review_required=true</StatusPill>
+        <StatusPill tone="good">broker_orders_enabled=false</StatusPill>
+        <StatusPill tone="good">live_trading_enabled=false</StatusPill>
+        <StatusPill tone="good">research_only=true</StatusPill>
+      </div>
+    </div>
+  );
+}
+
 function DashboardReviewSummary({ operatorState }) {
   const review = operatorState.humanReview || {};
   return (
@@ -1315,8 +1785,29 @@ function DashboardReviewSummary({ operatorState }) {
 
 function DashboardLearningSummary({ operatorState }) {
   const masterStatus = operatorState.masterStatus;
+  const audit = reportByKey(operatorState, 'knowledgeValidationAudit')?.raw || {};
+  const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
+  const criticalGaps = audit.critical_knowledge_gaps ?? audit.criticalKnowledgeGaps ?? masterStatus.knowledge_items_needing_oos;
+  const oldestOpenValidationAgeDays = audit.oldest_open_validation_age_days ?? audit.oldestOpenValidationAgeDays ?? 0;
+  const validationCompletionPercent =
+    audit.validation_completion_percent
+    ?? audit.validationCompletionPercent
+    ?? Math.max(
+      0,
+      Math.round(
+        (1 - (openValidations / Math.max(1, openValidations + criticalGaps))) * 100,
+      ),
+    );
+  const validationCompletion =
+    audit.validation_completion_label
+    || audit.validationCompletionLabel
+    || `${validationCompletionPercent}% abgeschlossen`;
   return (
     <div className="cockpit-accordion-grid">
+      <Metric label="Validierung" value={validationCompletion} tone={criticalGaps ? 'warn' : 'good'} />
+      <Metric label="Offene Validierungen" value={formatNumber(openValidations)} tone={openValidations ? 'warn' : 'good'} />
+      <Metric label="Kritische Wissenslücken" value={formatNumber(criticalGaps)} tone={criticalGaps ? 'warn' : 'good'} />
+      <Metric label="Älteste offene Validierung" value={`${formatNumber(oldestOpenValidationAgeDays)} Tage`} tone={oldestOpenValidationAgeDays >= 14 ? 'warn' : 'info'} />
       <Metric label="Wissensqualität" value={statusDeutsch(masterStatus.knowledge_health)} tone={toneFromStatus(masterStatus.knowledge_health)} />
       <Metric label="Vertrauen" value={scorePercent(masterStatus.average_trust_score)} tone="info" />
       <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
@@ -1373,10 +1864,14 @@ function DashboardLogs({ operatorState }) {
         <div className="operator-event-list">
           {logs.warnings.map((warning) => (
             <article className={`operator-event-row ${toneClass(warning.tone)}`} key={`${warning.label}:${warning.detail}`}>
-              <span aria-hidden="true">{warning.tone === 'danger' ? '🔴' : warning.tone === 'warn' ? '🟡' : '🟢'}</span>
+              <span aria-hidden="true">{warningToneInfo(warning.tone).icon}</span>
               <div>
-                <strong>{warning.label}</strong>
+                <strong>
+                  {warningToneInfo(warning.tone).label}: {warning.label}
+                  {warning.count > 1 ? ` (${formatNumber(warning.count)}x)` : ''}
+                </strong>
                 <small>{warning.detail}</small>
+                <small>Handlung: {warning.action}</small>
               </div>
             </article>
           ))}
@@ -1451,29 +1946,6 @@ function ScalpingProgressPanel({ masterStatus }) {
   );
 }
 
-function ReviewCommandList({ reviewId }) {
-  return (
-    <div className="review-command-list" aria-label="CLI-Befehle für menschliche Prüfung">
-      <div>
-        <span>Freigeben</span>
-        <code>{cliReviewCommand('approve', reviewId)}</code>
-      </div>
-      <div>
-        <span>Ablehnen</span>
-        <code>{cliReviewCommand('reject', reviewId)}</code>
-      </div>
-      <div>
-        <span>Mehr Evidenz anfordern</span>
-        <code>{cliReviewCommand('more', reviewId)}</code>
-      </div>
-      <div>
-        <span>Zurückstellen</span>
-        <code>{cliReviewCommand('defer', reviewId)}</code>
-      </div>
-    </div>
-  );
-}
-
 const REVIEW_ACTIONS = {
   approve: {
     label: 'Freigeben',
@@ -1509,10 +1981,34 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
     items: [],
   };
   const items = Array.isArray(review.items) ? review.items : [];
-  const [actionMessage, setActionMessage] = useState('');
   const [actionBusyId, setActionBusyId] = useState('');
+  const [pendingReviewAction, setPendingReviewAction] = useState(null);
+  const [reviewNotesById, setReviewNotesById] = useState({});
+  const [reviewFeedbackById, setReviewFeedbackById] = useState({});
   const [resolvedReviewIds, setResolvedReviewIds] = useState([]);
   const visibleItems = items.filter((item) => item.status === 'pending' && !resolvedReviewIds.includes(item.review_id));
+
+  const openReviewAction = (actionKey, item) => {
+    const action = REVIEW_ACTIONS[actionKey];
+    if (!action || !item?.review_id) {
+      return;
+    }
+
+    setPendingReviewAction({ reviewId: item.review_id, actionKey });
+    setReviewNotesById((current) => ({
+      ...current,
+      [item.review_id]: current[item.review_id] || `${action.label}: ${item.title}`,
+    }));
+    setReviewFeedbackById((current) => {
+      const next = { ...current };
+      delete next[item.review_id];
+      return next;
+    });
+  };
+
+  const cancelReviewAction = (reviewId) => {
+    setPendingReviewAction((current) => (current?.reviewId === reviewId ? null : current));
+  };
 
   const runReviewAction = async (actionKey, item) => {
     const action = REVIEW_ACTIONS[actionKey];
@@ -1520,29 +2016,22 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
       return;
     }
 
-    const confirmText = [
-      `${action.label} ausführen?`,
-      `Thema: ${item.title}`,
-      `Domäne: ${domainLabel(item.domain)}`,
-      `Hermes Empfehlung: ${reviewTrafficLight(item).label}`,
-      `Safety: no_auto_trading=true, human_review_required=true`,
-    ].join('\n');
-    if (!window.confirm(confirmText)) {
+    if (pendingReviewAction?.reviewId !== item.review_id || pendingReviewAction.actionKey !== actionKey) {
       return;
     }
 
-    const note = window.prompt(action.prompt, `${action.label.toLowerCase()} via UI review`);
-    if (note === null) {
-      return;
-    }
+    const note = String(reviewNotesById[item.review_id] || '').trim();
 
     setActionBusyId(item.review_id);
-    setActionMessage('');
+    let timeoutId = 0;
     try {
       await assertReviewEndpointAvailable(action.endpoint);
+      const controller = new AbortController();
+      timeoutId = window.setTimeout(() => controller.abort(), 10000);
       const response = await fetch(`${__HERMES_READONLY_BRIDGE_URL__}/bridge/review/${action.endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           review_id: item.review_id,
           note: note.trim(),
@@ -1550,6 +2039,7 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
           source: 'jarvis-control-center',
         }),
       });
+      window.clearTimeout(timeoutId);
 
       const responseText = await response.text();
       let payload = {};
@@ -1566,15 +2056,33 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
       const feedbackPath = payload?.data?.learning_feedback_path || payload?.learning_feedback_path || 'Learning Feedback gespeichert';
       const successMessage = `Entscheidung gespeichert: ${statusDeutsch(decision)}. Learning Feedback bestätigt.`;
       setResolvedReviewIds((current) => [...current, item.review_id]);
-      setActionMessage(`${successMessage} ${feedbackPath}`);
-      window.alert(successMessage);
+      setReviewFeedbackById((current) => ({
+        ...current,
+        [item.review_id]: {
+          tone: 'good',
+          title: 'Entscheidung gespeichert',
+          message: `${successMessage} ${feedbackPath}`,
+        },
+      }));
+      setPendingReviewAction(null);
       if (typeof onRefresh === 'function') {
-        await onRefresh();
+        window.setTimeout(() => {
+          void onRefresh();
+        }, 0);
       }
     } catch (error) {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
       const message = `Prüfentscheidung konnte nicht gespeichert werden. Bridge prüfen oder später erneut versuchen. ${error instanceof Error ? error.message : String(error)}`;
-      setActionMessage(message);
-      window.alert(message);
+      setReviewFeedbackById((current) => ({
+        ...current,
+        [item.review_id]: {
+          tone: 'danger',
+          title: 'Speichern fehlgeschlagen',
+          message,
+        },
+      }));
     } finally {
       setActionBusyId('');
     }
@@ -1608,13 +2116,13 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
         <StatusPill tone="good">live_trading_enabled=false</StatusPill>
         <StatusPill tone="good">research_only=true</StatusPill>
       </div>
-      {actionMessage ? <p className="control-view-note">{actionMessage}</p> : null}
-
       <div className="review-grid">
         {visibleItems.slice(0, 8).map((item) => {
           const trafficLight = reviewTrafficLight(item);
           const risk = reviewRisk(item);
           const evidenceQuality = reviewEvidenceQuality(item);
+          const pendingAction = pendingReviewAction?.reviewId === item.review_id ? REVIEW_ACTIONS[pendingReviewAction.actionKey] : null;
+          const feedback = reviewFeedbackById[item.review_id];
 
           return (
           <article className={`review-card review-operator-card ${trafficLight.className}`} key={item.review_id}>
@@ -1642,12 +2150,45 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
               <p><strong>Hinweis:</strong> {reviewRecommendationDeutsch(item.recommendation)}</p>
             </div>
 
-            <div className="review-action-row" aria-label="Vorbereitete Prüfaktionen">
-              <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction('approve', item)} type="button">Freigeben</button>
-              <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction('reject', item)} type="button">Ablehnen</button>
-              <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction('more', item)} type="button">Mehr Evidenz</button>
-              <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction('defer', item)} type="button">Zurückstellen</button>
-            </div>
+            {feedback ? (
+              <div className={`review-inline-feedback ${toneClass(feedback.tone)}`}>
+                <strong>{feedback.title}</strong>
+                <p>{feedback.message}</p>
+              </div>
+            ) : null}
+
+            {pendingAction ? (
+              <div className="review-inline-confirmation">
+                <strong>{pendingAction.label} wirklich ausführen?</strong>
+                <p><b>Thema:</b> {item.title}</p>
+                <p><b>Hermes Empfehlung:</b> {trafficLight.label}</p>
+                <p><b>Safety-Hinweis:</b> no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false</p>
+                <label className="review-inline-note">
+                  <span>Notiz für Learning Feedback</span>
+                  <textarea
+                    rows={3}
+                    value={reviewNotesById[item.review_id] || ''}
+                    onChange={(event) => setReviewNotesById((current) => ({ ...current, [item.review_id]: event.target.value }))}
+                    placeholder={`${pendingAction.label} via UI review`}
+                  />
+                </label>
+                <div className="review-inline-actions">
+                  <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction(pendingReviewAction.actionKey, item)} type="button">
+                    {actionBusyId === item.review_id ? 'Speichere...' : 'Bestätigen'}
+                  </button>
+                  <button disabled={actionBusyId === item.review_id} onClick={() => cancelReviewAction(item.review_id)} type="button">
+                    Abbrechen
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="review-action-row" aria-label="Vorbereitete Prüfaktionen">
+                <button disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('approve', item)} type="button">Freigeben</button>
+                <button disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('reject', item)} type="button">Ablehnen</button>
+                <button disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('more', item)} type="button">Mehr Evidenz</button>
+                <button disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('defer', item)} type="button">Zurückstellen</button>
+              </div>
+            )}
           </article>
           );
         })}
@@ -1903,6 +2444,10 @@ function CommandModuleDetails({ moduleId, operatorState, onRefresh }) {
     return <SystemView operatorState={operatorState} />;
   }
 
+  if (moduleId === 'time-control') {
+    return <DashboardTimeControl operatorState={operatorState} onRefresh={onRefresh} />;
+  }
+
   if (moduleId === 'roles') {
     return <RoleView operatorState={operatorState} />;
   }
@@ -2052,6 +2597,7 @@ function detailPreview(moduleId, operatorState) {
     trust: 'knowledgeQuality',
     review: 'humanReviewState',
     system: 'supervisorState',
+    'time-control': 'timeControl',
     roles: 'roleStatus',
     safety: 'masterStatus',
     reports: 'validateEnsembleSignalPackage',

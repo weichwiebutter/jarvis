@@ -56,6 +56,8 @@ internal sealed class HermesCli
             "nightly-stop-request" => RequestNightlyStop(),
             "scheduler-status" => ShowSchedulerStatus(),
             "scheduler-jobs" => ShowSchedulerJobs(),
+            "time-control-status" => ShowTimeControlStatus(),
+            "time-control-update" => UpdateTimeControl(),
             "readonly-bridge" or "bridge-start" => StartReadOnlyBridge(),
             "supervisor-start" => StartSupervisor(),
             "supervisor-status" => ShowSupervisorStatus(),
@@ -126,6 +128,7 @@ internal sealed class HermesCli
             "cleanup-invalid-validation-tasks" => CleanupInvalidValidationTasks(),
             "explain-validation-routing" => ExplainValidationRouting(),
             "knowledge-validation-status" => ShowKnowledgeValidationStatus(),
+            "knowledge-validation-audit" => ShowKnowledgeValidationAudit(),
             "explain-validation" => ExplainValidation(),
             "research-queue" => ShowResearchQueue(),
             "enqueue-research" => EnqueueResearch(),
@@ -293,6 +296,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes nightly-stop-request sicheren Stop-Request fuer Nightly Beta 3 setzen");
         Console.WriteLine("  hermes scheduler-status  internen Hermes Scheduler Status anzeigen");
         Console.WriteLine("  hermes scheduler-jobs    geplante Hermes Jobs anzeigen");
+        Console.WriteLine("  hermes time-control-status zentrale Arbeitszeit-/Window-Konfiguration anzeigen");
+        Console.WriteLine("  hermes time-control-update zentrale Arbeitszeit-/Window-Konfiguration aktualisieren");
         Console.WriteLine("  hermes readonly-bridge   localhost Read-only Bridge fuer Jarvis Control Center starten");
         Console.WriteLine("  hermes supervisor-start  langlebigen Hermes Supervisor starten");
         Console.WriteLine("  hermes supervisor-status Supervisor Heartbeat/State anzeigen");
@@ -359,6 +364,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes cleanup-invalid-validation-tasks unpassende Validation Tasks bereinigen");
         Console.WriteLine("  hermes explain-validation-routing --domain documentation Routing-Profil erklaeren");
         Console.WriteLine("  hermes knowledge-validation-status Validation Fortschritt anzeigen");
+        Console.WriteLine("  hermes knowledge-validation-audit Knowledge Validation Audit anzeigen");
         Console.WriteLine("  hermes explain-validation --id <KNOWLEDGE_ITEM_ID> Validierungsplan erklaeren");
         Console.WriteLine("  hermes research-queue     Cognitive Research Queue anzeigen");
         Console.WriteLine("  hermes enqueue-research --domain trading --type validation Research-Item einreihen");
@@ -1930,6 +1936,63 @@ internal sealed class HermesCli
         {
             WriteSchedulerJob(job);
         }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowTimeControlStatus()
+    {
+        WriteHeader("Hermes Zeitsteuerung");
+        var storagePaths = BuildStoragePaths();
+        var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var status = scheduler.GetTimeControlStatus();
+
+        WriteField("Config", DisplayPath(status.ConfigPath));
+        WriteField("Zeitzone", status.TimeZone);
+        WriteField("Status", status.StatusLabel);
+        WriteField("Arbeitsfenster", $"{status.WorkWindow.Start} - {status.WorkWindow.End} ({(status.WorkWindow.Enabled ? "aktiv" : "inaktiv")})");
+        WriteField("Nightly", $"{status.NightlyWindow.Start} - {status.NightlyWindow.End} ({(status.NightlyWindow.Enabled ? "aktiv" : "inaktiv")})");
+        WriteField("Lernfenster", $"{status.LearningWindow.Start} - {status.LearningWindow.End} ({(status.LearningWindow.Enabled ? "aktiv" : "inaktiv")})");
+        WriteField("Human-Review", $"{status.HumanReviewWindow.Start} - {status.HumanReviewWindow.End} ({(status.HumanReviewWindow.Enabled ? "aktiv" : "inaktiv")})");
+        WriteField("Lokale Zeit", status.CurrentLocal.ToString("O"));
+        WriteField("UTC", status.CurrentUtc.ToString("O"));
+        WriteField("Aktive Wochentage", string.Join(", ", status.ActiveWeekdays));
+        WriteField("Inaktive Wochentage", string.Join(", ", status.InactiveWeekdays));
+        WriteField("Im Arbeitsfenster", status.InWorkWindow.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", status.Warnings);
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int UpdateTimeControl()
+    {
+        WriteHeader("Hermes Zeitsteuerung aktualisieren");
+        var storagePaths = BuildStoragePaths();
+        var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var update = new ScheduleTimeControlUpdate(
+            TimeZone: ReadOption(_args, "--time-zone") ?? ReadOption(_args, "--timezone"),
+            WorkWindow: BuildWindowUpdate("work"),
+            NightlyWindow: BuildWindowUpdate("nightly"),
+            LearningWindow: BuildWindowUpdate("learning"),
+            HumanReviewWindow: BuildWindowUpdate("human-review"),
+            ActiveWeekdays: ParseWeekdays(ReadOption(_args, "--active-weekdays")));
+
+        var updated = scheduler.UpdateTimeControl(update);
+        var status = updated.BuildTimeControlStatus(DateTimeOffset.UtcNow, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+
+        WriteField("Config", DisplayPath(status.ConfigPath));
+        WriteField("Status", status.StatusLabel);
+        WriteField("Zeitzone", status.TimeZone);
+        WriteField("Arbeitsfenster", $"{status.WorkWindow.Start} - {status.WorkWindow.End} ({(status.WorkWindow.Enabled ? "aktiv" : "inaktiv")})");
+        WriteField("Nightly", $"{status.NightlyWindow.Start} - {status.NightlyWindow.End} ({(status.NightlyWindow.Enabled ? "aktiv" : "inaktiv")})");
+        WriteField("Lernfenster", $"{status.LearningWindow.Start} - {status.LearningWindow.End} ({(status.LearningWindow.Enabled ? "aktiv" : "inaktiv")})");
+        WriteField("Human-Review", $"{status.HumanReviewWindow.Start} - {status.HumanReviewWindow.End} ({(status.HumanReviewWindow.Enabled ? "aktiv" : "inaktiv")})");
+        WriteField("Aktive Wochentage", string.Join(", ", status.ActiveWeekdays));
+        WriteMessages("Warnings", status.Warnings);
 
         Console.WriteLine();
         WriteSafety();
@@ -6158,6 +6221,36 @@ internal sealed class HermesCli
         var status = service.BuildStatus();
 
         WriteKnowledgeValidationStatus(status);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowKnowledgeValidationAudit()
+    {
+        WriteHeader("Hermes Knowledge Validation Audit");
+        var service = new KnowledgeValidationAuditService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.AuditPath));
+        WriteField("Markdown", DisplayPath(service.AuditMarkdownPath));
+        WriteField("Validierung", report.ValidationCompletionLabel);
+        WriteField("Offene Validierungen", report.OpenValidations.ToString());
+        WriteField("Kritische Wissenslücken", report.CriticalKnowledgeGaps.ToString());
+        WriteField("Älteste offene Validierung", $"{report.OldestOpenValidationAgeDays} Tage");
+        WriteField("Validation Queue vorhanden", report.ValidationQueueExists.ToString().ToLowerInvariant());
+        WriteField("Validation Queue befüllt", report.ValidationQueueFilled.ToString().ToLowerInvariant());
+        WriteField("Validation Queue verarbeitet", report.ValidationQueueProcessed.ToString().ToLowerInvariant());
+        WriteMessages("Betroffene Domänen", report.AffectedDomains);
+        foreach (var domain in report.DomainBreakdown)
+        {
+            WriteSubHeader(domain.Domain);
+            WriteField("Offene Pläne", domain.OpenPlans.ToString());
+            WriteField("Offene Queue-Items", domain.OpenQueueItems.ToString());
+            WriteField("Betroffene Knowledge Items", domain.OpenKnowledgeItems.ToString());
+            WriteField("Älteste offene Validierung", $"{domain.OldestOpenValidationAgeDays} Tage");
+        }
+        WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -10396,6 +10489,44 @@ internal sealed class HermesCli
         }
 
         return null;
+    }
+
+    private SchedulerWindowConfig? BuildWindowUpdate(string prefix)
+    {
+        var start = ReadOption(_args, $"--{prefix}-start");
+        var end = ReadOption(_args, $"--{prefix}-end");
+        var enabledText = ReadOption(_args, $"--{prefix}-enabled");
+
+        if (string.IsNullOrWhiteSpace(start)
+            && string.IsNullOrWhiteSpace(end)
+            && string.IsNullOrWhiteSpace(enabledText))
+        {
+            return null;
+        }
+
+        var enabled = string.IsNullOrWhiteSpace(enabledText)
+            || (!enabledText.Equals("false", StringComparison.OrdinalIgnoreCase)
+                && !enabledText.Equals("0", StringComparison.OrdinalIgnoreCase)
+                && !enabledText.Equals("off", StringComparison.OrdinalIgnoreCase));
+
+        return new SchedulerWindowConfig(
+            Start: string.IsNullOrWhiteSpace(start) ? "00:00" : start!,
+            End: string.IsNullOrWhiteSpace(end) ? "00:00" : end!,
+            Enabled: enabled);
+    }
+
+    private static IReadOnlyList<string>? ParseWeekdays(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(item => item.Trim())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static IReadOnlyList<string> ReadAssetList(string[] args, string name)

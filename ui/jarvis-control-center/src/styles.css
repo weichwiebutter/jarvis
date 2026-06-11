@@ -917,6 +917,21 @@ h2 {
   background: rgba(255, 255, 255, 0.025);
 }
 
+.operator-event-row.tone-info {
+  border-color: rgba(132, 204, 255, 0.16);
+  background: rgba(71, 215, 255, 0.045);
+}
+
+.operator-event-row.tone-warn {
+  border-color: rgba(248, 193, 74, 0.24);
+  background: rgba(248, 193, 74, 0.055);
+}
+
+.operator-event-row.tone-danger {
+  border-color: rgba(251, 113, 133, 0.3);
+  background: rgba(251, 113, 133, 0.065);
+}
+
 .operator-event-row strong {
   display: block;
   color: var(--text);
@@ -931,6 +946,11 @@ h2 {
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.operator-event-row small + small {
+  margin-top: 3px;
+  color: var(--soft);
 }
 
 .cockpit-meta-strip span,
@@ -1753,8 +1773,97 @@ h2 {
   border-radius: 8px;
   color: var(--muted);
   background: rgba(255, 255, 255, 0.025);
-  cursor: not-allowed;
+  cursor: pointer;
   font-weight: 800;
+}
+
+.review-action-row button:disabled,
+.review-inline-actions button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.review-inline-confirmation,
+.review-inline-feedback {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(132, 204, 255, 0.16);
+  border-radius: 10px;
+  background: rgba(4, 10, 18, 0.72);
+}
+
+.review-inline-confirmation strong,
+.review-inline-feedback strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.review-inline-confirmation p,
+.review-inline-feedback p {
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.review-inline-confirmation p b {
+  color: var(--text);
+}
+
+.review-inline-note {
+  display: grid;
+  gap: 6px;
+}
+
+.review-inline-note span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.review-inline-note textarea {
+  width: 100%;
+  min-height: 76px;
+  padding: 9px 10px;
+  border: 1px solid rgba(132, 204, 255, 0.18);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  resize: vertical;
+}
+
+.review-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-inline-actions button {
+  min-height: 32px;
+  padding: 7px 10px;
+  border: 1px solid rgba(132, 204, 255, 0.22);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(71, 215, 255, 0.1);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.review-inline-actions button:last-child {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.review-inline-feedback.tone-good {
+  border-color: rgba(74, 222, 128, 0.24);
+  background: rgba(74, 222, 128, 0.06);
+}
+
+.review-inline-feedback.tone-danger {
+  border-color: rgba(251, 113, 133, 0.28);
+  background: rgba(251, 113, 133, 0.065);
 }
 
 .review-command-list {
@@ -3997,6 +4106,159 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+}
+
+.time-control-detail {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.time-control-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.time-control-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.time-control-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(132, 204, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.time-control-form label span,
+.time-control-weekdays > span,
+.time-control-actions span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.time-control-form input {
+  min-width: 0;
+  width: 100%;
+}
+
+.time-control-help,
+.time-control-warnings,
+.time-control-presets {
+  display: grid;
+  gap: 8px;
+}
+
+.time-control-help {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.time-control-warnings {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 196, 61, 0.3);
+  border-radius: 12px;
+  background: rgba(255, 196, 61, 0.08);
+  color: #ffe1a2;
+}
+
+.time-control-presets > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.time-control-presets button {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  min-height: 66px;
+  padding: 10px 12px;
+  border: 1px solid rgba(132, 204, 255, 0.18);
+  border-radius: 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+}
+
+.time-control-presets button strong {
+  font-size: 0.95rem;
+}
+
+.time-control-presets button small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.time-control-toggle button,
+.time-control-weekdays button,
+.time-control-actions button {
+  min-height: 36px;
+  border: 1px solid rgba(132, 204, 255, 0.18);
+  border-radius: 10px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.time-control-toggle button.is-active,
+.time-control-weekdays button.is-active {
+  border-color: rgba(71, 215, 255, 0.5);
+  color: var(--cyan);
+  background: rgba(71, 215, 255, 0.12);
+}
+
+.time-control-weekdays {
+  display: grid;
+  gap: 8px;
+}
+
+.time-control-weekdays > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.time-control-weekdays button {
+  min-width: 110px;
+  padding: 8px 12px;
+}
+
+.time-control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.time-control-actions button {
+  padding: 0 14px;
+}
+
+.time-control-message {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.time-control-message.is-good {
+  color: var(--lime);
+  border: 1px solid rgba(100, 230, 150, 0.24);
+}
+
+.time-control-message.is-danger {
+  color: var(--red);
+  border: 1px solid rgba(255, 110, 110, 0.24);
 }
 
 .operator-token-list span,

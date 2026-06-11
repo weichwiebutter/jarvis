@@ -182,6 +182,53 @@ function buildSource(dataSource, path, warning = '') {
   };
 }
 
+function normalizeTimeControlWindow(raw = {}, label = 'Fenster') {
+  return {
+    label: asString(firstDefined(raw.label, raw.name), label),
+    enabled: asBoolean(firstDefined(raw.enabled, raw.is_enabled, raw.isEnabled), true),
+    start: asString(firstDefined(raw.start, raw.start_time, raw.startTime), '00:00'),
+    end: asString(firstDefined(raw.end, raw.end_time, raw.endTime), '00:00'),
+    active_now: asBoolean(firstDefined(raw.active_now, raw.activeNow), false),
+    summary: asString(firstDefined(raw.summary, raw.status), 'inaktiv'),
+  };
+}
+
+export function normalizeTimeControl(raw = {}) {
+  return {
+    config_path: asString(firstDefined(raw.config_path, raw.configPath), 'config/schedules.json'),
+    time_zone: asString(firstDefined(raw.time_zone, raw.timeZone), 'Europe/Berlin'),
+    current_utc: firstDefined(raw.current_utc, raw.currentUtc, null),
+    current_local: firstDefined(raw.current_local, raw.currentLocal, null),
+    status_label: asString(
+      firstDefined(raw.status_label, raw.statusLabel),
+      asBoolean(firstDefined(raw.in_work_window, raw.inWorkWindow), false)
+        ? 'Derzeit im Arbeitsfenster'
+        : 'Außerhalb des Arbeitsfensters',
+    ),
+    in_work_window: asBoolean(firstDefined(raw.in_work_window, raw.inWorkWindow), false),
+    work_window: normalizeTimeControlWindow(firstDefined(raw.work_window, raw.workWindow) || {}, 'Arbeitszeit'),
+    nightly_window: normalizeTimeControlWindow(firstDefined(raw.nightly_window, raw.nightlyWindow) || {}, 'Nightly'),
+    learning_window: normalizeTimeControlWindow(firstDefined(raw.learning_window, raw.learningWindow) || {}, 'Lernfenster'),
+    human_review_window: normalizeTimeControlWindow(
+      firstDefined(raw.human_review_window, raw.humanReviewWindow) || {},
+      'Human-Review',
+    ),
+    weekdays: asArray(firstDefined(raw.weekdays, raw.weekDays)).map((item) => ({
+      day: asString(firstDefined(item.day, item.Day, item.label), 'unknown'),
+      active: asBoolean(firstDefined(item.active, item.is_active, item.isActive), false),
+    })),
+    active_weekdays: asArray(firstDefined(raw.active_weekdays, raw.activeWeekdays)).map(String),
+    inactive_weekdays: asArray(firstDefined(raw.inactive_weekdays, raw.inactiveWeekdays)).map(String),
+    warnings: asArray(firstDefined(raw.warnings, raw.Warnings)).map(String),
+    safety_flags: asArray(firstDefined(raw.safety_flags, raw.safetyFlags)).map(String),
+    no_auto_trading: asBoolean(firstDefined(raw.no_auto_trading, raw.noAutoTrading), true),
+    human_review_required: asBoolean(
+      firstDefined(raw.human_review_required, raw.humanReviewRequired),
+      true,
+    ),
+  };
+}
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -1387,6 +1434,31 @@ function reportFixtureRaw(key) {
       return runtimeMasterStatusMock;
     case 'humanReviewQueue':
       return runtimeHumanReviewMock;
+    case 'knowledgeValidationAudit':
+      return {
+        report_version: 'knowledge_validation_audit_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        validation_completion_label: '87% abgeschlossen',
+        validation_completion_percent: 87,
+        open_validations: 33,
+        critical_knowledge_gaps: 3,
+        queue_items_open: 33,
+        queue_items_processed: 12,
+        validation_queue_exists: true,
+        validation_queue_filled: true,
+        validation_queue_processed: true,
+        oldest_open_validation_age_days: 14,
+        affected_domains: ['trading', 'knowledge'],
+        domain_breakdown: [
+          { domain: 'trading', open_plans: 21, open_queue_items: 21, open_knowledge_items: 2, oldest_open_validation_age_days: 14 },
+          { domain: 'knowledge', open_plans: 12, open_queue_items: 12, open_knowledge_items: 1, oldest_open_validation_age_days: 9 },
+        ],
+        warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'cognitiveStatus':
       return {
         status: runtimeMasterStatusMock.knowledge_health,
@@ -1457,6 +1529,34 @@ function reportFixtureRaw(key) {
       return operatorDashboardMock.supervisorState;
     case 'schedulerState':
       return operatorDashboardMock.schedulerState;
+    case 'timeControl':
+      return {
+        config_path: '/home/home/jarvis/HermesRuntime/config/schedules.json',
+        time_zone: 'Europe/Berlin',
+        current_utc: new Date().toISOString(),
+        current_local: new Date().toISOString(),
+        status_label: 'Derzeit im Arbeitsfenster',
+        in_work_window: true,
+        work_window: { label: 'Arbeitszeit', enabled: true, start: '08:00', end: '18:00', active_now: true, summary: 'aktiv' },
+        nightly_window: { label: 'Nightly', enabled: true, start: '23:00', end: '05:00', active_now: false, summary: 'inaktiv' },
+        learning_window: { label: 'Lernfenster', enabled: true, start: '05:30', end: '07:00', active_now: false, summary: 'inaktiv' },
+        human_review_window: { label: 'Human-Review', enabled: true, start: '08:00', end: '18:00', active_now: true, summary: 'aktiv' },
+        weekdays: [
+          { day: 'Monday', active: true },
+          { day: 'Tuesday', active: true },
+          { day: 'Wednesday', active: true },
+          { day: 'Thursday', active: true },
+          { day: 'Friday', active: true },
+          { day: 'Saturday', active: false },
+          { day: 'Sunday', active: false },
+        ],
+        active_weekdays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+        inactive_weekdays: ['Saturday', 'Sunday'],
+        warnings: [],
+        safety_flags: ['no_auto_trading=true', 'human_review_required=true', 'broker_orders_enabled=false', 'live_trading_enabled=false', 'research_only=true'],
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'resourceStatus':
       return operatorDashboardMock.resourceStatus;
     case 'cleanupPlan':
@@ -2365,6 +2465,7 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
   const masterRaw = rawReports.masterStatus || runtimeMasterStatusMock;
   const supervisorRaw = rawReports.supervisorState || operatorDashboardMock.supervisorState;
   const schedulerRaw = rawReports.schedulerState || operatorDashboardMock.schedulerState;
+  const timeControlRaw = rawReports.timeControl || reportFixtureRaw('timeControl');
   const resourceRaw = rawReports.resourceStatus || operatorDashboardMock.resourceStatus;
   const storageRaw = rawReports.storageStatus || {};
   const nightlyRaw = rawReports.nightlyState || operatorDashboardMock.nightlyState;
@@ -2419,6 +2520,7 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
     roles: buildRoleOverview(masterStatus, rawReports),
     supervisor: normalizeSupervisorState(supervisorRaw),
     schedulerJobs: normalizeSchedulerJobs(schedulerRaw),
+    timeControl: normalizeTimeControl(timeControlRaw),
     resource,
     nightly: normalizeNightlyState(nightlyRaw),
     research: normalizeResearchSummary(
@@ -2485,11 +2587,13 @@ export function createOperatorDashboardFallback(loadError = '') {
       domainStatus: reportFixtureRaw('domainStatus'),
       supervisorState: operatorDashboardMock.supervisorState,
       schedulerState: operatorDashboardMock.schedulerState,
+      timeControl: reportFixtureRaw('timeControl'),
       resourceStatus: operatorDashboardMock.resourceStatus,
       nightlyState: operatorDashboardMock.nightlyState,
       demoSignalFeedStatus: operatorDashboardMock.demoSignalFeedStatus,
       latestDemoSignals: operatorDashboardMock.latestDemoSignals,
       forwardTestStatus: operatorDashboardMock.forwardTestStatus,
+      knowledgeValidationAudit: reportFixtureRaw('knowledgeValidationAudit'),
       ensemblePortfolioStatus: reportFixtureRaw('ensemblePortfolioStatus'),
       systemBHandoffBundle: systemBHandoffBundleMock,
       validateEnsembleSignalPackage: reportFixtureRaw('validateEnsembleSignalPackage'),
@@ -2550,6 +2654,7 @@ export async function loadOperatorDashboard() {
         domainStatus: dashboard.domainStatus,
         supervisorState: dashboard.supervisorState,
         schedulerState: dashboard.schedulerState,
+        timeControl: dashboard.timeControl,
         resourceStatus: dashboard.resourceStatus,
         storageStatus: dashboard.storageStatus,
         cleanupPlan: dashboard.cleanupPlan,
@@ -2557,6 +2662,7 @@ export async function loadOperatorDashboard() {
         demoSignalFeedStatus: dashboard.demoSignalFeedStatus,
         latestDemoSignals: dashboard.latestDemoSignals,
         forwardTestStatus: dashboard.forwardTestStatus,
+        knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
         ensemblePortfolioStatus: dashboard.ensemblePortfolioStatus,
         systemBHandoffBundle: dashboard.systemBHandoffBundle,
         validateEnsembleSignalPackage: dashboard.validateEnsembleSignalPackage,
@@ -2626,6 +2732,8 @@ export async function loadOperatorDashboard() {
   rawReports.setupRegistry = reportFixtureRaw('setupRegistry');
   rawReports.signalAgentSpecs = reportFixtureRaw('signalAgentSpecs');
   rawReports.multiAssetResearchStatus = reportFixtureRaw('multiAssetResearchStatus');
+  rawReports.knowledgeValidationAudit = reportFixtureRaw('knowledgeValidationAudit');
+  rawReports.timeControl = reportFixtureRaw('timeControl');
   let logLines = [...operatorDashboardMock.logLines];
   const warnings = [
     bridgeDashboardWarning,

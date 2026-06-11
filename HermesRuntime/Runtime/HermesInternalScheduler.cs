@@ -51,6 +51,20 @@ public sealed class HermesInternalScheduler
 
     public ScheduleConfig LoadConfig() => ScheduleConfig.LoadOrDefault(_configPath);
 
+    public ScheduleTimeControlStatus GetTimeControlStatus(DateTimeOffset? nowUtc = null)
+    {
+        var config = LoadConfig();
+        return config.BuildTimeControlStatus(nowUtc ?? DateTimeOffset.UtcNow, _configPath);
+    }
+
+    public ScheduleConfig UpdateTimeControl(ScheduleTimeControlUpdate update)
+    {
+        var config = LoadConfig();
+        var updated = config.WithTimeControl(update);
+        updated.Save(_configPath);
+        return updated;
+    }
+
     public SchedulerStatus GetStatus(DateTimeOffset? nowUtc = null)
     {
         var now = nowUtc ?? DateTimeOffset.UtcNow;

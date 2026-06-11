@@ -16,6 +16,7 @@ public sealed class HermesReadOnlyBridge
         new("setupWatch", "Setup Watch", "/runtime/setup-watch", "setup_watch/setup_watch.json"),
         new("supervisorState", "Supervisor State", "/runtime/supervisor", "reports/supervisor/supervisor_state.json"),
         new("schedulerState", "Scheduler State", "/runtime/scheduler", "reports/supervisor/scheduler_state.json"),
+        new("timeControl", "Zeitsteuerung", "/reports/time-control", "config/schedules.json"),
         new("resourceStatus", "Resource Status", "/runtime/resource", "reports/resource/resource_status.json"),
         new("storageStatus", "Storage Status", "/runtime/storage", "reports/storage/storage_status.json"),
         new("cleanupPlan", "Cleanup Plan", "/runtime/cleanup-plan", "reports/storage/cleanup_plan.json"),
@@ -24,6 +25,7 @@ public sealed class HermesReadOnlyBridge
         new("robustStrategies", "Robuste Strategien", "/reports/robust-strategies", "strategy_research/robust_strategies.json"),
         new("overfitReport", "Overfit Report", "/reports/overfit-report", "strategy_research/overfit_report.json"),
         new("humanReviewQueue", "Human Review Queue", "/reports/human-review-queue", "cognitive_core/human_review_queue.json"),
+        new("knowledgeValidationAudit", "Knowledge Validation Audit", "/reports/knowledge-validation-audit", "cognitive_core/knowledge_validation_audit.json"),
         new("ensemblePortfolioStatus", "Ensemble Portfolio Status", "/reports/ensemble-portfolio-status", "reports/scalping_portfolio/ensemble_portfolio/ensemble_portfolio_status.json"),
         new("systemBHandoffBundle", "System B Handoff Bundle", "/reports/system-b-handoff-bundle", "reports/system_b_handoff/system_b_handoff_bundle/portfolio_summary.json"),
         new("validateEnsembleSignalPackage", "Validate Ensemble Signal Package", "/reports/validate-ensemble-signal-package", "reports/scalping_portfolio/ensemble_portfolio/ensemble_signal_agent_package.json"),
@@ -46,6 +48,16 @@ public sealed class HermesReadOnlyBridge
         "refresh_token",
         "password",
         "token"
+    };
+
+    private static readonly HashSet<string> AllowedWriteEndpoints = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "/bridge/review/approve-review",
+        "/bridge/review/reject-review",
+        "/bridge/review/request-more-evidence",
+        "/bridge/review/defer-review",
+        "/bridge/bot-spec/export",
+        "/bridge/time-control/update",
     };
 
     private readonly StoragePaths _storagePaths;
@@ -111,6 +123,7 @@ public sealed class HermesReadOnlyBridge
                 .Append("/bridge/review/request-more-evidence")
                 .Append("/bridge/review/defer-review")
                 .Append("/bridge/bot-spec/export")
+                .Append("/bridge/time-control/update")
                 .Append("/bridge/health")
                 .Append("/reports")
                 .Append("/operator/dashboard")
@@ -145,6 +158,15 @@ public sealed class HermesReadOnlyBridge
             var path = (context.Request.Url?.AbsolutePath ?? "/").TrimEnd('/');
             path = string.IsNullOrWhiteSpace(path) ? "/" : path;
 
+            if (context.Request.HttpMethod == "POST" && !AllowedWriteEndpoints.Contains(path))
+            {
+                await WriteJsonAsync(
+                    context.Response,
+                    Error("not_found", $"Endpoint is not whitelisted: {path}"),
+                    HttpStatusCode.NotFound);
+                return;
+            }
+
             if (context.Request.HttpMethod == "POST" && TryHandleReviewAction(path, context.Request, out var reviewResponse, out var reviewStatus))
             {
                 await WriteJsonAsync(context.Response, reviewResponse, reviewStatus);
@@ -157,11 +179,18 @@ public sealed class HermesReadOnlyBridge
                 return;
             }
 
+            if (context.Request.HttpMethod == "POST" && TryHandleTimeControlAction(path, context.Request, out var timeControlResponse, out var timeControlStatus))
+            {
+                await WriteJsonAsync(context.Response, timeControlResponse, timeControlStatus);
+                return;
+            }
+
             var response = path switch
             {
                 "/bridge/health" => CreateHealthResponse(),
                 "/reports" => Ok(BuildReportIndex()),
                 "/operator/dashboard" => BuildOperatorDashboardResponse(),
+                "/reports/time-control" => BuildTimeControlResponse(),
                 _ => BuildReportResponse(path)
             };
 
@@ -189,6 +218,14 @@ public sealed class HermesReadOnlyBridge
 
         foreach (var report in Reports)
         {
+            if (string.Equals(report.Key, "timeControl", StringComparison.OrdinalIgnoreCase))
+            {
+                var timeControl = BuildTimeControlResponse();
+                dashboard[report.Key] = timeControl.Data;
+                warnings.AddRange(timeControl.Warnings);
+                continue;
+            }
+
             var result = TryReadReport(report);
             dashboard[report.Key] = result.Data;
             warnings.AddRange(result.Warnings);
@@ -223,6 +260,39 @@ public sealed class HermesReadOnlyBridge
             HumanReviewRequired: true,
             Data: result.Data,
             Warnings: result.Warnings);
+    }
+
+    private BridgeResponseModel BuildTimeControlResponse()
+    {
+        var scheduler = new HermesInternalScheduler(_storagePaths, _configPath());
+        var status = scheduler.GetTimeControlStatus();
+        return Ok(new
+        {
+            time_zone = status.TimeZone,
+            current_utc = status.CurrentUtc,
+            current_local = status.CurrentLocal,
+            status_label = status.StatusLabel,
+            in_work_window = status.InWorkWindow,
+            work_window = status.WorkWindow,
+            nightly_window = status.NightlyWindow,
+            learning_window = status.LearningWindow,
+            human_review_window = status.HumanReviewWindow,
+            weekdays = status.Weekdays,
+            active_weekdays = status.ActiveWeekdays,
+            inactive_weekdays = status.InactiveWeekdays,
+            config_path = status.ConfigPath,
+            no_auto_trading = status.NoAutoTrading,
+            human_review_required = status.HumanReviewRequired,
+            safety_flags = new[]
+            {
+                "no_auto_trading=true",
+                "human_review_required=true",
+                "broker_orders_enabled=false",
+                "live_trading_enabled=false",
+                "research_only=true",
+            },
+            warnings = status.Warnings,
+        });
     }
 
     private bool TryHandleReviewAction(
@@ -311,6 +381,72 @@ public sealed class HermesReadOnlyBridge
         catch (Exception ex) when (ex is InvalidOperationException or JsonException or IOException or UnauthorizedAccessException)
         {
             response = Error("review_action_failed", ex.Message);
+            statusCode = HttpStatusCode.BadRequest;
+            return true;
+        }
+    }
+
+    private bool TryHandleTimeControlAction(
+        string path,
+        HttpListenerRequest request,
+        out BridgeResponseModel response,
+        out HttpStatusCode statusCode)
+    {
+        response = Error("not_found", $"Endpoint is not whitelisted: {path}");
+        statusCode = HttpStatusCode.NotFound;
+
+        if (!AllowedWriteEndpoints.Contains(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
+            var body = reader.ReadToEnd();
+            var payload = JsonNode.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body)?.AsObject();
+            var update = new ScheduleTimeControlUpdate(
+                TimeZone: payload?["time_zone"]?.GetValue<string>() ?? payload?["timeZone"]?.GetValue<string>(),
+                WorkWindow: ParseWindow(payload?["work_window"]?.AsObject() ?? payload?["workWindow"]?.AsObject()),
+                NightlyWindow: ParseWindow(payload?["nightly_window"]?.AsObject() ?? payload?["nightlyWindow"]?.AsObject()),
+                LearningWindow: ParseWindow(payload?["learning_window"]?.AsObject() ?? payload?["learningWindow"]?.AsObject()),
+                HumanReviewWindow: ParseWindow(payload?["human_review_window"]?.AsObject() ?? payload?["humanReviewWindow"]?.AsObject()),
+                ActiveWeekdays: payload?["active_weekdays"]?.AsArray()?.Select(node => node?.GetValue<string>() ?? string.Empty).Where(value => !string.IsNullOrWhiteSpace(value)).ToList()
+                    ?? payload?["activeWeekdays"]?.AsArray()?.Select(node => node?.GetValue<string>() ?? string.Empty).Where(value => !string.IsNullOrWhiteSpace(value)).ToList());
+
+            var scheduler = new HermesInternalScheduler(_storagePaths, _configPath());
+            var updatedConfig = scheduler.UpdateTimeControl(update);
+            var status = updatedConfig.BuildTimeControlStatus(DateTimeOffset.UtcNow, _configPath());
+
+            response = Ok(new
+            {
+                action = "update_time_control",
+                updated_at_utc = DateTimeOffset.UtcNow,
+                config_path = status.ConfigPath,
+                status_label = status.StatusLabel,
+                in_work_window = status.InWorkWindow,
+                time_zone = status.TimeZone,
+                work_window = status.WorkWindow,
+                nightly_window = status.NightlyWindow,
+                learning_window = status.LearningWindow,
+                human_review_window = status.HumanReviewWindow,
+                active_weekdays = status.ActiveWeekdays,
+                inactive_weekdays = status.InactiveWeekdays,
+                safety_flags = new[]
+                {
+                    "no_auto_trading=true",
+                    "human_review_required=true",
+                    "broker_orders_enabled=false",
+                    "live_trading_enabled=false",
+                    "research_only=true",
+                }
+            });
+            statusCode = HttpStatusCode.OK;
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JsonException or IOException or UnauthorizedAccessException)
+        {
+            response = Error("time_control_update_failed", ex.Message);
             statusCode = HttpStatusCode.BadRequest;
             return true;
         }
@@ -549,6 +685,21 @@ public sealed class HermesReadOnlyBridge
             HumanReviewRequired: true,
             Data: null,
             Warnings: [warning]);
+    }
+
+    private string _configPath() => Path.Combine(_runtimeRoot, "config", "schedules.json");
+
+    private static SchedulerWindowConfig? ParseWindow(JsonObject? window)
+    {
+        if (window is null || window.Count == 0)
+        {
+            return null;
+        }
+
+        return new SchedulerWindowConfig(
+            Start: window["start"]?.GetValue<string>() ?? window["startTime"]?.GetValue<string>() ?? "00:00",
+            End: window["end"]?.GetValue<string>() ?? window["endTime"]?.GetValue<string>() ?? "00:00",
+            Enabled: window["enabled"]?.GetValue<bool?>() ?? true);
     }
 
     private static async Task WriteJsonAsync(

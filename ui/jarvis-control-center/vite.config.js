@@ -27,6 +27,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/human-review-queue'),
     path: 'read-only bridge:/reports/human-review-queue',
   },
+  knowledgeValidationAudit: {
+    label: 'Knowledge Validation Audit',
+    url: bridgeUrl('/reports/knowledge-validation-audit'),
+    path: 'read-only bridge:/reports/knowledge-validation-audit',
+  },
   cognitiveStatus: {
     label: 'Hermes Gehirn Status',
     url: bridgeUrl('/reports/cognitive-status'),
@@ -96,6 +101,11 @@ const operatorReports = {
     label: 'Scheduler State',
     url: bridgeUrl('/runtime/scheduler'),
     path: 'read-only bridge:/runtime/scheduler',
+  },
+  timeControl: {
+    label: 'Zeitsteuerung',
+    url: bridgeUrl('/reports/time-control'),
+    path: 'read-only bridge:/reports/time-control',
   },
   resourceStatus: {
     label: 'Resource Status',
