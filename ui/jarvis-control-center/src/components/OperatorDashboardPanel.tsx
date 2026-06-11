@@ -213,7 +213,7 @@ function KnowledgeHealthCard({ masterStatus }) {
         <MiniMetric label="Avg Trust" value={scorePercent(masterStatus.average_trust_score)} tone="info" />
         <MiniMetric label="Avg Quality" value={scorePercent(masterStatus.average_quality_score)} tone={tone} />
         <MiniMetric label="Knowledge Trend" value={masterStatus.knowledge_trend || '-'} tone="info" />
-        <MiniMetric label="Open Validation Plans" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
+        <MiniMetric label="Offene Validierungspläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
         <MiniMetric label="Needs OOS" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
         <MiniMetric label="Trusted Candidates" value={formatNumber(masterStatus.trusted_candidate_count)} tone={masterStatus.trusted_candidate_count ? 'good' : 'info'} />
       </div>
@@ -582,22 +582,22 @@ export function OperatorDashboardPanel() {
             · {formatNumber(operatorState.liveReportCount)} Bridge / {formatNumber(operatorState.fixtureReportCount)} Fixture
             {isRefreshing ? ' · liest' : ''}
           </span>
-          <StatusPill tone="warn">UI-only Controls</StatusPill>
+          <StatusPill tone="warn">Nur UI-Steuerung</StatusPill>
         </div>
       }
       className="operator-panel"
       eyebrow="Beta 3 Operator"
-      title="Operator Dashboard"
+      title="Befehlszentrale"
     >
       <OperatorCard
         badge={operatorState.masterStatus.overall_status}
-        title="Hermes Master Status"
+        title="Hermes-Gesamtstatus"
         tone={statusTone(operatorState.masterStatus.overall_status)}
       >
         <div className="operator-safety-flags">
           <StatusPill tone={sourceTone(operatorState.masterStatusSource)}>
             {operatorState.masterStatusSource === DATA_SOURCE.LIVE_FILE
-              ? 'Live Snapshot aktiv'
+              ? 'Live-Snapshot aktiv'
               : sourceModeLabel(operatorState.masterStatusSource)}
           </StatusPill>
           {operatorState.masterStatusWarning ? (
@@ -606,16 +606,16 @@ export function OperatorDashboardPanel() {
         </div>
         <div className="operator-master-grid">
           <MiniMetric label="Fokus" value={operatorState.masterStatus.current_focus} tone="info" />
-          <MiniMetric label="Aktive Domaenen" value={operatorState.masterStatus.active_domains.join(', ') || '-'} tone="info" />
+          <MiniMetric label="Aktive Domänen" value={operatorState.masterStatus.active_domains.join(', ') || '-'} tone="info" />
           <MiniMetric label="Geplante Aufgaben" value={formatNumber(operatorState.masterStatus.queued_tasks)} tone={operatorState.masterStatus.queued_tasks ? 'warn' : 'good'} />
           <MiniMetric label="Letzter Nightly" value={shortDateTime(operatorState.masterStatus.last_nightly_run)} />
           <MiniMetric label="Autonomer Loop" value={shortDateTime(operatorState.masterStatus.last_autonomous_loop)} />
           <MiniMetric label="Meta Review" value={shortDateTime(operatorState.masterStatus.last_meta_review)} />
-          <MiniMetric label="Lernstrategie" value={operatorState.masterStatus.learning_strategy} />
-          <MiniMetric label="Supervisor" value={operatorState.masterStatus.supervisor_running ? 'running' : 'stopped'} tone={operatorState.masterStatus.supervisor_running ? 'good' : 'warn'} />
-          <MiniMetric label="Scheduler Jobs" value={formatNumber(operatorState.masterStatus.scheduler_enabled)} />
-          <MiniMetric label="Resource Action" value={operatorState.masterStatus.resource_action} tone={statusTone(operatorState.masterStatus.resource_action)} />
-          <MiniMetric label="Storage Cleanup" value={formatNumber(operatorState.masterStatus.storage_cleanup)} tone={operatorState.masterStatus.storage_cleanup ? 'warn' : 'good'} />
+          <MiniMetric label="Lernphase" value={operatorState.masterStatus.learning_strategy} />
+          <MiniMetric label="Aufsicht" value={operatorState.masterStatus.supervisor_running ? 'läuft' : 'gestoppt'} tone={operatorState.masterStatus.supervisor_running ? 'good' : 'warn'} />
+          <MiniMetric label="Planer-Jobs" value={formatNumber(operatorState.masterStatus.scheduler_enabled)} />
+          <MiniMetric label="Ressourcenaktion" value={operatorState.masterStatus.resource_action} tone={statusTone(operatorState.masterStatus.resource_action)} />
+          <MiniMetric label="Speicherbereinigung" value={formatNumber(operatorState.masterStatus.storage_cleanup)} tone={operatorState.masterStatus.storage_cleanup ? 'warn' : 'good'} />
           <MiniMetric label="Robuste Strategien" value={formatNumber(operatorState.masterStatus.robust_strategies)} tone={operatorState.masterStatus.robust_strategies ? 'good' : 'warn'} />
           <MiniMetric label="Demo-Bot-Kandidaten" value={formatNumber(operatorState.masterStatus.demo_bot_candidates)} tone={operatorState.masterStatus.demo_bot_candidates ? 'good' : 'warn'} />
           <MiniMetric label="no_auto_trading" value={String(operatorState.masterStatus.no_auto_trading)} tone={operatorState.masterStatus.no_auto_trading ? 'good' : 'danger'} />
@@ -637,8 +637,8 @@ export function OperatorDashboardPanel() {
 
       <div className="operator-top-grid">
         <OperatorCard
-          badge={operatorState.supervisor.running ? 'running' : 'stopped'}
-          title="Supervisor Status"
+          badge={operatorState.supervisor.running ? 'läuft' : 'gestoppt'}
+          title="Aufsicht"
           tone={operatorState.supervisor.running ? 'good' : statusTone(operatorState.supervisor.status)}
         >
           <div className="operator-metric-grid">
@@ -650,7 +650,7 @@ export function OperatorDashboardPanel() {
           <p>{operatorState.supervisor.next_action}</p>
         </OperatorCard>
 
-        <OperatorCard badge={`${activeJobs.length} aktiv`} title="Scheduler Status" tone="info">
+        <OperatorCard badge={`${activeJobs.length} aktiv`} title="Planer" tone="info">
           <div className="operator-job-list">
             {nextJobs.map((job) => (
               <div className="operator-job-row" key={job.job_id}>
@@ -665,8 +665,8 @@ export function OperatorDashboardPanel() {
         </OperatorCard>
 
         <OperatorCard
-          badge={operatorState.resource.should_stop ? 'stop' : operatorState.resource.action}
-          title="Resource Status"
+          badge={operatorState.resource.should_stop ? 'stopp' : operatorState.resource.action}
+          title="Ressourcenstatus"
           tone={operatorState.resource.should_stop ? 'danger' : operatorState.resource.should_pause ? 'warn' : 'good'}
         >
           <div className="operator-meter-stack">
@@ -688,10 +688,10 @@ export function OperatorDashboardPanel() {
           </div>
         </OperatorCard>
 
-        <OperatorCard badge={operatorState.nightly.current_state} title="Nightly Status" tone={statusTone(operatorState.nightly.current_state)}>
+        <OperatorCard badge={operatorState.nightly.current_state} title="Nachtlauf" tone={statusTone(operatorState.nightly.current_state)}>
           <div className="operator-metric-grid">
             <MiniMetric label="Fenster" value={operatorState.nightly.next_nightly_window} />
-            <MiniMetric label="Naechster Start" value={shortDateTime(operatorState.nightly.next_scheduled_start_utc)} />
+          <MiniMetric label="Nächster Start" value={shortDateTime(operatorState.nightly.next_scheduled_start_utc)} />
             <MiniMetric label="Iterationen" value={formatNumber(operatorState.nightly.iterations_completed)} />
             <MiniMetric label="Arbeit" value={formatNumber(operatorState.nightly.work_performed)} />
           </div>

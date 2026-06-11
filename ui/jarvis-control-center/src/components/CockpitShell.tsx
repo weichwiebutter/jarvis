@@ -17,6 +17,25 @@ function formatGb(value) {
   return `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(Number(value || 0))} GB`;
 }
 
+function truncateText(value, maxLength = 28) {
+  const text = String(value || '-').trim();
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+function shortActionLabel(value) {
+  const text = String(value || '-').trim();
+  if (!text || text === '-') {
+    return '-';
+  }
+
+  const firstPart = text.split(/[.:|/]/)[0].trim();
+  return truncateText(firstPart || text, 24);
+}
+
 function shortDateTime(value) {
   if (!value) {
     return '-';
@@ -57,7 +76,7 @@ function shortTime(value) {
 function toneFromStatus(status) {
   const value = String(status || '').toLowerCase();
 
-  if (value.includes('running') || value.includes('completed') || value.includes('continue')) {
+  if (value.includes('running') || value.includes('completed') || value.includes('continue') || value.includes('ready') || value === 'ok') {
     return 'good';
   }
 
@@ -65,7 +84,7 @@ function toneFromStatus(status) {
     return 'danger';
   }
 
-  if (value.includes('outside') || value.includes('pending') || value.includes('skip')) {
+  if (value.includes('outside') || value.includes('pending') || value.includes('skip') || value.includes('needs') || value.includes('warning')) {
     return 'warn';
   }
 
@@ -355,7 +374,7 @@ function buildModules(operatorState) {
   return [
     {
       id: 'open_supervisor',
-      title: 'Supervisor',
+      title: 'Aufsicht',
       value: operatorState.supervisor.running ? 'läuft' : statusDeutsch(operatorState.supervisor.status),
       detail: operatorState.supervisor.next_action,
       tone: operatorState.supervisor.running ? 'good' : toneFromStatus(operatorState.supervisor.status),
@@ -363,15 +382,15 @@ function buildModules(operatorState) {
     },
     {
       id: 'open_scheduler',
-      title: 'Scheduler',
+      title: 'Planer',
       value: `${activeJobs.length} aktiv`,
-      detail: nextJob ? `${nextJob.job_type} / ${shortDateTime(nextJob.next_run_utc)}` : 'Keine nächsten Jobs gemeldet',
+      detail: nextJob ? `${nextJob.job_type} / ${shortDateTime(nextJob.next_run_utc)}` : 'Keine nächsten Planer-Jobs gemeldet',
       tone: activeJobs.length ? 'info' : 'warn',
       meta: 'config-gesteuert',
     },
     {
       id: 'open_nightly',
-      title: 'Nightly',
+      title: 'Nachtlauf',
       value: operatorState.nightly.current_state,
       detail: operatorState.nightly.next_action,
       tone: toneFromStatus(operatorState.nightly.current_state),
@@ -379,7 +398,7 @@ function buildModules(operatorState) {
     },
     {
       id: 'open_research',
-      title: 'Recherche',
+      title: 'Lernen & Wissen',
       value: `${formatNumber(operatorState.research.strategies_tested)} Tests`,
       detail: `${formatNumber(operatorState.research.robust_strategies)} robust / ${formatNumber(operatorState.research.overfit_suspected)} overfit`,
       tone: operatorState.research.overfit_suspected ? 'warn' : 'good',
@@ -395,7 +414,7 @@ function buildModules(operatorState) {
     },
     {
       id: 'open_regime',
-      title: 'Regime',
+      title: 'Marktregime',
       value: `${Math.round(Number(operatorState.research.regime_consistency_score || 0) * 100)}% Konsistenz`,
       detail: operatorState.research.regime_distribution.slice(0, 2).join(', ') || 'Noch keine Regime-Verteilung',
       tone: operatorState.research.regime_consistency_score ? 'good' : 'warn',
@@ -427,13 +446,121 @@ function buildModules(operatorState) {
     },
     {
       id: 'open_logs',
-      title: 'Protokolle',
+      title: 'Berichte',
       value: warningCount ? `${warningCount} Warnungen` : 'ruhig',
-      detail: operatorState.logLines.at(-1) || 'Keine Live-Protokolle in Bridge v1',
+      detail: operatorState.logLines.at(-1) || 'Keine Live-Protokolle in Bridge V1',
       tone: warningCount ? 'warn' : 'info',
       meta: 'nur lesend',
     },
   ];
+}
+
+function buildCommandCenterModules(operatorState) {
+  const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
+  const validationReport = reportByKey(operatorState, 'validateEnsembleSignalPackage')?.raw || {};
+  const handoffReport = reportByKey(operatorState, 'systemBHandoffBundle')?.raw || {};
+  const specsReport = reportByKey(operatorState, 'signalAgentSpecs')?.raw || {};
+  const openReviews = operatorState.humanReview?.pending_reviews || 0;
+  const warnings = [
+    ...operatorState.warnings,
+    ...operatorState.storage.warnings,
+    ...operatorState.storage.errors,
+  ].filter(Boolean).length;
+
+  return [
+    {
+      id: 'trading',
+      title: 'Handelsintelligenz',
+      value: `${formatNumber(portfolioReport.ready_assets || portfolioReport.bot_ready_assets || 2)} bereit`,
+      detail: 'GER40, XAUUSD bereit',
+      tone: toneFromStatus(operatorState.masterStatus.ensemble_portfolio_status || portfolioReport.portfolio_readiness || 'ready'),
+      meta: `EURUSD ${compactStatusLabel(portfolioReport.eurusd_readiness || 'needs_more_validation')}`,
+    },
+    {
+      id: 'signal-package',
+      title: 'Signalpaket',
+      value: compactStatusLabel(validationReport.validation_status || validationReport.status || 'bereit'),
+      detail: `${formatNumber(specsReport.spec_count || operatorState.masterStatus.signal_agent_specs_ready || 0)} Signal-Spezifikationen`,
+      tone: toneFromStatus(validationReport.validation_status || validationReport.status || 'completed'),
+      meta: truncateText(handoffReport.bundle_path || validationReport.package_path || 'System-B Übergabe bereit', 34),
+    },
+    {
+      id: 'learning',
+      title: 'Lernen & Wissen',
+      value: statusDeutsch(operatorState.masterStatus.knowledge_health),
+      detail: `Vertrauen ${scorePercent(operatorState.masterStatus.average_trust_score)}`,
+      tone: toneFromStatus(operatorState.masterStatus.knowledge_health),
+      meta: `${formatNumber(operatorState.masterStatus.knowledge_items_needing_oos)} OOS offen`,
+    },
+    {
+      id: 'trust',
+      title: 'Wissen & Vertrauen',
+      value: scorePercent(operatorState.masterStatus.average_trust_score),
+      detail: `${formatNumber(operatorState.masterStatus.pending_reviews)} Prüfungen`,
+      tone: operatorState.masterStatus.knowledge_items_needing_oos ? 'warn' : 'info',
+      meta: `${formatNumber(operatorState.masterStatus.validation_plans_open)} Pläne`,
+    },
+    {
+      id: 'review',
+      title: 'Prüfzentrum',
+      value: `${formatNumber(openReviews)} offen`,
+      detail: openReviews ? 'Frank muss prüfen' : 'Kein Eingriff nötig',
+      tone: openReviews ? 'warn' : 'good',
+      meta: `${formatNumber(operatorState.humanReview?.deferred_reviews || 0)} zurückgestellt`,
+    },
+    {
+      id: 'safety',
+      title: 'Sicherheit',
+      value: operatorState.masterStatus.no_auto_trading ? 'gesichert' : 'kritisch',
+      detail: 'Auto-Trading aus',
+      tone: operatorState.masterStatus.no_auto_trading ? 'good' : 'danger',
+      meta: 'Broker gesperrt',
+    },
+    {
+      id: 'system',
+      title: 'System',
+      value: operatorState.supervisor.running ? 'läuft' : statusDeutsch(operatorState.supervisor.status),
+      detail: `${formatNumber(operatorState.schedulerJobs.filter((job) => job.enabled).length)} Planer aktiv`,
+      tone: operatorState.supervisor.running ? 'good' : toneFromStatus(operatorState.supervisor.status),
+      meta: `Aktivität ${shortDateTime(operatorState.masterStatus.last_meta_review || operatorState.lastUpdatedAt)}`,
+    },
+    {
+      id: 'roles',
+      title: 'Rollen & Aufgaben',
+      value: `${formatNumber(operatorState.roles?.length || 0)} Rollen`,
+      detail: `${formatNumber(operatorState.masterStatus.queued_tasks)} geplante Aufgaben`,
+      tone: operatorState.masterStatus.queued_tasks ? 'warn' : 'info',
+      meta: 'Subsysteme',
+    },
+    {
+      id: 'storage',
+      title: 'Speicher & Ressourcen',
+      value: formatGb(operatorState.storage.free_disk_gb),
+      detail: `${formatNumber(operatorState.storage.cleanup_candidate_count)} Cleanup`,
+      tone: operatorState.storage.errors.length ? 'warn' : 'good',
+      meta: `${Math.round(operatorState.resource.memory_usage_percent)}% RAM`,
+    },
+    {
+      id: 'reports',
+      title: 'Berichte',
+      value: warnings ? `${warnings} Warnungen` : 'geordnet',
+      detail: `Paket ${compactStatusLabel(validationReport.validation_status || validationReport.status || 'bereit')}`,
+      tone: warnings ? 'warn' : 'info',
+      meta: 'Export bereit',
+    },
+    {
+      id: 'logs',
+      title: 'Protokolle',
+      value: warnings ? `${warnings} Warnungen` : 'ruhig',
+      detail: warnings ? 'Aufmerksamkeit nötig' : 'Keine Warnung',
+      tone: warnings ? 'warn' : 'info',
+      meta: 'Nur lesen',
+    },
+  ];
+}
+
+function moduleById(modules, id) {
+  return modules.find((module) => module.id === id);
 }
 
 function VoiceSphere({ operatorState, isRefreshing }) {
@@ -452,7 +579,7 @@ function VoiceSphere({ operatorState, isRefreshing }) {
       </div>
 
       <div className="voice-status-strip">
-        <StatusPill tone={supervisorTone}>Supervisor {operatorState.supervisor.running ? 'läuft' : 'gestoppt'}</StatusPill>
+        <StatusPill tone={supervisorTone}>Aufsicht {operatorState.supervisor.running ? 'läuft' : 'gestoppt'}</StatusPill>
         <StatusPill tone="warn">Auto-Trading gesperrt</StatusPill>
         <StatusPill tone={sourceTone(operatorState.dataSource)}>{sourceModeLabel(operatorState.dataSource)}</StatusPill>
         <StatusPill tone={isRefreshing ? 'info' : 'good'}>
@@ -473,10 +600,11 @@ function VoiceSphere({ operatorState, isRefreshing }) {
   );
 }
 
-function OrbitPanel({ module, onOpen }) {
+function OrbitPanel({ module, onOpen, className = '', style = {} }) {
   return (
     <button
-      className={`orbit-panel ${toneClass(module.tone)}`}
+      className={`orbit-panel ${className} ${toneClass(module.tone)}`}
+      style={style}
       data-command={module.id}
       onClick={() => onOpen(module.id)}
       type="button"
@@ -536,8 +664,8 @@ function MasterStatusOverview({ masterStatus, source }) {
         <Metric label="Autonomer Lernzyklus" value={shortDateTime(masterStatus.last_autonomous_loop)} />
         <Metric label="Letzte Lernanalyse" value={shortDateTime(masterStatus.last_meta_review)} />
         <Metric label="Lernstrategie" value={masterStatus.learning_strategy} />
-        <Metric label="Supervisor" value={masterStatus.supervisor_running ? 'läuft' : 'gestoppt'} tone={masterStatus.supervisor_running ? 'good' : 'warn'} />
-        <Metric label="Scheduler" value={`${formatNumber(masterStatus.scheduler_enabled)} aktiv`} />
+        <Metric label="Aufsicht" value={masterStatus.supervisor_running ? 'läuft' : 'gestoppt'} tone={masterStatus.supervisor_running ? 'good' : 'warn'} />
+        <Metric label="Planer" value={`${formatNumber(masterStatus.scheduler_enabled)} aktiv`} />
         <Metric label="Ressourcen" value={masterStatus.resource_action} tone={toneFromStatus(masterStatus.resource_action)} />
         <Metric label="Speicherbereinigung" value={formatNumber(masterStatus.storage_cleanup)} tone={masterStatus.storage_cleanup ? 'warn' : 'good'} />
         <Metric label="Robust" value={formatNumber(masterStatus.robust_strategies)} tone={masterStatus.robust_strategies ? 'good' : 'warn'} />
@@ -571,11 +699,217 @@ function DashboardSystemStatus({ operatorState }) {
   return (
     <div className="cockpit-accordion-grid">
       <Metric label="Gesamtstatus" value={statusDeutsch(operatorState.masterStatus.overall_status)} tone={toneFromStatus(operatorState.masterStatus.overall_status)} />
-      <Metric label="Supervisor" value={operatorState.supervisor.running ? 'läuft' : statusDeutsch(operatorState.supervisor.status)} tone={operatorState.supervisor.running ? 'good' : toneFromStatus(operatorState.supervisor.status)} />
-      <Metric label="Scheduler" value={`${formatNumber(operatorState.schedulerJobs.filter((job) => job.enabled).length)} aktiv`} tone="info" />
-      <Metric label="Nightly" value={statusDeutsch(operatorState.nightly.current_state)} tone={toneFromStatus(operatorState.nightly.current_state)} />
+      <Metric label="Aufsicht" value={operatorState.supervisor.running ? 'läuft' : statusDeutsch(operatorState.supervisor.status)} tone={operatorState.supervisor.running ? 'good' : toneFromStatus(operatorState.supervisor.status)} />
+      <Metric label="Planer" value={`${formatNumber(operatorState.schedulerJobs.filter((job) => job.enabled).length)} aktiv`} tone="info" />
+      <Metric label="Nachtlauf" value={statusDeutsch(operatorState.nightly.current_state)} tone={toneFromStatus(operatorState.nightly.current_state)} />
       <Metric label="Letzte Analyse" value={shortDateTime(operatorState.masterStatus.last_meta_review)} tone="info" />
       <Metric label="Lernstrategie" value={operatorState.masterStatus.learning_strategy} tone="info" />
+    </div>
+  );
+}
+
+function DashboardJarvisCenter({ operatorState }) {
+  const activeAssets = Array.isArray(operatorState.masterStatus.scalping_assets)
+    ? operatorState.masterStatus.scalping_assets
+    : ['GER40', 'XAUUSD', 'EURUSD'];
+  const reviewOpen = operatorState.humanReview?.pending_reviews || 0;
+  const tradingReady = String(operatorState.masterStatus.bot_ready_assets || operatorState.masterStatus.setup_ready_assets || '').includes('GER40')
+    || String(operatorState.masterStatus.ensemble_portfolio_status || '').includes('ready');
+
+  return (
+    <section className="cockpit-jarvis-orb" aria-label="Jarvis Zentrale">
+      <div className="cockpit-jarvis-orb-ring" />
+      <div className={`cockpit-jarvis-status-ring ${operatorState.supervisor.running ? 'is-active' : 'is-warning'}`} />
+      <div className="cockpit-jarvis-orb-core">
+        <p className="eyebrow">Jarvis</p>
+        <strong>{operatorState.supervisor.running ? 'Läuft' : 'Prüfen'}</strong>
+        <span>Fokus: {truncateText(operatorState.masterStatus.current_focus, 24)}</span>
+        <div className="cockpit-decision-row">
+          <i className={operatorState.supervisor.running ? 'is-good' : 'is-warn'} title="Jarvis läuft" />
+          <i className={reviewOpen ? 'is-warn' : 'is-good'} title="Frank muss handeln" />
+          <i className={tradingReady ? 'is-good' : 'is-warn'} title="Trading bereit" />
+        </div>
+      </div>
+      <div className="cockpit-jarvis-orb-caption cockpit-jarvis-orb-caption-top">
+        <small>Status</small>
+        <strong>{statusDeutsch(operatorState.masterStatus.overall_status)}</strong>
+      </div>
+      <div className="cockpit-jarvis-orb-caption cockpit-jarvis-orb-caption-right">
+        <small>Frank</small>
+        <strong>{reviewOpen ? `${formatNumber(reviewOpen)} Prüfungen` : 'nichts offen'}</strong>
+      </div>
+      <div className="cockpit-jarvis-orb-caption cockpit-jarvis-orb-caption-bottom">
+        <small>Trading</small>
+        <strong>{tradingReady ? 'bereit' : 'prüfen'}</strong>
+      </div>
+      <div className="cockpit-jarvis-orb-caption cockpit-jarvis-orb-caption-left">
+        <small>Aufsicht</small>
+        <strong>{operatorState.supervisor.running ? 'läuft' : 'gestoppt'}</strong>
+      </div>
+      <div className="cockpit-jarvis-orb-footer">
+        <span>{truncateText(activeAssets.join(' · '), 34)}</span>
+      </div>
+    </section>
+  );
+}
+
+function DashboardModuleOrbit({ modules, onOpen }) {
+  const orbitPositions = [
+    { '--orbit-angle': '-28deg', '--orbit-radius': 'clamp(255px, 31vw, 390px)' },
+    { '--orbit-angle': '-62deg', '--orbit-radius': 'clamp(250px, 30vw, 380px)' },
+    { '--orbit-angle': '-96deg', '--orbit-radius': 'clamp(246px, 29vw, 370px)' },
+    { '--orbit-angle': '-130deg', '--orbit-radius': 'clamp(250px, 30vw, 380px)' },
+    { '--orbit-angle': '-164deg', '--orbit-radius': 'clamp(255px, 31vw, 390px)' },
+    { '--orbit-angle': '28deg', '--orbit-radius': 'clamp(245px, 29vw, 370px)' },
+    { '--orbit-angle': '62deg', '--orbit-radius': 'clamp(238px, 28vw, 355px)' },
+    { '--orbit-angle': '96deg', '--orbit-radius': 'clamp(234px, 27vw, 345px)' },
+    { '--orbit-angle': '130deg', '--orbit-radius': 'clamp(238px, 28vw, 355px)' },
+    { '--orbit-angle': '164deg', '--orbit-radius': 'clamp(245px, 29vw, 370px)' },
+  ];
+
+  return (
+    <section className="cockpit-module-orbit" aria-label="Modulkreis">
+      <div className="cockpit-module-orbit-half">
+        {modules.map((module, index) => (
+          <OrbitPanel
+            className={`orbit-slot-${Math.min(index + 1, 10)}`}
+            style={orbitPositions[index] || orbitPositions[orbitPositions.length - 1]}
+            key={module.id}
+            module={module}
+            onOpen={onOpen}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function HudPanel({ module, onOpen }) {
+  if (!module) {
+    return null;
+  }
+
+  return (
+    <button
+      className={`hud-panel ${toneClass(module.tone)}`}
+      onClick={() => onOpen(module.id)}
+      type="button"
+    >
+      <div className="hud-panel-head">
+        <span>{module.title}</span>
+        <StatusPill tone={module.tone}>{module.value}</StatusPill>
+      </div>
+      <p>{module.detail}</p>
+      <small>{module.meta}</small>
+    </button>
+  );
+}
+
+function HudPanelStack({ title, modules, ids, onOpen }) {
+  return (
+    <section className="hud-panel-stack" aria-label={title}>
+      <div className="hud-stack-label">{title}</div>
+      {ids.map((id) => (
+        <HudPanel key={id} module={moduleById(modules, id)} onOpen={onOpen} />
+      ))}
+    </section>
+  );
+}
+
+function HudOperationsTimeline({ operatorState, modules, onOpen }) {
+  const warnings = [
+    ...operatorState.warnings,
+    ...operatorState.storage.warnings,
+    ...operatorState.storage.errors,
+  ].filter(Boolean);
+  const packageModule = moduleById(modules, 'signal-package');
+  const review = operatorState.humanReview || {};
+  const events = [
+    {
+      label: 'Letzte Aktivität',
+      value: shortDateTime(operatorState.masterStatus.last_meta_review || operatorState.lastUpdatedAt),
+      tone: 'info',
+    },
+    {
+      label: 'Warnungen',
+      value: warnings.length ? `${formatNumber(warnings.length)} aktiv` : 'keine kritischen Warnungen',
+      tone: warnings.length ? 'warn' : 'good',
+    },
+    {
+      label: 'Letzte Review-Aktion',
+      value: review.last_decision || review.last_action || (review.pending_reviews ? 'Prüfung offen' : 'keine Aktion nötig'),
+      tone: review.pending_reviews ? 'warn' : 'good',
+    },
+    {
+      label: 'Letzter Export',
+      value: packageModule?.meta || 'Übergabepaket bereit',
+      tone: 'info',
+    },
+    {
+      label: 'Research/Nightly',
+      value: shortDateTime(operatorState.masterStatus.last_nightly_run || operatorState.nightly.last_run_utc),
+      tone: toneFromStatus(operatorState.nightly.current_state),
+    },
+  ];
+
+  return (
+    <section className="hud-timeline" aria-label="Operations Timeline">
+      <div className="hud-timeline-head">
+        <div>
+          <span>Operations Timeline</span>
+          <strong>letzte Ereignisse und Warnungen</strong>
+        </div>
+        <button onClick={() => onOpen('logs')} type="button">Details öffnen</button>
+      </div>
+      <div className="hud-timeline-track">
+        {events.map((event) => (
+          <article className={`hud-timeline-event ${toneClass(event.tone)}`} key={event.label}>
+            <span>{event.label}</span>
+            <strong>{truncateText(event.value, 44)}</strong>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function HudCommandGrid({ operatorState, modules, onOpen }) {
+  return (
+    <div className="hud-command-grid">
+      <HudPanelStack
+        title="Mensch & Lernen"
+        modules={modules}
+        ids={['review', 'learning', 'trust', 'roles']}
+        onOpen={onOpen}
+      />
+
+      <div className="hud-core-zone">
+        <DashboardJarvisCenter operatorState={operatorState} />
+      </div>
+
+      <HudPanelStack
+        title="Trading & Betrieb"
+        modules={modules}
+        ids={['trading', 'signal-package', 'system', 'storage']}
+        onOpen={onOpen}
+      />
+
+      <HudOperationsTimeline operatorState={operatorState} modules={modules} onOpen={onOpen} />
+    </div>
+  );
+}
+
+function CommandCenterStatusBar({ operatorState }) {
+  return (
+    <div className="command-center-status-bar" aria-label="Jarvis Statusleiste">
+      <strong>Jarvis Control Center</strong>
+      <StatusPill tone={sourceTone(operatorState.dataSource)}>
+        {operatorState.dataSource === DATA_SOURCE.LIVE_FILE ? 'Live-Bridge' : 'Ersatzdaten'}
+      </StatusPill>
+      <span>Aktualisiert {shortTime(operatorState.lastUpdatedAt)}</span>
+      <StatusPill tone="good">Auto-Trading deaktiviert</StatusPill>
+      <StatusPill tone="warn">Menschliche Freigabe erforderlich</StatusPill>
+      <StatusPill tone="good">Research-only aktiv</StatusPill>
     </div>
   );
 }
@@ -584,6 +918,13 @@ function DashboardTradingIntelligence({ operatorState }) {
   const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
   const validationReport = reportByKey(operatorState, 'validateEnsembleSignalPackage')?.raw || {};
   const handoffReport = reportByKey(operatorState, 'systemBHandoffBundle')?.raw || {};
+  const assetQuality = (asset) => {
+    const readiness = String(asset.readiness || '').toLowerCase();
+    if (readiness.includes('bot_ready')) return 'gut';
+    if (readiness.includes('signal_ready')) return 'info';
+    if (readiness.includes('need')) return 'warn';
+    return 'info';
+  };
 
   const assets = Array.isArray(portfolioReport.assets) && portfolioReport.assets.length
     ? portfolioReport.assets
@@ -596,16 +937,51 @@ function DashboardTradingIntelligence({ operatorState }) {
   return (
     <div className="cockpit-accordion-grid">
       {assets.map((asset) => (
-        <Metric
-          key={asset.asset}
-          label={asset.asset}
-          value={compactStatusLabel(asset.readiness)}
-          tone={asset.readiness === 'bot_ready' ? 'good' : asset.readiness.includes('need') ? 'warn' : 'info'}
-        />
+        <div className="cockpit-asset-card" key={asset.asset}>
+          <strong>{asset.asset}</strong>
+          <span>{compactStatusLabel(asset.readiness)}</span>
+          <small>Setup: {asset.primary_setup || '-'}</small>
+          <small>Signalqualität: {formatNumber(asset.signal_quality || asset.quality_score || 0)}</small>
+          <small>Letzte Zertifizierung: {asset.last_certified_at || asset.last_certification || '-'}</small>
+          <StatusPill tone={assetQuality(asset)}>{compactStatusLabel(asset.readiness)}</StatusPill>
+        </div>
       ))}
       <Metric label="Portfolio" value={compactStatusLabel(portfolioReport.portfolio_readiness || portfolioReport.portfolio_status)} tone={toneFromStatus(portfolioReport.portfolio_readiness || portfolioReport.portfolio_status)} />
       <Metric label="Paketvalidierung" value={compactStatusLabel(validationReport.validation_status || validationReport.status)} tone={toneFromStatus(validationReport.validation_status || validationReport.status)} />
       <Metric label="Übergabepaket" value={handoffReport.bundle_path || portfolioReport.bundle_path || '-'} tone="info" />
+    </div>
+  );
+}
+
+function DashboardSignalPackage({ operatorState }) {
+  const validationReport = reportByKey(operatorState, 'validateEnsembleSignalPackage')?.raw || {};
+  const handoffReport = reportByKey(operatorState, 'systemBHandoffBundle')?.raw || {};
+  const specsReport = reportByKey(operatorState, 'signalAgentSpecs')?.raw || {};
+
+  return (
+    <div className="cockpit-accordion-grid">
+      <Metric
+        label="Paketprüfung"
+        value={compactStatusLabel(validationReport.validation_status || validationReport.status || 'bereit')}
+        tone={toneFromStatus(validationReport.validation_status || validationReport.status || 'completed')}
+      />
+      <Metric
+        label="Signal-Spezifikationen"
+        value={formatNumber(specsReport.spec_count || operatorState.masterStatus.signal_agent_specs_ready || 0)}
+        tone={(specsReport.spec_count || operatorState.masterStatus.signal_agent_specs_ready) ? 'good' : 'warn'}
+      />
+      <Metric
+        label="Übergabepaket"
+        value={handoffReport.bundle_status || handoffReport.status || 'vorbereitet'}
+        tone={toneFromStatus(handoffReport.bundle_status || handoffReport.status || 'completed')}
+      />
+      <Metric
+        label="System-B Bundle Pfad"
+        value={handoffReport.bundle_path || validationReport.package_path || '-'}
+        tone="info"
+      />
+      <Metric label="Auto-Trading" value="deaktiviert" tone="good" />
+      <Metric label="Broker-Orders" value="aus" tone="good" />
     </div>
   );
 }
@@ -652,7 +1028,7 @@ function DashboardSafety({ operatorState }) {
       <Metric label="Menschliche Prüfung" value={operatorState.masterStatus.human_review_required ? 'erforderlich' : 'frei'} tone={operatorState.masterStatus.human_review_required ? 'warn' : 'good'} />
       <Metric label="Broker-Orders" value={operatorState.masterStatus.broker_orders_enabled ? 'an' : 'aus'} tone={operatorState.masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
       <Metric label="Live-Trading" value={operatorState.masterStatus.live_trading_enabled ? 'an' : 'aus'} tone={operatorState.masterStatus.live_trading_enabled ? 'danger' : 'good'} />
-        <Metric label="Nur Forschung" value={operatorState.masterStatus.research_only ? 'aktiv' : 'inaktiv'} tone={operatorState.masterStatus.research_only ? 'good' : 'warn'} />
+      <Metric label="Nur Forschung" value={operatorState.masterStatus.research_only ? 'aktiv' : 'inaktiv'} tone={operatorState.masterStatus.research_only ? 'good' : 'warn'} />
     </div>
   );
 }
@@ -676,6 +1052,39 @@ function DashboardLogs({ operatorState }) {
           <code key={line}>{line}</code>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ReportsActionCards({ operatorState }) {
+  const reports = [
+    {
+      title: 'Systemstatus-Berichte',
+      detail: 'Aufsicht, Planer, Nachtlauf und Gesamtstatus',
+    },
+    {
+      title: 'Handelsintelligenz-Berichte',
+      detail: 'Portfolio, Setup-Registry und Signalpaket',
+    },
+    {
+      title: 'Prüfzentrum-Berichte',
+      detail: 'Offene Reviews und Human-Review-Feedback',
+    },
+  ];
+
+  return (
+    <div className="cockpit-report-card-grid">
+      {reports.map((report) => (
+        <article className="cockpit-report-card" key={report.title}>
+          <h3>{report.title}</h3>
+          <p>{report.detail}</p>
+          <div className="review-action-row">
+            <button type="button">Öffnen</button>
+            <button type="button">Exportieren</button>
+            <button type="button">Anzeigen</button>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
@@ -709,32 +1118,6 @@ function ScalpingProgressPanel({ masterStatus }) {
       </div>
       <p className="cockpit-master-source-warning">Read-only: uses master-status/report snapshots only. No runtime commands or trading actions.</p>
     </section>
-  );
-}
-
-const CONTROL_VIEWS = [
-  { id: 'overview', label: 'Übersicht' },
-  { id: 'review', label: 'Prüfzentrum' },
-  { id: 'brain', label: 'Hermes Gehirn' },
-  { id: 'trust', label: 'Wissensvertrauen' },
-  { id: 'domains', label: 'Domänen' },
-  { id: 'roles', label: 'Rollen' },
-];
-
-function ControlViewTabs({ activeView, onChange }) {
-  return (
-    <nav className="control-view-tabs" aria-label="Kontrollzentrum Ansichten">
-      {CONTROL_VIEWS.map((view) => (
-        <button
-          className={view.id === activeView ? 'is-active' : ''}
-          key={view.id}
-          onClick={() => onChange(view.id)}
-          type="button"
-        >
-          {view.label}
-        </button>
-      ))}
-    </nav>
   );
 }
 
@@ -1058,6 +1441,49 @@ function DomainView({ operatorState }) {
   );
 }
 
+function SystemView({ operatorState }) {
+  return (
+    <section className="control-view-panel" aria-label="System">
+      <div className="control-view-head">
+        <div>
+          <p className="eyebrow">Systemüberblick</p>
+          <h2>System</h2>
+        </div>
+        <StatusPill tone={operatorState.resource.should_stop ? 'danger' : operatorState.resource.should_pause ? 'warn' : 'good'}>
+          {operatorState.resource.should_stop ? 'kritisch' : operatorState.resource.should_pause ? 'Warnung' : 'ok'}
+        </StatusPill>
+      </div>
+
+      <div className="trust-summary-grid">
+        <Metric label="CPU" value={`${Math.round(operatorState.resource.cpu_usage_percent)}%`} tone={operatorState.resource.should_stop ? 'danger' : operatorState.resource.should_pause ? 'warn' : 'good'} />
+        <Metric label="RAM" value={`${Math.round(operatorState.resource.memory_usage_percent)}%`} tone={operatorState.resource.should_stop ? 'danger' : 'good'} />
+        <Metric label="Speicherplatz" value={formatGb(operatorState.storage.free_disk_gb)} tone={operatorState.storage.errors.length ? 'warn' : 'good'} />
+        <Metric label="Planer" value={`${formatNumber(operatorState.schedulerJobs.filter((job) => job.enabled).length)} aktiv`} tone="info" />
+        <Metric label="Aufsicht" value={operatorState.supervisor.running ? 'läuft' : 'gestoppt'} tone={operatorState.supervisor.running ? 'good' : 'warn'} />
+        <Metric label="Nachtlauf" value={statusDeutsch(operatorState.nightly.current_state)} tone={toneFromStatus(operatorState.nightly.current_state)} />
+      </div>
+
+      <div className="control-split-grid">
+        <article className="control-mini-panel">
+          <h3>Systemhinweise</h3>
+          <div className="operator-warning-list">
+            {(operatorState.resource.warnings || []).slice(0, 6).map((warning) => (
+              <span key={warning}>{warning}</span>
+            ))}
+            {(operatorState.resource.warnings || []).length === 0 ? <span>Keine aktuellen Systemhinweise.</span> : null}
+          </div>
+        </article>
+        <article className="control-mini-panel">
+          <h3>Nächste Aktion</h3>
+          <div className="operator-warning-list">
+            <span>{operatorState.resource.next_action || operatorState.supervisor.next_action || 'Keine Aktion geplant.'}</span>
+          </div>
+        </article>
+      </div>
+    </section>
+  );
+}
+
 function RoleView({ operatorState }) {
   return (
     <section className="control-view-panel" aria-label="Rollen">
@@ -1098,7 +1524,55 @@ function RoleView({ operatorState }) {
   );
 }
 
-function DetailOverlay({ moduleId, modules, operatorState, onClose }) {
+function CommandModuleDetails({ moduleId, operatorState, onRefresh }) {
+  if (moduleId === 'trading') {
+    return <DashboardTradingIntelligence operatorState={operatorState} />;
+  }
+
+  if (moduleId === 'signal-package') {
+    return <DashboardSignalPackage operatorState={operatorState} />;
+  }
+
+  if (moduleId === 'review') {
+    return <HumanReviewCenter operatorState={operatorState} onRefresh={onRefresh} />;
+  }
+
+  if (moduleId === 'learning') {
+    return <CognitiveCenter operatorState={operatorState} />;
+  }
+
+  if (moduleId === 'trust') {
+    return <KnowledgeTrustView operatorState={operatorState} />;
+  }
+
+  if (moduleId === 'system') {
+    return <SystemView operatorState={operatorState} />;
+  }
+
+  if (moduleId === 'roles') {
+    return <RoleView operatorState={operatorState} />;
+  }
+
+  if (moduleId === 'safety') {
+    return <DashboardSafety operatorState={operatorState} />;
+  }
+
+  if (moduleId === 'storage') {
+    return <DashboardStorageResources operatorState={operatorState} />;
+  }
+
+  if (moduleId === 'reports') {
+    return <ReportsActionCards operatorState={operatorState} />;
+  }
+
+  if (moduleId === 'logs') {
+    return <DashboardLogs operatorState={operatorState} />;
+  }
+
+  return null;
+}
+
+function DetailOverlay({ moduleId, modules, operatorState, onRefresh, onClose }) {
   const module = modules.find((item) => item.id === moduleId);
 
   if (!module) {
@@ -1118,11 +1592,16 @@ function DetailOverlay({ moduleId, modules, operatorState, onClose }) {
       <section className="cockpit-detail-panel">
         <div className="cockpit-detail-head">
           <div>
-            <p className="eyebrow">{module.id}</p>
+            <p className="eyebrow">Subsystem</p>
             <h2 id="cockpit-detail-title">{module.title}</h2>
+            <p className="control-view-note">{module.detail}</p>
           </div>
           <button className="cockpit-close-button" onClick={onClose} type="button">Schließen</button>
         </div>
+
+        <ViewErrorBoundary>
+          <CommandModuleDetails moduleId={moduleId} operatorState={operatorState} onRefresh={onRefresh} />
+        </ViewErrorBoundary>
 
         <div className="cockpit-detail-grid">
           {moduleId === 'open_supervisor' ? (
@@ -1197,15 +1676,15 @@ function DetailOverlay({ moduleId, modules, operatorState, onClose }) {
           ) : null}
         </div>
 
-        <div className="cockpit-report-preview">
-          <div className="cockpit-report-head">
+        <details className="cockpit-report-preview">
+          <summary className="cockpit-report-head">
             <span>Berichtsauszug</span>
             <StatusPill tone={sourceTone(operatorState.dataSource)}>
               {sourceModeLabel(operatorState.dataSource)}
             </StatusPill>
-          </div>
+          </summary>
           <pre>{detailPreview(moduleId, operatorState)}</pre>
-        </div>
+        </details>
       </section>
     </div>
   );
@@ -1213,6 +1692,17 @@ function DetailOverlay({ moduleId, modules, operatorState, onClose }) {
 
 function detailPreview(moduleId, operatorState) {
   const map = {
+    trading: 'ensemblePortfolioStatus',
+    'signal-package': 'validateEnsembleSignalPackage',
+    learning: 'researchInsights',
+    trust: 'knowledgeQuality',
+    review: 'humanReviewState',
+    system: 'supervisorState',
+    roles: 'roleStatus',
+    safety: 'masterStatus',
+    reports: 'validateEnsembleSignalPackage',
+    storage: 'cleanupPlan',
+    logs: 'nightlyState',
     open_supervisor: 'supervisorState',
     open_scheduler: 'schedulerState',
     open_research: 'researchInsights',
@@ -1225,7 +1715,7 @@ function detailPreview(moduleId, operatorState) {
   const reportKey = map[moduleId] || 'researchInsights';
   const report = reportByKey(operatorState, reportKey);
 
-  if (moduleId === 'open_safety') {
+  if (moduleId === 'open_safety' || moduleId === 'safety') {
     return jsonPreview({
       no_auto_trading: true,
       human_review_required: true,
@@ -1240,7 +1730,6 @@ function detailPreview(moduleId, operatorState) {
 export function CockpitShell() {
   const [operatorState, setOperatorState] = useState(() => createOperatorDashboardFallback());
   const [activeModule, setActiveModule] = useState('');
-  const [activeView, setActiveView] = useState('overview');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshOperatorState = () => {
     setIsRefreshing(true);
@@ -1276,18 +1765,12 @@ export function CockpitShell() {
   }, []);
 
   const modules = useMemo(() => buildModules(operatorState), [operatorState]);
+  const commandModules = useMemo(() => buildCommandCenterModules(operatorState), [operatorState]);
   const fixtureActive = operatorState.dataSource !== DATA_SOURCE.LIVE_FILE;
 
   return (
     <section className="cockpit-shell" aria-label="Jarvis Cockpit Hauptansicht">
-      <div className="cockpit-meta-strip">
-        <StatusPill tone={sourceTone(operatorState.dataSource)}>
-          {sourceModeLabel(operatorState.dataSource)}
-        </StatusPill>
-        <span>Zuletzt aktualisiert: {shortTime(operatorState.lastUpdatedAt)}</span>
-        <span>Polling: {operatorState.pollIntervalSeconds || COCKPIT_REFRESH_SECONDS}s</span>
-        <span>{formatNumber(operatorState.liveReportCount)} Live-Berichte / {formatNumber(operatorState.fixtureReportCount)} Ersatzdaten</span>
-      </div>
+      <CommandCenterStatusBar operatorState={operatorState} />
 
       {fixtureActive ? (
         <p className="cockpit-warning">
@@ -1295,118 +1778,17 @@ export function CockpitShell() {
         </p>
       ) : null}
 
-      <ControlViewTabs activeView={activeView} onChange={setActiveView} />
-
-      {activeView === 'overview' ? (
-        <>
-          <MasterStatusOverview
-            masterStatus={operatorState.masterStatus}
-            source={operatorState.masterStatusSource}
-          />
-
-          <div className="cockpit-accordion-stack">
-            <DashboardAccordion
-              badge={statusDeutsch(operatorState.masterStatus.overall_status)}
-              summary={`Supervisor ${operatorState.supervisor.running ? 'läuft' : statusDeutsch(operatorState.supervisor.status)} · Scheduler ${formatNumber(operatorState.schedulerJobs.filter((job) => job.enabled).length)} aktiv`}
-              title="Systemstatus"
-              tone={toneFromStatus(operatorState.masterStatus.overall_status)}
-            >
-              <DashboardSystemStatus operatorState={operatorState} />
-            </DashboardAccordion>
-
-            <DashboardAccordion
-              badge={compactStatusLabel(operatorState.masterStatus.ensemble_portfolio_status || operatorState.masterStatus.scalping_status || 'bereit')}
-              summary="GER40 · XAUUSD · EURUSD"
-              title="Handelsintelligenz"
-              tone="info"
-            >
-              <DashboardTradingIntelligence operatorState={operatorState} />
-            </DashboardAccordion>
-
-            <DashboardAccordion
-              badge={`${formatNumber(operatorState.humanReview?.pending_reviews || 0)} offen`}
-              summary={`Freigegeben ${formatNumber(operatorState.humanReview?.approved_reviews || 0)} · Zurückgestellt ${formatNumber(operatorState.humanReview?.deferred_reviews || 0)}`}
-              title="Prüfzentrum"
-              tone={(operatorState.humanReview?.pending_reviews || 0) ? 'warn' : 'good'}
-            >
-              <DashboardReviewSummary operatorState={operatorState} />
-              <ViewErrorBoundary>
-                <HumanReviewCenter operatorState={operatorState} onRefresh={refreshOperatorState} />
-              </ViewErrorBoundary>
-            </DashboardAccordion>
-
-            <DashboardAccordion
-              badge={statusDeutsch(operatorState.masterStatus.knowledge_health)}
-              summary={`Vertrauen ${scorePercent(operatorState.masterStatus.average_trust_score)} · OOS ${formatNumber(operatorState.masterStatus.knowledge_items_needing_oos)}`}
-              title="Lernen & Wissen"
-              tone={toneFromStatus(operatorState.masterStatus.knowledge_health)}
-            >
-              <DashboardLearningSummary operatorState={operatorState} />
-              <ViewErrorBoundary>
-                <KnowledgeTrustView operatorState={operatorState} />
-              </ViewErrorBoundary>
-            </DashboardAccordion>
-
-            <DashboardAccordion
-              badge={`${formatGb(operatorState.storage.free_disk_gb)} frei`}
-              summary={`CPU ${Math.round(operatorState.resource.cpu_usage_percent)}% · RAM ${Math.round(operatorState.resource.memory_usage_percent)}%`}
-              title="Speicher & Ressourcen"
-              tone={operatorState.storage.errors.length ? 'warn' : 'good'}
-            >
-              <DashboardStorageResources operatorState={operatorState} />
-            </DashboardAccordion>
-
-            <DashboardAccordion
-              badge={operatorState.masterStatus.no_auto_trading ? 'aus' : 'an'}
-              summary={`Menschliche Prüfung ${operatorState.masterStatus.human_review_required ? 'erforderlich' : 'frei'} · Live ${operatorState.masterStatus.live_trading_enabled ? 'an' : 'aus'}`}
-              title="Sicherheit"
-              tone={operatorState.masterStatus.broker_orders_enabled || operatorState.masterStatus.live_trading_enabled ? 'danger' : 'good'}
-            >
-              <DashboardSafety operatorState={operatorState} />
-            </DashboardAccordion>
-
-            <DashboardAccordion
-              badge={operatorState.logLines.length ? `${operatorState.logLines.length} Einträge` : 'leer'}
-              summary={`${operatorState.warnings.length + operatorState.storage.warnings.length + operatorState.storage.errors.length} Warnungen`}
-              title="Protokolle"
-              tone={(operatorState.warnings.length + operatorState.storage.warnings.length + operatorState.storage.errors.length) ? 'warn' : 'info'}
-            >
-              <DashboardLogs operatorState={operatorState} />
-            </DashboardAccordion>
-          </div>
-        </>
-      ) : null}
-
-      {activeView === 'review' ? (
-        <ViewErrorBoundary>
-          <HumanReviewCenter operatorState={operatorState} onRefresh={refreshOperatorState} />
-        </ViewErrorBoundary>
-      ) : null}
-      {activeView === 'brain' ? (
-        <ViewErrorBoundary>
-          <CognitiveCenter operatorState={operatorState} />
-        </ViewErrorBoundary>
-      ) : null}
-      {activeView === 'trust' ? (
-        <ViewErrorBoundary>
-          <KnowledgeTrustView operatorState={operatorState} />
-        </ViewErrorBoundary>
-      ) : null}
-      {activeView === 'domains' ? (
-        <ViewErrorBoundary>
-          <DomainView operatorState={operatorState} />
-        </ViewErrorBoundary>
-      ) : null}
-      {activeView === 'roles' ? (
-        <ViewErrorBoundary>
-          <RoleView operatorState={operatorState} />
-        </ViewErrorBoundary>
-      ) : null}
+      <HudCommandGrid
+        operatorState={operatorState}
+        modules={commandModules}
+        onOpen={setActiveModule}
+      />
 
       <DetailOverlay
         moduleId={activeModule}
-        modules={modules}
+        modules={[...commandModules, ...modules]}
         operatorState={operatorState}
+        onRefresh={refreshOperatorState}
         onClose={() => setActiveModule('')}
       />
     </section>
