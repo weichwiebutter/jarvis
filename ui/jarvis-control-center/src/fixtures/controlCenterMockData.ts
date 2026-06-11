@@ -487,3 +487,41 @@ export const providers = [
   { name: 'Ollama / Qwen', role: t.providers.localWorker, status: t.providers.ready },
   { name: 'OpenRouter', role: t.providers.fallback, status: t.providers.disabled },
 ];
+
+
+export const tradingIntelligenceMock = {
+  bundle_path: '/home/home/jarvis/HermesRuntime/.codex_artifacts/reports/system_b_handoff/system_b_handoff_bundle',
+  package_path: '/home/home/jarvis/HermesRuntime/.codex_artifacts/reports/scalping_portfolio/ensemble_portfolio/ensemble_signal_agent_package.json',
+  package_validation_status: 'ok',
+  portfolio_status: 'needs_validation',
+  assets: [
+    { asset: 'GER40', readiness: 'bot_ready', primary_setup: 'ger40_range_breakout_m5', backup_setups: ['ger40_ema_pullback_m5'], candidate_count: 5, signal_spec_count: 5 },
+    { asset: 'XAUUSD', readiness: 'bot_ready', primary_setup: 'xauusd_micro_trend_continuation_m5', backup_setups: ['xauusd_liquidity_rejection_m5', 'xauusd_ema_pullback_m5', 'xauusd_range_breakout_m5'], candidate_count: 8, signal_spec_count: 8 },
+    { asset: 'EURUSD', readiness: 'needs_more_validation', primary_setup: '-', backup_setups: [], candidate_count: 0, signal_spec_count: 0 },
+  ],
+  safety_flags: [
+    'no_auto_trading=true',
+    'human_review_required=true',
+    'broker_orders_enabled=false',
+    'live_trading_enabled=false',
+    'research_only=true',
+  ],
+  no_auto_trading: true,
+  human_review_required: true,
+  broker_orders_enabled: false,
+  live_trading_enabled: false,
+  research_only: true,
+};
+
+export const systemBHandoffBundleMock = {
+  bundle_path: '/home/home/jarvis/HermesRuntime/.codex_artifacts/reports/system_b_handoff/system_b_handoff_bundle',
+  files: ['README.md','ensemble_signal_agent_package.json','ensemble_signal_agent_package.schema.json','system_b_signal_agent_export_contract.md','portfolio_summary.json','portfolio_summary.md','bundle-manifest.json'],
+  asset_count: 3,
+  portfolio_status: 'needs_validation',
+  safety_flags: ['no_auto_trading=true','human_review_required=true','broker_orders_enabled=false','live_trading_enabled=false','research_only=true'],
+  no_auto_trading: true,
+  human_review_required: true,
+  broker_orders_enabled: false,
+  live_trading_enabled: false,
+  research_only: true,
+};

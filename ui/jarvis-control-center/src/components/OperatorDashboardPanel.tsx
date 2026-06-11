@@ -424,6 +424,101 @@ function SafetyPlaceholder({ title, value, tone = 'warn' }) {
   );
 }
 
+function reportRawByKey(reports, key) {
+  return reports.find((report) => report.key === key)?.raw || {};
+}
+
+function formatSetupList(setups) {
+  if (!Array.isArray(setups) || !setups.length) {
+    return '-';
+  }
+
+  return setups.join(', ');
+}
+
+function TradingIntelligenceCard({ reports }) {
+  const portfolio = reportRawByKey(reports, 'ensemblePortfolioStatus');
+  const handoff = reportRawByKey(reports, 'systemBHandoffBundle');
+  const validation = reportRawByKey(reports, 'validateEnsembleSignalPackage');
+  const registry = reportRawByKey(reports, 'setupRegistry');
+  const signalSpecs = reportRawByKey(reports, 'signalAgentSpecs');
+  const multiAsset = reportRawByKey(reports, 'multiAssetResearchStatus');
+  const assets = Array.isArray(portfolio.assets) ? portfolio.assets : [];
+  const safetyFlags = Array.isArray(portfolio.safety_flags) && portfolio.safety_flags.length
+    ? portfolio.safety_flags
+    : [
+        'no_auto_trading=true',
+        'human_review_required=true',
+        'broker_orders_enabled=false',
+        'live_trading_enabled=false',
+        'research_only=true',
+      ];
+  const fallbackAssets = [
+    { asset: 'GER40', readiness: 'bot_ready', primary_setup: 'ger40_range_breakout_m5', backup_setups: ['ger40_ema_pullback_m5'], signal_spec_count: 5 },
+    { asset: 'XAUUSD', readiness: 'bot_ready', primary_setup: 'xauusd_micro_trend_continuation_m5', backup_setups: ['xauusd_liquidity_rejection_m5', 'xauusd_ema_pullback_m5', 'xauusd_range_breakout_m5'], signal_spec_count: 8 },
+    { asset: 'EURUSD', readiness: 'needs_more_validation', primary_setup: '-', backup_setups: [], signal_spec_count: 0 },
+  ];
+  const displayedAssets = assets.length ? assets : fallbackAssets;
+  const setupCount = Object.values(registry.setup_counts_by_asset || {}).reduce(
+    (sum, value) => sum + Number(value || 0),
+    0,
+  );
+
+  return (
+    <OperatorCard
+      badge={String(portfolio.portfolio_readiness || portfolio.portfolio_status || 'needs_validation')}
+      title="Trading Intelligence"
+      tone={statusTone(portfolio.portfolio_readiness || portfolio.portfolio_status)}
+    >
+      <div className="operator-metric-grid">
+        <MiniMetric label="Portfolio Status" value={String(portfolio.portfolio_readiness || portfolio.portfolio_status || '-')} tone="info" />
+        <MiniMetric label="Asset Count" value={formatNumber(assets.length || handoff.asset_count || displayedAssets.length)} tone="info" />
+        <MiniMetric label="Setup Count" value={formatNumber(setupCount)} tone="info" />
+        <MiniMetric label="Signal Spec Count" value={formatNumber(signalSpecs.specs_ready || 0)} tone="good" />
+        <MiniMetric label="Package Validation" value={String(validation.validation_status || validation.status || portfolio.package_validation_status || 'unknown')} tone={statusTone(validation.validation_status || validation.status)} />
+        <MiniMetric label="Handoff Bundle" value={String(handoff.bundle_path || portfolio.bundle_path || '-')} tone="info" />
+      </div>
+
+      <div className="operator-token-list">
+        {displayedAssets.map((asset) => (
+          <span key={asset.asset}>
+            {asset.asset}: {asset.readiness}
+          </span>
+        ))}
+      </div>
+
+      <div className="operator-job-list">
+        {displayedAssets.map((asset) => (
+          <div className="operator-job-row" key={asset.asset}>
+            <div>
+              <strong>{asset.asset}</strong>
+              <span>
+                Primary: {asset.primary_setup || '-'} · Backups: {formatSetupList(asset.backup_setups)} · Specs: {formatNumber(asset.signal_spec_count || 0)}
+              </span>
+            </div>
+            <StatusPill tone={asset.readiness === 'bot_ready' ? 'good' : asset.readiness === 'needs_more_validation' ? 'warn' : 'info'}>
+              {asset.readiness}
+            </StatusPill>
+          </div>
+        ))}
+      </div>
+
+      <div className="operator-safety-flags">
+        {safetyFlags.map((flag) => (
+          <StatusPill key={flag} tone={flag.includes('false') ? 'good' : 'warn'}>
+            {flag}
+          </StatusPill>
+        ))}
+      </div>
+
+      <div className="operator-warning-list">
+        <span>Multi-Asset Status: {String(multiAsset.multi_asset_research_status || multiAsset.status || 'unknown')}</span>
+        <span>EURUSD ist bewusst nur Signal-/Validierungsbereit, nicht handelbar.</span>
+      </div>
+    </OperatorCard>
+  );
+}
+
 export function OperatorDashboardPanel() {
   const [operatorState, setOperatorState] = useState(() => createOperatorDashboardFallback());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -537,6 +632,8 @@ export function OperatorDashboardPanel() {
         <KnowledgeHealthCard masterStatus={operatorState.masterStatus} />
         <ScalpingProgressCard masterStatus={operatorState.masterStatus} />
       </OperatorCard>
+
+      <TradingIntelligenceCard reports={operatorState.reports} />
 
       <div className="operator-top-grid">
         <OperatorCard

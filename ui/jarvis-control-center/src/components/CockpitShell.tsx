@@ -578,9 +578,90 @@ function ReviewCommandList({ reviewId }) {
   );
 }
 
-function HumanReviewCenter({ operatorState }) {
+const REVIEW_ACTIONS = {
+  approve: {
+    label: 'Freigeben',
+    endpoint: 'approve-review',
+    decisionLabel: 'approved',
+    prompt: 'Freigabe begründen',
+  },
+  reject: {
+    label: 'Ablehnen',
+    endpoint: 'reject-review',
+    decisionLabel: 'rejected',
+    prompt: 'Ablehnung begründen',
+  },
+  more: {
+    label: 'Mehr Evidenz',
+    endpoint: 'request-more-evidence',
+    decisionLabel: 'needs_more_evidence',
+    prompt: 'Welche Evidenz fehlt?',
+  },
+  defer: {
+    label: 'Zurückstellen',
+    endpoint: 'defer-review',
+    decisionLabel: 'deferred',
+    prompt: 'Warum zurückstellen?',
+  },
+};
+
+function HumanReviewCenter({ operatorState, onRefresh }) {
   const review = operatorState.humanReview;
   const items = review.items || [];
+  const [actionMessage, setActionMessage] = useState('');
+  const [actionBusyId, setActionBusyId] = useState('');
+
+  const runReviewAction = async (actionKey, item) => {
+    const action = REVIEW_ACTIONS[actionKey];
+    if (!action || !item?.review_id) {
+      return;
+    }
+
+    const confirmText = [
+      `${action.label} Review?`,
+      `Review-ID: ${item.review_id}`,
+      `Knowledge Item: ${item.knowledge_item_id}`,
+      `Domain: ${item.domain}`,
+      `Safety: no_auto_trading=true, human_review_required=true`,
+    ].join('\n');
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+
+    const note = window.prompt(action.prompt, `${action.label.toLowerCase()} via UI review`);
+    if (note === null) {
+      return;
+    }
+
+    setActionBusyId(item.review_id);
+    setActionMessage('');
+    try {
+      const response = await fetch(`${__HERMES_READONLY_BRIDGE_URL__}/bridge/review/${action.endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          review_id: item.review_id,
+          note: note.trim(),
+          reviewer: 'ui_operator',
+          source: 'jarvis-control-center',
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || payload?.message || `${response.status} ${response.statusText}`.trim());
+      }
+
+      setActionMessage(`Review ${item.review_id}: ${payload?.decision || action.decisionLabel} gespeichert.`);
+      if (typeof onRefresh === 'function') {
+        await onRefresh();
+      }
+    } catch (error) {
+      setActionMessage(`Review ${item.review_id}: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setActionBusyId('');
+    }
+  };
 
   return (
     <section className="control-view-panel" aria-label="Prüfzentrum">
@@ -601,8 +682,16 @@ function HumanReviewCenter({ operatorState }) {
       </div>
 
       <p className="control-view-note">
-        Die UI ist nur lesend. Entscheidungen werden nicht im Browser ausgeführt; jeder Eintrag zeigt den passenden CLI-Befehl für eine echte menschliche Freigabe.
+        Die UI kann Review-Aktionen auslösen, aber niemals Trading-Aktionen. Jede Entscheidung läuft über den Human-Review-Workflow und bleibt menschlich kontrolliert.
       </p>
+      <div className="operator-safety-flags">
+        <StatusPill tone="warn">no_auto_trading=true</StatusPill>
+        <StatusPill tone="warn">human_review_required=true</StatusPill>
+        <StatusPill tone="good">broker_orders_enabled=false</StatusPill>
+        <StatusPill tone="good">live_trading_enabled=false</StatusPill>
+        <StatusPill tone="good">research_only=true</StatusPill>
+      </div>
+      {actionMessage ? <p className="control-view-note">{actionMessage}</p> : null}
 
       <div className="review-grid">
         {items.slice(0, 8).map((item) => (
@@ -629,10 +718,10 @@ function HumanReviewCenter({ operatorState }) {
             <p><strong>Evidenz:</strong> {item.evidence_summary}</p>
 
             <div className="review-action-row" aria-label="Vorbereitete Prüfaktionen">
-              <button disabled type="button">Freigeben</button>
-              <button disabled type="button">Ablehnen</button>
-              <button disabled type="button">Mehr Evidenz</button>
-              <button disabled type="button">Zurückstellen</button>
+              <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction('approve', item)} type="button">Freigeben</button>
+              <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction('reject', item)} type="button">Ablehnen</button>
+              <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction('more', item)} type="button">Mehr Evidenz</button>
+              <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction('defer', item)} type="button">Zurückstellen</button>
             </div>
             <ReviewCommandList reviewId={item.review_id} />
           </article>
@@ -1049,7 +1138,7 @@ export function CockpitShell() {
         </>
       ) : null}
 
-      {activeView === 'review' ? <HumanReviewCenter operatorState={operatorState} /> : null}
+      {activeView === 'review' ? <HumanReviewCenter operatorState={operatorState} onRefresh={refreshOperatorState} /> : null}
       {activeView === 'brain' ? <CognitiveCenter operatorState={operatorState} /> : null}
       {activeView === 'trust' ? <KnowledgeTrustView operatorState={operatorState} /> : null}
       {activeView === 'domains' ? <DomainView operatorState={operatorState} /> : null}

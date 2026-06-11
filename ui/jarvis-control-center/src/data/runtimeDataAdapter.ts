@@ -10,6 +10,7 @@ import { operatorDashboardMock } from '../fixtures/operatorDashboardMock';
 import { runtimeHumanReviewMock } from '../fixtures/runtimeHumanReviewMock';
 import { runtimeMasterStatusMock } from '../fixtures/runtimeMasterStatusMock';
 import { runtimeEvents } from '../fixtures/controlCenterMockData';
+import { systemBHandoffBundleMock } from '../fixtures/controlCenterMockData';
 import { de } from '../i18n/de';
 
 export const DATA_SOURCE = {
@@ -1466,6 +1467,74 @@ function reportFixtureRaw(key) {
       return operatorDashboardMock.demoSignalFeedStatus;
     case 'latestDemoSignals':
       return operatorDashboardMock.latestDemoSignals;
+    case 'ensemblePortfolioStatus':
+      return {
+        portfolio_readiness: 'needs_validation',
+        package_validation_status: 'ok',
+        bundle_path: '/home/home/jarvis/HermesRuntime/.codex_artifacts/reports/system_b_handoff/system_b_handoff_bundle',
+        package_path: '/home/home/jarvis/HermesRuntime/.codex_artifacts/reports/scalping_portfolio/ensemble_portfolio/ensemble_signal_agent_package.json',
+        assets: [
+          { asset: 'GER40', readiness: 'bot_ready', primary_setup: 'ger40_range_breakout_m5', backup_setups: ['ger40_ema_pullback_m5'], candidate_count: 5, signal_spec_count: 5 },
+          { asset: 'XAUUSD', readiness: 'bot_ready', primary_setup: 'xauusd_micro_trend_continuation_m5', backup_setups: ['xauusd_liquidity_rejection_m5', 'xauusd_ema_pullback_m5', 'xauusd_range_breakout_m5'], candidate_count: 8, signal_spec_count: 8 },
+          { asset: 'EURUSD', readiness: 'needs_more_validation', primary_setup: '-', backup_setups: [], candidate_count: 0, signal_spec_count: 0 },
+        ],
+        safety_flags: ['no_auto_trading=true', 'human_review_required=true', 'broker_orders_enabled=false', 'live_trading_enabled=false', 'research_only=true'],
+        no_auto_trading: true,
+        human_review_required: true,
+        broker_orders_enabled: false,
+        live_trading_enabled: false,
+        research_only: true,
+      };
+    case 'systemBHandoffBundle':
+      return {
+        bundle_path: '/home/home/jarvis/HermesRuntime/.codex_artifacts/reports/system_b_handoff/system_b_handoff_bundle',
+        files: ['README.md', 'ensemble_signal_agent_package.json', 'ensemble_signal_agent_package.schema.json', 'system_b_signal_agent_export_contract.md', 'portfolio_summary.json', 'portfolio_summary.md', 'bundle-manifest.json'],
+        asset_count: 3,
+        portfolio_status: 'needs_validation',
+        safety_flags: ['no_auto_trading=true', 'human_review_required=true', 'broker_orders_enabled=false', 'live_trading_enabled=false', 'research_only=true'],
+        no_auto_trading: true,
+        human_review_required: true,
+        broker_orders_enabled: false,
+        live_trading_enabled: false,
+        research_only: true,
+      };
+    case 'validateEnsembleSignalPackage':
+      return {
+        package_id: 'ensemble_signal_agent_package_20260611052025',
+        package_version: 'ensemble_signal_agent_package_v1',
+        validation_status: 'ok',
+        warnings: ['asset_not_tradeable:EURUSD:needs_more_validation'],
+        asset_count: 3,
+        package_path: '/home/home/jarvis/HermesRuntime/.codex_artifacts/reports/scalping_portfolio/ensemble_portfolio/ensemble_signal_agent_package.json',
+        no_auto_trading: true,
+        human_review_required: true,
+        broker_orders_enabled: false,
+        live_trading_enabled: false,
+        research_only: true,
+      };
+    case 'setupRegistry':
+      return {
+        setup_count_total: 6,
+        setup_counts_by_asset: { GER40: 2, XAUUSD: 4, EURUSD: 0 },
+        best_setup_by_asset: { GER40: 'ger40_range_breakout_m5', XAUUSD: 'xauusd_micro_trend_continuation_m5', EURUSD: '-' },
+        readiness_by_asset: { GER40: 'bot_ready', XAUUSD: 'bot_ready', EURUSD: 'needs_more_validation' },
+        safety_flags: ['no_auto_trading=true', 'human_review_required=true', 'broker_orders_enabled=false', 'live_trading_enabled=false', 'research_only=true'],
+      };
+    case 'signalAgentSpecs':
+      return {
+        specs_ready: 23,
+        by_asset: { GER40: 5, XAUUSD: 8, EURUSD: 8 },
+        safety_flags: ['no_auto_trading=true', 'human_review_required=true', 'broker_orders_enabled=false', 'live_trading_enabled=false', 'research_only=true'],
+      };
+    case 'multiAssetResearchStatus':
+      return {
+        multi_asset_research_status: 'ready',
+        assets_ready: ['GER40', 'XAUUSD'],
+        assets_setup_ready: ['GER40', 'XAUUSD'],
+        assets_data_ready_only: ['EURUSD'],
+        assets_missing_data: [],
+        safety_flags: ['no_auto_trading=true', 'human_review_required=true', 'broker_orders_enabled=false', 'live_trading_enabled=false', 'research_only=true'],
+      };
     case 'forwardTestStatus':
       return operatorDashboardMock.forwardTestStatus;
     case 'robustStrategies':
@@ -2421,6 +2490,12 @@ export function createOperatorDashboardFallback(loadError = '') {
       demoSignalFeedStatus: operatorDashboardMock.demoSignalFeedStatus,
       latestDemoSignals: operatorDashboardMock.latestDemoSignals,
       forwardTestStatus: operatorDashboardMock.forwardTestStatus,
+      ensemblePortfolioStatus: reportFixtureRaw('ensemblePortfolioStatus'),
+      systemBHandoffBundle: systemBHandoffBundleMock,
+      validateEnsembleSignalPackage: reportFixtureRaw('validateEnsembleSignalPackage'),
+      setupRegistry: reportFixtureRaw('setupRegistry'),
+      signalAgentSpecs: reportFixtureRaw('signalAgentSpecs'),
+      multiAssetResearchStatus: reportFixtureRaw('multiAssetResearchStatus'),
       researchInsights: operatorDashboardMock.researchInsights,
       regimeSummary: operatorDashboardMock.regimeSummary,
       strategyRegimePerformance: operatorDashboardMock.strategyRegimePerformance,
@@ -2482,6 +2557,12 @@ export async function loadOperatorDashboard() {
         demoSignalFeedStatus: dashboard.demoSignalFeedStatus,
         latestDemoSignals: dashboard.latestDemoSignals,
         forwardTestStatus: dashboard.forwardTestStatus,
+        ensemblePortfolioStatus: dashboard.ensemblePortfolioStatus,
+        systemBHandoffBundle: dashboard.systemBHandoffBundle,
+        validateEnsembleSignalPackage: dashboard.validateEnsembleSignalPackage,
+        setupRegistry: dashboard.setupRegistry,
+        signalAgentSpecs: dashboard.signalAgentSpecs,
+        multiAssetResearchStatus: dashboard.multiAssetResearchStatus,
         researchInsights: dashboard.researchInsights,
         robustStrategies: dashboard.robustStrategies,
         overfitReport: dashboard.overfitReport,
@@ -2539,6 +2620,12 @@ export async function loadOperatorDashboard() {
   if (masterStatusEntry) {
     rawReports.masterStatus = masterStatusEntry.raw;
   }
+  rawReports.ensemblePortfolioStatus = reportFixtureRaw('ensemblePortfolioStatus');
+  rawReports.systemBHandoffBundle = reportFixtureRaw('systemBHandoffBundle');
+  rawReports.validateEnsembleSignalPackage = reportFixtureRaw('validateEnsembleSignalPackage');
+  rawReports.setupRegistry = reportFixtureRaw('setupRegistry');
+  rawReports.signalAgentSpecs = reportFixtureRaw('signalAgentSpecs');
+  rawReports.multiAssetResearchStatus = reportFixtureRaw('multiAssetResearchStatus');
   let logLines = [...operatorDashboardMock.logLines];
   const warnings = [
     bridgeDashboardWarning,

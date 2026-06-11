@@ -23,6 +23,12 @@ public sealed class HermesReadOnlyBridge
         new("researchInsights", "Research Insights", "/reports/research-insights", "strategy_research/research_insights.json"),
         new("robustStrategies", "Robuste Strategien", "/reports/robust-strategies", "strategy_research/robust_strategies.json"),
         new("overfitReport", "Overfit Report", "/reports/overfit-report", "strategy_research/overfit_report.json"),
+        new("ensemblePortfolioStatus", "Ensemble Portfolio Status", "/reports/ensemble-portfolio-status", "reports/scalping_portfolio/ensemble_portfolio/ensemble_portfolio_status.json"),
+        new("systemBHandoffBundle", "System B Handoff Bundle", "/reports/system-b-handoff-bundle", "reports/system_b_handoff/system_b_handoff_bundle/portfolio_summary.json"),
+        new("validateEnsembleSignalPackage", "Validate Ensemble Signal Package", "/reports/validate-ensemble-signal-package", "reports/scalping_portfolio/ensemble_portfolio/ensemble_signal_agent_package.json"),
+        new("setupRegistry", "Setup Registry", "/reports/setup-registry", "reports/setup_registry/setup_registry.json"),
+        new("signalAgentSpecs", "Signal Agent Specs", "/reports/signal-agent-specs", "reports/signal_agent_specs/signal_agent_specs.json"),
+        new("multiAssetResearchStatus", "Multi-Asset Research Status", "/reports/multi-asset-research-status", "reports/scalping_portfolio/multi_asset_roadmap.json"),
         new("regimeSummary", "Regime Summary", "/reports/regime-summary", "reports/regimes/regime_summary.json"),
         new("strategyRegimePerformance", "Strategy Regime Performance", "/reports/strategy-regime-performance", "reports/regimes/strategy_regime_performance.json"),
         new("regimeDistribution", "Regime Distribution", "/reports/regime-distribution", "reports/regimes/regime_distribution.json")
@@ -97,6 +103,10 @@ public sealed class HermesReadOnlyBridge
             ReportsConfigured: Reports.Count,
             ReportsAvailable: index.Reports.Count(report => report.Available),
             Endpoints: Reports.Select(report => report.Endpoint)
+                .Append("/bridge/review/approve-review")
+                .Append("/bridge/review/reject-review")
+                .Append("/bridge/review/request-more-evidence")
+                .Append("/bridge/review/defer-review")
                 .Append("/bridge/health")
                 .Append("/reports")
                 .Append("/operator/dashboard")
@@ -119,17 +129,23 @@ public sealed class HermesReadOnlyBridge
                 return;
             }
 
-            if (context.Request.HttpMethod != "GET")
+            if (context.Request.HttpMethod is not ("GET" or "POST"))
             {
                 await WriteJsonAsync(
                     context.Response,
-                    Error("method_not_allowed", "Only GET requests are allowed."),
+                    Error("method_not_allowed", "Only GET and POST requests are allowed."),
                     HttpStatusCode.MethodNotAllowed);
                 return;
             }
 
             var path = (context.Request.Url?.AbsolutePath ?? "/").TrimEnd('/');
             path = string.IsNullOrWhiteSpace(path) ? "/" : path;
+
+            if (context.Request.HttpMethod == "POST" && TryHandleReviewAction(path, context.Request, out var reviewResponse, out var reviewStatus))
+            {
+                await WriteJsonAsync(context.Response, reviewResponse, reviewStatus);
+                return;
+            }
 
             var response = path switch
             {
@@ -197,6 +213,97 @@ public sealed class HermesReadOnlyBridge
             HumanReviewRequired: true,
             Data: result.Data,
             Warnings: result.Warnings);
+    }
+
+    private bool TryHandleReviewAction(
+        string path,
+        HttpListenerRequest request,
+        out BridgeResponseModel response,
+        out HttpStatusCode statusCode)
+    {
+        response = Error("not_found", $"Endpoint is not whitelisted: {path}");
+        statusCode = HttpStatusCode.NotFound;
+
+        if (!path.StartsWith("/bridge/review/", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var action = path["/bridge/review/".Length..].Trim('/');
+        var normalizedDecision = action switch
+        {
+            "approve-review" => "approved",
+            "reject-review" => "rejected",
+            "request-more-evidence" => "needs_more_evidence",
+            "defer-review" => "deferred",
+            _ => string.Empty
+        };
+
+        if (string.IsNullOrWhiteSpace(normalizedDecision))
+        {
+            response = Error("not_found", $"Unsupported review action: {action}");
+            statusCode = HttpStatusCode.NotFound;
+            return true;
+        }
+
+        try
+        {
+            using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
+            var body = reader.ReadToEnd();
+            var payload = JsonNode.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body)?.AsObject();
+            var reviewId = payload?["review_id"]?.GetValue<string>() ?? payload?["reviewId"]?.GetValue<string>() ?? string.Empty;
+            var note = payload?["note"]?.GetValue<string>() ?? payload?["comment"]?.GetValue<string>() ?? string.Empty;
+            var reviewer = payload?["reviewer"]?.GetValue<string>() ?? payload?["decided_by"]?.GetValue<string>() ?? "human";
+
+            if (string.IsNullOrWhiteSpace(reviewId))
+            {
+                response = Error("invalid_request", "review_id ist erforderlich.");
+                statusCode = HttpStatusCode.BadRequest;
+                return true;
+            }
+
+            var workflow = new HumanReviewWorkflow(_storagePaths);
+            var decision = workflow.Decide(reviewId.Trim(), normalizedDecision, note, reviewer);
+            var queue = workflow.LoadOrCreateQueue();
+
+            response = Ok(new
+            {
+                action = action,
+                decision = decision.Decision,
+                review_id = decision.ReviewId,
+                knowledge_item = decision.KnowledgeItemId,
+                domain = decision.Domain,
+                note = decision.Note,
+                timestamp_utc = decision.DecidedAtUtc,
+                queue_path = workflow.QueuePath,
+                decisions_path = workflow.DecisionsPath,
+                learning_feedback_path = workflow.LearningFeedbackPath,
+                queue = new
+                {
+                    pending = queue.PendingReviews,
+                    approved = queue.ApprovedReviews,
+                    rejected = queue.RejectedReviews,
+                    needs_more_evidence = queue.NeedsMoreEvidenceReviews,
+                    deferred = queue.DeferredReviews,
+                },
+                safety_flags = new[]
+                {
+                    "no_auto_trading=true",
+                    "human_review_required=true",
+                    "broker_orders_enabled=false",
+                    "live_trading_enabled=false",
+                    "research_only=true",
+                }
+            });
+            statusCode = HttpStatusCode.OK;
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JsonException or IOException or UnauthorizedAccessException)
+        {
+            response = Error("review_action_failed", ex.Message);
+            statusCode = HttpStatusCode.BadRequest;
+            return true;
+        }
     }
 
     private ReportIndex BuildReportIndex()
@@ -374,7 +481,7 @@ public sealed class HermesReadOnlyBridge
         var origin = request.Headers["Origin"];
         response.Headers["Access-Control-Allow-Origin"] =
             IsLocalOrigin(origin) ? origin! : "http://127.0.0.1:5173";
-        response.Headers["Access-Control-Allow-Methods"] = "GET, OPTIONS";
+        response.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
         response.Headers["Access-Control-Allow-Headers"] = "Content-Type";
         response.Headers["Cache-Control"] = "no-store";
     }

@@ -83,6 +83,21 @@ public sealed record HumanReviewSummary(
     bool NoAutoTrading,
     bool HumanReviewRequired);
 
+public sealed record HumanReviewLearningFeedback(
+    string FeedbackId,
+    string ReviewId,
+    string Decision,
+    string Note,
+    DateTimeOffset TimestampUtc,
+    string KnowledgeItem,
+    string Domain,
+    double PreviousTrust,
+    string Result,
+    bool NoTradingExecution,
+    bool NoBrokerAction,
+    bool NoAutoTrading,
+    bool HumanReviewRequired);
+
 public sealed class HumanReviewWorkflow
 {
     private readonly StoragePaths _storagePaths;
@@ -97,6 +112,8 @@ public sealed class HumanReviewWorkflow
     public string QueuePath => Path.Combine(Root, "human_review_queue.json");
 
     public string DecisionsPath => Path.Combine(Root, "human_review_decisions.jsonl");
+
+    public string LearningFeedbackPath => Path.Combine(Root, "human_review_learning_feedback.jsonl");
 
     public HumanReviewQueue GenerateQueue(string requestedByTaskId, int maxItems)
     {
@@ -206,6 +223,26 @@ public sealed class HumanReviewWorkflow
             NoAutoTrading: true,
             HumanReviewRequired: true);
         AppendDecision(decisionRecord);
+        AppendLearningFeedback(new HumanReviewLearningFeedback(
+            FeedbackId: $"human_review_feedback_{now:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}",
+            ReviewId: item.ReviewId,
+            Decision: normalized,
+            Note: string.IsNullOrWhiteSpace(note) ? "no_note" : note.Trim(),
+            TimestampUtc: now,
+            KnowledgeItem: item.KnowledgeItemId,
+            Domain: item.Domain,
+            PreviousTrust: item.TrustBefore,
+            Result: normalized switch
+            {
+                "approved" => "trusted",
+                "rejected" => "rejected",
+                "needs_more_evidence" => "more_evidence_requested",
+                _ => "deferred"
+            },
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true,
+            HumanReviewRequired: true));
         WriteQueue(items, []);
 
         if (normalized is "approved" or "rejected" or "needs_more_evidence")
@@ -237,7 +274,8 @@ public sealed class HumanReviewWorkflow
     {
         var queue = LoadOrCreateQueue();
         var evidence = new HumanReviewEvidenceStore(_storagePaths).LoadOrCreateReport();
-        var totalKnowledge = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems().Count;
+        var knowledgeCatalog = new KnowledgeCatalog(_storagePaths).LoadItems();
+        var totalKnowledge = knowledgeCatalog.Count;
         var activeItems = queue.Items;
         return new HumanReviewSummary(
             SummaryVersion: "human_review_summary_v1",
@@ -350,6 +388,12 @@ public sealed class HumanReviewWorkflow
     {
         Directory.CreateDirectory(Root);
         File.AppendAllText(DecisionsPath, JsonSerializer.Serialize(decision, JsonDefaults.WriteOptions) + Environment.NewLine);
+    }
+
+    private void AppendLearningFeedback(HumanReviewLearningFeedback feedback)
+    {
+        Directory.CreateDirectory(Root);
+        File.AppendAllText(LearningFeedbackPath, JsonSerializer.Serialize(feedback, JsonDefaults.WriteOptions) + Environment.NewLine);
     }
 
     private HumanReviewQueue EmptyQueue(IReadOnlyList<string>? warnings = null) =>

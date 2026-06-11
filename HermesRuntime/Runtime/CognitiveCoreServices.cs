@@ -260,6 +260,25 @@ public sealed class KnowledgeCatalog
 
     public string CatalogPath => Path.Combine(Root, "knowledge_catalog.json");
 
+    public IReadOnlyList<KnowledgeCatalogItem> LoadItems()
+    {
+        if (!File.Exists(CatalogPath))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<KnowledgeCatalogItem>>(
+                File.ReadAllText(CatalogPath),
+                JsonDefaults.SnapshotReadOptions) ?? [];
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
     public IReadOnlyList<KnowledgeCatalogItem> LoadOrCreateItems()
     {
         Directory.CreateDirectory(Root);

@@ -132,6 +132,36 @@ const operatorReports = {
     url: bridgeUrl('/reports/forward-test-status'),
     path: 'read-only bridge:/reports/forward-test-status',
   },
+  ensemblePortfolioStatus: {
+    label: 'Ensemble Portfolio Status',
+    url: bridgeUrl('/reports/ensemble-portfolio-status'),
+    path: 'read-only bridge:/reports/ensemble-portfolio-status',
+  },
+  systemBHandoffBundle: {
+    label: 'System B Handoff Bundle',
+    url: bridgeUrl('/reports/system-b-handoff-bundle'),
+    path: 'read-only bridge:/reports/system-b-handoff-bundle',
+  },
+  validateEnsembleSignalPackage: {
+    label: 'Validate Ensemble Signal Package',
+    url: bridgeUrl('/reports/validate-ensemble-signal-package'),
+    path: 'read-only bridge:/reports/validate-ensemble-signal-package',
+  },
+  setupRegistry: {
+    label: 'Setup Registry',
+    url: bridgeUrl('/reports/setup-registry'),
+    path: 'read-only bridge:/reports/setup-registry',
+  },
+  signalAgentSpecs: {
+    label: 'Signal Agent Specs',
+    url: bridgeUrl('/reports/signal-agent-specs'),
+    path: 'read-only bridge:/reports/signal-agent-specs',
+  },
+  multiAssetResearchStatus: {
+    label: 'Multi-Asset Research Status',
+    url: bridgeUrl('/reports/multi-asset-research-status'),
+    path: 'read-only bridge:/reports/multi-asset-research-status',
+  },
 };
 
 export default defineConfig({
