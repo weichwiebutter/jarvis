@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Hermes.Runtime;
 
@@ -34,30 +35,42 @@ public sealed record ScalpingEnsemblePortfolioReport(
     bool ResearchOnly);
 
 public sealed record EnsembleSignalAgentPackageEntry(
-    string Asset,
-    string Setup,
-    string PrimaryCandidate,
-    IReadOnlyList<string> BackupCandidates,
-    IReadOnlyList<string> DirectionLogic,
-    IReadOnlyList<string> EntryLogic,
-    IReadOnlyList<string> ExitLogic,
-    IReadOnlyList<string> InvalidationLogic,
-    double ConfidenceBaseline,
-    string Readiness,
-    IReadOnlyList<string> SafetyFlags);
+    [property: JsonPropertyName("asset")] string Asset,
+    [property: JsonPropertyName("setup_id")] string SetupId,
+    [property: JsonPropertyName("setup_name")] string SetupName,
+    [property: JsonPropertyName("timeframe")] string Timeframe,
+    [property: JsonPropertyName("direction")] string Direction,
+    [property: JsonPropertyName("primary_candidate")] string PrimaryCandidate,
+    [property: JsonPropertyName("backup_candidates")] IReadOnlyList<string> BackupCandidates,
+    [property: JsonPropertyName("confidence_baseline")] double ConfidenceBaseline,
+    [property: JsonPropertyName("signal_frequency")] string SignalFrequency,
+    [property: JsonPropertyName("entry_logic")] IReadOnlyList<string> EntryLogic,
+    [property: JsonPropertyName("exit_logic")] IReadOnlyList<string> ExitLogic,
+    [property: JsonPropertyName("stop_loss_logic")] IReadOnlyList<string> StopLossLogic,
+    [property: JsonPropertyName("take_profit_logic")] IReadOnlyList<string> TakeProfitLogic,
+    [property: JsonPropertyName("invalidation_logic")] IReadOnlyList<string> InvalidationLogic,
+    [property: JsonPropertyName("market_regime_tags")] IReadOnlyList<string> MarketRegimeTags,
+    [property: JsonPropertyName("session_tags")] IReadOnlyList<string> SessionTags,
+    [property: JsonPropertyName("risk_notes")] IReadOnlyList<string> RiskNotes,
+    [property: JsonPropertyName("readiness")] string Readiness,
+    [property: JsonPropertyName("human_review_required")] bool HumanReviewRequired,
+    [property: JsonPropertyName("no_auto_trading")] bool NoAutoTrading,
+    [property: JsonPropertyName("broker_orders_enabled")] bool BrokerOrdersEnabled,
+    [property: JsonPropertyName("live_trading_enabled")] bool LiveTradingEnabled);
 
 public sealed record EnsembleSignalAgentPortfolioPackage(
-    string PackageId,
-    DateTimeOffset CreatedUtc,
-    string Status,
-    IReadOnlyList<EnsembleSignalAgentPackageEntry> Entries,
-    IReadOnlyList<string> Assets,
-    IReadOnlyList<string> SafetyFlags,
-    bool NoAutoTrading,
-    bool HumanReviewRequired,
-    bool BrokerOrdersEnabled,
-    bool LiveTradingEnabled,
-    bool ResearchOnly);
+    [property: JsonPropertyName("package_id")] string PackageId,
+    [property: JsonPropertyName("generated_at")] DateTimeOffset GeneratedAtUtc,
+    [property: JsonPropertyName("package_version")] string PackageVersion,
+    [property: JsonPropertyName("source_system")] string SourceSystem,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("assets")] IReadOnlyList<EnsembleSignalAgentPackageEntry> Assets,
+    [property: JsonPropertyName("safety_flags")] IReadOnlyList<string> SafetyFlags,
+    [property: JsonPropertyName("no_auto_trading")] bool NoAutoTrading,
+    [property: JsonPropertyName("human_review_required")] bool HumanReviewRequired,
+    [property: JsonPropertyName("broker_orders_enabled")] bool BrokerOrdersEnabled,
+    [property: JsonPropertyName("live_trading_enabled")] bool LiveTradingEnabled,
+    [property: JsonPropertyName("research_only")] bool ResearchOnly);
 
 public sealed class ScalpingEnsemblePortfolioService
 {
@@ -154,23 +167,44 @@ public sealed class ScalpingEnsemblePortfolioService
     public EnsembleSignalAgentPortfolioPackage Export()
     {
         var report = Load() ?? Build();
+        var registryService = new CertifiedCandidateInventoryService(_storagePaths, _runtimeRoot);
+        var registry = registryService.LoadRegistry() ?? registryService.BuildRegistry();
+        var researchService = new ScalpingResearchService(_storagePaths, _runtimeRoot);
         var package = new EnsembleSignalAgentPortfolioPackage(
             PackageId: $"ensemble_signal_agent_package_{report.UpdatedAtUtc:yyyyMMddHHmmss}",
-            CreatedUtc: DateTimeOffset.UtcNow,
+            GeneratedAtUtc: DateTimeOffset.UtcNow,
+            PackageVersion: "ensemble_signal_agent_package_v1",
+            SourceSystem: "HermesRuntime/SystemA",
             Status: report.PortfolioReadiness,
-            Entries: report.Entries.Select(entry => new EnsembleSignalAgentPackageEntry(
-                Asset: entry.Asset,
-                Setup: entry.PrimarySetup,
-                PrimaryCandidate: entry.PrimaryCandidate,
-                BackupCandidates: entry.BackupCandidates,
-                DirectionLogic: LoadSignalSpec(entry.PrimaryCandidate)?.SignalDirectionLogic ?? [entry.PrimarySetup],
-                EntryLogic: LoadSignalSpec(entry.PrimaryCandidate)?.EntryConditions ?? [entry.PrimarySetup],
-                ExitLogic: LoadSignalSpec(entry.PrimaryCandidate)?.ExitConditions ?? ["exit_on_signal_invalidated_or_target_hit"],
-                InvalidationLogic: LoadSignalSpec(entry.PrimaryCandidate)?.InvalidationConditions ?? ["signal_invalidated"],
-                ConfidenceBaseline: entry.ConfidenceBaseline,
-                Readiness: entry.Readiness,
-                SafetyFlags: entry.SafetyFlags)).ToList(),
-            Assets: report.Assets,
+            Assets: report.Entries.Select(entry =>
+            {
+                var registryEntry = registry.Assets.FirstOrDefault(item => item.Asset.Equals(entry.Asset, StringComparison.OrdinalIgnoreCase) && item.SetupId.Equals(entry.PrimarySetup, StringComparison.OrdinalIgnoreCase));
+                var candidate = researchService.FindCandidate(entry.PrimaryCandidate);
+                var signalSpec = LoadSignalSpec(entry.PrimaryCandidate);
+                return new EnsembleSignalAgentPackageEntry(
+                    Asset: entry.Asset,
+                    SetupId: registryEntry?.SetupId ?? entry.PrimarySetup,
+                    SetupName: registryEntry?.SetupId ?? entry.PrimarySetup,
+                    Timeframe: registryEntry?.PrimaryTimeframe ?? candidate?.Timeframe ?? "unknown",
+                    Direction: registryEntry?.AllowedDirections.FirstOrDefault() ?? candidate?.SetupType ?? "long_short",
+                    PrimaryCandidate: entry.PrimaryCandidate,
+                    BackupCandidates: entry.BackupCandidates,
+                    ConfidenceBaseline: entry.ConfidenceBaseline,
+                    SignalFrequency: registryEntry?.ExpectedSignalFrequency ?? $"{entry.SignalSpecCount} signal specs",
+                    EntryLogic: signalSpec?.EntryConditions ?? candidate?.EntryRules ?? [entry.PrimarySetup],
+                    ExitLogic: signalSpec?.ExitConditions ?? candidate?.ExitRules ?? ["exit_on_signal_invalidated_or_target_hit"],
+                    StopLossLogic: candidate?.StopLossRules ?? ["technical_stop_beyond_recent_swing"],
+                    TakeProfitLogic: candidate?.TakeProfitRules ?? ["target_at_setup_volatility_band"],
+                    InvalidationLogic: signalSpec?.InvalidationConditions ?? [.. (candidate?.StopLossRules ?? []), "signal_invalidated"],
+                    MarketRegimeTags: registryEntry?.MarketRegimeTags ?? [],
+                    SessionTags: registryEntry?.SessionTags ?? [],
+                    RiskNotes: BuildRiskNotes(entry, registryEntry, candidate, signalSpec),
+                    Readiness: entry.Readiness,
+                    HumanReviewRequired: true,
+                    NoAutoTrading: true,
+                    BrokerOrdersEnabled: false,
+                    LiveTradingEnabled: false);
+            }).ToList(),
             SafetyFlags: ["no_auto_trading=true", "human_review_required=true", "broker_orders_enabled=false", "live_trading_enabled=false", "research_only=true"],
             NoAutoTrading: true,
             HumanReviewRequired: true,
@@ -182,6 +216,11 @@ public sealed class ScalpingEnsemblePortfolioService
         File.WriteAllText(PackageMarkdownPath, BuildPackageMarkdown(package));
         return package;
     }
+
+    public EnsembleSignalAgentPortfolioPackage? LoadPackage()
+        => File.Exists(PackagePath)
+            ? JsonSerializer.Deserialize<EnsembleSignalAgentPortfolioPackage>(File.ReadAllText(PackagePath), JsonDefaults.SnapshotReadOptions)
+            : null;
 
     public string ExplainSelection(string asset)
     {
@@ -308,6 +347,9 @@ public sealed class ScalpingEnsemblePortfolioService
 # Ensemble Signal Agent Package
 
 - package_id: {package.PackageId}
+- package_version: {package.PackageVersion}
+- generated_at: {package.GeneratedAtUtc:O}
+- source_system: {package.SourceSystem}
 - status: {package.Status}
 - no_auto_trading: true
 - human_review_required: true
@@ -316,6 +358,45 @@ public sealed class ScalpingEnsemblePortfolioService
 - research_only: true
 
 ## Entries
-{string.Join(Environment.NewLine, package.Entries.Select(entry => $"- {entry.Asset}: setup={entry.Setup}, primary_candidate={entry.PrimaryCandidate}, readiness={entry.Readiness}"))}
+{string.Join(Environment.NewLine, package.Assets.Select(entry => $"- {entry.Asset}: setup={entry.SetupId}, primary_candidate={entry.PrimaryCandidate}, readiness={entry.Readiness}, timeframe={entry.Timeframe}, direction={entry.Direction}"))}
 """;
+
+    private static IReadOnlyList<string> BuildRiskNotes(
+        ScalpingEnsemblePortfolioAssetEntry entry,
+        SetupRegistryEntry? registryEntry,
+        ScalpingStrategyCandidate? candidate,
+        ScalpingSignalSpec? signalSpec)
+    {
+        var notes = new List<string>
+        {
+            "research_only",
+            "human_review_required",
+            "no_auto_trading",
+            "no_broker_orders",
+            "no_live_trading"
+        };
+
+        if (candidate is not null)
+        {
+            notes.AddRange(candidate.RejectionReasons);
+            notes.AddRange(candidate.RiskProfile.RiskNotes.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+
+        if (signalSpec is not null)
+        {
+            notes.AddRange(signalSpec.RiskNotes);
+        }
+
+        if (registryEntry is not null && !registryEntry.ReadinessStatus.Equals("bot_ready", StringComparison.OrdinalIgnoreCase))
+        {
+            notes.Add(registryEntry.ReadinessStatus);
+        }
+
+        if (!string.IsNullOrWhiteSpace(entry.Readiness))
+        {
+            notes.Add(entry.Readiness);
+        }
+
+        return notes.Where(note => !string.IsNullOrWhiteSpace(note)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
 }

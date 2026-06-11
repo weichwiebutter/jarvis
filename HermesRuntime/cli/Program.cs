@@ -204,6 +204,7 @@ internal sealed class HermesCli
             "scalping-ensemble-member" => ShowScalpingEnsembleMember(),
             "export-scalping-ensemble-package" => ExportScalpingEnsemblePackage(),
             "scalping-ensemble-package" => ShowScalpingEnsemblePackage(),
+            "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "scalping-ensemble-human-review-package" => ShowScalpingEnsembleHumanReviewPackage(),
             "scalping-ensemble-review-status" => ShowScalpingEnsembleReviewStatus(),
             "approve-scalping-ensemble" => ApproveScalpingEnsemble(),
@@ -431,6 +432,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes scalping-ensemble-member --id <ID> optimiertes Ensemble-Mitglied anzeigen");
         Console.WriteLine("  hermes export-scalping-ensemble-package Ensemble Export Package erzeugen");
         Console.WriteLine("  hermes scalping-ensemble-package Ensemble Export Package anzeigen");
+        Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes scalping-ensemble-human-review-package Ensemble Human Review Package anzeigen");
         Console.WriteLine("  hermes scalping-ensemble-review-status Ensemble Review Status anzeigen");
         Console.WriteLine("  hermes approve-scalping-ensemble --mode demo_signal_use|forward_test_preparation Ensemble freigeben");
@@ -4721,27 +4723,97 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Scalping Ensemble Package");
         var service = new ScalpingEnsemblePortfolioService(BuildStoragePaths(), _runtimeRoot);
-        var report = service.Load();
-        if (report is null)
+        var package = service.LoadPackage();
+        if (package is null)
         {
             WriteError("scalping_ensemble_package_missing");
             WriteSafety();
             return 1;
         }
 
-        WriteField("Portfolio Readiness", report.PortfolioReadiness);
-        WriteField("Setup Count Total", report.SetupCountTotal.ToString());
-        WriteField("Certified Candidate Count Total", report.CertifiedCandidateCountTotal.ToString());
-        WriteField("Signal Spec Count Total", report.SignalSpecCountTotal.ToString());
-        WriteMessages("Assets", report.Assets);
-        WriteMessages("Warnings", report.Warnings);
+        WriteField("Package ID", package.PackageId);
+        WriteField("Package Version", package.PackageVersion);
+        WriteField("Generated At", package.GeneratedAtUtc.ToString("O"));
+        WriteField("Source System", package.SourceSystem);
+        WriteField("Status", package.Status);
+        WriteField("Assets", package.Assets.Count.ToString());
+        WriteMessages("Asset List", package.Assets.Select(asset => asset.Asset).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(asset => asset).ToList());
+        WriteMessages("Safety Flags", package.SafetyFlags);
         WriteField("JSON", DisplayPath(service.PackagePath));
         WriteField("Markdown", DisplayPath(service.PackageMarkdownPath));
-        WriteField("no_auto_trading", report.NoAutoTrading.ToString().ToLowerInvariant());
-        WriteField("human_review_required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("no_auto_trading", package.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("human_review_required", package.HumanReviewRequired.ToString().ToLowerInvariant());
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private int ValidateEnsembleSignalPackage()
+    {
+        WriteHeader("Hermes Validate Ensemble Signal Package");
+        var service = new ScalpingEnsemblePortfolioService(BuildStoragePaths(), _runtimeRoot);
+        var package = service.LoadPackage();
+        if (package is null)
+        {
+            WriteError("ensemble_signal_agent_package_missing");
+            WriteSafety();
+            return 1;
+        }
+
+        var blockers = new List<string>();
+        var warnings = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(package.PackageId)) blockers.Add("package_id_missing");
+        if (string.IsNullOrWhiteSpace(package.PackageVersion)) blockers.Add("package_version_missing");
+        if (package.Assets.Count == 0) blockers.Add("assets_missing");
+        if (!package.NoAutoTrading) blockers.Add("no_auto_trading_must_be_true");
+        if (!package.HumanReviewRequired) blockers.Add("human_review_required_must_be_true");
+        if (package.BrokerOrdersEnabled) blockers.Add("broker_orders_enabled_must_be_false");
+        if (package.LiveTradingEnabled) blockers.Add("live_trading_enabled_must_be_false");
+        if (!package.ResearchOnly) blockers.Add("research_only_must_be_true");
+
+        foreach (var asset in package.Assets)
+        {
+            if (string.IsNullOrWhiteSpace(asset.Asset)) blockers.Add("asset_missing");
+            if (string.IsNullOrWhiteSpace(asset.SetupId)) blockers.Add($"setup_id_missing:{asset.Asset}");
+            if (string.IsNullOrWhiteSpace(asset.SetupName)) warnings.Add($"setup_name_missing:{asset.Asset}");
+            if (string.IsNullOrWhiteSpace(asset.Timeframe)) blockers.Add($"timeframe_missing:{asset.Asset}");
+            if (string.IsNullOrWhiteSpace(asset.Direction)) warnings.Add($"direction_missing:{asset.Asset}");
+            if (string.IsNullOrWhiteSpace(asset.PrimaryCandidate)) blockers.Add($"primary_candidate_missing:{asset.Asset}");
+            if (asset.BackupCandidates is null) blockers.Add($"backup_candidates_missing:{asset.Asset}");
+            if (asset.ConfidenceBaseline < 0) warnings.Add($"confidence_baseline_invalid:{asset.Asset}");
+            if (string.IsNullOrWhiteSpace(asset.SignalFrequency)) warnings.Add($"signal_frequency_missing:{asset.Asset}");
+            if (asset.EntryLogic is null || asset.EntryLogic.Count == 0) warnings.Add($"entry_logic_missing:{asset.Asset}");
+            if (asset.ExitLogic is null || asset.ExitLogic.Count == 0) warnings.Add($"exit_logic_missing:{asset.Asset}");
+            if (asset.StopLossLogic is null || asset.StopLossLogic.Count == 0) warnings.Add($"stop_loss_logic_missing:{asset.Asset}");
+            if (asset.TakeProfitLogic is null || asset.TakeProfitLogic.Count == 0) warnings.Add($"take_profit_logic_missing:{asset.Asset}");
+            if (asset.InvalidationLogic is null || asset.InvalidationLogic.Count == 0) warnings.Add($"invalidation_logic_missing:{asset.Asset}");
+            if (asset.MarketRegimeTags is null) warnings.Add($"market_regime_tags_missing:{asset.Asset}");
+            if (asset.SessionTags is null) warnings.Add($"session_tags_missing:{asset.Asset}");
+            if (asset.RiskNotes is null || asset.RiskNotes.Count == 0) warnings.Add($"risk_notes_missing:{asset.Asset}");
+            if (!asset.NoAutoTrading || !asset.HumanReviewRequired || asset.BrokerOrdersEnabled || asset.LiveTradingEnabled)
+            {
+                blockers.Add($"asset_safety_flags_invalid:{asset.Asset}");
+            }
+
+            if (asset.Readiness is "needs_more_validation" or "missing_data" or "data_ready_only" or "quote_mapping_pending")
+            {
+                warnings.Add($"asset_not_tradeable:{asset.Asset}:{asset.Readiness}");
+            }
+        }
+
+        WriteField("Package ID", package.PackageId);
+        WriteField("Package Version", package.PackageVersion);
+        WriteField("Status", package.Status);
+        WriteField("Assets", package.Assets.Count.ToString());
+        WriteMessages("Warnings", warnings);
+        WriteMessages("Blockers", blockers);
+        WriteField("Validation", blockers.Count == 0 ? "ok" : "failed");
+        WriteField("JSON", DisplayPath(service.PackagePath));
+        WriteField("Markdown", DisplayPath(service.PackageMarkdownPath));
+        Console.WriteLine();
+        WriteSafety();
+        return blockers.Count > 0 ? 1 : 0;
     }
 
     private int ShowScalpingEnsembleHumanReviewPackage()
