@@ -241,7 +241,7 @@ function ScalpingProgressCard({ masterStatus }) {
         <MiniMetric label="Sensitivity" value={masterStatus.scalping_parameter_sensitivity_health || 'missing'} tone={statusTone(masterStatus.scalping_parameter_sensitivity_health)} />
         <MiniMetric label="Regime" value={masterStatus.scalping_regime_validation_health || 'missing'} tone={statusTone(masterStatus.scalping_regime_validation_health)} />
         <MiniMetric label="Bot Specs" value={formatNumber(masterStatus.ctrader_bot_specs_ready)} tone={masterStatus.ctrader_bot_specs_ready ? 'good' : 'info'} />
-        <MiniMetric label="Signal Specs" value={formatNumber(masterStatus.signal_agent_specs_ready)} tone={masterStatus.signal_agent_specs_ready ? 'good' : 'info'} />
+        <MiniMetric label="Signal-Spezifikationen" value={formatNumber(masterStatus.signal_agent_specs_ready)} tone={masterStatus.signal_agent_specs_ready ? 'good' : 'info'} />
         <MiniMetric label="no_auto_trading" value={String(masterStatus.no_auto_trading)} tone={masterStatus.no_auto_trading ? 'good' : 'danger'} />
         <MiniMetric label="human_review" value={String(masterStatus.human_review_required)} tone={masterStatus.human_review_required ? 'good' : 'danger'} />
         <MiniMetric label="broker_orders" value={String(masterStatus.broker_orders_enabled)} tone={masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
@@ -711,7 +711,7 @@ export function OperatorDashboardPanel() {
           masterStatus={operatorState.masterStatus}
         />
 
-        <OperatorCard title="Research Summary" tone="info">
+        <OperatorCard title="Recherche-Zusammenfassung" tone="info">
           <div className="operator-research-grid">
             <MiniMetric label="Strategien getestet" value={formatNumber(operatorState.research.strategies_tested)} tone="info" />
             <MiniMetric label="Robust" value={formatNumber(operatorState.research.robust_strategies)} tone="good" />

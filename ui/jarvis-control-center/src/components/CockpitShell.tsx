@@ -379,7 +379,7 @@ function buildModules(operatorState) {
     },
     {
       id: 'open_research',
-      title: 'Research',
+      title: 'Recherche',
       value: `${formatNumber(operatorState.research.strategies_tested)} Tests`,
       detail: `${formatNumber(operatorState.research.robust_strategies)} robust / ${formatNumber(operatorState.research.overfit_suspected)} overfit`,
       tone: operatorState.research.overfit_suspected ? 'warn' : 'good',
@@ -446,7 +446,7 @@ function VoiceSphere({ operatorState, isRefreshing }) {
         <div className="voice-sphere-ring" />
         <div className="voice-sphere-content">
           <span>Jarvis aktiv</span>
-          <strong>Voice Sphere</strong>
+          <strong>Sprachzentrale</strong>
           <p>Spracheingabe geplant · Sprachausgabe geplant</p>
         </div>
       </div>
@@ -488,6 +488,26 @@ function OrbitPanel({ module, onOpen }) {
       <p>{module.detail}</p>
       <small>{module.meta}</small>
     </button>
+  );
+}
+
+function DashboardAccordion({ id, title, badge, tone = 'info', summary, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <details className={`cockpit-accordion ${toneClass(tone)}`} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>
+        <div className="cockpit-accordion-head">
+          <span>{title}</span>
+          <strong>{summary}</strong>
+        </div>
+        <div className="cockpit-accordion-badges">
+          {badge ? <StatusPill tone={tone}>{badge}</StatusPill> : null}
+          <StatusPill tone={open ? 'good' : 'info'}>{open ? 'geöffnet' : 'eingeklappt'}</StatusPill>
+        </div>
+      </summary>
+      {open ? <div className="cockpit-accordion-body">{children}</div> : null}
+    </details>
   );
 }
 
@@ -534,6 +554,132 @@ function MasterStatusOverview({ masterStatus, source }) {
   );
 }
 
+function compactStatusLabel(status) {
+  const normalized = String(status || '').toLowerCase();
+
+  if (normalized.includes('bot_ready')) return 'Bot-bereit';
+  if (normalized.includes('signal_ready')) return 'Signal-bereit';
+  if (normalized.includes('needs_more_validation')) return 'Weitere Prüfung nötig';
+  if (normalized.includes('needs_validation')) return 'Prüfung erforderlich';
+  if (normalized.includes('ready')) return 'Bereit';
+  if (normalized.includes('warning')) return 'Warnung';
+  if (normalized.includes('critical')) return 'Kritisch';
+  return statusDeutsch(status);
+}
+
+function DashboardSystemStatus({ operatorState }) {
+  return (
+    <div className="cockpit-accordion-grid">
+      <Metric label="Gesamtstatus" value={statusDeutsch(operatorState.masterStatus.overall_status)} tone={toneFromStatus(operatorState.masterStatus.overall_status)} />
+      <Metric label="Supervisor" value={operatorState.supervisor.running ? 'läuft' : statusDeutsch(operatorState.supervisor.status)} tone={operatorState.supervisor.running ? 'good' : toneFromStatus(operatorState.supervisor.status)} />
+      <Metric label="Scheduler" value={`${formatNumber(operatorState.schedulerJobs.filter((job) => job.enabled).length)} aktiv`} tone="info" />
+      <Metric label="Nightly" value={statusDeutsch(operatorState.nightly.current_state)} tone={toneFromStatus(operatorState.nightly.current_state)} />
+      <Metric label="Letzte Analyse" value={shortDateTime(operatorState.masterStatus.last_meta_review)} tone="info" />
+      <Metric label="Lernstrategie" value={operatorState.masterStatus.learning_strategy} tone="info" />
+    </div>
+  );
+}
+
+function DashboardTradingIntelligence({ operatorState }) {
+  const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
+  const validationReport = reportByKey(operatorState, 'validateEnsembleSignalPackage')?.raw || {};
+  const handoffReport = reportByKey(operatorState, 'systemBHandoffBundle')?.raw || {};
+
+  const assets = Array.isArray(portfolioReport.assets) && portfolioReport.assets.length
+    ? portfolioReport.assets
+    : [
+        { asset: 'GER40', readiness: 'bot_ready' },
+        { asset: 'XAUUSD', readiness: 'bot_ready' },
+        { asset: 'EURUSD', readiness: 'needs_more_validation' },
+      ];
+
+  return (
+    <div className="cockpit-accordion-grid">
+      {assets.map((asset) => (
+        <Metric
+          key={asset.asset}
+          label={asset.asset}
+          value={compactStatusLabel(asset.readiness)}
+          tone={asset.readiness === 'bot_ready' ? 'good' : asset.readiness.includes('need') ? 'warn' : 'info'}
+        />
+      ))}
+      <Metric label="Portfolio" value={compactStatusLabel(portfolioReport.portfolio_readiness || portfolioReport.portfolio_status)} tone={toneFromStatus(portfolioReport.portfolio_readiness || portfolioReport.portfolio_status)} />
+      <Metric label="Paketvalidierung" value={compactStatusLabel(validationReport.validation_status || validationReport.status)} tone={toneFromStatus(validationReport.validation_status || validationReport.status)} />
+      <Metric label="Übergabepaket" value={handoffReport.bundle_path || portfolioReport.bundle_path || '-'} tone="info" />
+    </div>
+  );
+}
+
+function DashboardReviewSummary({ operatorState }) {
+  const review = operatorState.humanReview || {};
+  return (
+    <div className="cockpit-accordion-grid">
+      <Metric label="Offene Prüfungen" value={formatNumber(review.pending_reviews)} tone={review.pending_reviews ? 'warn' : 'good'} />
+      <Metric label="Freigegeben" value={formatNumber(review.approved_reviews)} tone="good" />
+      <Metric label="Zurückgestellt" value={formatNumber(review.deferred_reviews)} tone="info" />
+      <Metric label="Evidenz angefordert" value={formatNumber(review.needs_more_evidence_reviews)} tone={review.needs_more_evidence_reviews ? 'warn' : 'good'} />
+    </div>
+  );
+}
+
+function DashboardLearningSummary({ operatorState }) {
+  const masterStatus = operatorState.masterStatus;
+  return (
+    <div className="cockpit-accordion-grid">
+      <Metric label="Wissensqualität" value={statusDeutsch(masterStatus.knowledge_health)} tone={toneFromStatus(masterStatus.knowledge_health)} />
+      <Metric label="Vertrauen" value={scorePercent(masterStatus.average_trust_score)} tone="info" />
+      <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
+      <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
+    </div>
+  );
+}
+
+function DashboardStorageResources({ operatorState }) {
+  return (
+    <div className="cockpit-accordion-grid">
+      <Metric label="RAM" value={formatGb(operatorState.resource.free_memory_gb || operatorState.resource.memory_free_gb || 0)} tone="info" />
+      <Metric label="CPU" value={`${Math.round(operatorState.resource.cpu_usage_percent)}%`} tone={operatorState.resource.should_stop ? 'danger' : operatorState.resource.should_pause ? 'warn' : 'good'} />
+      <Metric label="Speicherplatz" value={formatGb(operatorState.storage.free_disk_gb)} tone={operatorState.storage.errors.length ? 'warn' : 'good'} />
+      <Metric label="Cleanup" value={formatNumber(operatorState.storage.cleanup_candidate_count)} tone={operatorState.storage.cleanup_candidate_count ? 'warn' : 'good'} />
+    </div>
+  );
+}
+
+function DashboardSafety({ operatorState }) {
+  return (
+    <div className="cockpit-accordion-grid">
+      <Metric label="Auto-Trading" value={operatorState.masterStatus.no_auto_trading ? 'aus' : 'an'} tone={operatorState.masterStatus.no_auto_trading ? 'good' : 'danger'} />
+      <Metric label="Menschliche Prüfung" value={operatorState.masterStatus.human_review_required ? 'erforderlich' : 'frei'} tone={operatorState.masterStatus.human_review_required ? 'warn' : 'good'} />
+      <Metric label="Broker-Orders" value={operatorState.masterStatus.broker_orders_enabled ? 'an' : 'aus'} tone={operatorState.masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
+      <Metric label="Live-Trading" value={operatorState.masterStatus.live_trading_enabled ? 'an' : 'aus'} tone={operatorState.masterStatus.live_trading_enabled ? 'danger' : 'good'} />
+        <Metric label="Nur Forschung" value={operatorState.masterStatus.research_only ? 'aktiv' : 'inaktiv'} tone={operatorState.masterStatus.research_only ? 'good' : 'warn'} />
+    </div>
+  );
+}
+
+function DashboardLogs({ operatorState }) {
+  const warnings = [
+    ...operatorState.warnings,
+    ...operatorState.storage.warnings,
+    ...operatorState.storage.errors,
+  ].filter(Boolean);
+
+  return (
+    <div className="cockpit-accordion-grid">
+      <div className="operator-warning-list">
+        {(warnings.length ? warnings : ['Keine kritischen Warnungen.']).slice(0, 6).map((warning) => (
+          <span key={warning}>{warning}</span>
+        ))}
+      </div>
+      <div className="operator-log-list">
+        {operatorState.logLines.slice(-6).map((line) => (
+          <code key={line}>{line}</code>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ScalpingProgressPanel({ masterStatus }) {
   const finalCandidates = masterStatus.scalping_final_candidates || 0;
   const robustCandidates = masterStatus.scalping_robust_candidates || 0;
@@ -555,7 +701,7 @@ function ScalpingProgressPanel({ masterStatus }) {
         <Metric label="Parameter Sensitivity" value={masterStatus.scalping_parameter_sensitivity_health || 'missing'} tone={toneFromStatus(masterStatus.scalping_parameter_sensitivity_health)} />
         <Metric label="Regime Validation" value={masterStatus.scalping_regime_validation_health || 'missing'} tone={toneFromStatus(masterStatus.scalping_regime_validation_health)} />
         <Metric label="Bot Specs" value={formatNumber(masterStatus.ctrader_bot_specs_ready)} tone={masterStatus.ctrader_bot_specs_ready ? 'good' : 'info'} />
-        <Metric label="Signal Specs" value={formatNumber(masterStatus.signal_agent_specs_ready)} tone={masterStatus.signal_agent_specs_ready ? 'good' : 'info'} />
+        <Metric label="Signal-Spezifikationen" value={formatNumber(masterStatus.signal_agent_specs_ready)} tone={masterStatus.signal_agent_specs_ready ? 'good' : 'info'} />
         <Metric label="no_auto_trading" value={String(masterStatus.no_auto_trading)} tone={masterStatus.no_auto_trading ? 'good' : 'danger'} />
         <Metric label="human_review" value={String(masterStatus.human_review_required)} tone={masterStatus.human_review_required ? 'good' : 'danger'} />
         <Metric label="broker_orders" value={String(masterStatus.broker_orders_enabled)} tone={masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
@@ -1053,7 +1199,7 @@ function DetailOverlay({ moduleId, modules, operatorState, onClose }) {
 
         <div className="cockpit-report-preview">
           <div className="cockpit-report-head">
-            <span>Report-Auszug</span>
+            <span>Berichtsauszug</span>
             <StatusPill tone={sourceTone(operatorState.dataSource)}>
               {sourceModeLabel(operatorState.dataSource)}
             </StatusPill>
@@ -1096,24 +1242,28 @@ export function CockpitShell() {
   const [activeModule, setActiveModule] = useState('');
   const [activeView, setActiveView] = useState('overview');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshOperatorState = () => {
+    setIsRefreshing(true);
+    return loadOperatorDashboard()
+      .then((nextState) => {
+        setOperatorState(nextState);
+        return nextState;
+      })
+      .finally(() => {
+        setIsRefreshing(false);
+      });
+  };
 
   useEffect(() => {
     let mounted = true;
     let refreshTimer;
 
     const refresh = () => {
-      setIsRefreshing(true);
-      loadOperatorDashboard()
-        .then((nextState) => {
-          if (mounted) {
-            setOperatorState(nextState);
-          }
-        })
-        .finally(() => {
-          if (mounted) {
-            setIsRefreshing(false);
-          }
-        });
+      refreshOperatorState().catch(() => {
+        if (mounted) {
+          setIsRefreshing(false);
+        }
+      });
     };
 
     refresh();
@@ -1126,8 +1276,6 @@ export function CockpitShell() {
   }, []);
 
   const modules = useMemo(() => buildModules(operatorState), [operatorState]);
-  const leftModules = modules.slice(0, 5);
-  const rightModules = modules.slice(5);
   const fixtureActive = operatorState.dataSource !== DATA_SOURCE.LIVE_FILE;
 
   return (
@@ -1156,26 +1304,75 @@ export function CockpitShell() {
             source={operatorState.masterStatusSource}
           />
 
-          <div className="cockpit-layout">
-            <div className="orbit-column orbit-column-left">
-              {leftModules.map((module) => (
-                <OrbitPanel key={module.id} module={module} onOpen={setActiveModule} />
-              ))}
-            </div>
+          <div className="cockpit-accordion-stack">
+            <DashboardAccordion
+              badge={statusDeutsch(operatorState.masterStatus.overall_status)}
+              summary={`Supervisor ${operatorState.supervisor.running ? 'läuft' : statusDeutsch(operatorState.supervisor.status)} · Scheduler ${formatNumber(operatorState.schedulerJobs.filter((job) => job.enabled).length)} aktiv`}
+              title="Systemstatus"
+              tone={toneFromStatus(operatorState.masterStatus.overall_status)}
+            >
+              <DashboardSystemStatus operatorState={operatorState} />
+            </DashboardAccordion>
 
-            <VoiceSphere operatorState={operatorState} isRefreshing={isRefreshing} />
+            <DashboardAccordion
+              badge={compactStatusLabel(operatorState.masterStatus.ensemble_portfolio_status || operatorState.masterStatus.scalping_status || 'bereit')}
+              summary="GER40 · XAUUSD · EURUSD"
+              title="Handelsintelligenz"
+              tone="info"
+            >
+              <DashboardTradingIntelligence operatorState={operatorState} />
+            </DashboardAccordion>
 
-            <div className="orbit-column orbit-column-right">
-              {rightModules.map((module) => (
-                <OrbitPanel key={module.id} module={module} onOpen={setActiveModule} />
-              ))}
-            </div>
-          </div>
+            <DashboardAccordion
+              badge={`${formatNumber(operatorState.humanReview?.pending_reviews || 0)} offen`}
+              summary={`Freigegeben ${formatNumber(operatorState.humanReview?.approved_reviews || 0)} · Zurückgestellt ${formatNumber(operatorState.humanReview?.deferred_reviews || 0)}`}
+              title="Prüfzentrum"
+              tone={(operatorState.humanReview?.pending_reviews || 0) ? 'warn' : 'good'}
+            >
+              <DashboardReviewSummary operatorState={operatorState} />
+              <ViewErrorBoundary>
+                <HumanReviewCenter operatorState={operatorState} onRefresh={refreshOperatorState} />
+              </ViewErrorBoundary>
+            </DashboardAccordion>
 
-          <div className="cockpit-command-strip" aria-label="Vorbereitete Sprachbefehle">
-            {['open_supervisor', 'open_scheduler', 'open_research', 'open_storage', 'open_safety', 'open_logs'].map((command) => (
-              <code key={command}>{command}</code>
-            ))}
+            <DashboardAccordion
+              badge={statusDeutsch(operatorState.masterStatus.knowledge_health)}
+              summary={`Vertrauen ${scorePercent(operatorState.masterStatus.average_trust_score)} · OOS ${formatNumber(operatorState.masterStatus.knowledge_items_needing_oos)}`}
+              title="Lernen & Wissen"
+              tone={toneFromStatus(operatorState.masterStatus.knowledge_health)}
+            >
+              <DashboardLearningSummary operatorState={operatorState} />
+              <ViewErrorBoundary>
+                <KnowledgeTrustView operatorState={operatorState} />
+              </ViewErrorBoundary>
+            </DashboardAccordion>
+
+            <DashboardAccordion
+              badge={`${formatGb(operatorState.storage.free_disk_gb)} frei`}
+              summary={`CPU ${Math.round(operatorState.resource.cpu_usage_percent)}% · RAM ${Math.round(operatorState.resource.memory_usage_percent)}%`}
+              title="Speicher & Ressourcen"
+              tone={operatorState.storage.errors.length ? 'warn' : 'good'}
+            >
+              <DashboardStorageResources operatorState={operatorState} />
+            </DashboardAccordion>
+
+            <DashboardAccordion
+              badge={operatorState.masterStatus.no_auto_trading ? 'aus' : 'an'}
+              summary={`Menschliche Prüfung ${operatorState.masterStatus.human_review_required ? 'erforderlich' : 'frei'} · Live ${operatorState.masterStatus.live_trading_enabled ? 'an' : 'aus'}`}
+              title="Sicherheit"
+              tone={operatorState.masterStatus.broker_orders_enabled || operatorState.masterStatus.live_trading_enabled ? 'danger' : 'good'}
+            >
+              <DashboardSafety operatorState={operatorState} />
+            </DashboardAccordion>
+
+            <DashboardAccordion
+              badge={operatorState.logLines.length ? `${operatorState.logLines.length} Einträge` : 'leer'}
+              summary={`${operatorState.warnings.length + operatorState.storage.warnings.length + operatorState.storage.errors.length} Warnungen`}
+              title="Protokolle"
+              tone={(operatorState.warnings.length + operatorState.storage.warnings.length + operatorState.storage.errors.length) ? 'warn' : 'info'}
+            >
+              <DashboardLogs operatorState={operatorState} />
+            </DashboardAccordion>
           </div>
         </>
       ) : null}
