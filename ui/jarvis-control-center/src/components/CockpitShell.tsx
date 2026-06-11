@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Component, useEffect, useMemo, useState } from 'react';
 import {
   createOperatorDashboardFallback,
   DATA_SOURCE,
@@ -74,6 +74,43 @@ function toneFromStatus(status) {
 
 function reportByKey(operatorState, key) {
   return operatorState.reports.find((report) => report.key === key);
+}
+
+class ViewErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <section className="control-view-panel" aria-label="Fehler">
+          <div className="control-view-head">
+            <div>
+              <p className="eyebrow">Fehler</p>
+              <h2>Ansicht konnte nicht geladen werden</h2>
+            </div>
+          </div>
+          <p className="control-view-note">
+            Prüfdaten konnten nicht geladen werden. Bridge prüfen oder später erneut versuchen.
+          </p>
+          <p className="control-view-note">
+            Details: {this.state.message || 'unbekannter Fehler'}
+          </p>
+        </section>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 function jsonPreview(raw) {
@@ -390,9 +427,9 @@ function buildModules(operatorState) {
     },
     {
       id: 'open_logs',
-      title: 'Logs',
+      title: 'Protokolle',
       value: warningCount ? `${warningCount} Warnungen` : 'ruhig',
-      detail: operatorState.logLines.at(-1) || 'Keine Live-Logs in Bridge v1',
+      detail: operatorState.logLines.at(-1) || 'Keine Live-Protokolle in Bridge v1',
       tone: warningCount ? 'warn' : 'info',
       meta: 'nur lesend',
     },
@@ -423,10 +460,10 @@ function VoiceSphere({ operatorState, isRefreshing }) {
         </StatusPill>
       </div>
 
-      <div className="chat-fallback" aria-label="Chat-Fallback">
+      <div className="chat-fallback" aria-label="Chat-Ersatz">
         <input
-          aria-label="Chat-Fallback Eingabe"
-          placeholder="Chat-Fallback: später Frage oder Sprachbefehl eingeben..."
+          aria-label="Chat-Ersatz Eingabe"
+          placeholder="Chat-Ersatz: später Frage oder Sprachbefehl eingeben..."
           readOnly
           value=""
         />
@@ -606,8 +643,13 @@ const REVIEW_ACTIONS = {
 };
 
 function HumanReviewCenter({ operatorState, onRefresh }) {
-  const review = operatorState.humanReview;
-  const items = review.items || [];
+  const review = operatorState.humanReview || {
+    pending_reviews: 0,
+    approved_reviews: 0,
+    rejected_reviews: 0,
+    items: [],
+  };
+  const items = Array.isArray(review.items) ? review.items : [];
   const [actionMessage, setActionMessage] = useState('');
   const [actionBusyId, setActionBusyId] = useState('');
 
@@ -730,7 +772,7 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
         {items.length === 0 ? (
           <article className="review-card">
             <h3>Keine offenen Prüfungen</h3>
-            <p>Hermes meldet aktuell keine offenen Prüfungen oder die Prüfwarteschlange ist über die Bridge nicht erreichbar.</p>
+            <p>Keine offenen Prüfungen.</p>
           </article>
         ) : null}
       </div>
@@ -1096,7 +1138,7 @@ export function CockpitShell() {
         </StatusPill>
         <span>Zuletzt aktualisiert: {shortTime(operatorState.lastUpdatedAt)}</span>
         <span>Polling: {operatorState.pollIntervalSeconds || COCKPIT_REFRESH_SECONDS}s</span>
-        <span>{formatNumber(operatorState.liveReportCount)} Live-Reports / {formatNumber(operatorState.fixtureReportCount)} Fallbacks</span>
+        <span>{formatNumber(operatorState.liveReportCount)} Live-Berichte / {formatNumber(operatorState.fixtureReportCount)} Ersatzdaten</span>
       </div>
 
       {fixtureActive ? (
@@ -1138,11 +1180,31 @@ export function CockpitShell() {
         </>
       ) : null}
 
-      {activeView === 'review' ? <HumanReviewCenter operatorState={operatorState} onRefresh={refreshOperatorState} /> : null}
-      {activeView === 'brain' ? <CognitiveCenter operatorState={operatorState} /> : null}
-      {activeView === 'trust' ? <KnowledgeTrustView operatorState={operatorState} /> : null}
-      {activeView === 'domains' ? <DomainView operatorState={operatorState} /> : null}
-      {activeView === 'roles' ? <RoleView operatorState={operatorState} /> : null}
+      {activeView === 'review' ? (
+        <ViewErrorBoundary>
+          <HumanReviewCenter operatorState={operatorState} onRefresh={refreshOperatorState} />
+        </ViewErrorBoundary>
+      ) : null}
+      {activeView === 'brain' ? (
+        <ViewErrorBoundary>
+          <CognitiveCenter operatorState={operatorState} />
+        </ViewErrorBoundary>
+      ) : null}
+      {activeView === 'trust' ? (
+        <ViewErrorBoundary>
+          <KnowledgeTrustView operatorState={operatorState} />
+        </ViewErrorBoundary>
+      ) : null}
+      {activeView === 'domains' ? (
+        <ViewErrorBoundary>
+          <DomainView operatorState={operatorState} />
+        </ViewErrorBoundary>
+      ) : null}
+      {activeView === 'roles' ? (
+        <ViewErrorBoundary>
+          <RoleView operatorState={operatorState} />
+        </ViewErrorBoundary>
+      ) : null}
 
       <DetailOverlay
         moduleId={activeModule}

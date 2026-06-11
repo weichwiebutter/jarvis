@@ -326,7 +326,7 @@ function ForwardTestCard({ masterStatus, forwardTest }) {
         <MiniMetric label="Assets" value={forwardTest.forward_test_assets?.join(', ') || masterStatus.forward_test_assets?.join(', ') || 'n/a'} tone="info" />
         <MiniMetric label="Signals Observed" value={formatNumber(forwardTest.forward_test_signals_observed ?? masterStatus.forward_test_signals_observed)} tone="info" />
         <MiniMetric label="Health" value={forwardTest.forward_test_health || masterStatus.forward_test_health || 'n/a'} tone={statusTone(forwardTest.forward_test_health || masterStatus.forward_test_health)} />
-        <MiniMetric label="Human Review" value={String(forwardTest.forward_test_requires_human_review ?? masterStatus.forward_test_requires_human_review ?? true)} tone={(forwardTest.forward_test_requires_human_review ?? true) ? 'good' : 'danger'} />
+        <MiniMetric label="Menschliche Prüfung" value={String(forwardTest.forward_test_requires_human_review ?? masterStatus.forward_test_requires_human_review ?? true)} tone={(forwardTest.forward_test_requires_human_review ?? true) ? 'good' : 'danger'} />
       </div>
 
       <div className="operator-warning-list" aria-label="Forward Test Warnings">
@@ -467,16 +467,16 @@ function TradingIntelligenceCard({ reports }) {
   return (
     <OperatorCard
       badge={String(portfolio.portfolio_readiness || portfolio.portfolio_status || 'needs_validation')}
-      title="Trading Intelligence"
+      title="Handelsintelligenz"
       tone={statusTone(portfolio.portfolio_readiness || portfolio.portfolio_status)}
     >
       <div className="operator-metric-grid">
-        <MiniMetric label="Portfolio Status" value={String(portfolio.portfolio_readiness || portfolio.portfolio_status || '-')} tone="info" />
-        <MiniMetric label="Asset Count" value={formatNumber(assets.length || handoff.asset_count || displayedAssets.length)} tone="info" />
-        <MiniMetric label="Setup Count" value={formatNumber(setupCount)} tone="info" />
-        <MiniMetric label="Signal Spec Count" value={formatNumber(signalSpecs.specs_ready || 0)} tone="good" />
-        <MiniMetric label="Package Validation" value={String(validation.validation_status || validation.status || portfolio.package_validation_status || 'unknown')} tone={statusTone(validation.validation_status || validation.status)} />
-        <MiniMetric label="Handoff Bundle" value={String(handoff.bundle_path || portfolio.bundle_path || '-')} tone="info" />
+        <MiniMetric label="Portfolio-Status" value={String(portfolio.portfolio_readiness || portfolio.portfolio_status || '-')} tone="info" />
+        <MiniMetric label="Asset-Anzahl" value={formatNumber(assets.length || handoff.asset_count || displayedAssets.length)} tone="info" />
+        <MiniMetric label="Setup-Anzahl" value={formatNumber(setupCount)} tone="info" />
+        <MiniMetric label="Signal-Spezifikationen" value={formatNumber(signalSpecs.specs_ready || 0)} tone="good" />
+        <MiniMetric label="Paketprüfung" value={String(validation.validation_status || validation.status || portfolio.package_validation_status || 'unknown')} tone={statusTone(validation.validation_status || validation.status)} />
+        <MiniMetric label="Übergabepaket" value={String(handoff.bundle_path || portfolio.bundle_path || '-')} tone="info" />
       </div>
 
       <div className="operator-token-list">
@@ -512,8 +512,8 @@ function TradingIntelligenceCard({ reports }) {
       </div>
 
       <div className="operator-warning-list">
-        <span>Multi-Asset Status: {String(multiAsset.multi_asset_research_status || multiAsset.status || 'unknown')}</span>
-        <span>EURUSD ist bewusst nur Signal-/Validierungsbereit, nicht handelbar.</span>
+        <span>Multi-Asset-Status: {String(multiAsset.multi_asset_research_status || multiAsset.status || 'unknown')}</span>
+        <span>EURUSD ist bewusst nur signal-bereit bzw. prüfungsbedürftig, nicht handelbar.</span>
       </div>
     </OperatorCard>
   );
@@ -575,7 +575,7 @@ export function OperatorDashboardPanel() {
       action={
         <div className="operator-panel-actions">
           <StatusPill tone={bridgeLive ? 'good' : 'warn'}>
-            {bridgeLive ? 'Live Bridge' : 'Fixture-Fallback'}
+            {bridgeLive ? 'Live-Bridge' : 'Ersatzdaten'}
           </StatusPill>
           <span className="operator-refresh-meta">
             Zuletzt: {shortTime(operatorState.lastUpdatedAt)} · Refresh {operatorState.pollIntervalSeconds || OPERATOR_REFRESH_SECONDS}s
@@ -725,14 +725,14 @@ export function OperatorDashboardPanel() {
           </div>
         </OperatorCard>
 
-        <OperatorCard title="Safety Control Layer" tone="warn">
+        <OperatorCard title="Sicherheit" tone="warn">
           <div className="operator-safety-grid">
-            <SafetyPlaceholder title="Auto-Trading" value="deaktiviert" />
-            <SafetyPlaceholder title="Demo/Paper Mode" value="Platzhalter" tone="info" />
-            <SafetyPlaceholder title="Emergency Stop" value="nicht verdrahtet" tone="danger" />
-            <SafetyPlaceholder title="Risk Limits" value="geplant" />
-            <SafetyPlaceholder title="Strategy Whitelist" value="geplant" tone="info" />
-            <SafetyPlaceholder title="Symbol Whitelist" value="geplant" tone="info" />
+            <SafetyPlaceholder title="Auto-Trading" value="aus" />
+            <SafetyPlaceholder title="Demo/Paper Modus" value="Platzhalter" tone="info" />
+            <SafetyPlaceholder title="Not-Aus" value="nicht verdrahtet" tone="danger" />
+            <SafetyPlaceholder title="Risikolimits" value="geplant" />
+            <SafetyPlaceholder title="Strategie-Whitelist" value="geplant" tone="info" />
+            <SafetyPlaceholder title="Symbol-Whitelist" value="geplant" tone="info" />
           </div>
           <div className="operator-safety-flags">
             <StatusPill tone="warn">no_auto_trading=true</StatusPill>
@@ -743,11 +743,11 @@ export function OperatorDashboardPanel() {
       </div>
 
       <div className="operator-bottom-grid">
-        <OperatorCard title="Report Viewer" tone="info">
+        <OperatorCard title="Berichte" tone="info">
           <ReportViewer reports={operatorState.reports} />
         </OperatorCard>
 
-        <OperatorCard title="Storage / Logs" tone={operatorState.storage.errors.length ? 'danger' : 'good'}>
+        <OperatorCard title="Speicher / Protokolle" tone={operatorState.storage.errors.length ? 'danger' : 'good'}>
           <div className="operator-storage-card">
             <MiniMetric label="Root" value={operatorState.storage.root} tone="info" />
             <MiniMetric label="Status" value={operatorState.storage.status} tone="good" />
