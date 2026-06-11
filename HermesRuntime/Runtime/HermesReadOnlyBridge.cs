@@ -6,7 +6,7 @@ namespace Hermes.Runtime;
 
 public sealed class HermesReadOnlyBridge
 {
-    private const string BridgeVersion = "hermes_readonly_bridge_v1";
+    private const string BridgeVersion = "hermes_readonly_bridge_v2";
     private const int MaxArrayItems = 25;
 
     private static readonly IReadOnlyList<ReportDefinition> Reports =
@@ -23,6 +23,7 @@ public sealed class HermesReadOnlyBridge
         new("researchInsights", "Research Insights", "/reports/research-insights", "strategy_research/research_insights.json"),
         new("robustStrategies", "Robuste Strategien", "/reports/robust-strategies", "strategy_research/robust_strategies.json"),
         new("overfitReport", "Overfit Report", "/reports/overfit-report", "strategy_research/overfit_report.json"),
+        new("humanReviewQueue", "Human Review Queue", "/reports/human-review-queue", "cognitive_core/human_review_queue.json"),
         new("ensemblePortfolioStatus", "Ensemble Portfolio Status", "/reports/ensemble-portfolio-status", "reports/scalping_portfolio/ensemble_portfolio/ensemble_portfolio_status.json"),
         new("systemBHandoffBundle", "System B Handoff Bundle", "/reports/system-b-handoff-bundle", "reports/system_b_handoff/system_b_handoff_bundle/portfolio_summary.json"),
         new("validateEnsembleSignalPackage", "Validate Ensemble Signal Package", "/reports/validate-ensemble-signal-package", "reports/scalping_portfolio/ensemble_portfolio/ensemble_signal_agent_package.json"),
@@ -48,11 +49,13 @@ public sealed class HermesReadOnlyBridge
     };
 
     private readonly StoragePaths _storagePaths;
+    private readonly string _runtimeRoot;
     private readonly DateTimeOffset _startedAtUtc = DateTimeOffset.UtcNow;
 
-    public HermesReadOnlyBridge(StoragePaths storagePaths)
+    public HermesReadOnlyBridge(StoragePaths storagePaths, string runtimeRoot)
     {
         _storagePaths = storagePaths;
+        _runtimeRoot = runtimeRoot;
     }
 
     public async Task RunAsync(string urlPrefix, CancellationToken cancellationToken)
@@ -107,6 +110,7 @@ public sealed class HermesReadOnlyBridge
                 .Append("/bridge/review/reject-review")
                 .Append("/bridge/review/request-more-evidence")
                 .Append("/bridge/review/defer-review")
+                .Append("/bridge/bot-spec/export")
                 .Append("/bridge/health")
                 .Append("/reports")
                 .Append("/operator/dashboard")
@@ -133,7 +137,7 @@ public sealed class HermesReadOnlyBridge
             {
                 await WriteJsonAsync(
                     context.Response,
-                    Error("method_not_allowed", "Only GET and POST requests are allowed."),
+                    Error("method_not_allowed", "Only GET, POST and OPTIONS requests are allowed."),
                     HttpStatusCode.MethodNotAllowed);
                 return;
             }
@@ -144,6 +148,12 @@ public sealed class HermesReadOnlyBridge
             if (context.Request.HttpMethod == "POST" && TryHandleReviewAction(path, context.Request, out var reviewResponse, out var reviewStatus))
             {
                 await WriteJsonAsync(context.Response, reviewResponse, reviewStatus);
+                return;
+            }
+
+            if (context.Request.HttpMethod == "POST" && TryHandleBotSpecAction(path, context.Request, out var botSpecResponse, out var botSpecStatus))
+            {
+                await WriteJsonAsync(context.Response, botSpecResponse, botSpecStatus);
                 return;
             }
 
@@ -301,6 +311,82 @@ public sealed class HermesReadOnlyBridge
         catch (Exception ex) when (ex is InvalidOperationException or JsonException or IOException or UnauthorizedAccessException)
         {
             response = Error("review_action_failed", ex.Message);
+            statusCode = HttpStatusCode.BadRequest;
+            return true;
+        }
+    }
+
+    private bool TryHandleBotSpecAction(
+        string path,
+        HttpListenerRequest request,
+        out BridgeResponseModel response,
+        out HttpStatusCode statusCode)
+    {
+        response = Error("not_found", $"Endpoint is not whitelisted: {path}");
+        statusCode = HttpStatusCode.NotFound;
+
+        if (!string.Equals(path, "/bridge/bot-spec/export", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
+            var body = reader.ReadToEnd();
+            var payload = JsonNode.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body)?.AsObject();
+            var candidateId = payload?["candidate_id"]?.GetValue<string>() ?? payload?["candidateId"]?.GetValue<string>() ?? string.Empty;
+            var asset = payload?["asset"]?.GetValue<string>() ?? string.Empty;
+            var setupId = payload?["setup_id"]?.GetValue<string>() ?? payload?["setupId"]?.GetValue<string>() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(candidateId))
+            {
+                response = Error("invalid_request", "candidate_id ist erforderlich.");
+                statusCode = HttpStatusCode.BadRequest;
+                return true;
+            }
+
+            var normalizedCandidateId = candidateId.Trim();
+            if (!normalizedCandidateId.StartsWith("scalp_", StringComparison.OrdinalIgnoreCase)
+                || normalizedCandidateId.Contains('/', StringComparison.Ordinal)
+                || normalizedCandidateId.Contains('\\', StringComparison.Ordinal))
+            {
+                response = Error("invalid_request", "candidate_id ist nicht erlaubt.");
+                statusCode = HttpStatusCode.BadRequest;
+                return true;
+            }
+
+            var result = new ScalpingResearchService(_storagePaths, _runtimeRoot).ExportCTraderBotSpec(normalizedCandidateId);
+
+            response = Ok(new
+            {
+                action = "export_ctrader_bot_specification",
+                candidate_id = normalizedCandidateId,
+                asset = asset,
+                setup_id = setupId,
+                json_path = DisplayPath(result.JsonPath),
+                markdown_path = DisplayPath(result.MarkdownPath),
+                generated_at_utc = DateTimeOffset.UtcNow,
+                output_type = "specification_only",
+                contains_bot_code = false,
+                contains_order_api = false,
+                safety_flags = new[]
+                {
+                    "no_auto_trading=true",
+                    "human_review_required=true",
+                    "broker_orders_enabled=false",
+                    "live_trading_enabled=false",
+                    "research_only=true",
+                    "specification_only=true",
+                    "no_ctrader_order_api=true",
+                }
+            });
+            statusCode = HttpStatusCode.OK;
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JsonException or IOException or UnauthorizedAccessException)
+        {
+            response = Error("bot_spec_export_failed", ex.Message);
             statusCode = HttpStatusCode.BadRequest;
             return true;
         }

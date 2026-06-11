@@ -1100,7 +1100,7 @@ internal sealed class HermesCli
         }
 
         var storagePaths = BuildReadOnlyStoragePaths();
-        var bridge = new HermesReadOnlyBridge(storagePaths);
+        var bridge = new HermesReadOnlyBridge(storagePaths, _runtimeRoot);
         using var cancellation = new CancellationTokenSource();
 
         Console.CancelKeyPress += (_, eventArgs) =>

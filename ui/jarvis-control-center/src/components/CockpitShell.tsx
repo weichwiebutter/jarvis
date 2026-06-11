@@ -8,6 +8,8 @@ import { sourceModeLabel, sourceTone } from '../utils/controlCenterFormatters';
 import { StatusPill, toneClass } from './StatusCard';
 
 const COCKPIT_REFRESH_SECONDS = 45;
+const DEFAULT_SYSTEM_B_BUNDLE_PATH = '/home/home/jarvis/HermesRuntime/.codex_artifacts/reports/system_b_handoff/system_b_handoff_bundle';
+const DEFAULT_ENSEMBLE_PACKAGE_PATH = '/home/home/jarvis/HermesRuntime/.codex_artifacts/reports/scalping_portfolio/ensemble_portfolio/ensemble_signal_agent_package.json';
 
 function formatNumber(value) {
   return new Intl.NumberFormat('de-DE').format(Number(value || 0));
@@ -34,6 +36,15 @@ function shortActionLabel(value) {
 
   const firstPart = text.split(/[.:|/]/)[0].trim();
   return truncateText(firstPart || text, 24);
+}
+
+function visiblePath(value, fallback = '-') {
+  const text = String(value || '').trim();
+  if (!text || text === '[redacted_path]') {
+    return fallback;
+  }
+
+  return text;
 }
 
 function shortDateTime(value) {
@@ -93,6 +104,48 @@ function toneFromStatus(status) {
 
 function reportByKey(operatorState, key) {
   return operatorState.reports.find((report) => report.key === key);
+}
+
+function portfolioEntries(operatorState) {
+  const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
+  if (Array.isArray(portfolioReport.entries) && portfolioReport.entries.length) {
+    return portfolioReport.entries;
+  }
+
+  if (Array.isArray(portfolioReport.assets) && portfolioReport.assets.length) {
+    return portfolioReport.assets;
+  }
+
+  return [
+    { asset: 'GER40', readiness: 'bot_ready', primary_setup: 'ger40_range_breakout_m5', primary_candidate: 'scalp_ger40_160c06ea86' },
+    { asset: 'XAUUSD', readiness: 'bot_ready', primary_setup: 'xauusd_micro_trend_continuation_m5', primary_candidate: 'scalp_xauusd_5564a8e2b6' },
+    { asset: 'EURUSD', readiness: 'needs_more_validation', primary_setup: '-', primary_candidate: '-' },
+  ];
+}
+
+function setupRegistryEntries(operatorState) {
+  const setupRegistry = reportByKey(operatorState, 'setupRegistry')?.raw || {};
+  return Array.isArray(setupRegistry.assets) ? setupRegistry.assets : [];
+}
+
+function botSpecActions(operatorState) {
+  const setups = setupRegistryEntries(operatorState);
+  return portfolioEntries(operatorState)
+    .filter((entry) => String(entry.readiness || entry.portfolio_readiness || '').toLowerCase().includes('bot_ready'))
+    .map((entry) => {
+      const setup = setups.find((item) =>
+        String(item.asset || '').toUpperCase() === String(entry.asset || '').toUpperCase()
+        && String(item.setup_id || '') === String(entry.primary_setup || item.setup_id || ''),
+      );
+      return {
+        asset: entry.asset,
+        setup_id: entry.primary_setup || setup?.setup_id || '-',
+        candidate_id: entry.primary_candidate || setup?.primary_candidate || '-',
+        timeframe: setup?.primary_timeframe || entry.timeframe || '-',
+        readiness: entry.readiness || setup?.readiness_status || '-',
+      };
+    })
+    .filter((action) => action.candidate_id && action.candidate_id !== '-');
 }
 
 class ViewErrorBoundary extends Component {
@@ -262,6 +315,177 @@ function reviewRecommendationDeutsch(value) {
   };
 
   return labels[normalized] || String(value || '-');
+}
+
+function evidenceMetric(summary, key) {
+  const match = String(summary || '').match(new RegExp(`${key}=([0-9.]+)`, 'i'));
+  return match ? Number(match[1]) : 0;
+}
+
+function reviewEvidenceQuality(item) {
+  const quality = evidenceMetric(item.evidence_summary, 'quality');
+  const evidence = evidenceMetric(item.evidence_summary, 'evidence');
+  const validation = evidenceMetric(item.evidence_summary, 'validation');
+  const values = [quality, evidence, validation].filter((value) => Number.isFinite(value) && value > 0);
+  if (!values.length) {
+    return 0;
+  }
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function reviewRisk(item) {
+  const trust = Number(item.trust_before || 0);
+  const evidenceQuality = reviewEvidenceQuality(item);
+  const validation = evidenceMetric(item.evidence_summary, 'validation');
+
+  if (trust < 0.45 || evidenceQuality < 0.45 || validation < 0.45) {
+    return { label: 'hoch', tone: 'danger' };
+  }
+
+  if (trust < 0.65 || evidenceQuality < 0.62 || validation < 0.55) {
+    return { label: 'mittel', tone: 'warn' };
+  }
+
+  return { label: 'niedrig', tone: 'good' };
+}
+
+function reviewTrafficLight(item) {
+  const recommendation = String(item.recommendation || '').toLowerCase();
+  const trust = Number(item.trust_before || 0);
+  const evidenceQuality = reviewEvidenceQuality(item);
+  const risk = reviewRisk(item);
+
+  if (recommendation.includes('reject') || risk.tone === 'danger') {
+    return {
+      label: 'Ablehnung empfohlen',
+      tone: 'danger',
+      className: 'is-red',
+    };
+  }
+
+  if (recommendation.includes('more_evidence') || recommendation.includes('quality_gate') || trust < 0.68 || evidenceQuality < 0.66) {
+    return {
+      label: 'Mehr Evidenz empfohlen',
+      tone: 'warn',
+      className: 'is-yellow',
+    };
+  }
+
+  return {
+    label: 'Freigabe empfohlen',
+    tone: 'good',
+    className: 'is-green',
+  };
+}
+
+function reviewClearReason(item) {
+  const trust = scorePercent(item.trust_before);
+  const evidenceQuality = scorePercent(reviewEvidenceQuality(item));
+  const risk = reviewRisk(item).label;
+  return `${reviewReasonDeutsch(item.reason)} Vertrauen ${trust}, Evidenzqualität ${evidenceQuality}, Risiko ${risk}.`;
+}
+
+async function assertReviewEndpointAvailable(endpoint) {
+  try {
+    const response = await fetch(`${__HERMES_READONLY_BRIDGE_URL__}/bridge/health`, {
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => ({}));
+    const bridgeVersion = payload?.data?.bridge_version || payload?.bridge_version || 'unbekannte Bridge-Version';
+    const endpoints = payload?.data?.endpoints || payload?.endpoints || [];
+    const expected = `/bridge/review/${endpoint}`;
+
+    if (Array.isArray(endpoints) && endpoints.length && !endpoints.includes(expected)) {
+      throw new Error(`Laufende Bridge ${bridgeVersion} unterstützt ${expected} nicht. Bridge neu starten.`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('unterstützt')) {
+      throw error;
+    }
+  }
+}
+
+function postErrorMessage(payload, responseText, response) {
+  const warning = Array.isArray(payload?.warnings) ? payload.warnings[0] : '';
+  return warning
+    || payload?.error
+    || payload?.message
+    || responseText
+    || `${response.status} ${response.statusText}`.trim();
+}
+
+function cleanOperatorEventText(value) {
+  const text = String(value || '').trim();
+  if (!text) {
+    return '';
+  }
+
+  if (text.includes('{') || text.includes('}') || text.includes('launcher invoked')) {
+    return '';
+  }
+
+  if (text.includes('/home/') || text.includes('/mnt/') || text.includes('\\')) {
+    return '';
+  }
+
+  if (/exception|stack trace| at \w+\./i.test(text)) {
+    return '';
+  }
+
+  return truncateText(text, 92);
+}
+
+function operatorLogView(operatorState) {
+  const systemEvents = [
+    {
+      label: 'Supervisor gestartet',
+      detail: operatorState.supervisor.running ? 'Aufsicht läuft' : 'Aufsicht nicht aktiv',
+      tone: operatorState.supervisor.running ? 'good' : 'warn',
+    },
+    {
+      label: 'Nightly abgeschlossen',
+      detail: statusDeutsch(operatorState.nightly.current_state),
+      tone: toneFromStatus(operatorState.nightly.current_state),
+    },
+    {
+      label: 'Zertifizierung abgeschlossen',
+      detail: `${formatNumber(operatorState.masterStatus.scalping_final_candidates || operatorState.masterStatus.ctrader_bot_specs_ready || 0)} Kandidaten/Specs`,
+      tone: (operatorState.masterStatus.scalping_final_candidates || operatorState.masterStatus.ctrader_bot_specs_ready) ? 'good' : 'info',
+    },
+    {
+      label: 'Export erstellt',
+      detail: `${formatNumber(operatorState.masterStatus.signal_agent_specs_ready || 0)} Signal-Spezifikationen`,
+      tone: operatorState.masterStatus.signal_agent_specs_ready ? 'good' : 'warn',
+    },
+    {
+      label: 'Review offen',
+      detail: `${formatNumber(operatorState.humanReview?.pending_reviews || 0)} offene Prüfungen`,
+      tone: operatorState.humanReview?.pending_reviews ? 'warn' : 'good',
+    },
+  ];
+  const reportWarnings = [
+    ...operatorState.warnings,
+    ...operatorState.storage.warnings,
+    ...operatorState.storage.errors,
+  ]
+    .map(cleanOperatorEventText)
+    .filter(Boolean)
+    .filter((warning) =>
+      /missing|fehlt|nicht gefunden|unavailable|nicht verfuegbar|nicht verfügbar|setup watch|runtime report/i.test(warning),
+    )
+    .map((warning) => {
+      if (/setup watch/i.test(warning)) {
+        return { label: 'fehlender Setup Watch Report', detail: 'Setup Watch Report fehlt oder ist nicht lesbar.', tone: 'warn' };
+      }
+
+      return { label: 'fehlender Runtime Report', detail: warning, tone: 'warn' };
+    });
+
+  return {
+    systemEvents,
+    warnings: reportWarnings.length ? reportWarnings : [{ label: 'Keine relevanten Warnungen', detail: 'Runtime-Reports sind ausreichend verfügbar.', tone: 'good' }],
+  };
 }
 
 function GoalSystemCard({ masterStatus }) {
@@ -482,7 +706,7 @@ function buildCommandCenterModules(operatorState) {
       value: compactStatusLabel(validationReport.validation_status || validationReport.status || 'bereit'),
       detail: `${formatNumber(specsReport.spec_count || operatorState.masterStatus.signal_agent_specs_ready || 0)} Signal-Spezifikationen`,
       tone: toneFromStatus(validationReport.validation_status || validationReport.status || 'completed'),
-      meta: truncateText(handoffReport.bundle_path || validationReport.package_path || 'System-B Übergabe bereit', 34),
+      meta: truncateText(visiblePath(handoffReport.bundle_path, DEFAULT_SYSTEM_B_BUNDLE_PATH), 34),
     },
     {
       id: 'learning',
@@ -918,9 +1142,12 @@ function DashboardTradingIntelligence({ operatorState }) {
   const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
   const validationReport = reportByKey(operatorState, 'validateEnsembleSignalPackage')?.raw || {};
   const handoffReport = reportByKey(operatorState, 'systemBHandoffBundle')?.raw || {};
+  const actions = botSpecActions(operatorState);
+  const [botSpecStatus, setBotSpecStatus] = useState('');
+  const [busyCandidate, setBusyCandidate] = useState('');
   const assetQuality = (asset) => {
     const readiness = String(asset.readiness || '').toLowerCase();
-    if (readiness.includes('bot_ready')) return 'gut';
+    if (readiness.includes('bot_ready')) return 'good';
     if (readiness.includes('signal_ready')) return 'info';
     if (readiness.includes('need')) return 'warn';
     return 'info';
@@ -928,11 +1155,54 @@ function DashboardTradingIntelligence({ operatorState }) {
 
   const assets = Array.isArray(portfolioReport.assets) && portfolioReport.assets.length
     ? portfolioReport.assets
+    : Array.isArray(portfolioReport.entries) && portfolioReport.entries.length
+      ? portfolioReport.entries
     : [
         { asset: 'GER40', readiness: 'bot_ready' },
         { asset: 'XAUUSD', readiness: 'bot_ready' },
         { asset: 'EURUSD', readiness: 'needs_more_validation' },
       ];
+
+  const exportBotSpec = async (action) => {
+    const confirmText = [
+      'cTrader Bot-Spezifikation erzeugen?',
+      `Asset: ${action.asset}`,
+      `Setup: ${action.setup_id}`,
+      `Kandidat: ${action.candidate_id}`,
+      'Es wird nur eine Spezifikation erzeugt.',
+      'Kein Bot-Code. Keine Orders. Keine cTrader Order API.',
+    ].join('\n');
+
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+
+    setBusyCandidate(action.candidate_id);
+    setBotSpecStatus('');
+    try {
+      const response = await fetch(`${__HERMES_READONLY_BRIDGE_URL__}/bridge/bot-spec/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidate_id: action.candidate_id,
+          asset: action.asset,
+          setup_id: action.setup_id,
+          source: 'jarvis-control-center',
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.warnings?.[0] || payload?.error || payload?.message || `${response.status} ${response.statusText}`.trim());
+      }
+
+      const result = payload?.data || payload;
+      setBotSpecStatus(`Spezifikation erzeugt: ${result.json_path || result.markdown_path || action.candidate_id}`);
+    } catch (error) {
+      setBotSpecStatus(`Spezifikation nicht erzeugt: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusyCandidate('');
+    }
+  };
 
   return (
     <div className="cockpit-accordion-grid">
@@ -948,7 +1218,41 @@ function DashboardTradingIntelligence({ operatorState }) {
       ))}
       <Metric label="Portfolio" value={compactStatusLabel(portfolioReport.portfolio_readiness || portfolioReport.portfolio_status)} tone={toneFromStatus(portfolioReport.portfolio_readiness || portfolioReport.portfolio_status)} />
       <Metric label="Paketvalidierung" value={compactStatusLabel(validationReport.validation_status || validationReport.status)} tone={toneFromStatus(validationReport.validation_status || validationReport.status)} />
-      <Metric label="Übergabepaket" value={handoffReport.bundle_path || portfolioReport.bundle_path || '-'} tone="info" />
+      <Metric label="Übergabeordner" value={visiblePath(handoffReport.bundle_path || portfolioReport.bundle_path, DEFAULT_SYSTEM_B_BUNDLE_PATH)} tone="info" />
+      <Metric label="Paketdatei" value={visiblePath(validationReport.package_path || portfolioReport.package_path, DEFAULT_ENSEMBLE_PACKAGE_PATH)} tone="info" />
+      <section className="bot-spec-action-panel">
+        <div className="bot-spec-action-head">
+          <div>
+            <span>Bot-Spezifikation</span>
+            <strong>cTrader Bot-Spezifikation erzeugen</strong>
+          </div>
+          <StatusPill tone="warn">Human Review danach Pflicht</StatusPill>
+        </div>
+        <p>
+          Erzeugt nur eine Spezifikation mit Asset, Setup, Entry-/Exit-Regeln, SL/TP, Risk Rules,
+          Session Filter, Kill Switch und Safety Flags. Kein Bot-Code, keine Order API.
+        </p>
+        <div className="bot-spec-action-list">
+          {actions.map((action) => (
+            <button
+              disabled={busyCandidate === action.candidate_id}
+              key={action.candidate_id}
+              onClick={() => exportBotSpec(action)}
+              type="button"
+            >
+              {busyCandidate === action.candidate_id ? 'Erzeuge Spezifikation...' : `Spezifikation erzeugen: ${action.asset} / ${action.setup_id}`}
+            </button>
+          ))}
+          {actions.length === 0 ? <span>Kein bot_ready Setup mit Primary Candidate gefunden.</span> : null}
+        </div>
+        {botSpecStatus ? <p className="control-view-note">{botSpecStatus}</p> : null}
+        <div className="operator-safety-flags">
+          <StatusPill tone="good">specification_only=true</StatusPill>
+          <StatusPill tone="good">no_ctrader_order_api=true</StatusPill>
+          <StatusPill tone="good">broker_orders_enabled=false</StatusPill>
+          <StatusPill tone="good">live_trading_enabled=false</StatusPill>
+        </div>
+      </section>
     </div>
   );
 }
@@ -957,6 +1261,15 @@ function DashboardSignalPackage({ operatorState }) {
   const validationReport = reportByKey(operatorState, 'validateEnsembleSignalPackage')?.raw || {};
   const handoffReport = reportByKey(operatorState, 'systemBHandoffBundle')?.raw || {};
   const specsReport = reportByKey(operatorState, 'signalAgentSpecs')?.raw || {};
+  const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
+  const bundlePath = visiblePath(handoffReport.bundle_path || portfolioReport.bundle_path, DEFAULT_SYSTEM_B_BUNDLE_PATH);
+  const packagePath = visiblePath(validationReport.package_path || portfolioReport.package_path, DEFAULT_ENSEMBLE_PACKAGE_PATH);
+  const lastExport = validationReport.generated_at
+    || validationReport.generated_at_utc
+    || handoffReport.generated_at
+    || handoffReport.generated_at_utc
+    || portfolioReport.updated_at_utc
+    || operatorState.lastUpdatedAt;
 
   return (
     <div className="cockpit-accordion-grid">
@@ -972,14 +1285,16 @@ function DashboardSignalPackage({ operatorState }) {
       />
       <Metric
         label="Übergabepaket"
-        value={handoffReport.bundle_status || handoffReport.status || 'vorbereitet'}
+        value={handoffReport.bundle_status || handoffReport.status || handoffReport.portfolio_status || 'vorbereitet'}
         tone={toneFromStatus(handoffReport.bundle_status || handoffReport.status || 'completed')}
       />
       <Metric
-        label="System-B Bundle Pfad"
-        value={handoffReport.bundle_path || validationReport.package_path || '-'}
+        label="System-B Übergabeordner"
+        value={bundlePath}
         tone="info"
       />
+      <Metric label="ensemble_signal_agent_package.json" value={packagePath} tone="info" />
+      <Metric label="Letzter Export" value={shortDateTime(lastExport)} tone="info" />
       <Metric label="Auto-Trading" value="deaktiviert" tone="good" />
       <Metric label="Broker-Orders" value="aus" tone="good" />
     </div>
@@ -1034,24 +1349,39 @@ function DashboardSafety({ operatorState }) {
 }
 
 function DashboardLogs({ operatorState }) {
-  const warnings = [
-    ...operatorState.warnings,
-    ...operatorState.storage.warnings,
-    ...operatorState.storage.errors,
-  ].filter(Boolean);
+  const logs = operatorLogView(operatorState);
 
   return (
-    <div className="cockpit-accordion-grid">
-      <div className="operator-warning-list">
-        {(warnings.length ? warnings : ['Keine kritischen Warnungen.']).slice(0, 6).map((warning) => (
-          <span key={warning}>{warning}</span>
-        ))}
-      </div>
-      <div className="operator-log-list">
-        {operatorState.logLines.slice(-6).map((line) => (
-          <code key={line}>{line}</code>
-        ))}
-      </div>
+    <div className="operator-log-summary">
+      <section>
+        <h3>Systemereignisse</h3>
+        <div className="operator-event-list">
+          {logs.systemEvents.map((event) => (
+            <article className={`operator-event-row ${toneClass(event.tone)}`} key={event.label}>
+              <span aria-hidden="true">{event.tone === 'good' ? '🟢' : event.tone === 'danger' ? '🔴' : event.tone === 'warn' ? '🟡' : '🟢'}</span>
+              <div>
+                <strong>{event.label}</strong>
+                <small>{event.detail}</small>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h3>Warnungen</h3>
+        <div className="operator-event-list">
+          {logs.warnings.map((warning) => (
+            <article className={`operator-event-row ${toneClass(warning.tone)}`} key={`${warning.label}:${warning.detail}`}>
+              <span aria-hidden="true">{warning.tone === 'danger' ? '🔴' : warning.tone === 'warn' ? '🟡' : '🟢'}</span>
+              <div>
+                <strong>{warning.label}</strong>
+                <small>{warning.detail}</small>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -1181,6 +1511,8 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
   const items = Array.isArray(review.items) ? review.items : [];
   const [actionMessage, setActionMessage] = useState('');
   const [actionBusyId, setActionBusyId] = useState('');
+  const [resolvedReviewIds, setResolvedReviewIds] = useState([]);
+  const visibleItems = items.filter((item) => item.status === 'pending' && !resolvedReviewIds.includes(item.review_id));
 
   const runReviewAction = async (actionKey, item) => {
     const action = REVIEW_ACTIONS[actionKey];
@@ -1189,10 +1521,10 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
     }
 
     const confirmText = [
-      `${action.label} Review?`,
-      `Review-ID: ${item.review_id}`,
-      `Knowledge Item: ${item.knowledge_item_id}`,
-      `Domain: ${item.domain}`,
+      `${action.label} ausführen?`,
+      `Thema: ${item.title}`,
+      `Domäne: ${domainLabel(item.domain)}`,
+      `Hermes Empfehlung: ${reviewTrafficLight(item).label}`,
       `Safety: no_auto_trading=true, human_review_required=true`,
     ].join('\n');
     if (!window.confirm(confirmText)) {
@@ -1207,6 +1539,7 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
     setActionBusyId(item.review_id);
     setActionMessage('');
     try {
+      await assertReviewEndpointAvailable(action.endpoint);
       const response = await fetch(`${__HERMES_READONLY_BRIDGE_URL__}/bridge/review/${action.endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1218,17 +1551,30 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
         }),
       });
 
-      const payload = await response.json().catch(() => ({}));
+      const responseText = await response.text();
+      let payload = {};
+      try {
+        payload = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        payload = {};
+      }
       if (!response.ok) {
-        throw new Error(payload?.error || payload?.message || `${response.status} ${response.statusText}`.trim());
+        throw new Error(postErrorMessage(payload, responseText, response));
       }
 
-      setActionMessage(`Review ${item.review_id}: ${payload?.decision || action.decisionLabel} gespeichert.`);
+      const decision = payload?.data?.decision || payload?.decision || action.decisionLabel;
+      const feedbackPath = payload?.data?.learning_feedback_path || payload?.learning_feedback_path || 'Learning Feedback gespeichert';
+      const successMessage = `Entscheidung gespeichert: ${statusDeutsch(decision)}. Learning Feedback bestätigt.`;
+      setResolvedReviewIds((current) => [...current, item.review_id]);
+      setActionMessage(`${successMessage} ${feedbackPath}`);
+      window.alert(successMessage);
       if (typeof onRefresh === 'function') {
         await onRefresh();
       }
     } catch (error) {
-      setActionMessage(`Review ${item.review_id}: ${error instanceof Error ? error.message : String(error)}`);
+      const message = `Prüfentscheidung konnte nicht gespeichert werden. Bridge prüfen oder später erneut versuchen. ${error instanceof Error ? error.message : String(error)}`;
+      setActionMessage(message);
+      window.alert(message);
     } finally {
       setActionBusyId('');
     }
@@ -1265,28 +1611,36 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
       {actionMessage ? <p className="control-view-note">{actionMessage}</p> : null}
 
       <div className="review-grid">
-        {items.slice(0, 8).map((item) => (
-          <article className="review-card" key={item.review_id}>
+        {visibleItems.slice(0, 8).map((item) => {
+          const trafficLight = reviewTrafficLight(item);
+          const risk = reviewRisk(item);
+          const evidenceQuality = reviewEvidenceQuality(item);
+
+          return (
+          <article className={`review-card review-operator-card ${trafficLight.className}`} key={item.review_id}>
             <div className="review-card-head">
               <div>
                 <span>{domainLabel(item.domain)}</span>
                 <h3>{item.title}</h3>
               </div>
-              <StatusPill tone={priorityTone(item.priority)}>
-                {statusDeutsch(item.priority)}
-              </StatusPill>
+              <div className="review-traffic-light" aria-label={trafficLight.label}>
+                <i />
+                <StatusPill tone={trafficLight.tone}>{trafficLight.label}</StatusPill>
+              </div>
             </div>
 
             <div className="review-card-metrics">
-              <Metric label="Wissenselement" value={item.knowledge_item_id} />
-              <Metric label="Status" value={statusDeutsch(item.status)} tone={item.status === 'pending' ? 'warn' : 'info'} />
-              <Metric label="Vertrauen vorher" value={scorePercent(item.trust_before)} tone="info" />
-              <Metric label="Angefordert durch" value={item.requested_by_task_id} />
+              <Metric label="Vertrauen" value={scorePercent(item.trust_before)} tone={item.trust_before >= 0.65 ? 'good' : 'warn'} />
+              <Metric label="Evidenzqualität" value={scorePercent(evidenceQuality)} tone={evidenceQuality >= 0.66 ? 'good' : evidenceQuality >= 0.45 ? 'warn' : 'danger'} />
+              <Metric label="Risiko" value={risk.label} tone={risk.tone} />
+              <Metric label="Priorität" value={statusDeutsch(item.priority)} tone={priorityTone(item.priority)} />
             </div>
 
-            <p><strong>Grund:</strong> {reviewReasonDeutsch(item.reason)}</p>
-            <p><strong>Empfehlung:</strong> {reviewRecommendationDeutsch(item.recommendation)}</p>
-            <p><strong>Evidenz:</strong> {item.evidence_summary}</p>
+            <div className="review-cleartext">
+              <p><strong>Hermes Empfehlung:</strong> {trafficLight.label}</p>
+              <p><strong>Begründung:</strong> {reviewClearReason(item)}</p>
+              <p><strong>Hinweis:</strong> {reviewRecommendationDeutsch(item.recommendation)}</p>
+            </div>
 
             <div className="review-action-row" aria-label="Vorbereitete Prüfaktionen">
               <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction('approve', item)} type="button">Freigeben</button>
@@ -1294,11 +1648,11 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
               <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction('more', item)} type="button">Mehr Evidenz</button>
               <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction('defer', item)} type="button">Zurückstellen</button>
             </div>
-            <ReviewCommandList reviewId={item.review_id} />
           </article>
-        ))}
+          );
+        })}
 
-        {items.length === 0 ? (
+        {visibleItems.length === 0 ? (
           <article className="review-card">
             <h3>Keine offenen Prüfungen</h3>
             <p>Keine offenen Prüfungen.</p>
