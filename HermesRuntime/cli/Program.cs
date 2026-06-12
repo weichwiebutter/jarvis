@@ -107,6 +107,8 @@ internal sealed class HermesCli
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
             "generate-trusted-review-candidates" => GenerateTrustedReviewCandidates(),
+            "trust-improvement-plan" => ShowTrustImprovementPlan(),
+            "generate-trust-improvement-plan" => GenerateTrustImprovementPlan(),
             "review-promotion-candidates" => ReviewPromotionCandidates(),
             "explain-promotion" => ExplainPromotion(),
             "contradictions" => ShowContradictions(),
@@ -350,6 +352,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
         Console.WriteLine("  hermes generate-trusted-review-candidates Trusted Review Kandidaten erzeugen");
+        Console.WriteLine("  hermes trust-improvement-plan Knowledge Trust Improvement Plan anzeigen");
+        Console.WriteLine("  hermes generate-trust-improvement-plan Knowledge Trust Improvement Plan erzeugen");
         Console.WriteLine("  hermes review-promotion-candidates Promotion Kandidaten reviewen");
         Console.WriteLine("  hermes explain-promotion --id <ID> Promotion Entscheidung erklaeren");
         Console.WriteLine("  hermes contradictions     Knowledge Contradiction Report erzeugen/anzeigen");
@@ -11537,6 +11541,30 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowTrustImprovementPlan()
+    {
+        WriteHeader("Hermes Knowledge Trust Improvement Plan");
+        var service = new KnowledgeTrustImprovementPlannerService(BuildStoragePaths());
+        var report = service.Load() ?? service.Run();
+
+        WriteTrustImprovementPlan(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int GenerateTrustImprovementPlan()
+    {
+        WriteHeader("Hermes Knowledge Trust Improvement Plan");
+        var service = new KnowledgeTrustImprovementPlannerService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteTrustImprovementPlan(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private void WriteTrustedReviewGate(TrustedKnowledgeReviewGateReport report, TrustedKnowledgeReviewGateService service)
     {
         WriteField("Report", DisplayPath(service.GatePath));
@@ -11563,6 +11591,44 @@ internal sealed class HermesCli
             WriteMessages("Reasons", candidate.BlockingReasons);
         }
         WriteMessages("Warnings", report.Warnings);
+    }
+
+    private void WriteTrustImprovementPlan(KnowledgeTrustImprovementPlanReport report, KnowledgeTrustImprovementPlannerService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Total Blocked Items", report.TotalBlockedItems.ToString());
+        WriteField("Estimated Effort", report.EstimatedEffort);
+        WriteField("Auto Fixable Count", report.AutoFixableCount.ToString());
+        WriteField("Human Review Count", report.HumanReviewCount.ToString());
+        WriteField("Requires Human Review", report.RequiresHumanReview.ToString().ToLowerInvariant());
+        WriteField("Next Recommended Action", report.NextRecommendedAction);
+        WriteMessages("Blocker Counts", report.BlockerCounts.Select(entry => $"{entry.Key}: {entry.Value}").ToList());
+        foreach (var action in report.PlannedActions.Take(20))
+        {
+            WriteSubHeader(action.Title);
+            WriteField("Action ID", action.ActionId);
+            WriteField("Blocker", action.Blocker);
+            WriteField("Domain", action.Domain);
+            WriteField("Priority", action.Priority);
+            WriteField("Suggested Action", action.SuggestedAction);
+            WriteField("Auto Fixable", action.AutoFixable.ToString().ToLowerInvariant());
+            WriteField("Requires Human Review", action.RequiresHumanReview.ToString().ToLowerInvariant());
+        }
+        foreach (var item in report.TopPriorityItems.Take(20))
+        {
+            WriteSubHeader(item.Title);
+            WriteField("Knowledge ID", item.KnowledgeId);
+            WriteField("Domain", item.Domain);
+            WriteField("Trust Score", item.TrustScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Quality Score", item.QualityScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Validation Score", item.ValidationScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Priority", item.Priority);
+            WriteField("Auto Fixable", item.AutoFixable.ToString().ToLowerInvariant());
+            WriteField("Requires Human Review", item.RequiresHumanReview.ToString().ToLowerInvariant());
+            WriteMessages("Blockers", item.Blockers);
+            WriteMessages("Planned Actions", item.PlannedActions);
+        }
     }
 
     private int ReviewPromotionCandidates()

@@ -54,11 +54,13 @@ public sealed class AutonomousImprovementQueueService
     {
         Directory.CreateDirectory(Root);
         var audit = new KnowledgeValidationAuditService(_storagePaths).Run();
+        var trustPlan = new KnowledgeTrustImprovementPlannerService(_storagePaths).Run();
         var warnings = audit.Warnings
+            .Concat(trustPlan.BlockerCounts.Keys)
             .Concat(new[] { "storage_cleanup_candidates" })
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var tasks = BuildTasks(warnings, audit);
+        var tasks = BuildTasks(warnings, audit, trustPlan);
         var report = new AutonomousImprovementQueueReport(
             ReportVersion: "autonomous_improvement_queue_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -101,7 +103,10 @@ public sealed class AutonomousImprovementQueueService
         }
     }
 
-    private static IReadOnlyList<AutonomousImprovementTask> BuildTasks(IReadOnlyList<string> warnings, KnowledgeValidationAuditReport audit)
+    private static IReadOnlyList<AutonomousImprovementTask> BuildTasks(
+        IReadOnlyList<string> warnings,
+        KnowledgeValidationAuditReport audit,
+        KnowledgeTrustImprovementPlanReport trustPlan)
     {
         var tasks = new List<AutonomousImprovementTask>();
         var now = DateTimeOffset.UtcNow;
@@ -137,6 +142,24 @@ public sealed class AutonomousImprovementQueueService
                 false,
                 false,
                 "Im nächsten Status-Check") with { CreatedAtUtc = now });
+        }
+
+        foreach (var plannedAction in trustPlan.PlannedActions)
+        {
+            var mapping = plannedAction.ActionId.StartsWith("gather_more_evidence", StringComparison.OrdinalIgnoreCase)
+                ? NewTask(plannedAction.Blocker, plannedAction.Title, plannedAction.Domain, plannedAction.Priority, "Trusted-Kandidaten brauchen mehr Evidenz.", plannedAction.SuggestedAction, plannedAction.RequiresHumanReview, plannedAction.AutoFixable, true, "Im nächsten Validierungsfenster")
+                : plannedAction.ActionId.StartsWith("source_expansion", StringComparison.OrdinalIgnoreCase)
+                    ? NewTask(plannedAction.Blocker, plannedAction.Title, plannedAction.Domain, plannedAction.Priority, "Trusted-Kandidaten brauchen zusätzliche Quellen.", plannedAction.SuggestedAction, plannedAction.RequiresHumanReview, plannedAction.AutoFixable, true, "Im nächsten Validierungsfenster")
+                    : plannedAction.ActionId.StartsWith("schedule_revalidation", StringComparison.OrdinalIgnoreCase)
+                        ? NewTask(plannedAction.Blocker, plannedAction.Title, plannedAction.Domain, plannedAction.Priority, "Trusted-Kandidaten brauchen Re-Validierung.", plannedAction.SuggestedAction, plannedAction.RequiresHumanReview, plannedAction.AutoFixable, true, "Beim nächsten Validation Cycle")
+                        : plannedAction.ActionId.StartsWith("contradiction_analysis", StringComparison.OrdinalIgnoreCase)
+                            ? NewTask(plannedAction.Blocker, plannedAction.Title, plannedAction.Domain, plannedAction.Priority, "Aktive Widersprüche müssen analysiert werden.", plannedAction.SuggestedAction, plannedAction.RequiresHumanReview, plannedAction.AutoFixable, true, "Sofort")
+                            : null;
+
+            if (mapping is not null)
+            {
+                tasks.Add(mapping with { CreatedAtUtc = now, TaskId = $"improvement_{plannedAction.ActionId}" });
+            }
         }
 
         return tasks

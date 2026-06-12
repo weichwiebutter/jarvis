@@ -147,6 +147,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/trusted-knowledge-review-gate'),
     path: 'read-only bridge:/reports/trusted-knowledge-review-gate',
   },
+  knowledgeTrustImprovementPlan: {
+    label: 'Knowledge Trust Improvement Plan',
+    url: bridgeUrl('/reports/knowledge-trust-improvement-plan'),
+    path: 'read-only bridge:/reports/knowledge-trust-improvement-plan',
+  },
   autonomousImprovementQueue: {
     label: 'Autonomous Improvement Queue',
     url: bridgeUrl('/reports/autonomous-improvement-queue'),

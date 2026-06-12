@@ -47,7 +47,15 @@ public sealed class AutonomousImprovementExecutorService
         "knowledge_validation_queue_missing",
         "hypotheses_without_validation_queue",
         "storage_cleanup_candidates",
-        "no_robust_strategies"
+        "no_robust_strategies",
+        "trust_score_too_low",
+        "quality_score_too_low",
+        "insufficient_sources",
+        "validation_score_too_low",
+        "not_recently_validated",
+        "active_contradiction",
+        "pending_human_review",
+        "not_yet_trusted_or_robust"
     };
 
     private readonly StoragePaths _storagePaths;
@@ -156,6 +164,13 @@ public sealed class AutonomousImprovementExecutorService
                 "hypotheses_without_validation_queue" => ExecuteHypothesesQueueing(task),
                 "storage_cleanup_candidates" => ExecuteStoragePlanRefresh(task),
                 "no_robust_strategies" => ExecuteRobustnessPlan(task),
+                "trust_score_too_low" => ExecuteTrustImprovementPlan(task),
+                "quality_score_too_low" => ExecuteTrustImprovementPlan(task),
+                "insufficient_sources" => ExecuteTrustImprovementPlan(task),
+                "validation_score_too_low" => ExecuteTrustImprovementPlan(task),
+                "not_recently_validated" => ExecuteTrustImprovementPlan(task),
+                "active_contradiction" => ExecuteTrustImprovementPlan(task),
+                "not_yet_trusted_or_robust" => ExecuteTrustImprovementPlan(task),
                 _ => AutonomousImprovementExecutionTaskFromQueue(task, "skipped", DateTimeOffset.UtcNow, "Unsupported task type.", ["unsupported_task_type"], task.SafeToExecute)
             };
         }
@@ -237,6 +252,20 @@ public sealed class AutonomousImprovementExecutorService
             [],
             task.SafeToExecute,
             strategy.MemoryPath);
+    }
+
+    private AutonomousImprovementExecutionTask ExecuteTrustImprovementPlan(AutonomousImprovementTask task)
+    {
+        var planner = new KnowledgeTrustImprovementPlannerService(_storagePaths);
+        var report = planner.Run();
+        return AutonomousImprovementExecutionTaskFromQueue(
+            task,
+            "executed",
+            DateTimeOffset.UtcNow,
+            $"Trust Improvement Plan aktualisiert; planned_actions={report.PlannedActions.Count}; blocker_counts={report.BlockerCounts.Count}.",
+            [],
+            task.SafeToExecute,
+            planner.ReportPath);
     }
 
     private static bool IsSafeToExecute(AutonomousImprovementTask task)

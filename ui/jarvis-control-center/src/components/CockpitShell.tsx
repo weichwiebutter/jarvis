@@ -335,7 +335,13 @@ function frankActionCenterModel(operatorState) {
   const masterStatus = operatorState.masterStatus || {};
   const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
   const trustedGate = reportByKey(operatorState, 'trustedKnowledgeReviewGate')?.raw || {};
+  const trustPlan = reportByKey(operatorState, 'knowledgeTrustImprovementPlan')?.raw || {};
   const trustedEligible = Number(trustedGate.eligible_for_trusted_review || trustedGate.eligibleForTrustedReview || 0);
+  const trustBlocked = Number(trustPlan.total_blocked_items || trustPlan.totalBlockedItems || 0);
+  const trustMainReasons = Object.entries(trustPlan.blocker_counts || trustPlan.blockerCounts || {})
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .slice(0, 4)
+    .map(([key, value]) => `${formatNumber(value)} ${translateOperatorCode(key).title.toLowerCase()}`);
   const warningCandidates = [
     ...operatorState.warnings,
     ...operatorState.storage.warnings,
@@ -398,6 +404,26 @@ function frankActionCenterModel(operatorState) {
     };
   }
 
+  if (trustBlocked > 0) {
+    return {
+      mode: 'yellow',
+      title: `Hermes arbeitet an ${formatNumber(trustBlocked)} Vertrauensverbesserungen`,
+      summary: trustMainReasons[0] || 'Hermes verbessert Vertrauen, Evidenz und Validierung.',
+      headline: 'Frank muss nichts tun.',
+      action: 'Nein',
+      buttonVisible: false,
+      buttonLabel: '',
+      buttonTarget: '',
+      items: trustMainReasons.slice(0, 3).map((reason) => ({
+        topic: reason,
+        recommendation: 'Hermes arbeitet daran.',
+        risk: 'niedrig',
+        tone: 'warn',
+      })),
+      details: ['Keine Aktion für Frank. Hermes plant Evidenz-, Re-Validierungs- und Quellenarbeit selbstständig.'],
+    };
+  }
+
   const yellowReasons = uniqueList([
     ...translatedWarnings
       .filter((warning) => warning.tone === 'warn')
@@ -436,6 +462,7 @@ function frankActionCenterModel(operatorState) {
     operatorState.storage.cleanup_candidate_count ? 'Speicheranalyse' : '',
     portfolioReport.signal_agent_specs_ready ? 'Signalpaket prüfen' : '',
     trustedEligible > 0 ? 'Trusted-Freigabe prüfen' : '',
+    trustBlocked > 0 ? 'Vertrauensverbesserungen planen' : '',
   ]);
 
   return {
@@ -459,9 +486,11 @@ function frankActionCenterModel(operatorState) {
           { topic: 'Wissensvalidierung vorbereiten', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
           { topic: 'Speicheranalyse', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
         ],
-    details: trustedEligible > 0
-      ? ['Trusted-Kandidaten liegen bereit und warten auf die manuelle Freigabe im Prüfzentrum.']
-      : ['Noch keine Trusted-Kandidaten. Hermes arbeitet weiter an Validierung.'],
+      details: trustedEligible > 0
+        ? ['Trusted-Kandidaten liegen bereit und warten auf die manuelle Freigabe im Prüfzentrum.']
+        : trustBlocked > 0
+          ? ['Hermes arbeitet an Vertrauensverbesserungen. Keine Aktion erforderlich.']
+          : ['Noch keine Trusted-Kandidaten. Hermes arbeitet weiter an Validierung.'],
   };
 }
 
@@ -2190,6 +2219,7 @@ function DashboardLearningSummary({ operatorState }) {
   const audit = reportByKey(operatorState, 'knowledgeValidationAudit')?.raw || {};
   const improvement = reportByKey(operatorState, 'autonomousImprovementQueue')?.raw || {};
   const execution = reportByKey(operatorState, 'autonomousImprovementExecution')?.raw || {};
+  const trustPlan = reportByKey(operatorState, 'knowledgeTrustImprovementPlan')?.raw || {};
   const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
   const criticalGaps = audit.critical_knowledge_gaps ?? audit.criticalKnowledgeGaps ?? masterStatus.knowledge_items_needing_oos;
   const oldestOpenValidationAgeDays = audit.oldest_open_validation_age_days ?? audit.oldestOpenValidationAgeDays ?? 0;
@@ -2218,6 +2248,8 @@ function DashboardLearningSummary({ operatorState }) {
       <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
       <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
       <Metric label="Selbstverbesserung" value={improvement.active_improvements ? `${formatNumber(improvement.active_improvements)} aktiv` : 'bereit'} tone={improvement.active_improvements ? 'good' : 'info'} />
+      <Metric label="Vertrauensverbesserungen" value={trustPlan.total_blocked_items ?? trustPlan.totalBlockedItems ? `Hermes arbeitet an ${formatNumber(trustPlan.total_blocked_items ?? trustPlan.totalBlockedItems)}` : 'bereit'} tone={trustPlan.total_blocked_items ?? trustPlan.totalBlockedItems ? 'warn' : 'info'} />
+      <Metric label="Hauptgründe" value={trustPlan.blocker_counts ? `${formatNumber(trustPlan.blocker_counts.trust_score_too_low || trustPlan.blockerCounts?.trust_score_too_low || 0)} niedriges Vertrauen` : 'bereit'} tone="info" />
       <Metric label="Erledigt" value={execution.executed ?? execution.Executed ?? 0} tone="good" />
       <Metric label="Geplant" value={execution.planned ?? execution.Planned ?? 0} tone="info" />
       <Metric label="Übersprungen" value={execution.skipped ?? execution.Skipped ?? 0} tone="info" />

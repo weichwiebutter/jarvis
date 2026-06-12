@@ -1722,6 +1722,40 @@ function reportFixtureRaw(key) {
         no_auto_trading: true,
         human_review_required: true,
       };
+    case 'knowledgeTrustImprovementPlan':
+      return {
+        report_version: 'knowledge_trust_improvement_plan_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        total_blocked_items: 138,
+        blocker_counts: {
+          trust_score_too_low: 50,
+          quality_score_too_low: 42,
+          insufficient_sources: 33,
+          validation_score_too_low: 28,
+          not_recently_validated: 21,
+          active_contradiction: 5,
+          pending_human_review: 20,
+          not_yet_trusted_or_robust: 138,
+        },
+        planned_actions: [
+          { action_id: 'gather_more_evidence_trading:liquidity_sweep', blocker: 'trust_score_too_low', title: 'Mehr Evidenz sammeln', domain: 'trading', priority: 'medium', reason: 'trust_score_too_low', suggested_action: 'Mehr Evidenz sammeln.', auto_fixable: true, requires_human_review: false, status: 'planned' },
+          { action_id: 'source_expansion_trading:liquidity_sweep', blocker: 'insufficient_sources', title: 'Zusätzliche Quellen identifizieren', domain: 'trading', priority: 'medium', reason: 'insufficient_sources', suggested_action: 'Zusätzliche Quellen identifizieren.', auto_fixable: true, requires_human_review: false, status: 'planned' },
+          { action_id: 'schedule_revalidation_trading:liquidity_sweep', blocker: 'validation_score_too_low', title: 'Re-Validierung planen', domain: 'trading', priority: 'medium', reason: 'validation_score_too_low', suggested_action: 'Re-Validierung planen.', auto_fixable: true, requires_human_review: false, status: 'planned' },
+          { action_id: 'contradiction_analysis_trading:liquidity_sweep', blocker: 'active_contradiction', title: 'Widerspruchsanalyse erzeugen', domain: 'trading', priority: 'high', reason: 'active_contradiction', suggested_action: 'Widerspruchsanalyse erzeugen.', auto_fixable: true, requires_human_review: false, status: 'planned' },
+        ],
+        estimated_effort: 'hoch',
+        auto_fixable_count: 4,
+        human_review_count: 0,
+        top_priority_items: [
+          { knowledge_id: 'trading:liquidity_sweep', domain: 'trading', title: 'Liquidity Sweep', blockers: ['trust_score_too_low'], trust_score: 0.6411, quality_score: 0.6394, validation_score: 0.5068, planned_actions: ['gather_more_evidence_trading:liquidity_sweep'], priority: 'high', auto_fixable: true, requires_human_review: false },
+        ],
+        next_recommended_action: 'Mehr Evidenz sammeln.',
+        requires_human_review: true,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'autonomousImprovementExecution':
       return {
         report_version: 'autonomous_improvement_execution_v1',
@@ -2700,6 +2734,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       autonomousImprovementQueue: reportFixtureRaw('autonomousImprovementQueue'),
       autonomousImprovementExecution: reportFixtureRaw('autonomousImprovementExecution'),
       trustedKnowledgeReviewGate: reportFixtureRaw('trustedKnowledgeReviewGate'),
+      knowledgeTrustImprovementPlan: reportFixtureRaw('knowledgeTrustImprovementPlan'),
       ensemblePortfolioStatus: reportFixtureRaw('ensemblePortfolioStatus'),
       systemBHandoffBundle: systemBHandoffBundleMock,
       validateEnsembleSignalPackage: reportFixtureRaw('validateEnsembleSignalPackage'),
@@ -2772,6 +2807,7 @@ export async function loadOperatorDashboard() {
         autonomousImprovementQueue: dashboard.autonomousImprovementQueue,
         autonomousImprovementExecution: dashboard.autonomousImprovementExecution,
         trustedKnowledgeReviewGate: dashboard.trustedKnowledgeReviewGate,
+        knowledgeTrustImprovementPlan: dashboard.knowledgeTrustImprovementPlan,
         ensemblePortfolioStatus: dashboard.ensemblePortfolioStatus,
         systemBHandoffBundle: dashboard.systemBHandoffBundle,
         validateEnsembleSignalPackage: dashboard.validateEnsembleSignalPackage,
@@ -2845,6 +2881,7 @@ export async function loadOperatorDashboard() {
   rawReports.autonomousImprovementQueue = reportFixtureRaw('autonomousImprovementQueue');
   rawReports.autonomousImprovementExecution = reportFixtureRaw('autonomousImprovementExecution');
   rawReports.trustedKnowledgeReviewGate = reportFixtureRaw('trustedKnowledgeReviewGate');
+  rawReports.knowledgeTrustImprovementPlan = reportFixtureRaw('knowledgeTrustImprovementPlan');
   rawReports.timeControl = reportFixtureRaw('timeControl');
   let logLines = [...operatorDashboardMock.logLines];
   const warnings = [
