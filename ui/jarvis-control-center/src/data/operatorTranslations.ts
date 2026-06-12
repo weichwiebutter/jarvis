@@ -119,6 +119,14 @@ const OPERATOR_TRANSLATIONS = {
     whatHermesDoes: 'führt sichere Verbesserungsaufgaben aus',
     franksAction: 'Nein',
   },
+  trusted_knowledge_review_gate: {
+    title: 'Trusted-Freigabe wird vorbereitet',
+    meaning: 'Hermes hat mögliche Trusted-Kandidaten erkannt, gibt sie aber nicht selbst frei.',
+    action: 'Im Prüfzentrum prüfen.',
+    severity: 'action',
+    whatHermesDoes: 'bereitet Trusted-Kandidaten für die menschliche Freigabe vor',
+    franksAction: 'Ja, im Prüfzentrum',
+  },
   human_review_required: {
     title: 'Menschliche Entscheidung erforderlich',
     meaning: 'Hermes darf diese Vertrauensstufe nicht selbst freigeben.',
@@ -241,6 +249,10 @@ const FALLBACK_TRANSLATIONS = [
   {
     match: /autonomous[_\-\s]?improvement[_\-\s]?execution/i,
     value: OPERATOR_TRANSLATIONS.autonomous_improvement_execution,
+  },
+  {
+    match: /trusted[_\-\s]?knowledge[_\-\s]?review[_\-\s]?gate/i,
+    value: OPERATOR_TRANSLATIONS.trusted_knowledge_review_gate,
   },
   {
     match: /stopped_by_stop_request/i,

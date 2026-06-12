@@ -142,6 +142,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/forward-test-status'),
     path: 'read-only bridge:/reports/forward-test-status',
   },
+  trustedKnowledgeReviewGate: {
+    label: 'Trusted Knowledge Review Gate',
+    url: bridgeUrl('/reports/trusted-knowledge-review-gate'),
+    path: 'read-only bridge:/reports/trusted-knowledge-review-gate',
+  },
   autonomousImprovementQueue: {
     label: 'Autonomous Improvement Queue',
     url: bridgeUrl('/reports/autonomous-improvement-queue'),

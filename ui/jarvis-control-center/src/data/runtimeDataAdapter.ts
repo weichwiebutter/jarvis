@@ -1668,6 +1668,60 @@ function reportFixtureRaw(key) {
         no_auto_trading: true,
         human_review_required: true,
       };
+    case 'trustedKnowledgeReviewGate':
+      return {
+        report_version: 'trusted_knowledge_review_gate_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        total_knowledge_items: 138,
+        trusted_items_count: 3,
+        eligible_for_trusted_review: 2,
+        blocked_items: 136,
+        rejection_reasons: {
+          not_yet_trusted_or_robust: 90,
+          trust_score_too_low: 24,
+          quality_score_too_low: 17,
+          insufficient_evidence: 11,
+          active_contradiction: 4,
+        },
+        top_candidates: [
+          {
+            knowledge_id: 'trading:ema_pullback',
+            domain: 'trading',
+            title: 'EMA Pullback',
+            trust_score: 0.88,
+            quality_score: 0.86,
+            evidence_score: 0.81,
+            evidence_count: 5,
+            source_count: 3,
+            last_validated_utc: runtimeMasterStatusMock.updated_at_utc,
+            reasons: [],
+            blocking_reasons: [],
+            requires_human_review: true,
+            review_status: 'none',
+          },
+          {
+            knowledge_id: 'trading:range_breakout',
+            domain: 'trading',
+            title: 'Range Breakout',
+            trust_score: 0.87,
+            quality_score: 0.85,
+            evidence_score: 0.8,
+            evidence_count: 4,
+            source_count: 2,
+            last_validated_utc: runtimeMasterStatusMock.updated_at_utc,
+            reasons: [],
+            blocking_reasons: [],
+            requires_human_review: true,
+            review_status: 'none',
+          },
+        ],
+        warnings: [],
+        requires_human_review: true,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'autonomousImprovementExecution':
       return {
         report_version: 'autonomous_improvement_execution_v1',
@@ -2645,6 +2699,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       knowledgeValidationAudit: reportFixtureRaw('knowledgeValidationAudit'),
       autonomousImprovementQueue: reportFixtureRaw('autonomousImprovementQueue'),
       autonomousImprovementExecution: reportFixtureRaw('autonomousImprovementExecution'),
+      trustedKnowledgeReviewGate: reportFixtureRaw('trustedKnowledgeReviewGate'),
       ensemblePortfolioStatus: reportFixtureRaw('ensemblePortfolioStatus'),
       systemBHandoffBundle: systemBHandoffBundleMock,
       validateEnsembleSignalPackage: reportFixtureRaw('validateEnsembleSignalPackage'),
@@ -2713,10 +2768,11 @@ export async function loadOperatorDashboard() {
         demoSignalFeedStatus: dashboard.demoSignalFeedStatus,
         latestDemoSignals: dashboard.latestDemoSignals,
         forwardTestStatus: dashboard.forwardTestStatus,
-      knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
-      autonomousImprovementQueue: dashboard.autonomousImprovementQueue,
-      autonomousImprovementExecution: dashboard.autonomousImprovementExecution,
-      ensemblePortfolioStatus: dashboard.ensemblePortfolioStatus,
+        knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
+        autonomousImprovementQueue: dashboard.autonomousImprovementQueue,
+        autonomousImprovementExecution: dashboard.autonomousImprovementExecution,
+        trustedKnowledgeReviewGate: dashboard.trustedKnowledgeReviewGate,
+        ensemblePortfolioStatus: dashboard.ensemblePortfolioStatus,
         systemBHandoffBundle: dashboard.systemBHandoffBundle,
         validateEnsembleSignalPackage: dashboard.validateEnsembleSignalPackage,
         setupRegistry: dashboard.setupRegistry,
@@ -2788,6 +2844,7 @@ export async function loadOperatorDashboard() {
   rawReports.knowledgeValidationAudit = reportFixtureRaw('knowledgeValidationAudit');
   rawReports.autonomousImprovementQueue = reportFixtureRaw('autonomousImprovementQueue');
   rawReports.autonomousImprovementExecution = reportFixtureRaw('autonomousImprovementExecution');
+  rawReports.trustedKnowledgeReviewGate = reportFixtureRaw('trustedKnowledgeReviewGate');
   rawReports.timeControl = reportFixtureRaw('timeControl');
   let logLines = [...operatorDashboardMock.logLines];
   const warnings = [

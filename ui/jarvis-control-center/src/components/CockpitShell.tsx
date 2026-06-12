@@ -334,6 +334,8 @@ function frankActionCenterModel(operatorState) {
   const openReviews = Number(review.pending_reviews || pendingItems.length || 0);
   const masterStatus = operatorState.masterStatus || {};
   const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
+  const trustedGate = reportByKey(operatorState, 'trustedKnowledgeReviewGate')?.raw || {};
+  const trustedEligible = Number(trustedGate.eligible_for_trusted_review || trustedGate.eligibleForTrustedReview || 0);
   const warningCandidates = [
     ...operatorState.warnings,
     ...operatorState.storage.warnings,
@@ -376,6 +378,26 @@ function frankActionCenterModel(operatorState) {
     };
   }
 
+  if (trustedEligible > 0) {
+    return {
+      mode: 'red',
+      title: `${formatNumber(trustedEligible)} Wissenselemente bereit für Trusted-Freigabe`,
+      summary: 'Trusted bleibt eine menschliche Entscheidung.',
+      headline: 'Frank muss diese Freigaben im Prüfzentrum prüfen.',
+      action: 'Ja, im Prüfzentrum',
+      buttonVisible: true,
+      buttonLabel: 'Prüfzentrum öffnen',
+      buttonTarget: 'review',
+      items: (trustedGate.top_candidates || trustedGate.topCandidates || []).slice(0, 3).map((candidate) => ({
+        topic: reviewTopicLabel(candidate),
+        recommendation: 'Im Prüfzentrum prüfen.',
+        risk: candidate.blocking_reasons?.length ? 'mittel' : 'niedrig',
+        tone: candidate.blocking_reasons?.length ? 'warn' : 'good',
+      })),
+      details: ['Keine automatische Trusted-Promotion.'],
+    };
+  }
+
   const yellowReasons = uniqueList([
     ...translatedWarnings
       .filter((warning) => warning.tone === 'warn')
@@ -413,6 +435,7 @@ function frankActionCenterModel(operatorState) {
     masterStatus.validation_plans_open || masterStatus.knowledge_items_needing_oos ? 'Wissensvalidierung vorbereiten' : '',
     operatorState.storage.cleanup_candidate_count ? 'Speicheranalyse' : '',
     portfolioReport.signal_agent_specs_ready ? 'Signalpaket prüfen' : '',
+    trustedEligible > 0 ? 'Trusted-Freigabe prüfen' : '',
   ]);
 
   return {
@@ -436,7 +459,9 @@ function frankActionCenterModel(operatorState) {
           { topic: 'Wissensvalidierung vorbereiten', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
           { topic: 'Speicheranalyse', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
         ],
-    details: [],
+    details: trustedEligible > 0
+      ? ['Trusted-Kandidaten liegen bereit und warten auf die manuelle Freigabe im Prüfzentrum.']
+      : ['Noch keine Trusted-Kandidaten. Hermes arbeitet weiter an Validierung.'],
   };
 }
 
@@ -1147,6 +1172,7 @@ function buildCommandCenterModules(operatorState) {
   const validationReport = reportByKey(operatorState, 'validateEnsembleSignalPackage')?.raw || {};
   const handoffReport = reportByKey(operatorState, 'systemBHandoffBundle')?.raw || {};
   const specsReport = reportByKey(operatorState, 'signalAgentSpecs')?.raw || {};
+  const trustedGateReport = reportByKey(operatorState, 'trustedKnowledgeReviewGate')?.raw || {};
   const openReviews = operatorState.humanReview?.pending_reviews || 0;
   const warnings = [
     ...operatorState.warnings,
@@ -1191,9 +1217,13 @@ function buildCommandCenterModules(operatorState) {
       id: 'trust',
       title: 'Wissen & Vertrauen',
       value: scorePercent(operatorState.masterStatus.average_trust_score),
-      detail: `${formatNumber(operatorState.masterStatus.pending_reviews)} Prüfungen`,
-      tone: operatorState.masterStatus.knowledge_items_needing_oos ? 'warn' : 'info',
-      meta: `${formatNumber(operatorState.masterStatus.validation_plans_open)} Pläne`,
+      detail: trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview
+        ? `${formatNumber(trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview)} Wissenselemente bereit`
+        : `${formatNumber(operatorState.masterStatus.pending_reviews)} Prüfungen`,
+      tone: trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview ? 'warn' : operatorState.masterStatus.knowledge_items_needing_oos ? 'warn' : 'info',
+      meta: trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview
+        ? 'Im Prüfzentrum prüfen'
+        : `${formatNumber(operatorState.masterStatus.validation_plans_open)} Pläne`,
     },
     {
       id: 'review',

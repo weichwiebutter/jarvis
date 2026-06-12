@@ -105,6 +105,8 @@ internal sealed class HermesCli
             "knowledge-health" => ShowKnowledgeHealth(),
             "promotion-status" => ShowPromotionStatus(),
             "trusted-candidates" => ShowTrustedCandidates(),
+            "trusted-review-gate" => ShowTrustedReviewGate(),
+            "generate-trusted-review-candidates" => GenerateTrustedReviewCandidates(),
             "review-promotion-candidates" => ReviewPromotionCandidates(),
             "explain-promotion" => ExplainPromotion(),
             "contradictions" => ShowContradictions(),
@@ -346,6 +348,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-health   Knowledge Trust/Quality Scores erzeugen und anzeigen");
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
+        Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
+        Console.WriteLine("  hermes generate-trusted-review-candidates Trusted Review Kandidaten erzeugen");
         Console.WriteLine("  hermes review-promotion-candidates Promotion Kandidaten reviewen");
         Console.WriteLine("  hermes explain-promotion --id <ID> Promotion Entscheidung erklaeren");
         Console.WriteLine("  hermes contradictions     Knowledge Contradiction Report erzeugen/anzeigen");
@@ -11507,6 +11511,58 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private int ShowTrustedReviewGate()
+    {
+        WriteHeader("Hermes Trusted Knowledge Review Gate");
+        var service = new TrustedKnowledgeReviewGateService(BuildStoragePaths());
+        var report = service.Load() ?? service.Run();
+
+        WriteTrustedReviewGate(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int GenerateTrustedReviewCandidates()
+    {
+        WriteHeader("Hermes Trusted Knowledge Review Gate");
+        var service = new TrustedKnowledgeReviewGateService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteTrustedReviewGate(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private void WriteTrustedReviewGate(TrustedKnowledgeReviewGateReport report, TrustedKnowledgeReviewGateService service)
+    {
+        WriteField("Report", DisplayPath(service.GatePath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Total Knowledge Items", report.TotalKnowledgeItems.ToString());
+        WriteField("Trusted Items", report.TrustedItemsCount.ToString());
+        WriteField("Eligible for Trusted Review", report.EligibleForTrustedReview.ToString());
+        WriteField("Blocked Items", report.BlockedItems.ToString());
+        WriteField("Requires Human Review", report.RequiresHumanReview.ToString().ToLowerInvariant());
+        WriteMessages("Blocker", report.RejectionReasons.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
+        foreach (var candidate in report.TopCandidates.Take(20))
+        {
+            WriteSubHeader(candidate.Title);
+            WriteField("Knowledge ID", candidate.KnowledgeId);
+            WriteField("Domain", candidate.Domain);
+            WriteField("Trust Score", candidate.TrustScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Quality Score", candidate.QualityScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Evidence Score", candidate.EvidenceScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Evidence Count", candidate.EvidenceCount.ToString());
+            WriteField("Source Count", candidate.SourceCount.ToString());
+            WriteField("Last Validated", candidate.LastValidatedUtc?.ToString("O") ?? "-");
+            WriteField("Review Status", candidate.ReviewStatus);
+            WriteField("Requires Human Review", candidate.RequiresHumanReview.ToString().ToLowerInvariant());
+            WriteMessages("Reasons", candidate.BlockingReasons);
+        }
+        WriteMessages("Warnings", report.Warnings);
     }
 
     private int ReviewPromotionCandidates()
