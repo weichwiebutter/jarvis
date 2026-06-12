@@ -159,6 +159,46 @@ const OPERATOR_TRANSLATIONS = {
     whatHermesDoes: 'aktualisiert den Cleanup-Plan',
     franksAction: 'Nein',
   },
+  evidenz_sammeln: {
+    title: 'Evidenz sammeln',
+    meaning: 'Hermes sammelt zusätzliche Evidenz.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'hint',
+    whatHermesDoes: 'sammelt Evidenz',
+    franksAction: 'Nein',
+  },
+  quellen_erweitern: {
+    title: 'Quellen erweitern',
+    meaning: 'Hermes erweitert die Quellenbasis.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'hint',
+    whatHermesDoes: 'erweitert Quellen',
+    franksAction: 'Nein',
+  },
+  re_validierung: {
+    title: 'Re-Validierung',
+    meaning: 'Hermes plant weitere Validierungsläufe.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'hint',
+    whatHermesDoes: 'plant Re-Validierung',
+    franksAction: 'Nein',
+  },
+  widersprueche_pruefen: {
+    title: 'Widersprüche prüfen',
+    meaning: 'Hermes analysiert widersprüchliche Hinweise.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'warn',
+    whatHermesDoes: 'prüft Widersprüche',
+    franksAction: 'Nein',
+  },
+  systempflege: {
+    title: 'Systempflege',
+    meaning: 'Hermes hält die interne Pflege in Ordnung.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'hint',
+    whatHermesDoes: 'führt Systempflege aus',
+    franksAction: 'Nein',
+  },
   autonomous_improvement_execution: {
     title: 'Selbstverbesserung wird ausgeführt',
     meaning: 'Hermes arbeitet sichere Verbesserungsaufgaben nacheinander ab.',
@@ -329,6 +369,26 @@ const FALLBACK_TRANSLATIONS = [
   {
     match: /cleanup[_\-\s]?plan[_\-\s]?update/i,
     value: OPERATOR_TRANSLATIONS.cleanup_plan_update,
+  },
+  {
+    match: /evidenz[_\-\s]?sammeln/i,
+    value: OPERATOR_TRANSLATIONS.evidenz_sammeln,
+  },
+  {
+    match: /quellen[_\-\s]?erweitern/i,
+    value: OPERATOR_TRANSLATIONS.quellen_erweitern,
+  },
+  {
+    match: /re[_\-\s]?validierung/i,
+    value: OPERATOR_TRANSLATIONS.re_validierung,
+  },
+  {
+    match: /widerspr[\u00fcu]che[_\-\s]?pr[\u00fc]fen/i,
+    value: OPERATOR_TRANSLATIONS.widersprueche_pruefen,
+  },
+  {
+    match: /systempflege/i,
+    value: OPERATOR_TRANSLATIONS.systempflege,
   },
   {
     match: /trusted[_\-\s]?knowledge[_\-\s]?review[_\-\s]?gate/i,

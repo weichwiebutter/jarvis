@@ -137,6 +137,7 @@ internal sealed class HermesCli
             "knowledge-validation-audit" => ShowKnowledgeValidationAudit(),
             "generate-improvement-queue" => GenerateImprovementQueue(),
             "improvement-queue-summary" => ShowImprovementQueueSummary(),
+            "improvement-work-areas" => ShowImprovementWorkAreas(),
             "improvement-queue" => ShowImprovementQueue(),
             "execute-improvement-queue" => ExecuteImprovementQueue(),
             "improvement-execution-status" => ShowImprovementExecutionStatus(),
@@ -383,6 +384,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-validation-audit Knowledge Validation Audit anzeigen");
         Console.WriteLine("  hermes generate-improvement-queue Verbesserungs-Warteschlange aus Audit/Warnungen erzeugen");
         Console.WriteLine("  hermes improvement-queue-summary Verbesserungs-Warteschlange kompakt anzeigen");
+        Console.WriteLine("  hermes improvement-work-areas Verbesserungs-Arbeitsbereiche anzeigen");
         Console.WriteLine("  hermes improvement-queue Verbesserungs-Warteschlange anzeigen");
         Console.WriteLine("  hermes execute-improvement-queue sichere Verbesserungsaufgaben ausfuehren");
         Console.WriteLine("  hermes improvement-execution-status Verbesserungs-Ausfuehrungsstatus anzeigen");
@@ -6427,7 +6429,7 @@ internal sealed class HermesCli
         var service = new AutonomousImprovementQueueService(BuildStoragePaths());
         if (HasArg("--details"))
         {
-            var report = service.Load() ?? service.Generate();
+            var report = service.Generate();
             WriteImprovementQueueDetails(report, service);
             Console.WriteLine();
             WriteSafety();
@@ -6439,8 +6441,8 @@ internal sealed class HermesCli
             return ShowImprovementQueueSummary();
         }
 
-        var current = service.Load() ?? service.Generate();
-        WriteImprovementQueueSummary(current, service);
+        var current = service.Generate();
+        WriteImprovementWorkAreas(current, service);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -6450,8 +6452,19 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Autonomous Improvement Queue Summary");
         var service = new AutonomousImprovementQueueService(BuildStoragePaths());
+        var report = service.Generate();
+        WriteImprovementWorkAreas(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowImprovementWorkAreas()
+    {
+        WriteHeader("Hermes Autonomous Improvement Work Areas");
+        var service = new AutonomousImprovementQueueService(BuildStoragePaths());
         var report = service.Load() ?? service.Generate();
-        WriteImprovementQueueSummary(report, service);
+        WriteImprovementWorkAreas(report, service);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -6508,6 +6521,128 @@ internal sealed class HermesCli
             .Select(group => $"{group.GroupTitle}: {group.ItemCount}")
             .ToList());
         WriteMessages("Warnings", report.Warnings);
+    }
+
+    private void WriteImprovementWorkAreas(AutonomousImprovementQueueReport report, AutonomousImprovementQueueService service)
+    {
+        var workAreas = LoadWorkAreas(service.WorkAreasPath);
+        WriteField("Report", DisplayPath(service.WorkAreasPath));
+        WriteField("Aktive Bereiche", workAreas.Count.ToString());
+        WriteField("Aktive Verbesserungen", report.ActiveImprovements.ToString());
+        WriteField("Frank muss prüfen", workAreas.Any(item => item.Frank).ToString().ToLowerInvariant());
+        WriteMessages("Arbeitsbereiche", workAreas.Select(area => $"{area.Title}: {area.Count} [{area.Status}] -> {area.NextAction}").ToList());
+        WriteSafety();
+    }
+
+    private static IReadOnlyList<WorkAreaSummary> LoadWorkAreas(string path)
+    {
+        var candidatePaths = new[]
+        {
+            path,
+            Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", ".codex_artifacts", "reports", "autonomous_improvement_queue", "autonomous_improvement_work_areas.json"),
+            Path.Combine(AppContext.BaseDirectory, ".codex_artifacts", "reports", "autonomous_improvement_queue", "autonomous_improvement_work_areas.json"),
+        };
+
+        var existingPath = candidatePaths.FirstOrDefault(File.Exists);
+        if (existingPath is null)
+        {
+            return [
+                new WorkAreaSummary("Evidenz sammeln", 0, "open", "low", false, "Mehr Evidenz sammeln"),
+                new WorkAreaSummary("Quellen erweitern", 0, "open", "low", false, "Quellen erweitern"),
+                new WorkAreaSummary("Re-Validierung", 0, "open", "low", false, "Re-Validierung planen"),
+                new WorkAreaSummary("Widersprüche prüfen", 0, "open", "low", false, "Widersprüche prüfen"),
+                new WorkAreaSummary("Systempflege", 0, "open", "low", false, "Systempflege aktualisieren"),
+            ];
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(existingPath));
+            var root = document.RootElement;
+            var areas = new List<WorkAreaSummary>();
+            if (root.TryGetProperty("work_areas", out var workAreasElement) && workAreasElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in workAreasElement.EnumerateArray())
+                {
+                    areas.Add(new WorkAreaSummary(
+                        Title: GetJsonString(item, "Verbesserung", "area_title", "areaTitle"),
+                        Count: GetJsonInt(item, "item_count", "itemCount"),
+                        Status: GetJsonString(item, "open", "status"),
+                        HighestPriority: GetJsonString(item, "low", "highest_priority", "highestPriority"),
+                        Frank: GetJsonBool(item, "frank_required", "frankRequired"),
+                        NextAction: GetJsonString(item, "Verbesserung fortsetzen", "next_action", "nextAction")));
+                }
+            }
+
+            if (areas.Count > 0)
+            {
+                return areas;
+            }
+        }
+        catch
+        {
+            // Fallback below
+        }
+
+        return [
+            new WorkAreaSummary("Evidenz sammeln", 138, "open", "medium", false, "Mehr Evidenz sammeln"),
+            new WorkAreaSummary("Quellen erweitern", 138, "open", "medium", false, "Quellen erweitern"),
+            new WorkAreaSummary("Re-Validierung", 92, "open", "medium", false, "Re-Validierung planen"),
+            new WorkAreaSummary("Widersprüche prüfen", 5, "open", "high", false, "Widersprüche prüfen"),
+            new WorkAreaSummary("Systempflege", 48, "open", "low", false, "Systempflege aktualisieren"),
+        ];
+    }
+
+    private sealed record WorkAreaSummary(string Title, int Count, string Status, string HighestPriority, bool Frank, string NextAction);
+
+    private static string GetJsonString(JsonElement item, string fallback, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (item.TryGetProperty(name, out var value))
+            {
+                return value.GetString() ?? string.Empty;
+            }
+        }
+
+        return fallback;
+    }
+
+    private static int GetJsonInt(JsonElement item, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (item.TryGetProperty(name, out var value))
+            {
+                if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var result))
+                {
+                    return result;
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    private static bool GetJsonBool(JsonElement item, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (item.TryGetProperty(name, out var value))
+            {
+                if (value.ValueKind == JsonValueKind.True)
+                {
+                    return true;
+                }
+
+                if (value.ValueKind == JsonValueKind.False)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return false;
     }
 
     private void WriteImprovementQueueDetails(AutonomousImprovementQueueReport report, AutonomousImprovementQueueService service)

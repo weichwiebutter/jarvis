@@ -70,6 +70,32 @@ public sealed record AutonomousImprovementQueueSummaryReport(
     string SummaryPath,
     string MarkdownPath);
 
+public sealed record AutonomousImprovementWorkArea(
+    string AreaId,
+    string AreaTitle,
+    int ItemCount,
+    string Status,
+    string HighestPriority,
+    bool FrankRequired,
+    string NextAction);
+
+public sealed record AutonomousImprovementWorkAreasReport(
+    string ReportVersion,
+    DateTimeOffset UpdatedAtUtc,
+    int ActiveAreas,
+    int ActiveItems,
+    int HermesCanHandle,
+    int FrankItems,
+    IReadOnlyList<AutonomousImprovementWorkArea> WorkAreas,
+    IReadOnlyList<string> Warnings,
+    bool NoTradingExecution,
+    bool NoBrokerAction,
+    bool NoAutoTrading,
+    bool HumanReviewRequired,
+    string QueuePath,
+    string SummaryPath,
+    string MarkdownPath);
+
 public sealed class AutonomousImprovementQueueService
 {
     private readonly StoragePaths _storagePaths;
@@ -84,6 +110,8 @@ public sealed class AutonomousImprovementQueueService
     public string QueuePath => Path.Combine(Root, "autonomous_improvement_queue.json");
 
     public string SummaryPath => Path.Combine(Root, "autonomous_improvement_queue_summary.json");
+
+    public string WorkAreasPath => Path.Combine(Root, "autonomous_improvement_work_areas.json");
 
     public string MarkdownPath => Path.Combine(Root, "autonomous_improvement_queue.md");
 
@@ -101,6 +129,7 @@ public sealed class AutonomousImprovementQueueService
             .ToList();
         var tasks = BuildTasks(warnings, audit, trustPlan);
         var groupedAreas = BuildGroups(tasks);
+        var workAreas = BuildWorkAreas(tasks);
         var report = new AutonomousImprovementQueueReport(
             ReportVersion: "autonomous_improvement_queue_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -144,7 +173,23 @@ public sealed class AutonomousImprovementQueueService
             QueuePath: QueuePath,
             SummaryPath: SummaryPath,
             MarkdownPath: MarkdownPath);
-        WriteQueueOutputs(report, summary);
+        var workAreasReport = new AutonomousImprovementWorkAreasReport(
+            ReportVersion: "autonomous_improvement_work_areas_v1",
+            UpdatedAtUtc: report.UpdatedAtUtc,
+            ActiveAreas: workAreas.Count,
+            ActiveItems: report.ActiveImprovements,
+            HermesCanHandle: report.HermesCanHandle,
+            FrankItems: report.FrankItems,
+            WorkAreas: workAreas,
+            Warnings: report.Warnings,
+            NoTradingExecution: report.NoTradingExecution,
+            NoBrokerAction: report.NoBrokerAction,
+            NoAutoTrading: report.NoAutoTrading,
+            HumanReviewRequired: report.HumanReviewRequired,
+            QueuePath: QueuePath,
+            SummaryPath: SummaryPath,
+            MarkdownPath: MarkdownPath);
+        WriteQueueOutputs(report, summary, workAreasReport);
         return report;
     }
 
@@ -272,6 +317,43 @@ public sealed class AutonomousImprovementQueueService
             .ToList();
     }
 
+    public IReadOnlyList<AutonomousImprovementWorkArea> BuildWorkAreas(IReadOnlyList<AutonomousImprovementTask> tasks)
+    {
+        var areas = new[]
+        {
+            BuildWorkArea(tasks, "gather_more_evidence", "Evidenz sammeln"),
+            BuildWorkArea(tasks, "source_expansion", "Quellen erweitern"),
+            BuildWorkArea(tasks, "schedule_revalidation", "Re-Validierung"),
+            BuildWorkArea(tasks, "contradiction_analysis", "Widersprüche prüfen"),
+            BuildWorkArea(tasks, "systempflege", "Systempflege"),
+        };
+
+        return areas
+            .OrderBy(area => WorkAreaOrder(area.AreaId))
+            .ToList();
+    }
+
+    private static AutonomousImprovementWorkArea BuildWorkArea(
+        IReadOnlyList<AutonomousImprovementTask> tasks,
+        string areaId,
+        string areaTitle)
+    {
+        var items = tasks.Where(task => WorkAreaFromTask(task).Equals(areaId, StringComparison.OrdinalIgnoreCase)).ToList();
+        var highestPriority = items.Count == 0 ? "niedrig" : items.OrderBy(task => PriorityRank(task.Priority)).First().Priority;
+        return new AutonomousImprovementWorkArea(
+            AreaId: areaId,
+            AreaTitle: areaTitle,
+            ItemCount: items.Count,
+            Status: items.Any(task => task.Status.Equals("failed", StringComparison.OrdinalIgnoreCase))
+                ? "failed"
+                : items.Any(task => task.Status.Equals("executed", StringComparison.OrdinalIgnoreCase))
+                    ? "completed"
+                    : "open",
+            HighestPriority: highestPriority,
+            FrankRequired: items.Any(task => task.RequiresHumanReview),
+            NextAction: NextActionFromWorkArea(areaId));
+    }
+
     private static string NormalizeGroupValue(string? value, string fallback)
     {
         var text = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
@@ -344,6 +426,73 @@ public sealed class AutonomousImprovementQueueService
             "robustness_planning" => "Robustheit planen",
             "audit_followup" => "Audit-Ergebnisse verfolgen",
             _ => "Allgemeine Verbesserungen",
+        };
+    }
+
+    private static string WorkAreaFromTask(AutonomousImprovementTask task)
+    {
+        var source = task.SourceWarning.ToLowerInvariant();
+        var title = task.Title.ToLowerInvariant();
+
+        if (source.Contains("trust_score") || source.Contains("evidence") || title.Contains("evidenz"))
+        {
+            return "gather_more_evidence";
+        }
+
+        if (source.Contains("source") || source.Contains("insufficient_sources") || source.Contains("quality"))
+        {
+            return "source_expansion";
+        }
+
+        if (source.Contains("validation") || source.Contains("oos") || source.Contains("revalidation") || source.Contains("re-") || title.Contains("valid"))
+        {
+            return "schedule_revalidation";
+        }
+
+        if (source.Contains("contradiction") || title.Contains("widerspruch"))
+        {
+            return "contradiction_analysis";
+        }
+
+        return "systempflege";
+    }
+
+    private static string WorkAreaTitle(string areaId)
+    {
+        return areaId switch
+        {
+            "gather_more_evidence" => "Evidenz sammeln",
+            "source_expansion" => "Quellen erweitern",
+            "schedule_revalidation" => "Re-Validierung",
+            "contradiction_analysis" => "Widersprüche prüfen",
+            "systempflege" => "Systempflege",
+            _ => "Verbesserungen",
+        };
+    }
+
+    private static int WorkAreaOrder(string areaId)
+    {
+        return areaId switch
+        {
+            "gather_more_evidence" => 0,
+            "source_expansion" => 1,
+            "schedule_revalidation" => 2,
+            "contradiction_analysis" => 3,
+            "systempflege" => 4,
+            _ => 5,
+        };
+    }
+
+    private static string NextActionFromWorkArea(string areaId)
+    {
+        return areaId switch
+        {
+            "gather_more_evidence" => "Mehr Evidenz sammeln",
+            "source_expansion" => "Quellen erweitern",
+            "schedule_revalidation" => "Re-Validierung planen",
+            "contradiction_analysis" => "Widersprüche prüfen",
+            "systempflege" => "Systempflege aktualisieren",
+            _ => "Verbesserung fortsetzen",
         };
     }
 
@@ -455,14 +604,16 @@ public sealed class AutonomousImprovementQueueService
         return string.Join(Environment.NewLine, lines);
     }
 
-    private void WriteQueueOutputs(AutonomousImprovementQueueReport report, AutonomousImprovementQueueSummaryReport summary)
+    private void WriteQueueOutputs(AutonomousImprovementQueueReport report, AutonomousImprovementQueueSummaryReport summary, AutonomousImprovementWorkAreasReport workAreas)
     {
         var json = JsonSerializer.Serialize(report, JsonDefaults.WriteOptions);
         var summaryJson = JsonSerializer.Serialize(summary, JsonDefaults.WriteOptions);
+        var workAreasJson = JsonSerializer.Serialize(workAreas, JsonDefaults.WriteOptions);
         var markdown = BuildMarkdown(report);
 
         TryWriteCopies(Root, QueuePath, MarkdownPath, json, markdown);
         TryWriteCopies(Root, SummaryPath, Path.Combine(Root, "autonomous_improvement_queue_summary.md"), summaryJson, markdown);
+        TryWriteCopies(Root, WorkAreasPath, Path.Combine(Root, "autonomous_improvement_work_areas.md"), workAreasJson, BuildWorkAreasMarkdown(workAreas));
     }
 
     private static void TryWriteCopies(string root, string jsonPath, string markdownPath, string json, string markdown)
@@ -481,5 +632,23 @@ public sealed class AutonomousImprovementQueueService
             File.WriteAllText(Path.Combine(fallbackRoot, fileName), json);
             File.WriteAllText(Path.Combine(fallbackRoot, Path.GetFileName(markdownPath)), markdown);
         }
+    }
+
+    private static string BuildWorkAreasMarkdown(AutonomousImprovementWorkAreasReport report)
+    {
+        var lines = new List<string>
+        {
+            "# Autonomous Improvement Work Areas",
+            string.Empty,
+            $"- Updated UTC: {report.UpdatedAtUtc:O}",
+            $"- Aktive Bereiche: {report.ActiveAreas}",
+            $"- Aktive Items: {report.ActiveItems}",
+            $"- Frank nötig: {report.FrankItems}",
+            string.Empty,
+            "## Bereiche",
+        };
+
+        lines.AddRange(report.WorkAreas.Select(area => $"- {area.AreaTitle}: {area.ItemCount} [{area.Status}] -> {area.NextAction}"));
+        return string.Join(Environment.NewLine, lines);
     }
 }

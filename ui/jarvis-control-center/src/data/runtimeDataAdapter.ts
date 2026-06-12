@@ -1672,13 +1672,34 @@ function reportFixtureRaw(key) {
       return {
         report_version: 'autonomous_improvement_queue_summary_v1',
         updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
-        active_areas: 6,
+        active_areas: 5,
         active_items: 421,
         hermes_can_handle: 421,
         frank_items: 0,
-        grouped_improvement_areas: reportFixtureRaw('autonomousImprovementQueue').grouped_improvement_areas,
-        top_priority_groups: reportFixtureRaw('autonomousImprovementQueue').top_priority_groups,
+        grouped_improvement_areas: reportFixtureRaw('autonomousImprovementWorkAreas').work_areas,
+        top_priority_groups: reportFixtureRaw('autonomousImprovementWorkAreas').work_areas,
         source_warnings: reportFixtureRaw('autonomousImprovementQueue').source_warnings,
+        warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'autonomousImprovementWorkAreas':
+      return {
+        report_version: 'autonomous_improvement_work_areas_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        active_areas: 5,
+        active_items: 421,
+        hermes_can_handle: 421,
+        frank_items: 0,
+        work_areas: [
+          { area_id: 'gather_more_evidence', area_title: 'Evidenz sammeln', item_count: 138, status: 'open', highest_priority: 'medium', frank_required: false, next_action: 'Mehr Evidenz sammeln' },
+          { area_id: 'source_expansion', area_title: 'Quellen erweitern', item_count: 138, status: 'open', highest_priority: 'medium', frank_required: false, next_action: 'Quellen erweitern' },
+          { area_id: 'schedule_revalidation', area_title: 'Re-Validierung', item_count: 92, status: 'open', highest_priority: 'medium', frank_required: false, next_action: 'Re-Validierung planen' },
+          { area_id: 'contradiction_analysis', area_title: 'Widersprüche prüfen', item_count: 5, status: 'open', highest_priority: 'high', frank_required: false, next_action: 'Widersprüche prüfen' },
+          { area_id: 'systempflege', area_title: 'Systempflege', item_count: 48, status: 'open', highest_priority: 'low', frank_required: false, next_action: 'Systempflege aktualisieren' },
+        ],
         warnings: [],
         no_trading_execution: true,
         no_broker_action: true,
@@ -2750,6 +2771,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       knowledgeValidationAudit: reportFixtureRaw('knowledgeValidationAudit'),
       autonomousImprovementQueue: reportFixtureRaw('autonomousImprovementQueue'),
       autonomousImprovementQueueSummary: reportFixtureRaw('autonomousImprovementQueueSummary'),
+      autonomousImprovementWorkAreas: reportFixtureRaw('autonomousImprovementWorkAreas'),
       autonomousImprovementExecution: reportFixtureRaw('autonomousImprovementExecution'),
       trustedKnowledgeReviewGate: reportFixtureRaw('trustedKnowledgeReviewGate'),
       knowledgeTrustImprovementPlan: reportFixtureRaw('knowledgeTrustImprovementPlan'),
@@ -2824,6 +2846,7 @@ export async function loadOperatorDashboard() {
         knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
         autonomousImprovementQueue: dashboard.autonomousImprovementQueue,
         autonomousImprovementQueueSummary: dashboard.autonomousImprovementQueueSummary,
+        autonomousImprovementWorkAreas: dashboard.autonomousImprovementWorkAreas,
         autonomousImprovementExecution: dashboard.autonomousImprovementExecution,
         trustedKnowledgeReviewGate: dashboard.trustedKnowledgeReviewGate,
         knowledgeTrustImprovementPlan: dashboard.knowledgeTrustImprovementPlan,
@@ -2899,6 +2922,7 @@ export async function loadOperatorDashboard() {
   rawReports.knowledgeValidationAudit = reportFixtureRaw('knowledgeValidationAudit');
   rawReports.autonomousImprovementQueue = reportFixtureRaw('autonomousImprovementQueue');
   rawReports.autonomousImprovementQueueSummary = reportFixtureRaw('autonomousImprovementQueueSummary');
+  rawReports.autonomousImprovementWorkAreas = reportFixtureRaw('autonomousImprovementWorkAreas');
   rawReports.autonomousImprovementExecution = reportFixtureRaw('autonomousImprovementExecution');
   rawReports.trustedKnowledgeReviewGate = reportFixtureRaw('trustedKnowledgeReviewGate');
   rawReports.knowledgeTrustImprovementPlan = reportFixtureRaw('knowledgeTrustImprovementPlan');
