@@ -2,6 +2,7 @@ using Hermes.Runtime;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using System.Xml.Linq;
 
@@ -58,6 +59,7 @@ internal sealed class HermesCli
             "scheduler-jobs" => ShowSchedulerJobs(),
             "time-control-status" => ShowTimeControlStatus(),
             "time-control-update" => UpdateTimeControl(),
+            "startup-status" => ShowStartupStatus(),
             "readonly-bridge" or "bridge-start" => StartReadOnlyBridge(),
             "supervisor-start" => StartSupervisor(),
             "supervisor-status" => ShowSupervisorStatus(),
@@ -298,6 +300,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes scheduler-jobs    geplante Hermes Jobs anzeigen");
         Console.WriteLine("  hermes time-control-status zentrale Arbeitszeit-/Window-Konfiguration anzeigen");
         Console.WriteLine("  hermes time-control-update zentrale Arbeitszeit-/Window-Konfiguration aktualisieren");
+        Console.WriteLine("  hermes startup-status    Bridge-/Scheduler-Startstatus und Start-Hilfe anzeigen");
         Console.WriteLine("  hermes readonly-bridge   localhost Read-only Bridge fuer Jarvis Control Center starten");
         Console.WriteLine("  hermes supervisor-start  langlebigen Hermes Supervisor starten");
         Console.WriteLine("  hermes supervisor-status Supervisor Heartbeat/State anzeigen");
@@ -1966,6 +1969,123 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private int ShowStartupStatus()
+    {
+        WriteHeader("Hermes Startup Orchestrator");
+
+        var scheduler = new HermesInternalScheduler(BuildStoragePaths(), Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var schedulerStatus = scheduler.GetStatus();
+        var timeControl = scheduler.GetTimeControlStatus();
+        var bridgeUrl = "http://127.0.0.1:8787/bridge/health";
+        var bridgeRunning = IsBridgeHealthy(bridgeUrl, out var bridgeVersion, out var bridgeWarnings);
+
+        WriteField("Read-only Bridge", bridgeRunning ? "aktiv" : "nicht aktiv");
+        WriteField("Bridge Version", bridgeVersion ?? "-");
+        WriteField("Bridge Health", bridgeRunning ? bridgeUrl : "nicht erreichbar");
+        WriteField("Scheduler Status", schedulerStatus.Warnings.Count == 0 ? "lesbar" : "mit Warnungen");
+        WriteField("Scheduler Jobs", schedulerStatus.Jobs.Count.ToString());
+        WriteField("Time Control", timeControl.InWorkWindow ? "Derzeit im Arbeitsfenster" : "Außerhalb des Arbeitsfensters");
+        WriteField("Zeitzone", timeControl.TimeZone);
+        WriteField("Arbeitsfenster", $"{timeControl.WorkWindow.Start} - {timeControl.WorkWindow.End}");
+        WriteField("Nightly Fenster", $"{timeControl.NightlyWindow.Start} - {timeControl.NightlyWindow.End}");
+        WriteField("Lernfenster", $"{timeControl.LearningWindow.Start} - {timeControl.LearningWindow.End}");
+        WriteField("Human-Review Fenster", $"{timeControl.HumanReviewWindow.Start} - {timeControl.HumanReviewWindow.End}");
+        WriteMessages("Bridge Hinweise", bridgeWarnings);
+
+        Console.WriteLine();
+        Console.WriteLine("Start-Hilfe:");
+        Console.WriteLine(bridgeRunning
+            ? "  Bridge läuft bereits: dotnet run --project ./cli/Hermes.Cli.csproj -- readonly-bridge"
+            : "  Bridge starten: cd ~/jarvis/HermesRuntime && dotnet run --project ./cli/Hermes.Cli.csproj -- readonly-bridge");
+        Console.WriteLine("  Scheduler prüfen: dotnet run --project ./cli/Hermes.Cli.csproj -- scheduler-status");
+        Console.WriteLine("  Zeitsteuerung prüfen: dotnet run --project ./cli/Hermes.Cli.csproj -- time-control-status");
+        Console.WriteLine("  UI starten: cd ~/jarvis/ui/jarvis-control-center && npm run dev");
+        Console.WriteLine("  Komplettstart: cd ~/jarvis && ./start-hermes.sh");
+
+        if (!bridgeRunning)
+        {
+            var started = TryStartBridgeProcess(out var startMessage);
+            WriteField("Bridge Startversuch", started ? "gestartet" : "nicht gestartet");
+            WriteField("Bridge Startinfo", startMessage);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private bool IsBridgeHealthy(string bridgeUrl, out string? bridgeVersion, out List<string> warnings)
+    {
+        bridgeVersion = null;
+        warnings = [];
+
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+            var response = client.GetStringAsync(bridgeUrl).GetAwaiter().GetResult();
+            using var document = JsonDocument.Parse(response);
+            var root = document.RootElement;
+            if (TryGetProperty(root, out var data, "data"))
+            {
+                bridgeVersion = GetString(data, "bridge_version", "bridgeVersion");
+                var status = GetString(data, "status");
+                if (!string.IsNullOrWhiteSpace(status) && !status.Equals("available", StringComparison.OrdinalIgnoreCase))
+                {
+                    warnings.Add($"Bridge meldet Status '{status}'.");
+                }
+            }
+            else
+            {
+                bridgeVersion = GetString(root, "bridge_version", "bridgeVersion");
+                var status = GetString(root, "status");
+                if (!string.IsNullOrWhiteSpace(status) && !status.Equals("available", StringComparison.OrdinalIgnoreCase))
+                {
+                    warnings.Add($"Bridge meldet Status '{status}'.");
+                }
+            }
+
+            return true;
+        }
+        catch (Exception)
+        {
+            warnings.Add("Bridge ist nicht aktiv.");
+            warnings.Add("Starte: cd ~/jarvis/HermesRuntime && dotnet run --project ./cli/Hermes.Cli.csproj -- readonly-bridge");
+            return false;
+        }
+    }
+
+    private bool TryStartBridgeProcess(out string message)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = "run --project ./cli/Hermes.Cli.csproj -- readonly-bridge --url http://127.0.0.1:8787/",
+                WorkingDirectory = _runtimeRoot,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+
+            var process = Process.Start(startInfo);
+            if (process is null)
+            {
+                message = "Bridge-Prozess konnte nicht gestartet werden.";
+                return false;
+            }
+
+            message = $"Bridge-Startprozess mit PID {process.Id} gestartet.";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            return false;
+        }
     }
 
     private int UpdateTimeControl()

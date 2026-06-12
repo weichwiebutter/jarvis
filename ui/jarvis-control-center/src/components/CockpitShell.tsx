@@ -3010,7 +3010,7 @@ export function CockpitShell() {
 
       {fixtureActive ? (
         <p className="cockpit-warning">
-          Nur lesende Bridge nicht vollständig verfügbar. Die Cockpit-Ansicht nutzt stabile Ersatzdaten.
+          Bridge ist nicht aktiv. Starte: cd ~/jarvis/HermesRuntime && dotnet run --project ./cli/Hermes.Cli.csproj -- readonly-bridge
         </p>
       ) : null}
 
