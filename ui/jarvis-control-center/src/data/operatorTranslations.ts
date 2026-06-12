@@ -111,6 +111,14 @@ const OPERATOR_TRANSLATIONS = {
     whatHermesDoes: 'arbeitet Verbesserungsaufgaben selbstständig ab',
     franksAction: 'Nein',
   },
+  autonomous_improvement_execution: {
+    title: 'Selbstverbesserung wird ausgeführt',
+    meaning: 'Hermes arbeitet sichere Verbesserungsaufgaben nacheinander ab.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'good',
+    whatHermesDoes: 'führt sichere Verbesserungsaufgaben aus',
+    franksAction: 'Nein',
+  },
   human_review_required: {
     title: 'Menschliche Entscheidung erforderlich',
     meaning: 'Hermes darf diese Vertrauensstufe nicht selbst freigeben.',
@@ -229,6 +237,10 @@ const FALLBACK_TRANSLATIONS = [
   {
     match: /outside_work_window/i,
     value: OPERATOR_TRANSLATIONS.outside_work_window,
+  },
+  {
+    match: /autonomous[_\-\s]?improvement[_\-\s]?execution/i,
+    value: OPERATOR_TRANSLATIONS.autonomous_improvement_execution,
   },
   {
     match: /stopped_by_stop_request/i,

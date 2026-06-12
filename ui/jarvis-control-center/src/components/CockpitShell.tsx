@@ -2159,6 +2159,7 @@ function DashboardLearningSummary({ operatorState }) {
   const masterStatus = operatorState.masterStatus;
   const audit = reportByKey(operatorState, 'knowledgeValidationAudit')?.raw || {};
   const improvement = reportByKey(operatorState, 'autonomousImprovementQueue')?.raw || {};
+  const execution = reportByKey(operatorState, 'autonomousImprovementExecution')?.raw || {};
   const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
   const criticalGaps = audit.critical_knowledge_gaps ?? audit.criticalKnowledgeGaps ?? masterStatus.knowledge_items_needing_oos;
   const oldestOpenValidationAgeDays = audit.oldest_open_validation_age_days ?? audit.oldestOpenValidationAgeDays ?? 0;
@@ -2187,7 +2188,11 @@ function DashboardLearningSummary({ operatorState }) {
       <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
       <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
       <Metric label="Selbstverbesserung" value={improvement.active_improvements ? `${formatNumber(improvement.active_improvements)} aktiv` : 'bereit'} tone={improvement.active_improvements ? 'good' : 'info'} />
-      <Metric label="Frank" value={improvement.frank_items ? `${formatNumber(improvement.frank_items)} prüfen` : 'nichts offen'} tone={improvement.frank_items ? 'warn' : 'good'} />
+      <Metric label="Erledigt" value={execution.executed ?? execution.Executed ?? 0} tone="good" />
+      <Metric label="Geplant" value={execution.planned ?? execution.Planned ?? 0} tone="info" />
+      <Metric label="Übersprungen" value={execution.skipped ?? execution.Skipped ?? 0} tone="info" />
+      <Metric label="Fehlgeschlagen" value={execution.failed ?? execution.Failed ?? 0} tone={execution.failed || execution.Failed ? 'warn' : 'good'} />
+      <Metric label="Frank" value={(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvement.frank_items) ? `${formatNumber(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvement.frank_items)} prüfen` : 'nichts offen'} tone={(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvement.frank_items) ? 'warn' : 'good'} />
     </div>
   );
 }

@@ -133,6 +133,8 @@ internal sealed class HermesCli
             "knowledge-validation-audit" => ShowKnowledgeValidationAudit(),
             "generate-improvement-queue" => GenerateImprovementQueue(),
             "improvement-queue" => ShowImprovementQueue(),
+            "execute-improvement-queue" => ExecuteImprovementQueue(),
+            "improvement-execution-status" => ShowImprovementExecutionStatus(),
             "explain-validation" => ExplainValidation(),
             "research-queue" => ShowResearchQueue(),
             "enqueue-research" => EnqueueResearch(),
@@ -372,6 +374,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-validation-audit Knowledge Validation Audit anzeigen");
         Console.WriteLine("  hermes generate-improvement-queue Verbesserungs-Warteschlange aus Audit/Warnungen erzeugen");
         Console.WriteLine("  hermes improvement-queue Verbesserungs-Warteschlange anzeigen");
+        Console.WriteLine("  hermes execute-improvement-queue sichere Verbesserungsaufgaben ausfuehren");
+        Console.WriteLine("  hermes improvement-execution-status Verbesserungs-Ausfuehrungsstatus anzeigen");
         Console.WriteLine("  hermes explain-validation --id <KNOWLEDGE_ITEM_ID> Validierungsplan erklaeren");
         Console.WriteLine("  hermes research-queue     Cognitive Research Queue anzeigen");
         Console.WriteLine("  hermes enqueue-research --domain trading --type validation Research-Item einreihen");
@@ -6419,6 +6423,37 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ExecuteImprovementQueue()
+    {
+        WriteHeader("Hermes Autonomous Improvement Execution");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 20, min: 1, max: 50);
+        var service = new AutonomousImprovementExecutorService(BuildStoragePaths());
+        var report = service.Execute(maxItems);
+
+        WriteImprovementExecution(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowImprovementExecutionStatus()
+    {
+        WriteHeader("Hermes Autonomous Improvement Execution");
+        var service = new AutonomousImprovementExecutorService(BuildStoragePaths());
+        var report = service.Load();
+        if (report is null)
+        {
+            WriteWarning("Noch kein Verbesserungs-Ausführungsreport vorhanden. Bitte zuerst `hermes execute-improvement-queue` ausführen.");
+            WriteSafety();
+            return 1;
+        }
+
+        WriteImprovementExecution(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private void WriteImprovementQueue(AutonomousImprovementQueueReport report, AutonomousImprovementQueueService service)
     {
         WriteField("Report", DisplayPath(service.QueuePath));
@@ -6440,6 +6475,37 @@ internal sealed class HermesCli
             WriteField("Due Hint", task.DueHint);
             WriteField("Requires Human Review", task.RequiresHumanReview.ToString().ToLowerInvariant());
             WriteField("Auto Fixable", task.AutoFixable.ToString().ToLowerInvariant());
+            WriteField("Safe To Execute", task.SafeToExecute.ToString().ToLowerInvariant());
+        }
+        WriteMessages("Warnings", report.Warnings);
+    }
+
+    private void WriteImprovementExecution(AutonomousImprovementExecutionReport report, AutonomousImprovementExecutorService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Log", DisplayPath(service.LogPath));
+        WriteField("Aktive Verbesserungen", (report.Pending + report.Planned).ToString());
+        WriteField("Geplant", report.Planned.ToString());
+        WriteField("Erledigt", report.Executed.ToString());
+        WriteField("Übersprungen", report.Skipped.ToString());
+        WriteField("Fehlgeschlagen", report.Failed.ToString());
+        WriteField("Frank nötig", report.NeedsHumanReview > 0 ? "ja" : "nein");
+        WriteField("Letzte Ausführung", report.LastExecutedAtUtc?.ToString("O") ?? "-");
+        WriteMessages("Quelle", report.Tasks.Select(task => $"{task.Title} [{task.Status}]").Take(20).ToList());
+        foreach (var task in report.Tasks)
+        {
+            WriteSubHeader(task.Title);
+            WriteField("Source Warning", task.SourceWarning);
+            WriteField("Domain", task.Domain);
+            WriteField("Priority", task.Priority);
+            WriteField("Status", task.Status);
+            WriteField("Result", task.Result);
+            WriteField("Executed At", task.ExecutedAtUtc?.ToString("O") ?? "-");
+            WriteField("Output Report", task.OutputReportPath is null ? "-" : DisplayPath(task.OutputReportPath));
+            WriteField("Requires Human Review", task.RequiresHumanReview.ToString().ToLowerInvariant());
+            WriteField("Auto Fixable", task.AutoFixable.ToString().ToLowerInvariant());
+            WriteField("Safe To Execute", task.SafeToExecute.ToString().ToLowerInvariant());
         }
         WriteMessages("Warnings", report.Warnings);
     }

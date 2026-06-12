@@ -1637,6 +1637,55 @@ function reportFixtureRaw(key) {
       };
     case 'forwardTestStatus':
       return operatorDashboardMock.forwardTestStatus;
+    case 'autonomousImprovementQueue':
+      return {
+        report_version: 'autonomous_improvement_queue_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        active_improvements: 4,
+        highest_priority: 'high',
+        hermes_can_handle: 4,
+        frank_items: 0,
+        tasks: [
+          {
+            task_id: 'improvement_storage_cleanup_candidates',
+            source_warning: 'storage_cleanup_candidates',
+            title: 'Cleanup-Plan aktualisieren',
+            domain: 'process',
+            priority: 'low',
+            reason: 'Speicherbereinigung wäre sinnvoll.',
+            suggested_action: 'Cleanup-Plan bei Bedarf aktualisieren.',
+            status: 'open',
+            due_hint: 'Bei Speicherbedarf',
+            requires_human_review: false,
+            auto_fixable: true,
+            safe_to_execute: true,
+          },
+        ],
+        source_warnings: ['oos_data_missing', 'knowledge_validation_queue_missing', 'hypotheses_without_validation_queue', 'storage_cleanup_candidates'],
+        warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'autonomousImprovementExecution':
+      return {
+        report_version: 'autonomous_improvement_execution_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        pending: 0,
+        planned: 0,
+        executed: 4,
+        skipped: 0,
+        failed: 0,
+        needs_human_review: 0,
+        last_executed_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        tasks: [],
+        warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'robustStrategies':
       return {
         strategies: operatorDashboardMock.researchInsights.robust_strategies,
@@ -2594,6 +2643,8 @@ export function createOperatorDashboardFallback(loadError = '') {
       latestDemoSignals: operatorDashboardMock.latestDemoSignals,
       forwardTestStatus: operatorDashboardMock.forwardTestStatus,
       knowledgeValidationAudit: reportFixtureRaw('knowledgeValidationAudit'),
+      autonomousImprovementQueue: reportFixtureRaw('autonomousImprovementQueue'),
+      autonomousImprovementExecution: reportFixtureRaw('autonomousImprovementExecution'),
       ensemblePortfolioStatus: reportFixtureRaw('ensemblePortfolioStatus'),
       systemBHandoffBundle: systemBHandoffBundleMock,
       validateEnsembleSignalPackage: reportFixtureRaw('validateEnsembleSignalPackage'),
@@ -2662,8 +2713,10 @@ export async function loadOperatorDashboard() {
         demoSignalFeedStatus: dashboard.demoSignalFeedStatus,
         latestDemoSignals: dashboard.latestDemoSignals,
         forwardTestStatus: dashboard.forwardTestStatus,
-        knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
-        ensemblePortfolioStatus: dashboard.ensemblePortfolioStatus,
+      knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
+      autonomousImprovementQueue: dashboard.autonomousImprovementQueue,
+      autonomousImprovementExecution: dashboard.autonomousImprovementExecution,
+      ensemblePortfolioStatus: dashboard.ensemblePortfolioStatus,
         systemBHandoffBundle: dashboard.systemBHandoffBundle,
         validateEnsembleSignalPackage: dashboard.validateEnsembleSignalPackage,
         setupRegistry: dashboard.setupRegistry,
@@ -2733,6 +2786,8 @@ export async function loadOperatorDashboard() {
   rawReports.signalAgentSpecs = reportFixtureRaw('signalAgentSpecs');
   rawReports.multiAssetResearchStatus = reportFixtureRaw('multiAssetResearchStatus');
   rawReports.knowledgeValidationAudit = reportFixtureRaw('knowledgeValidationAudit');
+  rawReports.autonomousImprovementQueue = reportFixtureRaw('autonomousImprovementQueue');
+  rawReports.autonomousImprovementExecution = reportFixtureRaw('autonomousImprovementExecution');
   rawReports.timeControl = reportFixtureRaw('timeControl');
   let logLines = [...operatorDashboardMock.logLines];
   const warnings = [

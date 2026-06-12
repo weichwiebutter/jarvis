@@ -142,6 +142,16 @@ const operatorReports = {
     url: bridgeUrl('/reports/forward-test-status'),
     path: 'read-only bridge:/reports/forward-test-status',
   },
+  autonomousImprovementQueue: {
+    label: 'Autonomous Improvement Queue',
+    url: bridgeUrl('/reports/autonomous-improvement-queue'),
+    path: 'read-only bridge:/reports/autonomous-improvement-queue',
+  },
+  autonomousImprovementExecution: {
+    label: 'Autonomous Improvement Execution',
+    url: bridgeUrl('/reports/autonomous-improvement-execution'),
+    path: 'read-only bridge:/reports/autonomous-improvement-execution',
+  },
   ensemblePortfolioStatus: {
     label: 'Ensemble Portfolio Status',
     url: bridgeUrl('/reports/ensemble-portfolio-status'),
