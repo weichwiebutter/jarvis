@@ -4,6 +4,12 @@ import {
   DATA_SOURCE,
   loadOperatorDashboard,
 } from '../data/runtimeDataAdapter';
+import {
+  compactOperatorExplanation,
+  describeMustFrankAct,
+  operatorTrafficLight,
+  translateOperatorCode,
+} from '../data/operatorTranslations';
 import { sourceModeLabel, sourceTone } from '../utils/controlCenterFormatters';
 import { StatusPill, toneClass } from './StatusCard';
 
@@ -26,16 +32,6 @@ function truncateText(value, maxLength = 28) {
   }
 
   return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
-}
-
-function shortActionLabel(value) {
-  const text = String(value || '-').trim();
-  if (!text || text === '-') {
-    return '-';
-  }
-
-  const firstPart = text.split(/[.:|/]/)[0].trim();
-  return truncateText(firstPart || text, 24);
 }
 
 function visiblePath(value, fallback = '-') {
@@ -199,6 +195,26 @@ function Metric({ label, value, tone = 'info' }) {
   );
 }
 
+function OperatorSummary({ code, fallback = null }) {
+  const item = operatorStatusOverview(code, fallback);
+  const trafficLight = operatorTrafficLight(item.severity);
+
+  return (
+    <div className="operator-summary-card">
+      <div className="operator-summary-head">
+        <div>
+          <span>{item.title}</span>
+          <strong>{trafficLight.label}</strong>
+        </div>
+        <StatusPill tone={trafficLight.tone}>{trafficLight.symbol}</StatusPill>
+      </div>
+      <p>{item.meaning}</p>
+      <p><strong>Hermes arbeitet an:</strong> {item.whatHermesDoes}</p>
+      <p><strong>Aktion für Frank:</strong> {item.franksAction}</p>
+    </div>
+  );
+}
+
 function goalLabel(goalId) {
   return String(goalId || '-')
     .replace(/^improve_/, '')
@@ -247,6 +263,181 @@ function statusDeutsch(value) {
   };
 
   return labels[normalized] || String(value || '-');
+}
+
+function operatorStatusOverview(value) {
+  const translation = translateOperatorCode(value);
+  return {
+    title: translation.title,
+    meaning: translation.meaning,
+    action: translation.action,
+    severity: translation.severity,
+    whatHermesDoes: translation.whatHermesDoes,
+    franksAction: translation.franksAction,
+  };
+}
+
+function topicDeutsch(value) {
+  const text = String(value || '').trim();
+  if (!text) {
+    return '';
+  }
+
+  const lowered = text.toLowerCase();
+  if (lowered.includes('eurusd')) return 'EURUSD validieren';
+  if (lowered.includes('xauusd')) return 'XAUUSD prüfen';
+  if (lowered.includes('ger40') || lowered.includes('de40') || lowered.includes('dax')) return 'GER40 prüfen';
+  if (lowered.includes('validation') || lowered.includes('validierung') || lowered.includes('knowledge')) return 'Wissensvalidierung vorbereiten';
+  if (lowered.includes('cleanup') || lowered.includes('storage') || lowered.includes('speicher')) return 'Speicheranalyse';
+  if (lowered.includes('signal')) return 'Signalpaket prüfen';
+  if (lowered.includes('review')) return 'Prüfzentrum bearbeiten';
+  if (lowered.includes('nightly')) return 'Nightly kontrollieren';
+
+  return text
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\bvalidate\b/gi, 'validieren')
+    .replace(/\bvalidation\b/gi, 'Validierung');
+}
+
+function uniqueList(values) {
+  return [...new Set(values.filter(Boolean).map((value) => String(value).trim()).filter(Boolean))];
+}
+
+function reviewTopicLabel(item) {
+  const raw = String(
+    item.title
+    || item.topic
+    || item.subject
+    || item.name
+    || item.reason
+    || item.recommendation
+    || '',
+  ).trim();
+
+  if (!raw) {
+    return 'Offene Prüfung';
+  }
+
+  const translated = translateOperatorCode(raw, null);
+  if (translated && translated.title && translated.title !== raw && translated.title !== 'Technische Information') {
+    return translated.title;
+  }
+
+  return topicDeutsch(reviewReasonDeutsch(raw));
+}
+
+function frankActionCenterModel(operatorState) {
+  const review = operatorState.humanReview || {};
+  const items = Array.isArray(review.items) ? review.items : [];
+  const pendingItems = items.filter((item) => item.status === 'pending');
+  const openReviews = Number(review.pending_reviews || pendingItems.length || 0);
+  const masterStatus = operatorState.masterStatus || {};
+  const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
+  const warningCandidates = [
+    ...operatorState.warnings,
+    ...operatorState.storage.warnings,
+    ...operatorState.storage.errors,
+    ...(masterStatus.top_blockers || []),
+    ...(masterStatus.next_recommended_actions || []),
+  ].filter(Boolean);
+  const translatedWarnings = warningCandidates
+    .map(classifyOperatorWarning)
+    .filter(Boolean);
+
+  const decisionRows = pendingItems
+    .slice(0, 3)
+    .map((item) => ({
+      topic: reviewTopicLabel(item),
+      recommendation: reviewRecommendationDeutsch(item.recommendation),
+      risk: reviewRisk(item).label,
+      tone: reviewTrafficLight(item).tone,
+    }));
+
+  if (openReviews > 0) {
+    return {
+      mode: 'red',
+      title: 'Entscheidungen erforderlich',
+      summary: `${formatNumber(openReviews)} offene Reviews`,
+      headline: 'Frank muss jetzt entscheiden.',
+      action: 'Ja, im Prüfzentrum',
+      buttonVisible: true,
+      buttonLabel: 'Prüfzentrum öffnen',
+      buttonTarget: 'review',
+      items: decisionRows.length ? decisionRows : [
+        {
+          topic: 'Offene Prüfungen',
+          recommendation: 'Menschliche Prüfung erforderlich.',
+          risk: 'mittel',
+          tone: 'warn',
+        },
+      ],
+      details: ['Hermes wartet auf eine Freigabe im Prüfzentrum.'],
+    };
+  }
+
+  const yellowReasons = uniqueList([
+    ...translatedWarnings
+      .filter((warning) => warning.tone === 'warn')
+      .map((warning) => warning.label),
+    masterStatus.knowledge_items_needing_oos ? translateOperatorCode('oos_data_missing').title : '',
+    masterStatus.validation_plans_open || masterStatus.validation_tasks_pending ? translateOperatorCode('validation_queue_missing').title : '',
+    operatorState.storage.cleanup_candidate_count ? translateOperatorCode('storage_cleanup_candidates').title : '',
+    review.needs_more_evidence_reviews ? translateOperatorCode('evidence_requested').title : '',
+    masterStatus.pending_reviews && !openReviews ? translateOperatorCode('review_required').title : '',
+  ]);
+
+  if (yellowReasons.length) {
+    return {
+      mode: 'yellow',
+      title: 'Hermes arbeitet daran',
+      summary: yellowReasons[0],
+      headline: 'Hermes bearbeitet die offenen Themen selbstständig.',
+      action: yellowReasons.some((reason) => /Speicher/i.test(reason)) ? 'Ja, Speicher prüfen' : 'Ja, Konfiguration prüfen',
+      buttonVisible: false,
+      buttonLabel: '',
+      buttonTarget: '',
+      items: yellowReasons.slice(0, 3).map((reason) => ({
+        topic: reason,
+        recommendation: 'Hermes arbeitet daran.',
+        risk: 'mittel',
+        tone: 'warn',
+      })),
+      details: yellowReasons.length > 1 ? yellowReasons.slice(1, 3) : [],
+    };
+  }
+
+  const ongoingTopics = uniqueList([
+    masterStatus.next_recommended_actions?.[0],
+    portfolioReport.eurusd_readiness && String(portfolioReport.eurusd_readiness).includes('validation') ? 'EURUSD validieren' : '',
+    masterStatus.validation_plans_open || masterStatus.knowledge_items_needing_oos ? 'Wissensvalidierung vorbereiten' : '',
+    operatorState.storage.cleanup_candidate_count ? 'Speicheranalyse' : '',
+    portfolioReport.signal_agent_specs_ready ? 'Signalpaket prüfen' : '',
+  ]);
+
+  return {
+    mode: 'green',
+    title: 'Keine Aktion erforderlich',
+    summary: 'Hermes arbeitet selbstständig weiter.',
+    headline: 'Hermes arbeitet selbstständig weiter.',
+    action: 'Nein',
+    buttonVisible: false,
+    buttonLabel: '',
+    buttonTarget: '',
+      items: ongoingTopics.slice(0, 3).length
+      ? ongoingTopics.slice(0, 3).map((topic) => ({
+          topic: topicDeutsch(topic),
+          recommendation: 'Keine Aktion erforderlich.',
+          risk: 'niedrig',
+          tone: 'good',
+        }))
+      : [
+          { topic: 'EURUSD validieren', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
+          { topic: 'Wissensvalidierung vorbereiten', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
+          { topic: 'Speicheranalyse', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
+        ],
+    details: [],
+  };
 }
 
 function trustLabel(value) {
@@ -476,6 +667,106 @@ function classifyOperatorWarning(rawWarning) {
   }
 
   const lower = text.toLowerCase();
+  if (lower.includes('outside_nightly_window')) {
+    return {
+      key: 'outside_nightly_window',
+      label: translateOperatorCode('outside_nightly_window').title,
+      detail: translateOperatorCode('outside_nightly_window').meaning,
+      tone: 'info',
+      action: translateOperatorCode('outside_nightly_window').action,
+    };
+  }
+
+  if (lower.includes('safe_stop_requested')) {
+    return {
+      key: 'safe_stop_requested',
+      label: translateOperatorCode('safe_stop_requested').title,
+      detail: translateOperatorCode('safe_stop_requested').meaning,
+      tone: 'info',
+      action: translateOperatorCode('safe_stop_requested').action,
+    };
+  }
+
+  if (lower.includes('storage_cleanup_candidates')) {
+    return {
+      key: 'storage_cleanup_candidates',
+      label: translateOperatorCode('storage_cleanup_candidates').title,
+      detail: translateOperatorCode('storage_cleanup_candidates').meaning,
+      tone: 'info',
+      action: translateOperatorCode('storage_cleanup_candidates').action,
+    };
+  }
+
+  if (lower.includes('oos_data_missing')) {
+    return {
+      key: 'oos_data_missing',
+      label: translateOperatorCode('oos_data_missing').title,
+      detail: translateOperatorCode('oos_data_missing').meaning,
+      tone: 'warn',
+      action: translateOperatorCode('oos_data_missing').action,
+    };
+  }
+
+  if (lower.includes('knowledge_validation_queue_missing')) {
+    return {
+      key: 'knowledge_validation_queue_missing',
+      label: translateOperatorCode('knowledge_validation_queue_missing').title,
+      detail: translateOperatorCode('knowledge_validation_queue_missing').meaning,
+      tone: 'warn',
+      action: translateOperatorCode('knowledge_validation_queue_missing').action,
+    };
+  }
+
+  if (lower.includes('validation_queue_missing')) {
+    return {
+      key: 'validation_queue_missing',
+      label: translateOperatorCode('validation_queue_missing').title,
+      detail: translateOperatorCode('validation_queue_missing').meaning,
+      tone: 'warn',
+      action: translateOperatorCode('validation_queue_missing').action,
+    };
+  }
+
+  if (lower.includes('human_review_required')) {
+    return {
+      key: 'human_review_required',
+      label: translateOperatorCode('human_review_required').title,
+      detail: translateOperatorCode('human_review_required').meaning,
+      tone: 'warn',
+      action: translateOperatorCode('human_review_required').action,
+    };
+  }
+
+  if (lower.includes('review_required')) {
+    return {
+      key: 'review_required',
+      label: translateOperatorCode('review_required').title,
+      detail: translateOperatorCode('review_required').meaning,
+      tone: 'warn',
+      action: translateOperatorCode('review_required').action,
+    };
+  }
+
+  if (lower.includes('evidence_requested') || lower.includes('more evidence')) {
+    return {
+      key: 'evidence_requested',
+      label: translateOperatorCode('evidence_requested').title,
+      detail: translateOperatorCode('evidence_requested').meaning,
+      tone: 'warn',
+      action: translateOperatorCode('evidence_requested').action,
+    };
+  }
+
+  if (lower.includes('deferred_reviews') || lower.includes('deferred review') || lower.includes('zurückgestellt')) {
+    return {
+      key: 'deferred_reviews',
+      label: translateOperatorCode('deferred_reviews').title,
+      detail: translateOperatorCode('deferred_reviews').meaning,
+      tone: 'info',
+      action: translateOperatorCode('deferred_reviews').action,
+    };
+  }
+
   if (/no_auto_trading=false|broker_orders_enabled=true|live_trading_enabled=true|safety.*false|human_review_required=false/.test(lower)) {
     return {
       key: warningFingerprint(text),
@@ -570,13 +861,15 @@ function operatorLogView(operatorState) {
   const systemEvents = [
     {
       label: 'Supervisor gestartet',
-      detail: operatorState.supervisor.running ? 'Aufsicht läuft' : 'Aufsicht nicht aktiv',
-      tone: operatorState.supervisor.running ? 'good' : 'warn',
+      detail: operatorState.supervisor.running
+        ? 'Hermes arbeitet im aktiven Betriebsmodus.'
+        : translateOperatorCode(operatorState.supervisor.status).meaning,
+      tone: operatorState.supervisor.running ? 'good' : operatorTrafficLight(operatorState.supervisor.status).tone,
     },
     {
       label: 'Nightly abgeschlossen',
-      detail: statusDeutsch(operatorState.nightly.current_state),
-      tone: toneFromStatus(operatorState.nightly.current_state),
+      detail: translateOperatorCode(operatorState.nightly.current_state).meaning,
+      tone: operatorTrafficLight(operatorState.nightly.current_state).tone,
     },
     {
       label: 'Zertifizierung abgeschlossen',
@@ -602,7 +895,7 @@ function operatorLogView(operatorState) {
 
   return {
     systemEvents,
-    warnings: reportWarnings.length ? reportWarnings : [{ label: 'Keine relevanten Hinweise', detail: 'Runtime-Reports sind ausreichend verfügbar.', tone: 'good', action: 'Keine Aktion nötig.', count: 1 }],
+    warnings: reportWarnings.length ? reportWarnings : [{ label: 'Keine relevanten Hinweise', detail: 'Hermes kann die vorhandenen Berichte lesen.', tone: 'good', action: 'Keine Aktion nötig.', count: 1 }],
   };
 }
 
@@ -836,17 +1129,17 @@ function buildCommandCenterModules(operatorState) {
       id: 'trading',
       title: 'Handelsintelligenz',
       value: `${formatNumber(portfolioReport.ready_assets || portfolioReport.bot_ready_assets || 2)} bereit`,
-      detail: 'GER40, XAUUSD bereit',
+      detail: 'GER40 und XAUUSD sind bereit',
       tone: toneFromStatus(operatorState.masterStatus.ensemble_portfolio_status || portfolioReport.portfolio_readiness || 'ready'),
-      meta: `EURUSD ${compactStatusLabel(portfolioReport.eurusd_readiness || 'needs_more_validation')}`,
+      meta: `EURUSD: ${translateOperatorCode(portfolioReport.eurusd_readiness || 'needs_more_validation').title}`,
     },
     {
       id: 'signal-package',
       title: 'Signalpaket',
       value: compactStatusLabel(validationReport.validation_status || validationReport.status || 'bereit'),
-      detail: `${formatNumber(specsReport.spec_count || operatorState.masterStatus.signal_agent_specs_ready || 0)} Signal-Spezifikationen`,
+      detail: `${formatNumber(specsReport.spec_count || operatorState.masterStatus.signal_agent_specs_ready || 0)} Spezifikationen verfügbar`,
       tone: toneFromStatus(validationReport.validation_status || validationReport.status || 'completed'),
-      meta: truncateText(visiblePath(handoffReport.bundle_path, DEFAULT_SYSTEM_B_BUNDLE_PATH), 34),
+      meta: 'Übergabeordner vorbereitet',
     },
     {
       id: 'learning',
@@ -1026,7 +1319,7 @@ function MasterStatusOverview({ masterStatus, source }) {
         </div>
       </div>
       {source !== DATA_SOURCE.LIVE_FILE ? (
-        <p className="cockpit-master-source-warning">Demo-/Snapshot-Daten aktiv</p>
+        <p className="cockpit-master-source-warning">Ersatzdaten aktiv - Bridge liest sichere lokale Berichte.</p>
       ) : null}
       <div className="cockpit-master-grid">
         <Metric label="Fokus" value={masterStatus.current_focus} tone="info" />
@@ -1043,7 +1336,7 @@ function MasterStatusOverview({ masterStatus, source }) {
         <Metric label="Robust" value={formatNumber(masterStatus.robust_strategies)} tone={masterStatus.robust_strategies ? 'good' : 'warn'} />
         <Metric label="Demo-Kandidaten" value={formatNumber(masterStatus.demo_bot_candidates)} tone={masterStatus.demo_bot_candidates ? 'good' : 'warn'} />
         <Metric label="no_auto_trading" value={String(masterStatus.no_auto_trading)} tone={masterStatus.no_auto_trading ? 'good' : 'danger'} />
-        <Metric label="human_review" value={String(masterStatus.human_review_required)} tone={masterStatus.human_review_required ? 'good' : 'danger'} />
+        <Metric label="Menschliche Prüfung" value={masterStatus.human_review_required ? 'erforderlich' : 'frei'} tone={masterStatus.human_review_required ? 'good' : 'danger'} />
         <Metric label="broker_orders" value={String(masterStatus.broker_orders_enabled)} tone={masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
         <Metric label="live_trading" value={String(masterStatus.live_trading_enabled)} tone={masterStatus.live_trading_enabled ? 'danger' : 'good'} />
       </div>
@@ -1197,10 +1490,11 @@ function timeControlWindowWarning(start, end, enabled) {
 function DashboardSystemStatus({ operatorState }) {
   return (
     <div className="cockpit-accordion-grid">
+      <OperatorSummary code={operatorState.supervisor.next_action || operatorState.supervisor.status} />
       <Metric label="Gesamtstatus" value={statusDeutsch(operatorState.masterStatus.overall_status)} tone={toneFromStatus(operatorState.masterStatus.overall_status)} />
       <Metric label="Aufsicht" value={operatorState.supervisor.running ? 'läuft' : statusDeutsch(operatorState.supervisor.status)} tone={operatorState.supervisor.running ? 'good' : toneFromStatus(operatorState.supervisor.status)} />
       <Metric label="Planer" value={`${formatNumber(operatorState.schedulerJobs.filter((job) => job.enabled).length)} aktiv`} tone="info" />
-      <Metric label="Nachtlauf" value={statusDeutsch(operatorState.nightly.current_state)} tone={toneFromStatus(operatorState.nightly.current_state)} />
+      <Metric label="Nachtlauf" value={translateOperatorCode(operatorState.nightly.current_state).title} tone={toneFromStatus(operatorState.nightly.current_state)} />
       <Metric label="Letzte Analyse" value={shortDateTime(operatorState.masterStatus.last_meta_review)} tone="info" />
       <Metric label="Lernstrategie" value={operatorState.masterStatus.learning_strategy} tone="info" />
     </div>
@@ -1407,6 +1701,48 @@ function HudCommandGrid({ operatorState, modules, onOpen }) {
   );
 }
 
+function FrankActionCenter({ operatorState, onOpen }) {
+  const model = frankActionCenterModel(operatorState);
+
+  return (
+    <section className={`frank-action-center tone-${model.mode}`} aria-label="Aktionen für Frank">
+      <div className="frank-action-head">
+        <div>
+          <span>Aktionen für Frank</span>
+          <strong>{model.title}</strong>
+        </div>
+        <StatusPill tone={model.mode === 'red' ? 'danger' : model.mode === 'yellow' ? 'warn' : 'good'}>
+          {model.mode === 'red' ? '🔴' : model.mode === 'yellow' ? '🟡' : '🟢'}
+        </StatusPill>
+      </div>
+
+      <p className="frank-action-summary">{model.summary}</p>
+      <p className="frank-action-headline">{model.headline}</p>
+
+      <div className="frank-action-list" aria-label="Frank Themen">
+        {model.items.slice(0, 3).map((item, index) => (
+          <article className={`frank-action-item ${item.tone ? `tone-${item.tone}` : ''}`} key={`${item.topic}-${index}`}>
+            <strong>{truncateText(item.topic, 42)}</strong>
+            <span>{truncateText(`Hermes: ${item.recommendation}`, 56)}</span>
+            <span>{`Risiko: ${item.risk}`}</span>
+          </article>
+        ))}
+      </div>
+
+      <div className="frank-action-footer">
+        <StatusPill tone={model.mode === 'red' ? 'danger' : model.mode === 'yellow' ? 'warn' : 'good'}>
+          Aktion für Frank: {model.action}
+        </StatusPill>
+        {model.buttonVisible ? (
+          <button type="button" onClick={() => onOpen(model.buttonTarget)}>
+            {model.buttonLabel}
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function CommandCenterStatusBar({ operatorState }) {
   return (
     <div className="command-center-status-bar" aria-label="Jarvis Statusleiste">
@@ -1480,20 +1816,23 @@ function DashboardTradingIntelligence({ operatorState }) {
 
   return (
     <div className="cockpit-accordion-grid">
+      <OperatorSummary code={portfolioReport.portfolio_readiness || operatorState.masterStatus.ensemble_portfolio_status || 'ready'} />
       {assets.map((asset) => (
         <div className="cockpit-asset-card" key={asset.asset}>
           <strong>{asset.asset}</strong>
           <span>{compactStatusLabel(asset.readiness)}</span>
-          <small>Setup: {asset.primary_setup || '-'}</small>
+          <small>Aktives Setup: {asset.primary_setup || '-'}</small>
           <small>Signalqualität: {formatNumber(asset.signal_quality || asset.quality_score || 0)}</small>
-          <small>Letzte Zertifizierung: {asset.last_certified_at || asset.last_certification || '-'}</small>
+          <small>Letzte Zertifizierung: {shortDateTime(asset.last_certified_at || asset.last_certification)}</small>
           <StatusPill tone={assetQuality(asset)}>{compactStatusLabel(asset.readiness)}</StatusPill>
+          <small>{translateOperatorCode(asset.readiness).meaning}</small>
+          <small>Hermes arbeitet an: {translateOperatorCode(asset.readiness).whatHermesDoes}</small>
+          <small>Aktion für Frank: {translateOperatorCode(asset.readiness).franksAction}</small>
         </div>
       ))}
       <Metric label="Portfolio" value={compactStatusLabel(portfolioReport.portfolio_readiness || portfolioReport.portfolio_status)} tone={toneFromStatus(portfolioReport.portfolio_readiness || portfolioReport.portfolio_status)} />
       <Metric label="Paketvalidierung" value={compactStatusLabel(validationReport.validation_status || validationReport.status)} tone={toneFromStatus(validationReport.validation_status || validationReport.status)} />
-      <Metric label="Übergabeordner" value={visiblePath(handoffReport.bundle_path || portfolioReport.bundle_path, DEFAULT_SYSTEM_B_BUNDLE_PATH)} tone="info" />
-      <Metric label="Paketdatei" value={visiblePath(validationReport.package_path || portfolioReport.package_path, DEFAULT_ENSEMBLE_PACKAGE_PATH)} tone="info" />
+      <Metric label="Aktion für Frank" value={describeMustFrankAct(translateOperatorCode(portfolioReport.portfolio_readiness || portfolioReport.portfolio_status).action)} tone="info" />
       <section className="bot-spec-action-panel">
         <div className="bot-spec-action-head">
           <div>
@@ -1536,8 +1875,6 @@ function DashboardSignalPackage({ operatorState }) {
   const handoffReport = reportByKey(operatorState, 'systemBHandoffBundle')?.raw || {};
   const specsReport = reportByKey(operatorState, 'signalAgentSpecs')?.raw || {};
   const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
-  const bundlePath = visiblePath(handoffReport.bundle_path || portfolioReport.bundle_path, DEFAULT_SYSTEM_B_BUNDLE_PATH);
-  const packagePath = visiblePath(validationReport.package_path || portfolioReport.package_path, DEFAULT_ENSEMBLE_PACKAGE_PATH);
   const lastExport = validationReport.generated_at
     || validationReport.generated_at_utc
     || handoffReport.generated_at
@@ -1547,6 +1884,7 @@ function DashboardSignalPackage({ operatorState }) {
 
   return (
     <div className="cockpit-accordion-grid">
+      <OperatorSummary code={validationReport.validation_status || validationReport.status || 'ready'} />
       <Metric
         label="Paketprüfung"
         value={compactStatusLabel(validationReport.validation_status || validationReport.status || 'bereit')}
@@ -1562,12 +1900,7 @@ function DashboardSignalPackage({ operatorState }) {
         value={handoffReport.bundle_status || handoffReport.status || handoffReport.portfolio_status || 'vorbereitet'}
         tone={toneFromStatus(handoffReport.bundle_status || handoffReport.status || 'completed')}
       />
-      <Metric
-        label="System-B Übergabeordner"
-        value={bundlePath}
-        tone="info"
-      />
-      <Metric label="ensemble_signal_agent_package.json" value={packagePath} tone="info" />
+      <Metric label="Aktion für Frank" value={describeMustFrankAct(translateOperatorCode(validationReport.validation_status || validationReport.status).action)} tone="info" />
       <Metric label="Letzter Export" value={shortDateTime(lastExport)} tone="info" />
       <Metric label="Auto-Trading" value="deaktiviert" tone="good" />
       <Metric label="Broker-Orders" value="aus" tone="good" />
@@ -1775,6 +2108,7 @@ function DashboardReviewSummary({ operatorState }) {
   const review = operatorState.humanReview || {};
   return (
     <div className="cockpit-accordion-grid">
+      <OperatorSummary code={review.pending_reviews ? 'human_review_required' : 'ok'} />
       <Metric label="Offene Prüfungen" value={formatNumber(review.pending_reviews)} tone={review.pending_reviews ? 'warn' : 'good'} />
       <Metric label="Freigegeben" value={formatNumber(review.approved_reviews)} tone="good" />
       <Metric label="Zurückgestellt" value={formatNumber(review.deferred_reviews)} tone="info" />
@@ -1804,6 +2138,7 @@ function DashboardLearningSummary({ operatorState }) {
     || `${validationCompletionPercent}% abgeschlossen`;
   return (
     <div className="cockpit-accordion-grid">
+      <OperatorSummary code={criticalGaps ? 'oos_data_missing' : 'ok'} />
       <Metric label="Validierung" value={validationCompletion} tone={criticalGaps ? 'warn' : 'good'} />
       <Metric label="Offene Validierungen" value={formatNumber(openValidations)} tone={openValidations ? 'warn' : 'good'} />
       <Metric label="Kritische Wissenslücken" value={formatNumber(criticalGaps)} tone={criticalGaps ? 'warn' : 'good'} />
@@ -1819,6 +2154,7 @@ function DashboardLearningSummary({ operatorState }) {
 function DashboardStorageResources({ operatorState }) {
   return (
     <div className="cockpit-accordion-grid">
+      <OperatorSummary code={operatorState.storage.cleanup_candidate_count ? 'storage_cleanup_candidates' : 'ok'} />
       <Metric label="RAM" value={formatGb(operatorState.resource.free_memory_gb || operatorState.resource.memory_free_gb || 0)} tone="info" />
       <Metric label="CPU" value={`${Math.round(operatorState.resource.cpu_usage_percent)}%`} tone={operatorState.resource.should_stop ? 'danger' : operatorState.resource.should_pause ? 'warn' : 'good'} />
       <Metric label="Speicherplatz" value={formatGb(operatorState.storage.free_disk_gb)} tone={operatorState.storage.errors.length ? 'warn' : 'good'} />
@@ -1867,10 +2203,10 @@ function DashboardLogs({ operatorState }) {
               <span aria-hidden="true">{warningToneInfo(warning.tone).icon}</span>
               <div>
                 <strong>
-                  {warningToneInfo(warning.tone).label}: {warning.label}
+                  {warningToneInfo(warning.tone).label}: {translateOperatorCode(warning.label).title}
                   {warning.count > 1 ? ` (${formatNumber(warning.count)}x)` : ''}
                 </strong>
-                <small>{warning.detail}</small>
+                <small>{translateOperatorCode(warning.detail).meaning || warning.detail}</small>
                 <small>Handlung: {warning.action}</small>
               </div>
             </article>
@@ -1937,7 +2273,7 @@ function ScalpingProgressPanel({ masterStatus }) {
         <Metric label="Bot Specs" value={formatNumber(masterStatus.ctrader_bot_specs_ready)} tone={masterStatus.ctrader_bot_specs_ready ? 'good' : 'info'} />
         <Metric label="Signal-Spezifikationen" value={formatNumber(masterStatus.signal_agent_specs_ready)} tone={masterStatus.signal_agent_specs_ready ? 'good' : 'info'} />
         <Metric label="no_auto_trading" value={String(masterStatus.no_auto_trading)} tone={masterStatus.no_auto_trading ? 'good' : 'danger'} />
-        <Metric label="human_review" value={String(masterStatus.human_review_required)} tone={masterStatus.human_review_required ? 'good' : 'danger'} />
+      <Metric label="Menschliche Prüfung" value={masterStatus.human_review_required ? 'erforderlich' : 'frei'} tone={masterStatus.human_review_required ? 'good' : 'danger'} />
         <Metric label="broker_orders" value={String(masterStatus.broker_orders_enabled)} tone={masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
         <Metric label="live_trading" value={String(masterStatus.live_trading_enabled)} tone={masterStatus.live_trading_enabled ? 'danger' : 'good'} />
       </div>
@@ -2221,17 +2557,16 @@ function CognitiveCenter({ operatorState }) {
             <div>
               <h3>{step.title}</h3>
               <StatusPill tone={step.warnings.length ? 'warn' : 'good'}>
-                {step.warnings.length ? 'Warnung' : 'aktiv'}
+                {step.warnings.length ? 'Hermes arbeitet daran' : 'Alles ok'}
               </StatusPill>
             </div>
-            <Metric label="Status" value={step.status} tone={step.warnings.length ? 'warn' : 'info'} />
+            <OperatorSummary code={step.status} />
             <Metric label="Letzte Aktivität" value={shortDateTime(step.last_activity)} />
-            <Metric label="Nächster Schritt" value={step.next_step} />
-            <Metric label="Report" value={step.report_path} tone={step.report_available ? 'good' : 'warn'} />
+            <Metric label="Nächster Schritt" value={translateOperatorCode(step.next_step).title} />
             {step.warnings.length ? (
               <div className="operator-warning-list">
                 {step.warnings.slice(0, 4).map((warning) => (
-                  <span key={warning}>{warning}</span>
+                  <span key={warning}>{translateOperatorCode(warning).title}</span>
                 ))}
               </div>
             ) : null}
@@ -2280,7 +2615,7 @@ function KnowledgeTrustView({ operatorState }) {
           <h3>Wichtigste Vertrauenslücken</h3>
           <div className="operator-warning-list">
             {masterStatus.top_blockers.slice(0, 8).map((blocker) => (
-              <span key={blocker}>{blocker}</span>
+              <span key={blocker}>{translateOperatorCode(blocker).title}</span>
             ))}
           </div>
         </article>
@@ -2288,7 +2623,7 @@ function KnowledgeTrustView({ operatorState }) {
           <h3>Prüfprioritäten</h3>
           <div className="operator-warning-list">
             {masterStatus.top_review_priorities.slice(0, 8).map((priority) => (
-              <span key={priority}>{priority}</span>
+              <span key={priority}>{translateOperatorCode(priority).title}</span>
             ))}
           </div>
         </article>
@@ -2322,10 +2657,10 @@ function DomainView({ operatorState }) {
             </div>
             <Metric label="Wissenselemente" value={formatNumber(domain.knowledge_items)} />
             <Metric label="Letzte Prüfung" value={shortDateTime(domain.last_check_utc)} />
-            <Metric label="Nächste Aufgabe" value={domain.next_recommended_task} tone="info" />
+            <Metric label="Nächste Aufgabe" value={translateOperatorCode(domain.next_recommended_task).title} tone="info" />
             <div className="operator-token-list">
               {domain.open_needs.slice(0, 6).map((need) => (
-                <span key={need}>{need}</span>
+                <span key={need}>{translateOperatorCode(need).title}</span>
               ))}
               {domain.open_needs.length === 0 ? <span>Keine offenen Needs gemeldet</span> : null}
             </div>
@@ -2345,17 +2680,18 @@ function SystemView({ operatorState }) {
           <h2>System</h2>
         </div>
         <StatusPill tone={operatorState.resource.should_stop ? 'danger' : operatorState.resource.should_pause ? 'warn' : 'good'}>
-          {operatorState.resource.should_stop ? 'kritisch' : operatorState.resource.should_pause ? 'Warnung' : 'ok'}
+          {operatorState.resource.should_stop ? 'Frank muss entscheiden' : operatorState.resource.should_pause ? 'Hermes arbeitet daran' : 'Alles ok'}
         </StatusPill>
       </div>
 
+      <OperatorSummary code={operatorState.supervisor.status || operatorState.resource.action} />
       <div className="trust-summary-grid">
         <Metric label="CPU" value={`${Math.round(operatorState.resource.cpu_usage_percent)}%`} tone={operatorState.resource.should_stop ? 'danger' : operatorState.resource.should_pause ? 'warn' : 'good'} />
         <Metric label="RAM" value={`${Math.round(operatorState.resource.memory_usage_percent)}%`} tone={operatorState.resource.should_stop ? 'danger' : 'good'} />
         <Metric label="Speicherplatz" value={formatGb(operatorState.storage.free_disk_gb)} tone={operatorState.storage.errors.length ? 'warn' : 'good'} />
         <Metric label="Planer" value={`${formatNumber(operatorState.schedulerJobs.filter((job) => job.enabled).length)} aktiv`} tone="info" />
         <Metric label="Aufsicht" value={operatorState.supervisor.running ? 'läuft' : 'gestoppt'} tone={operatorState.supervisor.running ? 'good' : 'warn'} />
-        <Metric label="Nachtlauf" value={statusDeutsch(operatorState.nightly.current_state)} tone={toneFromStatus(operatorState.nightly.current_state)} />
+        <Metric label="Nachtlauf" value={translateOperatorCode(operatorState.nightly.current_state).title} tone={toneFromStatus(operatorState.nightly.current_state)} />
       </div>
 
       <div className="control-split-grid">
@@ -2363,7 +2699,7 @@ function SystemView({ operatorState }) {
           <h3>Systemhinweise</h3>
           <div className="operator-warning-list">
             {(operatorState.resource.warnings || []).slice(0, 6).map((warning) => (
-              <span key={warning}>{warning}</span>
+              <span key={warning}>{translateOperatorCode(warning).title}</span>
             ))}
             {(operatorState.resource.warnings || []).length === 0 ? <span>Keine aktuellen Systemhinweise.</span> : null}
           </div>
@@ -2371,7 +2707,7 @@ function SystemView({ operatorState }) {
         <article className="control-mini-panel">
           <h3>Nächste Aktion</h3>
           <div className="operator-warning-list">
-            <span>{operatorState.resource.next_action || operatorState.supervisor.next_action || 'Keine Aktion geplant.'}</span>
+            <span>{translateOperatorCode(operatorState.resource.next_action || operatorState.supervisor.next_action).meaning || 'Keine Aktion geplant.'}</span>
           </div>
         </article>
       </div>
@@ -2404,11 +2740,11 @@ function RoleView({ operatorState }) {
             </div>
             <Metric label="Status" value={role.status} />
             <Metric label="Zuletzt" value={shortDateTime(role.last_work)} />
-            <Metric label="Ergebnis" value={role.result} />
+            <Metric label="Ergebnis" value={translateOperatorCode(role.result).title} />
             {role.warnings.length ? (
               <div className="operator-warning-list">
                 {role.warnings.map((warning) => (
-                  <span key={warning}>{warning}</span>
+                  <span key={warning}>{translateOperatorCode(warning).title}</span>
                 ))}
               </div>
             ) : null}
@@ -2577,7 +2913,7 @@ function DetailOverlay({ moduleId, modules, operatorState, onRefresh, onClose })
 
         <details className="cockpit-report-preview">
           <summary className="cockpit-report-head">
-            <span>Berichtsauszug</span>
+            <span>Technische Details anzeigen</span>
             <StatusPill tone={sourceTone(operatorState.dataSource)}>
               {sourceModeLabel(operatorState.dataSource)}
             </StatusPill>
@@ -2674,9 +3010,11 @@ export function CockpitShell() {
 
       {fixtureActive ? (
         <p className="cockpit-warning">
-          Nur lesende Bridge nicht vollständig verfügbar. Die Cockpit-Ansicht nutzt stabile Demo-/Snapshot-Daten.
+          Nur lesende Bridge nicht vollständig verfügbar. Die Cockpit-Ansicht nutzt stabile Ersatzdaten.
         </p>
       ) : null}
+
+      <FrankActionCenter operatorState={operatorState} onOpen={setActiveModule} />
 
       <HudCommandGrid
         operatorState={operatorState}
