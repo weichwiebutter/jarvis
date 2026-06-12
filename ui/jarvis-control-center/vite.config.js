@@ -157,6 +157,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/autonomous-improvement-queue'),
     path: 'read-only bridge:/reports/autonomous-improvement-queue',
   },
+  autonomousImprovementQueueSummary: {
+    label: 'Autonomous Improvement Queue Summary',
+    url: bridgeUrl('/reports/autonomous-improvement-queue-summary'),
+    path: 'read-only bridge:/reports/autonomous-improvement-queue-summary',
+  },
   autonomousImprovementExecution: {
     label: 'Autonomous Improvement Execution',
     url: bridgeUrl('/reports/autonomous-improvement-execution'),

@@ -66,8 +66,8 @@ public sealed class KnowledgeTrustImprovementPlannerService
     public KnowledgeTrustImprovementPlanReport Run()
     {
         Directory.CreateDirectory(Root);
-
-        var gate = new TrustedKnowledgeReviewGateService(_storagePaths).Run();
+        var gateService = new TrustedKnowledgeReviewGateService(_storagePaths);
+        var gate = gateService.Load() ?? gateService.Run();
         var quality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
         var catalog = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
         var catalogById = catalog.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
@@ -180,8 +180,7 @@ public sealed class KnowledgeTrustImprovementPlannerService
             ReportPath: ReportPath,
             MarkdownPath: MarkdownPath);
 
-        File.WriteAllText(ReportPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
-        File.WriteAllText(MarkdownPath, BuildMarkdown(report));
+        TryWriteReportCopies(report);
         return report;
     }
 
@@ -201,6 +200,26 @@ public sealed class KnowledgeTrustImprovementPlannerService
         catch (Exception ex) when (ex is IOException or JsonException)
         {
             return null;
+        }
+    }
+
+    private void TryWriteReportCopies(KnowledgeTrustImprovementPlanReport report)
+    {
+        var json = JsonSerializer.Serialize(report, JsonDefaults.WriteOptions);
+        var markdown = BuildMarkdown(report);
+
+        try
+        {
+            Directory.CreateDirectory(Root);
+            File.WriteAllText(ReportPath, json);
+            File.WriteAllText(MarkdownPath, markdown);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var fallbackRoot = Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", ".codex_artifacts", "reports", "knowledge_trust_improvement_plan");
+            Directory.CreateDirectory(fallbackRoot);
+            File.WriteAllText(Path.Combine(fallbackRoot, "knowledge_trust_improvement_plan.json"), json);
+            File.WriteAllText(Path.Combine(fallbackRoot, "knowledge_trust_improvement_plan.md"), markdown);
         }
     }
 

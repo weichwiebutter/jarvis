@@ -111,6 +111,54 @@ const OPERATOR_TRANSLATIONS = {
     whatHermesDoes: 'arbeitet Verbesserungsaufgaben selbstständig ab',
     franksAction: 'Nein',
   },
+  gather_more_evidence: {
+    title: 'Mehr Evidenz sammeln',
+    meaning: 'Hermes erweitert die Evidenzbasis für Wissen und Kandidaten.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'hint',
+    whatHermesDoes: 'sammelt zusätzliche Evidenz',
+    franksAction: 'Nein',
+  },
+  source_expansion: {
+    title: 'Quellen erweitern',
+    meaning: 'Hermes sucht zusätzliche und bessere Quellen.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'hint',
+    whatHermesDoes: 'erweitert die Quellenbasis',
+    franksAction: 'Nein',
+  },
+  schedule_revalidation: {
+    title: 'Re-Validierung planen',
+    meaning: 'Hermes plant weitere Validierungs- und OOS-Läufe.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'hint',
+    whatHermesDoes: 'plant Re-Validierungsfenster',
+    franksAction: 'Nein',
+  },
+  contradiction_analysis: {
+    title: 'Widersprüche prüfen',
+    meaning: 'Hermes untersucht aktive Widersprüche in Wissen und Strategien.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'warn',
+    whatHermesDoes: 'analysiert widersprüchliche Signale',
+    franksAction: 'Nein',
+  },
+  validation_queue_repair: {
+    title: 'Validation Queue reparieren',
+    meaning: 'Hermes stellt die Validierungswarteschlange wieder her.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'warn',
+    whatHermesDoes: 'repariert die Validierungswarteschlange',
+    franksAction: 'Nein',
+  },
+  cleanup_plan_update: {
+    title: 'Systempflege',
+    meaning: 'Hermes aktualisiert den Cleanup-Plan.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'hint',
+    whatHermesDoes: 'aktualisiert den Cleanup-Plan',
+    franksAction: 'Nein',
+  },
   autonomous_improvement_execution: {
     title: 'Selbstverbesserung wird ausgeführt',
     meaning: 'Hermes arbeitet sichere Verbesserungsaufgaben nacheinander ab.',
@@ -257,6 +305,30 @@ const FALLBACK_TRANSLATIONS = [
   {
     match: /autonomous[_\-\s]?improvement[_\-\s]?execution/i,
     value: OPERATOR_TRANSLATIONS.autonomous_improvement_execution,
+  },
+  {
+    match: /gather[_\-\s]?more[_\-\s]?evidence/i,
+    value: OPERATOR_TRANSLATIONS.gather_more_evidence,
+  },
+  {
+    match: /source[_\-\s]?expansion/i,
+    value: OPERATOR_TRANSLATIONS.source_expansion,
+  },
+  {
+    match: /schedule[_\-\s]?revalidation/i,
+    value: OPERATOR_TRANSLATIONS.schedule_revalidation,
+  },
+  {
+    match: /contradiction[_\-\s]?analysis/i,
+    value: OPERATOR_TRANSLATIONS.contradiction_analysis,
+  },
+  {
+    match: /validation[_\-\s]?queue[_\-\s]?repair/i,
+    value: OPERATOR_TRANSLATIONS.validation_queue_repair,
+  },
+  {
+    match: /cleanup[_\-\s]?plan[_\-\s]?update/i,
+    value: OPERATOR_TRANSLATIONS.cleanup_plan_update,
   },
   {
     match: /trusted[_\-\s]?knowledge[_\-\s]?review[_\-\s]?gate/i,

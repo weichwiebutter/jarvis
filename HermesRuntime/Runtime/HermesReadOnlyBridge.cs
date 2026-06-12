@@ -27,6 +27,7 @@ public sealed class HermesReadOnlyBridge
         new("humanReviewQueue", "Human Review Queue", "/reports/human-review-queue", "cognitive_core/human_review_queue.json"),
         new("knowledgeValidationAudit", "Knowledge Validation Audit", "/reports/knowledge-validation-audit", "reports/knowledge_validation_audit/knowledge_validation_audit.json"),
         new("autonomousImprovementQueue", "Autonomous Improvement Queue", "/reports/autonomous-improvement-queue", "reports/autonomous_improvement_queue/autonomous_improvement_queue.json"),
+        new("autonomousImprovementQueueSummary", "Autonomous Improvement Queue Summary", "/reports/autonomous-improvement-queue-summary", "reports/autonomous_improvement_queue/autonomous_improvement_queue_summary.json"),
         new("autonomousImprovementExecution", "Autonomous Improvement Execution", "/reports/autonomous-improvement-execution", "reports/autonomous_improvement_execution/autonomous_improvement_execution.json"),
         new("trustedKnowledgeReviewGate", "Trusted Knowledge Review Gate", "/reports/trusted-knowledge-review-gate", "reports/trusted_knowledge_review_gate/trusted_knowledge_review_gate.json"),
         new("knowledgeTrustImprovementPlan", "Knowledge Trust Improvement Plan", "/reports/knowledge-trust-improvement-plan", "reports/knowledge_trust_improvement_plan/knowledge_trust_improvement_plan.json"),

@@ -257,7 +257,7 @@ public sealed class AutonomousImprovementExecutorService
     private AutonomousImprovementExecutionTask ExecuteTrustImprovementPlan(AutonomousImprovementTask task)
     {
         var planner = new KnowledgeTrustImprovementPlannerService(_storagePaths);
-        var report = planner.Run();
+        var report = planner.Load() ?? planner.Run();
         return AutonomousImprovementExecutionTaskFromQueue(
             task,
             "executed",

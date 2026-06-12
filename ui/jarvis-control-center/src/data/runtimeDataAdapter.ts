@@ -1641,27 +1641,44 @@ function reportFixtureRaw(key) {
       return {
         report_version: 'autonomous_improvement_queue_v1',
         updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
-        active_improvements: 4,
+        active_improvements: 421,
         highest_priority: 'high',
-        hermes_can_handle: 4,
+        hermes_can_handle: 421,
         frank_items: 0,
-        tasks: [
-          {
-            task_id: 'improvement_storage_cleanup_candidates',
-            source_warning: 'storage_cleanup_candidates',
-            title: 'Cleanup-Plan aktualisieren',
-            domain: 'process',
-            priority: 'low',
-            reason: 'Speicherbereinigung wäre sinnvoll.',
-            suggested_action: 'Cleanup-Plan bei Bedarf aktualisieren.',
-            status: 'open',
-            due_hint: 'Bei Speicherbedarf',
-            requires_human_review: false,
-            auto_fixable: true,
-            safe_to_execute: true,
-          },
+        grouped_improvement_areas: [
+          { group_id: 'group_gather_more_evidence_trading_medium_trust_score_too_low', group_title: 'Mehr Evidenz sammeln', action_type: 'gather_more_evidence', domain: 'trading', priority: 'medium', source_warning: 'trust_score_too_low', item_count: 138, completed_count: 0, failed_count: 0, status: 'open', next_action: 'Mehr Evidenz sammeln' },
+          { group_id: 'group_source_expansion_trading_medium_quality_score_too_low', group_title: 'Quellen erweitern', action_type: 'source_expansion', domain: 'trading', priority: 'medium', source_warning: 'quality_score_too_low', item_count: 138, completed_count: 0, failed_count: 0, status: 'open', next_action: 'Quellen erweitern' },
+          { group_id: 'group_schedule_revalidation_trading_medium_validation_score_too_low', group_title: 'Re-Validierung planen', action_type: 'schedule_revalidation', domain: 'trading', priority: 'medium', source_warning: 'validation_score_too_low', item_count: 92, completed_count: 0, failed_count: 0, status: 'open', next_action: 'Re-Validierung planen' },
+          { group_id: 'group_contradiction_analysis_trading_high_active_contradiction', group_title: 'Widersprüche prüfen', action_type: 'contradiction_analysis', domain: 'trading', priority: 'high', source_warning: 'active_contradiction', item_count: 5, completed_count: 0, failed_count: 0, status: 'open', next_action: 'Widerspruchsanalyse ausführen' },
+          { group_id: 'group_validation_queue_repair_research_high_knowledge_validation_queue_missing', group_title: 'Validation Queue reparieren', action_type: 'validation_queue_repair', domain: 'research', priority: 'high', source_warning: 'knowledge_validation_queue_missing', item_count: 1, completed_count: 0, failed_count: 0, status: 'open', next_action: 'Validation Queue prüfen/reparieren' },
+          { group_id: 'group_cleanup_plan_update_process_low_storage_cleanup_candidates', group_title: 'Systempflege', action_type: 'cleanup_plan_update', domain: 'process', priority: 'low', source_warning: 'storage_cleanup_candidates', item_count: 1, completed_count: 0, failed_count: 0, status: 'open', next_action: 'Cleanup-Plan aktualisieren' },
         ],
-        source_warnings: ['oos_data_missing', 'knowledge_validation_queue_missing', 'hypotheses_without_validation_queue', 'storage_cleanup_candidates'],
+        top_priority_groups: [
+          { group_id: 'group_contradiction_analysis_trading_high_active_contradiction', group_title: 'Widersprüche prüfen', action_type: 'contradiction_analysis', domain: 'trading', priority: 'high', source_warning: 'active_contradiction', item_count: 5, completed_count: 0, failed_count: 0, status: 'open', next_action: 'Widerspruchsanalyse ausführen' },
+          { group_id: 'group_validation_queue_repair_research_high_knowledge_validation_queue_missing', group_title: 'Validation Queue reparieren', action_type: 'validation_queue_repair', domain: 'research', priority: 'high', source_warning: 'knowledge_validation_queue_missing', item_count: 1, completed_count: 0, failed_count: 0, status: 'open', next_action: 'Validation Queue prüfen/reparieren' },
+          { group_id: 'group_gather_more_evidence_trading_medium_trust_score_too_low', group_title: 'Mehr Evidenz sammeln', action_type: 'gather_more_evidence', domain: 'trading', priority: 'medium', source_warning: 'trust_score_too_low', item_count: 138, completed_count: 0, failed_count: 0, status: 'open', next_action: 'Mehr Evidenz sammeln' },
+          { group_id: 'group_source_expansion_trading_medium_quality_score_too_low', group_title: 'Quellen erweitern', action_type: 'source_expansion', domain: 'trading', priority: 'medium', source_warning: 'quality_score_too_low', item_count: 138, completed_count: 0, failed_count: 0, status: 'open', next_action: 'Quellen erweitern' },
+          { group_id: 'group_schedule_revalidation_trading_medium_validation_score_too_low', group_title: 'Re-Validierung planen', action_type: 'schedule_revalidation', domain: 'trading', priority: 'medium', source_warning: 'validation_score_too_low', item_count: 92, completed_count: 0, failed_count: 0, status: 'open', next_action: 'Re-Validierung planen' },
+        ],
+        tasks: [],
+        source_warnings: ['validation_queue_active', 'no_trusted_knowledge', 'not_yet_trusted_or_robust', 'trust_score_too_low', 'quality_score_too_low', 'insufficient_sources', 'validation_score_too_low', 'not_recently_validated', 'pending_human_review', 'active_contradiction', 'storage_cleanup_candidates'],
+        warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'autonomousImprovementQueueSummary':
+      return {
+        report_version: 'autonomous_improvement_queue_summary_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        active_areas: 6,
+        active_items: 421,
+        hermes_can_handle: 421,
+        frank_items: 0,
+        grouped_improvement_areas: reportFixtureRaw('autonomousImprovementQueue').grouped_improvement_areas,
+        top_priority_groups: reportFixtureRaw('autonomousImprovementQueue').top_priority_groups,
+        source_warnings: reportFixtureRaw('autonomousImprovementQueue').source_warnings,
         warnings: [],
         no_trading_execution: true,
         no_broker_action: true,
@@ -2732,6 +2749,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       forwardTestStatus: operatorDashboardMock.forwardTestStatus,
       knowledgeValidationAudit: reportFixtureRaw('knowledgeValidationAudit'),
       autonomousImprovementQueue: reportFixtureRaw('autonomousImprovementQueue'),
+      autonomousImprovementQueueSummary: reportFixtureRaw('autonomousImprovementQueueSummary'),
       autonomousImprovementExecution: reportFixtureRaw('autonomousImprovementExecution'),
       trustedKnowledgeReviewGate: reportFixtureRaw('trustedKnowledgeReviewGate'),
       knowledgeTrustImprovementPlan: reportFixtureRaw('knowledgeTrustImprovementPlan'),
@@ -2805,6 +2823,7 @@ export async function loadOperatorDashboard() {
         forwardTestStatus: dashboard.forwardTestStatus,
         knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
         autonomousImprovementQueue: dashboard.autonomousImprovementQueue,
+        autonomousImprovementQueueSummary: dashboard.autonomousImprovementQueueSummary,
         autonomousImprovementExecution: dashboard.autonomousImprovementExecution,
         trustedKnowledgeReviewGate: dashboard.trustedKnowledgeReviewGate,
         knowledgeTrustImprovementPlan: dashboard.knowledgeTrustImprovementPlan,
@@ -2879,6 +2898,7 @@ export async function loadOperatorDashboard() {
   rawReports.multiAssetResearchStatus = reportFixtureRaw('multiAssetResearchStatus');
   rawReports.knowledgeValidationAudit = reportFixtureRaw('knowledgeValidationAudit');
   rawReports.autonomousImprovementQueue = reportFixtureRaw('autonomousImprovementQueue');
+  rawReports.autonomousImprovementQueueSummary = reportFixtureRaw('autonomousImprovementQueueSummary');
   rawReports.autonomousImprovementExecution = reportFixtureRaw('autonomousImprovementExecution');
   rawReports.trustedKnowledgeReviewGate = reportFixtureRaw('trustedKnowledgeReviewGate');
   rawReports.knowledgeTrustImprovementPlan = reportFixtureRaw('knowledgeTrustImprovementPlan');

@@ -136,6 +136,7 @@ internal sealed class HermesCli
             "knowledge-validation-status" => ShowKnowledgeValidationStatus(),
             "knowledge-validation-audit" => ShowKnowledgeValidationAudit(),
             "generate-improvement-queue" => GenerateImprovementQueue(),
+            "improvement-queue-summary" => ShowImprovementQueueSummary(),
             "improvement-queue" => ShowImprovementQueue(),
             "execute-improvement-queue" => ExecuteImprovementQueue(),
             "improvement-execution-status" => ShowImprovementExecutionStatus(),
@@ -381,6 +382,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-validation-status Validation Fortschritt anzeigen");
         Console.WriteLine("  hermes knowledge-validation-audit Knowledge Validation Audit anzeigen");
         Console.WriteLine("  hermes generate-improvement-queue Verbesserungs-Warteschlange aus Audit/Warnungen erzeugen");
+        Console.WriteLine("  hermes improvement-queue-summary Verbesserungs-Warteschlange kompakt anzeigen");
         Console.WriteLine("  hermes improvement-queue Verbesserungs-Warteschlange anzeigen");
         Console.WriteLine("  hermes execute-improvement-queue sichere Verbesserungsaufgaben ausfuehren");
         Console.WriteLine("  hermes improvement-execution-status Verbesserungs-Ausfuehrungsstatus anzeigen");
@@ -6413,7 +6415,7 @@ internal sealed class HermesCli
         var service = new AutonomousImprovementQueueService(BuildStoragePaths());
         var report = service.Generate();
 
-        WriteImprovementQueue(report, service);
+        WriteImprovementQueueSummary(report, service);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -6423,9 +6425,33 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Autonomous Improvement Queue");
         var service = new AutonomousImprovementQueueService(BuildStoragePaths());
-        var report = service.Load() ?? service.Generate();
+        if (HasArg("--details"))
+        {
+            var report = service.Load() ?? service.Generate();
+            WriteImprovementQueueDetails(report, service);
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
 
-        WriteImprovementQueue(report, service);
+        if (HasArg("--grouped"))
+        {
+            return ShowImprovementQueueSummary();
+        }
+
+        var current = service.Load() ?? service.Generate();
+        WriteImprovementQueueSummary(current, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowImprovementQueueSummary()
+    {
+        WriteHeader("Hermes Autonomous Improvement Queue Summary");
+        var service = new AutonomousImprovementQueueService(BuildStoragePaths());
+        var report = service.Load() ?? service.Generate();
+        WriteImprovementQueueSummary(report, service);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -6462,18 +6488,37 @@ internal sealed class HermesCli
         return 0;
     }
 
-    private void WriteImprovementQueue(AutonomousImprovementQueueReport report, AutonomousImprovementQueueService service)
+    private void WriteImprovementQueueSummary(AutonomousImprovementQueueReport report, AutonomousImprovementQueueService service)
     {
         WriteField("Report", DisplayPath(service.QueuePath));
+        WriteField("Summary", DisplayPath(service.SummaryPath));
         WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Aktive Verbesserungsbereiche", report.GroupedImprovementAreas.Count.ToString());
         WriteField("Aktive Verbesserungen", report.ActiveImprovements.ToString());
         WriteField("Höchste Priorität", report.HighestPriority);
         WriteField("Hermes kann selbst bearbeiten", report.HermesCanHandle.ToString());
         WriteField("Frank muss prüfen", report.FrankItems.ToString());
         WriteMessages("Quelle", report.SourceWarnings);
-        foreach (var task in report.Tasks)
+        WriteMessages("Gruppierte Verbesserungsbereiche", report.GroupedImprovementAreas
+            .Take(10)
+            .Select(group => $"{group.GroupTitle}: {group.ItemCount} ({group.Domain}/{group.Priority}) -> {group.NextAction}")
+            .ToList());
+        WriteMessages("Top Priorität", report.TopPriorityGroups
+            .Take(5)
+            .Select(group => $"{group.GroupTitle}: {group.ItemCount}")
+            .ToList());
+        WriteMessages("Warnings", report.Warnings);
+    }
+
+    private void WriteImprovementQueueDetails(AutonomousImprovementQueueReport report, AutonomousImprovementQueueService service)
+    {
+        WriteImprovementQueueSummary(report, service);
+        Console.WriteLine();
+        Console.WriteLine("Einzelaufgaben:");
+        foreach (var task in report.Tasks.Take(50))
         {
             WriteSubHeader(task.Title);
+            WriteField("Task ID", task.TaskId);
             WriteField("Source Warning", task.SourceWarning);
             WriteField("Domain", task.Domain);
             WriteField("Priority", task.Priority);
@@ -6485,7 +6530,6 @@ internal sealed class HermesCli
             WriteField("Auto Fixable", task.AutoFixable.ToString().ToLowerInvariant());
             WriteField("Safe To Execute", task.SafeToExecute.ToString().ToLowerInvariant());
         }
-        WriteMessages("Warnings", report.Warnings);
     }
 
     private void WriteImprovementExecution(AutonomousImprovementExecutionReport report, AutonomousImprovementExecutorService service)
@@ -10751,6 +10795,11 @@ internal sealed class HermesCli
         }
 
         return null;
+    }
+
+    private bool HasArg(string name)
+    {
+        return _args.Any(arg => arg.Equals(name, StringComparison.OrdinalIgnoreCase));
     }
 
     private SchedulerWindowConfig? BuildWindowUpdate(string prefix)

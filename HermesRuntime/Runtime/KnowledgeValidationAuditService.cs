@@ -405,13 +405,24 @@ public sealed class KnowledgeValidationAuditService
     {
         var json = JsonSerializer.Serialize(report, JsonDefaults.WriteOptions);
         var markdown = BuildMarkdown(report);
-        Directory.CreateDirectory(AuditRoot);
-        File.WriteAllText(AuditPath, json);
-        File.WriteAllText(AuditMarkdownPath, markdown);
+        TryWriteCopies(AuditRoot, AuditPath, AuditMarkdownPath, json, markdown);
+        TryWriteCopies(Root, Path.Combine(Root, "knowledge_validation_audit.json"), Path.Combine(Root, "knowledge_validation_audit.md"), json, markdown);
+    }
 
-        var legacyRoot = Root;
-        Directory.CreateDirectory(legacyRoot);
-        File.WriteAllText(Path.Combine(legacyRoot, "knowledge_validation_audit.json"), json);
-        File.WriteAllText(Path.Combine(legacyRoot, "knowledge_validation_audit.md"), markdown);
+    private void TryWriteCopies(string root, string jsonPath, string markdownPath, string json, string markdown)
+    {
+        try
+        {
+            Directory.CreateDirectory(root);
+            File.WriteAllText(jsonPath, json);
+            File.WriteAllText(markdownPath, markdown);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var fallbackRoot = Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", ".codex_artifacts", "reports", "knowledge_validation_audit");
+            Directory.CreateDirectory(fallbackRoot);
+            File.WriteAllText(Path.Combine(fallbackRoot, "knowledge_validation_audit.json"), json);
+            File.WriteAllText(Path.Combine(fallbackRoot, "knowledge_validation_audit.md"), markdown);
+        }
     }
 }

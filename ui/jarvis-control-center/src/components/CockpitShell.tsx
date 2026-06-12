@@ -494,6 +494,46 @@ function frankActionCenterModel(operatorState) {
   };
 }
 
+function improvementQueueSummaryModel(operatorState) {
+  const summary = reportByKey(operatorState, 'autonomousImprovementQueueSummary')?.raw || {};
+  const queue = reportByKey(operatorState, 'autonomousImprovementQueue')?.raw || {};
+  const groups = summary.grouped_improvement_areas || summary.groupedImprovementAreas
+    || queue.grouped_improvement_areas || queue.groupedImprovementAreas
+    || [];
+  const topGroups = summary.top_priority_groups || summary.topPriorityGroups
+    || queue.top_priority_groups || queue.topPriorityGroups
+    || groups.slice(0, 5);
+
+  return {
+    title: 'Selbstverbesserung',
+    summary: `Hermes arbeitet an ${formatNumber(summary.active_areas || groups.length || 0)} Verbesserungsbereichen`,
+    headline: 'Hermes arbeitet selbstständig an Wissensvalidierung und OOS-Planung. Keine Aktion erforderlich.',
+    action: 'Nein',
+    detail: topGroups.length
+      ? topGroups.map((group) => `${group.group_title || group.groupTitle}: ${formatNumber(group.item_count || group.itemCount)}`).join(' · ')
+      : 'Hermes arbeitet selbstständig weiter.',
+    meta: `Frank nötig: ${formatNumber(summary.frank_items || queue.frank_items || 0)}`,
+    tone: topGroups.length ? 'warn' : 'good',
+    items: topGroups.length
+      ? topGroups.map((group) => ({
+          topic: group.group_title || group.groupTitle || 'Verbesserung',
+          recommendation: 'Hermes arbeitet daran.',
+          risk: 'niedrig',
+          tone: 'warn',
+        }))
+      : [
+          { topic: 'Evidenz sammeln', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
+          { topic: 'Validierung planen', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
+          { topic: 'Systempflege', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
+        ],
+    details: [
+      `Frank nötig: ${summary.frank_items || queue.frank_items || 0}`,
+      `Erledigt: ${formatNumber(summary.completed_items || queue.completed_items || 0)}`,
+      `Fehlgeschlagen: ${formatNumber(summary.failed_items || queue.failed_items || 0)}`,
+    ],
+  };
+}
+
 function trustLabel(value) {
   return statusDeutsch(value);
 }
@@ -1237,10 +1277,12 @@ function buildCommandCenterModules(operatorState) {
     {
       id: 'self-improvement',
       title: 'Selbstverbesserung',
-      value: `${formatNumber((reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.active_improvements) || 0)} aktiv`,
-      detail: reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.highest_priority || 'Hermes bearbeitet Warnungen selbstständig',
-      tone: toneFromStatus(reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.highest_priority || 'ready'),
-      meta: `${formatNumber((reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.frank_items) || 0)} Frank`,
+      value: `${formatNumber((reportByKey(operatorState, 'autonomousImprovementQueueSummary')?.raw?.top_priority_groups?.length) || reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.top_priority_groups?.length || 0)} Bereiche`,
+      detail: reportByKey(operatorState, 'autonomousImprovementQueueSummary')?.raw?.top_priority_groups?.[0]?.group_title
+        || reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.top_priority_groups?.[0]?.group_title
+        || 'Hermes bearbeitet Warnungen selbstständig',
+      tone: toneFromStatus(reportByKey(operatorState, 'autonomousImprovementQueueSummary')?.raw?.highest_priority || reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.highest_priority || 'ready'),
+      meta: `${formatNumber((reportByKey(operatorState, 'autonomousImprovementQueueSummary')?.raw?.frank_items) || reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.frank_items || 0)} Frank`,
     },
     {
       id: 'trust',
