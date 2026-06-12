@@ -131,6 +131,8 @@ internal sealed class HermesCli
             "explain-validation-routing" => ExplainValidationRouting(),
             "knowledge-validation-status" => ShowKnowledgeValidationStatus(),
             "knowledge-validation-audit" => ShowKnowledgeValidationAudit(),
+            "generate-improvement-queue" => GenerateImprovementQueue(),
+            "improvement-queue" => ShowImprovementQueue(),
             "explain-validation" => ExplainValidation(),
             "research-queue" => ShowResearchQueue(),
             "enqueue-research" => EnqueueResearch(),
@@ -368,6 +370,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes explain-validation-routing --domain documentation Routing-Profil erklaeren");
         Console.WriteLine("  hermes knowledge-validation-status Validation Fortschritt anzeigen");
         Console.WriteLine("  hermes knowledge-validation-audit Knowledge Validation Audit anzeigen");
+        Console.WriteLine("  hermes generate-improvement-queue Verbesserungs-Warteschlange aus Audit/Warnungen erzeugen");
+        Console.WriteLine("  hermes improvement-queue Verbesserungs-Warteschlange anzeigen");
         Console.WriteLine("  hermes explain-validation --id <KNOWLEDGE_ITEM_ID> Validierungsplan erklaeren");
         Console.WriteLine("  hermes research-queue     Cognitive Research Queue anzeigen");
         Console.WriteLine("  hermes enqueue-research --domain trading --type validation Research-Item einreihen");
@@ -6389,6 +6393,55 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private int GenerateImprovementQueue()
+    {
+        WriteHeader("Hermes Autonomous Improvement Queue");
+        var service = new AutonomousImprovementQueueService(BuildStoragePaths());
+        var report = service.Generate();
+
+        WriteImprovementQueue(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowImprovementQueue()
+    {
+        WriteHeader("Hermes Autonomous Improvement Queue");
+        var service = new AutonomousImprovementQueueService(BuildStoragePaths());
+        var report = service.Load() ?? service.Generate();
+
+        WriteImprovementQueue(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private void WriteImprovementQueue(AutonomousImprovementQueueReport report, AutonomousImprovementQueueService service)
+    {
+        WriteField("Report", DisplayPath(service.QueuePath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Aktive Verbesserungen", report.ActiveImprovements.ToString());
+        WriteField("Höchste Priorität", report.HighestPriority);
+        WriteField("Hermes kann selbst bearbeiten", report.HermesCanHandle.ToString());
+        WriteField("Frank muss prüfen", report.FrankItems.ToString());
+        WriteMessages("Quelle", report.SourceWarnings);
+        foreach (var task in report.Tasks)
+        {
+            WriteSubHeader(task.Title);
+            WriteField("Source Warning", task.SourceWarning);
+            WriteField("Domain", task.Domain);
+            WriteField("Priority", task.Priority);
+            WriteField("Reason", task.Reason);
+            WriteField("Suggested Action", task.SuggestedAction);
+            WriteField("Status", task.Status);
+            WriteField("Due Hint", task.DueHint);
+            WriteField("Requires Human Review", task.RequiresHumanReview.ToString().ToLowerInvariant());
+            WriteField("Auto Fixable", task.AutoFixable.ToString().ToLowerInvariant());
+        }
+        WriteMessages("Warnings", report.Warnings);
     }
 
     private int ExplainValidation()

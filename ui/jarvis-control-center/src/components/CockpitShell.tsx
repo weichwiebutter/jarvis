@@ -1180,6 +1180,14 @@ function buildCommandCenterModules(operatorState) {
       meta: `${formatNumber(operatorState.masterStatus.knowledge_items_needing_oos)} OOS offen`,
     },
     {
+      id: 'self-improvement',
+      title: 'Selbstverbesserung',
+      value: `${formatNumber((reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.active_improvements) || 0)} aktiv`,
+      detail: reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.highest_priority || 'Hermes bearbeitet Warnungen selbstständig',
+      tone: toneFromStatus(reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.highest_priority || 'ready'),
+      meta: `${formatNumber((reportByKey(operatorState, 'autonomousImprovementQueue')?.raw?.frank_items) || 0)} Frank`,
+    },
+    {
       id: 'trust',
       title: 'Wissen & Vertrauen',
       value: scorePercent(operatorState.masterStatus.average_trust_score),
@@ -2150,6 +2158,7 @@ function DashboardReviewSummary({ operatorState }) {
 function DashboardLearningSummary({ operatorState }) {
   const masterStatus = operatorState.masterStatus;
   const audit = reportByKey(operatorState, 'knowledgeValidationAudit')?.raw || {};
+  const improvement = reportByKey(operatorState, 'autonomousImprovementQueue')?.raw || {};
   const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
   const criticalGaps = audit.critical_knowledge_gaps ?? audit.criticalKnowledgeGaps ?? masterStatus.knowledge_items_needing_oos;
   const oldestOpenValidationAgeDays = audit.oldest_open_validation_age_days ?? audit.oldestOpenValidationAgeDays ?? 0;
@@ -2177,6 +2186,8 @@ function DashboardLearningSummary({ operatorState }) {
       <Metric label="Vertrauen" value={scorePercent(masterStatus.average_trust_score)} tone="info" />
       <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
       <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
+      <Metric label="Selbstverbesserung" value={improvement.active_improvements ? `${formatNumber(improvement.active_improvements)} aktiv` : 'bereit'} tone={improvement.active_improvements ? 'good' : 'info'} />
+      <Metric label="Frank" value={improvement.frank_items ? `${formatNumber(improvement.frank_items)} prüfen` : 'nichts offen'} tone={improvement.frank_items ? 'warn' : 'good'} />
     </div>
   );
 }
@@ -2800,6 +2811,10 @@ function CommandModuleDetails({ moduleId, operatorState, onRefresh }) {
 
   if (moduleId === 'learning') {
     return <CognitiveCenter operatorState={operatorState} />;
+  }
+
+  if (moduleId === 'self-improvement') {
+    return <DashboardLearningSummary operatorState={operatorState} />;
   }
 
   if (moduleId === 'trust') {

@@ -103,6 +103,14 @@ const OPERATOR_TRANSLATIONS = {
     whatHermesDoes: 'wertet Validation-Lücken aus',
     franksAction: 'Nein',
   },
+  autonomous_improvement_queue: {
+    title: 'Selbstverbesserung läuft',
+    meaning: 'Hermes erzeugt und verfolgt konkrete Verbesserungsaufgaben.',
+    action: 'Keine direkte Aktion erforderlich. Hermes arbeitet die Queue selbst ab.',
+    severity: 'good',
+    whatHermesDoes: 'arbeitet Verbesserungsaufgaben selbstständig ab',
+    franksAction: 'Nein',
+  },
   human_review_required: {
     title: 'Menschliche Entscheidung erforderlich',
     meaning: 'Hermes darf diese Vertrauensstufe nicht selbst freigeben.',
@@ -193,6 +201,10 @@ const FALLBACK_TRANSLATIONS = [
   {
     match: /knowledge_validation_audit/i,
     value: OPERATOR_TRANSLATIONS.knowledge_validation_audit,
+  },
+  {
+    match: /autonomous_improvement_queue/i,
+    value: OPERATOR_TRANSLATIONS.autonomous_improvement_queue,
   },
   {
     match: /validation_queue_missing/i,

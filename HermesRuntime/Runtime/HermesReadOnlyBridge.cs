@@ -26,6 +26,7 @@ public sealed class HermesReadOnlyBridge
         new("overfitReport", "Overfit Report", "/reports/overfit-report", "strategy_research/overfit_report.json"),
         new("humanReviewQueue", "Human Review Queue", "/reports/human-review-queue", "cognitive_core/human_review_queue.json"),
         new("knowledgeValidationAudit", "Knowledge Validation Audit", "/reports/knowledge-validation-audit", "reports/knowledge_validation_audit/knowledge_validation_audit.json"),
+        new("autonomousImprovementQueue", "Autonomous Improvement Queue", "/reports/autonomous-improvement-queue", "reports/autonomous_improvement_queue/autonomous_improvement_queue.json"),
         new("ensemblePortfolioStatus", "Ensemble Portfolio Status", "/reports/ensemble-portfolio-status", "reports/scalping_portfolio/ensemble_portfolio/ensemble_portfolio_status.json"),
         new("systemBHandoffBundle", "System B Handoff Bundle", "/reports/system-b-handoff-bundle", "reports/system_b_handoff/system_b_handoff_bundle/portfolio_summary.json"),
         new("validateEnsembleSignalPackage", "Validate Ensemble Signal Package", "/reports/validate-ensemble-signal-package", "reports/scalping_portfolio/ensemble_portfolio/ensemble_signal_agent_package.json"),
