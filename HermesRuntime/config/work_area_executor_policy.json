@@ -1,0 +1,72 @@
+[
+  {
+    "area_id": "gather_more_evidence",
+    "area_title": "Evidenz sammeln",
+    "auto_allowed": true,
+    "requires_work_window": true,
+    "requires_nightly_window": false,
+    "requires_resource_guard": false,
+    "requires_human_review": false,
+    "safe_delete_only": false,
+    "execution_mode": "auto",
+    "next_execution_window_hint": "Arbeitsfenster",
+    "planned_action": "Evidenz sammeln",
+    "notes": "Bevorzugt im Arbeitsfenster."
+  },
+  {
+    "area_id": "source_expansion",
+    "area_title": "Quellen erweitern",
+    "auto_allowed": true,
+    "requires_work_window": true,
+    "requires_nightly_window": false,
+    "requires_resource_guard": false,
+    "requires_human_review": false,
+    "safe_delete_only": false,
+    "execution_mode": "auto",
+    "next_execution_window_hint": "Arbeitsfenster",
+    "planned_action": "Quellen erweitern",
+    "notes": "Nur sichere lokale/zugelassene Quellen."
+  },
+  {
+    "area_id": "schedule_revalidation",
+    "area_title": "Re-Validierung",
+    "auto_allowed": true,
+    "requires_work_window": false,
+    "requires_nightly_window": true,
+    "requires_resource_guard": true,
+    "requires_human_review": false,
+    "safe_delete_only": false,
+    "execution_mode": "plan_or_nightly",
+    "next_execution_window_hint": "Nightly",
+    "planned_action": "Re-Validierung planen",
+    "notes": "Schwere Läufe nur im Nightly-Fenster."
+  },
+  {
+    "area_id": "contradiction_analysis",
+    "area_title": "Widersprüche prüfen",
+    "auto_allowed": true,
+    "requires_work_window": true,
+    "requires_nightly_window": false,
+    "requires_resource_guard": false,
+    "requires_human_review": true,
+    "safe_delete_only": false,
+    "execution_mode": "analysis_only",
+    "next_execution_window_hint": "Arbeitsfenster",
+    "planned_action": "Widersprüche analysieren",
+    "notes": "Analyse automatisch; Auflösung nur im Prüfzentrum."
+  },
+  {
+    "area_id": "systempflege",
+    "area_title": "Systempflege",
+    "auto_allowed": true,
+    "requires_work_window": true,
+    "requires_nightly_window": false,
+    "requires_resource_guard": true,
+    "requires_human_review": false,
+    "safe_delete_only": true,
+    "execution_mode": "plan_only",
+    "next_execution_window_hint": "bei Bedarf",
+    "planned_action": "Cleanup-Plan aktualisieren",
+    "notes": "Reale Löschungen nur mit safe cleanup."
+  }
+]

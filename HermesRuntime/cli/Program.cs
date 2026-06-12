@@ -139,6 +139,8 @@ internal sealed class HermesCli
             "improvement-queue-summary" => ShowImprovementQueueSummary(),
             "improvement-work-areas" => ShowImprovementWorkAreas(),
             "improvement-queue" => ShowImprovementQueue(),
+            "work-area-policy" => ShowWorkAreaPolicy(),
+            "execute-work-areas" => ExecuteWorkAreas(),
             "execute-improvement-queue" => ExecuteImprovementQueue(),
             "improvement-execution-status" => ShowImprovementExecutionStatus(),
             "explain-validation" => ExplainValidation(),
@@ -385,6 +387,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes generate-improvement-queue Verbesserungs-Warteschlange aus Audit/Warnungen erzeugen");
         Console.WriteLine("  hermes improvement-queue-summary Verbesserungs-Warteschlange kompakt anzeigen");
         Console.WriteLine("  hermes improvement-work-areas Verbesserungs-Arbeitsbereiche anzeigen");
+        Console.WriteLine("  hermes work-area-policy Work-Area-Ausfuehrungsregeln anzeigen");
+        Console.WriteLine("  hermes execute-work-areas erlaubte Work Areas ausfuehren");
         Console.WriteLine("  hermes improvement-queue Verbesserungs-Warteschlange anzeigen");
         Console.WriteLine("  hermes execute-improvement-queue sichere Verbesserungsaufgaben ausfuehren");
         Console.WriteLine("  hermes improvement-execution-status Verbesserungs-Ausfuehrungsstatus anzeigen");
@@ -6465,6 +6469,48 @@ internal sealed class HermesCli
         var service = new AutonomousImprovementQueueService(BuildStoragePaths());
         var report = service.Load() ?? service.Generate();
         WriteImprovementWorkAreas(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowWorkAreaPolicy()
+    {
+        WriteHeader("Hermes Work Area Policy");
+        var service = new WorkAreaExecutorPolicyService(BuildStoragePaths(), Path.Combine(_runtimeRoot, "config", "work_area_executor_policy.json"));
+        var report = service.Load() ?? service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Aktive Bereiche", report.ActiveAreas.ToString());
+        WriteField("Aktive Verbesserungen", report.ActiveImprovements.ToString());
+        WriteField("Frank muss prüfen", report.FrankItems.ToString());
+        WriteField("Im Arbeitsfenster", report.InWorkWindow.ToString().ToLowerInvariant());
+        WriteField("Im Nightly", report.InNightlyWindow.ToString().ToLowerInvariant());
+        WriteField("ResourceGuard", report.ResourceHealthy ? "ok" : "warnung");
+        WriteMessages("Work Areas", report.WorkAreas.Select(area => $"{area.AreaTitle}: {(area.AutomaticallyAllowed ? "ja" : "nein")} · {area.Status} · {area.NextExecutionWindow} · Frank: {(area.FrankRequired ? "ja" : "nein")}").ToList());
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ExecuteWorkAreas()
+    {
+        WriteHeader("Hermes Work Area Execution");
+        var service = new WorkAreaExecutorPolicyService(BuildStoragePaths(), Path.Combine(_runtimeRoot, "config", "work_area_executor_policy.json"));
+        var report = service.Execute();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Aktive Bereiche", report.ActiveAreas.ToString());
+        WriteField("Aktive Verbesserungen", report.ActiveImprovements.ToString());
+        WriteField("Frank muss prüfen", report.FrankItems.ToString());
+        WriteField("Im Arbeitsfenster", report.InWorkWindow.ToString().ToLowerInvariant());
+        WriteField("Im Nightly", report.InNightlyWindow.ToString().ToLowerInvariant());
+        WriteField("ResourceGuard", report.ResourceHealthy ? "ok" : "warnung");
+        WriteMessages("Work Areas", report.WorkAreas.Select(area => $"{area.AreaTitle}: {area.Result} · {area.Status} · {area.NextExecutionWindow} · Frank: {(area.FrankRequired ? "ja" : "nein")}").ToList());
+        WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();
         return 0;

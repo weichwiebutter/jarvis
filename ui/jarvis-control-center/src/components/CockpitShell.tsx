@@ -495,25 +495,25 @@ function frankActionCenterModel(operatorState) {
 }
 
 function improvementQueueSummaryModel(operatorState) {
-  const workAreas = reportByKey(operatorState, 'autonomousImprovementWorkAreas')?.raw || {};
-  const areas = workAreas.work_areas || workAreas.workAreas || [];
+  const policy = reportByKey(operatorState, 'workAreaExecutorPolicy')?.raw || {};
+  const workAreas = policy.work_areas || policy.workAreas || reportByKey(operatorState, 'autonomousImprovementWorkAreas')?.raw?.work_areas || [];
 
   return {
     title: 'Selbstverbesserung',
-    summary: `Hermes arbeitet an ${formatNumber(workAreas.active_areas || areas.length || 0)} Verbesserungsbereichen`,
+    summary: `Hermes arbeitet an ${formatNumber(policy.active_areas || workAreas.length || 0)} Verbesserungsbereichen`,
     headline: 'Hermes arbeitet selbstständig an Wissensvalidierung und OOS-Planung. Keine Aktion erforderlich.',
     action: 'Nein',
-    detail: areas.length
-      ? areas.map((area) => `${area.area_title || area.areaTitle}: ${formatNumber(area.item_count || area.itemCount)}`).join(' · ')
+    detail: workAreas.length
+      ? workAreas.map((area) => `${area.area_title || area.areaTitle}: ${formatNumber(area.item_count || area.itemCount)} · ${area.status || 'bereit'}`).join(' · ')
       : 'Hermes arbeitet selbstständig weiter.',
-    meta: `Frank nötig: ${formatNumber(workAreas.frank_items || 0)}`,
-    tone: areas.length ? 'warn' : 'good',
-    items: areas.length
-      ? areas.map((area) => ({
+    meta: `Frank nötig: ${formatNumber(policy.frank_items || 0)}`,
+    tone: workAreas.length ? 'warn' : 'good',
+    items: workAreas.length
+        ? workAreas.map((area) => ({
           topic: area.area_title || area.areaTitle || 'Verbesserung',
-          recommendation: 'Hermes arbeitet daran.',
-          risk: 'niedrig',
-          tone: area.highest_priority === 'high' ? 'danger' : area.item_count ? 'warn' : 'good',
+          recommendation: `Status: ${area.status || 'bereit'} · Automatisch erlaubt: ${area.automatically_allowed ?? area.automaticallyAllowed ? 'ja' : 'nein'} · Nächstes Fenster: ${area.next_execution_window || area.nextExecutionWindow || 'jetzt'} · Frank nötig: ${area.frank_required || area.frankRequired ? 'ja' : 'nein'}`,
+          risk: area.status || 'bereit',
+          tone: area.frank_required || area.frankRequired ? 'action' : area.status === 'wartet auf Nightly' ? 'warn' : area.highest_priority === 'high' ? 'danger' : 'good',
         }))
       : [
           { topic: 'Evidenz sammeln', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
@@ -521,9 +521,9 @@ function improvementQueueSummaryModel(operatorState) {
           { topic: 'Systempflege', recommendation: 'Keine Aktion erforderlich.', risk: 'niedrig', tone: 'good' },
         ],
     details: [
-      `Frank nötig: ${workAreas.frank_items || 0}`,
-      `Erledigt: ${formatNumber(workAreas.completed_items || 0)}`,
-      `Fehlgeschlagen: ${formatNumber(workAreas.failed_items || 0)}`,
+      `Frank nötig: ${policy.frank_items || 0}`,
+      `Im Arbeitsfenster: ${policy.in_work_window ? 'ja' : 'nein'}`,
+      `Im Nightly: ${policy.in_nightly_window ? 'ja' : 'nein'}`,
     ],
   };
 }
@@ -1271,10 +1271,10 @@ function buildCommandCenterModules(operatorState) {
     {
       id: 'self-improvement',
       title: 'Selbstverbesserung',
-      value: `${formatNumber(reportByKey(operatorState, 'autonomousImprovementWorkAreas')?.raw?.active_areas || 0)} Bereiche`,
+      value: `${formatNumber(reportByKey(operatorState, 'workAreaExecutorPolicy')?.raw?.active_areas || 0)} Bereiche`,
       detail: '5 feste Arbeitsbereiche',
       tone: 'warn',
-      meta: `${formatNumber(reportByKey(operatorState, 'autonomousImprovementWorkAreas')?.raw?.frank_items || 0)} Frank`,
+      meta: `${formatNumber(reportByKey(operatorState, 'workAreaExecutorPolicy')?.raw?.frank_items || 0)} Frank`,
     },
     {
       id: 'trust',
@@ -2252,6 +2252,7 @@ function DashboardLearningSummary({ operatorState }) {
   const masterStatus = operatorState.masterStatus;
   const audit = reportByKey(operatorState, 'knowledgeValidationAudit')?.raw || {};
   const improvement = reportByKey(operatorState, 'autonomousImprovementQueue')?.raw || {};
+  const improvementPolicy = reportByKey(operatorState, 'workAreaExecutorPolicy')?.raw || {};
   const execution = reportByKey(operatorState, 'autonomousImprovementExecution')?.raw || {};
   const trustPlan = reportByKey(operatorState, 'knowledgeTrustImprovementPlan')?.raw || {};
   const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
@@ -2281,14 +2282,14 @@ function DashboardLearningSummary({ operatorState }) {
       <Metric label="Vertrauen" value={scorePercent(masterStatus.average_trust_score)} tone="info" />
       <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
       <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
-      <Metric label="Selbstverbesserung" value={improvement.active_improvements ? `${formatNumber(improvement.active_improvements)} aktiv` : 'bereit'} tone={improvement.active_improvements ? 'good' : 'info'} />
+      <Metric label="Selbstverbesserung" value={`${formatNumber(improvementPolicy.active_areas || improvement.active_improvements || 0)} Bereiche`} tone={improvementPolicy.active_areas || improvement.active_improvements ? 'good' : 'info'} />
       <Metric label="Vertrauensverbesserungen" value={trustPlan.total_blocked_items ?? trustPlan.totalBlockedItems ? `Hermes arbeitet an ${formatNumber(trustPlan.total_blocked_items ?? trustPlan.totalBlockedItems)}` : 'bereit'} tone={trustPlan.total_blocked_items ?? trustPlan.totalBlockedItems ? 'warn' : 'info'} />
       <Metric label="Hauptgründe" value={trustPlan.blocker_counts ? `${formatNumber(trustPlan.blocker_counts.trust_score_too_low || trustPlan.blockerCounts?.trust_score_too_low || 0)} niedriges Vertrauen` : 'bereit'} tone="info" />
       <Metric label="Erledigt" value={execution.executed ?? execution.Executed ?? 0} tone="good" />
       <Metric label="Geplant" value={execution.planned ?? execution.Planned ?? 0} tone="info" />
       <Metric label="Übersprungen" value={execution.skipped ?? execution.Skipped ?? 0} tone="info" />
       <Metric label="Fehlgeschlagen" value={execution.failed ?? execution.Failed ?? 0} tone={execution.failed || execution.Failed ? 'warn' : 'good'} />
-      <Metric label="Frank" value={(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvement.frank_items) ? `${formatNumber(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvement.frank_items)} prüfen` : 'nichts offen'} tone={(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvement.frank_items) ? 'warn' : 'good'} />
+      <Metric label="Frank" value={(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvementPolicy.frank_items) ? `${formatNumber(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvementPolicy.frank_items)} prüfen` : 'nichts offen'} tone={(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvementPolicy.frank_items) ? 'warn' : 'good'} />
     </div>
   );
 }

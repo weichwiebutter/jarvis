@@ -167,6 +167,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/autonomous-improvement-work-areas'),
     path: 'read-only bridge:/reports/autonomous-improvement-work-areas',
   },
+  workAreaExecutorPolicy: {
+    label: 'Work Area Executor Policy',
+    url: bridgeUrl('/reports/work-area-executor-policy'),
+    path: 'read-only bridge:/reports/work-area-executor-policy',
+  },
   autonomousImprovementExecution: {
     label: 'Autonomous Improvement Execution',
     url: bridgeUrl('/reports/autonomous-improvement-execution'),
