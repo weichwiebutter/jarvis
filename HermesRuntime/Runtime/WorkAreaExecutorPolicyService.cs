@@ -14,7 +14,8 @@ public sealed record WorkAreaExecutorPolicy(
     string ExecutionMode,
     string NextExecutionWindowHint,
     string PlannedAction,
-    string Notes);
+    string Notes,
+    string ReportPathHint);
 
 public sealed record WorkAreaExecutorDecision(
     string AreaId,
@@ -240,11 +241,11 @@ public sealed class WorkAreaExecutorPolicyService
 
         return new[]
         {
-            new WorkAreaExecutorPolicy("gather_more_evidence", "Evidenz sammeln", true, true, false, false, false, false, "auto", "Arbeitsfenster", "Evidenz sammeln", "Bevorzugt im Arbeitsfenster."),
-            new WorkAreaExecutorPolicy("source_expansion", "Quellen erweitern", true, true, false, false, false, false, "auto", "Arbeitsfenster", "Quellen erweitern", "Nur sichere lokale/zugelassene Quellen."),
-            new WorkAreaExecutorPolicy("schedule_revalidation", "Re-Validierung", true, false, true, true, false, false, "plan_or_nightly", "Nightly", "Re-Validierung planen", "Schwere Läufe nur im Nightly-Fenster."),
-            new WorkAreaExecutorPolicy("contradiction_analysis", "Widersprüche prüfen", true, true, false, false, true, false, "analysis_only", "Arbeitsfenster", "Widersprüche analysieren", "Analyse automatisch; Auflösung nur im Prüfzentrum."),
-            new WorkAreaExecutorPolicy("systempflege", "Systempflege", true, true, false, true, false, true, "plan_only", "bei Bedarf", "Cleanup-Plan aktualisieren", "Reale Löschungen nur mit safe cleanup."),
+            new WorkAreaExecutorPolicy("gather_more_evidence", "Evidenz sammeln", true, true, false, false, false, false, "auto", "Arbeitsfenster", "Evidenz sammeln", "Bevorzugt im Arbeitsfenster.", "reports/knowledge_validation_audit/knowledge_validation_audit.json"),
+            new WorkAreaExecutorPolicy("source_expansion", "Quellen erweitern", true, true, false, false, false, false, "auto", "Arbeitsfenster", "Quellen erweitern", "Nur sichere lokale/zugelassene Quellen.", "reports/knowledge_trust_improvement_plan/knowledge_trust_improvement_plan.json"),
+            new WorkAreaExecutorPolicy("schedule_revalidation", "Re-Validierung", true, false, true, true, false, false, "plan_or_nightly", "Nightly", "Re-Validierung planen", "Schwere Läufe nur im Nightly-Fenster.", "reports/knowledge_validation_audit/knowledge_validation_audit.json"),
+            new WorkAreaExecutorPolicy("contradiction_analysis", "Widersprüche prüfen", true, true, false, false, true, false, "analysis_only", "Arbeitsfenster", "Widersprüche analysieren", "Analyse automatisch; Auflösung nur im Prüfzentrum.", "reports/trusted_knowledge_review_gate/trusted_knowledge_review_gate.json"),
+            new WorkAreaExecutorPolicy("systempflege", "Systempflege", true, true, false, true, false, true, "plan_only", "bei Bedarf", "Cleanup-Plan aktualisieren", "Reale Löschungen nur mit safe cleanup.", "reports/storage/cleanup_plan.json"),
         };
     }
 

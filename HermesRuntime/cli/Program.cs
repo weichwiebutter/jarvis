@@ -141,6 +141,8 @@ internal sealed class HermesCli
             "improvement-queue" => ShowImprovementQueue(),
             "work-area-policy" => ShowWorkAreaPolicy(),
             "execute-work-areas" => ExecuteWorkAreas(),
+            "nightly-work-area-status" => ShowNightlyWorkAreaStatus(),
+            "run-nightly-work-areas" => RunNightlyWorkAreas(),
             "execute-improvement-queue" => ExecuteImprovementQueue(),
             "improvement-execution-status" => ShowImprovementExecutionStatus(),
             "explain-validation" => ExplainValidation(),
@@ -389,6 +391,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes improvement-work-areas Verbesserungs-Arbeitsbereiche anzeigen");
         Console.WriteLine("  hermes work-area-policy Work-Area-Ausfuehrungsregeln anzeigen");
         Console.WriteLine("  hermes execute-work-areas erlaubte Work Areas ausfuehren");
+        Console.WriteLine("  hermes nightly-work-area-status Nightly Work Area Status anzeigen");
+        Console.WriteLine("  hermes run-nightly-work-areas Re-Validierung im Nightly-Fenster ausfuehren");
         Console.WriteLine("  hermes improvement-queue Verbesserungs-Warteschlange anzeigen");
         Console.WriteLine("  hermes execute-improvement-queue sichere Verbesserungsaufgaben ausfuehren");
         Console.WriteLine("  hermes improvement-execution-status Verbesserungs-Ausfuehrungsstatus anzeigen");
@@ -6510,6 +6514,50 @@ internal sealed class HermesCli
         WriteField("Im Nightly", report.InNightlyWindow.ToString().ToLowerInvariant());
         WriteField("ResourceGuard", report.ResourceHealthy ? "ok" : "warnung");
         WriteMessages("Work Areas", report.WorkAreas.Select(area => $"{area.AreaTitle}: {area.Result} · {area.Status} · {area.NextExecutionWindow} · Frank: {(area.FrankRequired ? "ja" : "nein")}").ToList());
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowNightlyWorkAreaStatus()
+    {
+        WriteHeader("Hermes Nightly Work Area Status");
+        var service = new NightlyWorkAreaRunnerService(BuildStoragePaths(), Path.Combine(_runtimeRoot, "config", "work_area_executor_policy.json"));
+        var report = service.Load() ?? service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Im Nightly", report.InNightlyWindow.ToString().ToLowerInvariant());
+        WriteField("ResourceGuard", report.ResourceHealthy ? "ok" : "warnung");
+        WriteField("Re-Validierung", report.Revalidation.Status);
+        WriteField("Nächstes Fenster", report.Revalidation.NextExecutionWindow);
+        WriteField("Nächste Ausführung", report.Revalidation.NextExecutionAtUtc?.ToString("O") ?? "-");
+        WriteField("Letzte Ausführung", report.Revalidation.ExecutedAtUtc?.ToString("O") ?? "-");
+        WriteField("Resultat", report.Revalidation.Result);
+        WriteField("Output Report", DisplayPath(report.Revalidation.OutputReportPath));
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunNightlyWorkAreas()
+    {
+        WriteHeader("Hermes Nightly Work Areas");
+        var service = new NightlyWorkAreaRunnerService(BuildStoragePaths(), Path.Combine(_runtimeRoot, "config", "work_area_executor_policy.json"));
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Im Nightly", report.InNightlyWindow.ToString().ToLowerInvariant());
+        WriteField("ResourceGuard", report.ResourceHealthy ? "ok" : "warnung");
+        WriteField("Re-Validierung", report.Revalidation.Status);
+        WriteField("Nächstes Fenster", report.Revalidation.NextExecutionWindow);
+        WriteField("Nächste Ausführung", report.Revalidation.NextExecutionAtUtc?.ToString("O") ?? "-");
+        WriteField("Letzte Ausführung", report.Revalidation.ExecutedAtUtc?.ToString("O") ?? "-");
+        WriteField("Resultat", report.Revalidation.Result);
+        WriteField("Output Report", DisplayPath(report.Revalidation.OutputReportPath));
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();

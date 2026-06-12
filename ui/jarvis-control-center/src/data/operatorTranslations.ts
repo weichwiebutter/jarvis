@@ -135,6 +135,22 @@ const OPERATOR_TRANSLATIONS = {
     whatHermesDoes: 'plant Re-Validierungsfenster',
     franksAction: 'Nein',
   },
+  wartet_auf_nightly: {
+    title: 'Wartet auf Nightly',
+    meaning: 'Hermes darf den Lauf erst im erlaubten Nightly-Fenster starten.',
+    action: 'Keine Aktion erforderlich.',
+    severity: 'hint',
+    whatHermesDoes: 'wartet auf das nächste Nightly-Fenster',
+    franksAction: 'Nein',
+  },
+  resourceguard_signal: {
+    title: 'Ressourcenschutz aktiv',
+    meaning: 'Hermes wartet auf sichere Ressourcenbedingungen.',
+    action: 'Keine Aktion erforderlich.',
+    severity: 'warn',
+    whatHermesDoes: 'wartet auf bessere Ressourcenlage',
+    franksAction: 'Nein',
+  },
   contradiction_analysis: {
     title: 'Widersprüche prüfen',
     meaning: 'Hermes untersucht aktive Widersprüche in Wissen und Strategien.',
@@ -229,14 +245,6 @@ const OPERATOR_TRANSLATIONS = {
     action: 'Keine Aktion erforderlich.',
     severity: 'good',
     whatHermesDoes: 'führt erlaubte Arbeit selbstständig aus',
-    franksAction: 'Nein',
-  },
-  wartet_auf_nightly: {
-    title: 'Wartet auf Nightly',
-    meaning: 'Diese Aufgabe läuft erst im nächsten Nachtfenster.',
-    action: 'Keine Aktion erforderlich.',
-    severity: 'warn',
-    whatHermesDoes: 'wartet auf das Nightly-Fenster',
     franksAction: 'Nein',
   },
   geplant: {

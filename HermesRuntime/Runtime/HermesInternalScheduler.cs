@@ -32,8 +32,9 @@ public sealed class HermesInternalScheduler
         "evaluate_knowledge_quality",
         "consolidate_memory",
         "execute_validation_tasks",
-        "validate_domain_knowledge"
-        ,"run_scalping_robustness_expansion"
+        "validate_domain_knowledge",
+        "run_scalping_robustness_expansion",
+        "run_nightly_work_areas"
     };
 
     private readonly StoragePaths _storagePaths;

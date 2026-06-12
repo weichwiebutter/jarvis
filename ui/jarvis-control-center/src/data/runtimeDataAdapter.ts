@@ -1732,6 +1732,34 @@ function reportFixtureRaw(key) {
         no_auto_trading: true,
         human_review_required: true,
       };
+    case 'nightlyWorkAreaStatus':
+      return {
+        report_version: 'nightly_work_area_runner_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        time_control_path: 'HermesRuntime/config/schedules.json',
+        resource_path: 'HermesRuntime/reports/resource/resource_status.json',
+        in_nightly_window: false,
+        resource_healthy: true,
+        revalidation: {
+          area_id: 'schedule_revalidation',
+          area_title: 'Re-Validierung',
+          status: 'wartet auf Nightly',
+          next_execution_window: 'Nightly',
+          next_execution_at_utc: '2026-06-12T23:00:00Z',
+          resource_healthy: true,
+          in_nightly_window: false,
+          planned_action: 'Re-Validierung planen',
+          result: 'geplant',
+          output_report_path: 'reports/knowledge_validation_audit/knowledge_validation_audit.json',
+          executed_at_utc: null,
+          warnings: ['wartet_auf_nightly'],
+        },
+        warnings: ['wartet_auf_nightly'],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'trustedKnowledgeReviewGate':
       return {
         report_version: 'trusted_knowledge_review_gate_v1',
@@ -2799,6 +2827,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       autonomousImprovementQueueSummary: reportFixtureRaw('autonomousImprovementQueueSummary'),
       autonomousImprovementWorkAreas: reportFixtureRaw('autonomousImprovementWorkAreas'),
       workAreaExecutorPolicy: reportFixtureRaw('workAreaExecutorPolicy'),
+      nightlyWorkAreaStatus: reportFixtureRaw('nightlyWorkAreaStatus'),
       autonomousImprovementExecution: reportFixtureRaw('autonomousImprovementExecution'),
       trustedKnowledgeReviewGate: reportFixtureRaw('trustedKnowledgeReviewGate'),
       knowledgeTrustImprovementPlan: reportFixtureRaw('knowledgeTrustImprovementPlan'),
@@ -2875,6 +2904,7 @@ export async function loadOperatorDashboard() {
         autonomousImprovementQueueSummary: dashboard.autonomousImprovementQueueSummary,
         autonomousImprovementWorkAreas: dashboard.autonomousImprovementWorkAreas,
         workAreaExecutorPolicy: dashboard.workAreaExecutorPolicy,
+        nightlyWorkAreaStatus: dashboard.nightlyWorkAreaStatus,
         autonomousImprovementExecution: dashboard.autonomousImprovementExecution,
         trustedKnowledgeReviewGate: dashboard.trustedKnowledgeReviewGate,
         knowledgeTrustImprovementPlan: dashboard.knowledgeTrustImprovementPlan,
@@ -2952,6 +2982,7 @@ export async function loadOperatorDashboard() {
   rawReports.autonomousImprovementQueueSummary = reportFixtureRaw('autonomousImprovementQueueSummary');
   rawReports.autonomousImprovementWorkAreas = reportFixtureRaw('autonomousImprovementWorkAreas');
   rawReports.workAreaExecutorPolicy = reportFixtureRaw('workAreaExecutorPolicy');
+  rawReports.nightlyWorkAreaStatus = reportFixtureRaw('nightlyWorkAreaStatus');
   rawReports.autonomousImprovementExecution = reportFixtureRaw('autonomousImprovementExecution');
   rawReports.trustedKnowledgeReviewGate = reportFixtureRaw('trustedKnowledgeReviewGate');
   rawReports.knowledgeTrustImprovementPlan = reportFixtureRaw('knowledgeTrustImprovementPlan');

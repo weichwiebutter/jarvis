@@ -80,6 +80,23 @@ function shortTime(value) {
   }).format(parsed);
 }
 
+function shortTimeOnly(value) {
+  if (!value) {
+    return '-';
+  }
+
+  const parsed = Date.parse(value);
+
+  if (!Number.isFinite(parsed)) {
+    return String(value);
+  }
+
+  return new Intl.DateTimeFormat('de-DE', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed);
+}
+
 function toneFromStatus(status) {
   const value = String(status || '').toLowerCase();
 
@@ -496,7 +513,22 @@ function frankActionCenterModel(operatorState) {
 
 function improvementQueueSummaryModel(operatorState) {
   const policy = reportByKey(operatorState, 'workAreaExecutorPolicy')?.raw || {};
+  const nightly = reportByKey(operatorState, 'nightlyWorkAreaStatus')?.raw || {};
   const workAreas = policy.work_areas || policy.workAreas || reportByKey(operatorState, 'autonomousImprovementWorkAreas')?.raw?.work_areas || [];
+  const revalidation = nightly.revalidation || nightly.Revalidation || {};
+  const revalidationStatus = String(revalidation.status || revalidation.Status || 'bereit').toLowerCase();
+  const nextExecutionWindow = revalidation.next_execution_window || revalidation.NextExecutionWindow || 'jetzt';
+  const nextExecutionAtUtc = revalidation.next_execution_at_utc || revalidation.NextExecutionAtUtc || null;
+  const lastExecutionAtUtc = revalidation.executed_at_utc || revalidation.ExecutedAtUtc || null;
+  const revalidationHeadline =
+    revalidationStatus === 'ausgeführt'
+      ? `Zuletzt ausgeführt um ${shortTimeOnly(lastExecutionAtUtc)}`
+      : revalidationStatus.includes('fehler')
+        ? `Fehlgeschlagen${revalidation.result ? `: ${revalidation.result}` : ''}`
+        : (String(nextExecutionWindow).toLowerCase().includes('wartet')
+          || String(nextExecutionWindow).toLowerCase().includes('nightly'))
+          ? String(nextExecutionWindow)
+          : `Wartet auf Nightly bis ${nextExecutionWindow}${nextExecutionAtUtc ? ` (${shortTimeOnly(nextExecutionAtUtc)})` : ''}`;
 
   return {
     title: 'Selbstverbesserung',
@@ -524,6 +556,7 @@ function improvementQueueSummaryModel(operatorState) {
       `Frank nötig: ${policy.frank_items || 0}`,
       `Im Arbeitsfenster: ${policy.in_work_window ? 'ja' : 'nein'}`,
       `Im Nightly: ${policy.in_nightly_window ? 'ja' : 'nein'}`,
+      `Re-Validierung: ${revalidationHeadline}${nextExecutionAtUtc ? ` (${shortTimeOnly(nextExecutionAtUtc)} UTC)` : ''}`,
     ],
   };
 }
@@ -1236,6 +1269,16 @@ function buildCommandCenterModules(operatorState) {
   const handoffReport = reportByKey(operatorState, 'systemBHandoffBundle')?.raw || {};
   const specsReport = reportByKey(operatorState, 'signalAgentSpecs')?.raw || {};
   const trustedGateReport = reportByKey(operatorState, 'trustedKnowledgeReviewGate')?.raw || {};
+  const nightly = reportByKey(operatorState, 'nightlyWorkAreaStatus')?.raw || {};
+  const revalidation = nightly.revalidation || nightly.Revalidation || {};
+  const revalidationStatus = String(revalidation.status || revalidation.Status || 'bereit').toLowerCase();
+  const revalidationNext = revalidation.next_execution_window || revalidation.NextExecutionWindow || 'jetzt';
+  const revalidationAt = revalidation.next_execution_at_utc || revalidation.NextExecutionAtUtc || '';
+  const revalidationLabel = revalidationStatus === 'ausgeführt'
+    ? `zuletzt ${shortTimeOnly(revalidation.executed_at_utc || revalidation.ExecutedAtUtc)}`
+    : revalidationStatus.includes('fehler')
+      ? `fehlgeschlagen${revalidation.result ? ` · ${revalidation.result}` : ''}`
+      : `wartet auf Nightly bis ${revalidationNext}${revalidationAt ? ` (${shortTimeOnly(revalidationAt)})` : ''}`;
   const openReviews = operatorState.humanReview?.pending_reviews || 0;
   const warnings = [
     ...operatorState.warnings,
@@ -1272,8 +1315,8 @@ function buildCommandCenterModules(operatorState) {
       id: 'self-improvement',
       title: 'Selbstverbesserung',
       value: `${formatNumber(reportByKey(operatorState, 'workAreaExecutorPolicy')?.raw?.active_areas || 0)} Bereiche`,
-      detail: '5 feste Arbeitsbereiche',
-      tone: 'warn',
+      detail: `Re-Validierung: ${revalidationLabel}`,
+      tone: nightly.in_nightly_window || nightly.InNightlyWindow ? 'good' : 'warn',
       meta: `${formatNumber(reportByKey(operatorState, 'workAreaExecutorPolicy')?.raw?.frank_items || 0)} Frank`,
     },
     {
@@ -2253,6 +2296,7 @@ function DashboardLearningSummary({ operatorState }) {
   const audit = reportByKey(operatorState, 'knowledgeValidationAudit')?.raw || {};
   const improvement = reportByKey(operatorState, 'autonomousImprovementQueue')?.raw || {};
   const improvementPolicy = reportByKey(operatorState, 'workAreaExecutorPolicy')?.raw || {};
+  const nightly = reportByKey(operatorState, 'nightlyWorkAreaStatus')?.raw || {};
   const execution = reportByKey(operatorState, 'autonomousImprovementExecution')?.raw || {};
   const trustPlan = reportByKey(operatorState, 'knowledgeTrustImprovementPlan')?.raw || {};
   const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
@@ -2283,6 +2327,17 @@ function DashboardLearningSummary({ operatorState }) {
       <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
       <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
       <Metric label="Selbstverbesserung" value={`${formatNumber(improvementPolicy.active_areas || improvement.active_improvements || 0)} Bereiche`} tone={improvementPolicy.active_areas || improvement.active_improvements ? 'good' : 'info'} />
+      <Metric
+        label="Re-Validierung"
+        value={
+          nightly.revalidation?.status
+          || nightly.Revalidation?.status
+          || nightly.revalidation?.Status
+          || nightly.Revalidation?.Status
+          || 'bereit'
+        }
+        tone={nightly.in_nightly_window || nightly.InNightlyWindow ? 'good' : 'warn'}
+      />
       <Metric label="Vertrauensverbesserungen" value={trustPlan.total_blocked_items ?? trustPlan.totalBlockedItems ? `Hermes arbeitet an ${formatNumber(trustPlan.total_blocked_items ?? trustPlan.totalBlockedItems)}` : 'bereit'} tone={trustPlan.total_blocked_items ?? trustPlan.totalBlockedItems ? 'warn' : 'info'} />
       <Metric label="Hauptgründe" value={trustPlan.blocker_counts ? `${formatNumber(trustPlan.blocker_counts.trust_score_too_low || trustPlan.blockerCounts?.trust_score_too_low || 0)} niedriges Vertrauen` : 'bereit'} tone="info" />
       <Metric label="Erledigt" value={execution.executed ?? execution.Executed ?? 0} tone="good" />

@@ -30,6 +30,7 @@ public sealed class HermesReadOnlyBridge
         new("autonomousImprovementQueueSummary", "Autonomous Improvement Queue Summary", "/reports/autonomous-improvement-queue-summary", "reports/autonomous_improvement_queue/autonomous_improvement_queue_summary.json"),
         new("autonomousImprovementWorkAreas", "Autonomous Improvement Work Areas", "/reports/autonomous-improvement-work-areas", "reports/autonomous_improvement_queue/autonomous_improvement_work_areas.json"),
         new("workAreaExecutorPolicy", "Work Area Executor Policy", "/reports/work-area-executor-policy", "reports/autonomous_improvement_queue/work_area_executor_policy.json"),
+        new("nightlyWorkAreaStatus", "Nightly Work Area Status", "/reports/nightly-work-area-status", "reports/autonomous_improvement_queue/nightly_work_area_status.json"),
         new("autonomousImprovementExecution", "Autonomous Improvement Execution", "/reports/autonomous-improvement-execution", "reports/autonomous_improvement_execution/autonomous_improvement_execution.json"),
         new("trustedKnowledgeReviewGate", "Trusted Knowledge Review Gate", "/reports/trusted-knowledge-review-gate", "reports/trusted_knowledge_review_gate/trusted_knowledge_review_gate.json"),
         new("knowledgeTrustImprovementPlan", "Knowledge Trust Improvement Plan", "/reports/knowledge-trust-improvement-plan", "reports/knowledge_trust_improvement_plan/knowledge_trust_improvement_plan.json"),
@@ -66,6 +67,7 @@ public sealed class HermesReadOnlyBridge
         "/bridge/bot-spec/export",
         "/bridge/time-control/update",
         "/bridge/execute-work-areas",
+        "/bridge/run-nightly-work-areas",
     };
 
     private readonly StoragePaths _storagePaths;
@@ -133,6 +135,7 @@ public sealed class HermesReadOnlyBridge
                 .Append("/bridge/bot-spec/export")
                 .Append("/bridge/time-control/update")
                 .Append("/bridge/execute-work-areas")
+                .Append("/bridge/run-nightly-work-areas")
                 .Append("/bridge/health")
                 .Append("/reports")
                 .Append("/operator/dashboard")
@@ -197,6 +200,12 @@ public sealed class HermesReadOnlyBridge
             if (context.Request.HttpMethod == "POST" && TryHandleWorkAreaExecutionAction(path, context.Request, out var workAreaResponse, out var workAreaStatus))
             {
                 await WriteJsonAsync(context.Response, workAreaResponse, workAreaStatus);
+                return;
+            }
+
+            if (context.Request.HttpMethod == "POST" && TryHandleNightlyWorkAreaAction(path, context.Request, out var nightlyResponse, out var nightlyStatus))
+            {
+                await WriteJsonAsync(context.Response, nightlyResponse, nightlyStatus);
                 return;
             }
 
@@ -513,6 +522,52 @@ public sealed class HermesReadOnlyBridge
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             response = Error("work_area_execution_failed", ex.Message);
+            statusCode = HttpStatusCode.BadRequest;
+            return true;
+        }
+    }
+
+    private bool TryHandleNightlyWorkAreaAction(
+        string path,
+        HttpListenerRequest request,
+        out BridgeResponseModel response,
+        out HttpStatusCode statusCode)
+    {
+        response = Error("not_found", $"Endpoint is not whitelisted: {path}");
+        statusCode = HttpStatusCode.NotFound;
+
+        if (!path.Equals("/bridge/run-nightly-work-areas", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        try
+        {
+            var service = new NightlyWorkAreaRunnerService(_storagePaths, Path.Combine(_runtimeRoot, "config", "work_area_executor_policy.json"));
+            var report = service.Run();
+            response = Ok(new
+            {
+                report_version = report.ReportVersion,
+                updated_at_utc = report.UpdatedAtUtc,
+                time_control_path = report.TimeControlPath,
+                resource_path = report.ResourcePath,
+                in_nightly_window = report.InNightlyWindow,
+                resource_healthy = report.ResourceHealthy,
+                revalidation = report.Revalidation,
+                warnings = report.Warnings,
+                no_trading_execution = report.NoTradingExecution,
+                no_broker_action = report.NoBrokerAction,
+                no_auto_trading = report.NoAutoTrading,
+                human_review_required = report.HumanReviewRequired,
+                report_path = report.ReportPath,
+                markdown_path = report.MarkdownPath,
+            });
+            statusCode = HttpStatusCode.OK;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            response = Error("nightly_work_area_failed", ex.Message);
             statusCode = HttpStatusCode.BadRequest;
             return true;
         }

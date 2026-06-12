@@ -72,6 +72,16 @@ public sealed record ScheduleConfig(
                 SleepSeconds: 60,
                 MaxIdleIterations: 10),
             new(
+                JobId: "nightly_work_area_runner",
+                JobType: "run_nightly_work_areas",
+                Enabled: true,
+                ScheduleType: "window",
+                Command: "run-nightly-work-areas",
+                WindowStart: "23:00",
+                WindowEnd: "05:00",
+                MaxRuntimeMinutes: 30,
+                SleepSeconds: 60),
+            new(
                 JobId: "storage_hygiene",
                 JobType: "storage_hygiene",
                 Enabled: true,

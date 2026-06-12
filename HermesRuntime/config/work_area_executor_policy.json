@@ -11,7 +11,8 @@
     "execution_mode": "auto",
     "next_execution_window_hint": "Arbeitsfenster",
     "planned_action": "Evidenz sammeln",
-    "notes": "Bevorzugt im Arbeitsfenster."
+    "notes": "Bevorzugt im Arbeitsfenster.",
+    "report_path_hint": "reports/knowledge_validation_audit/knowledge_validation_audit.json"
   },
   {
     "area_id": "source_expansion",
@@ -25,7 +26,8 @@
     "execution_mode": "auto",
     "next_execution_window_hint": "Arbeitsfenster",
     "planned_action": "Quellen erweitern",
-    "notes": "Nur sichere lokale/zugelassene Quellen."
+    "notes": "Nur sichere lokale/zugelassene Quellen.",
+    "report_path_hint": "reports/knowledge_trust_improvement_plan/knowledge_trust_improvement_plan.json"
   },
   {
     "area_id": "schedule_revalidation",
@@ -39,7 +41,8 @@
     "execution_mode": "plan_or_nightly",
     "next_execution_window_hint": "Nightly",
     "planned_action": "Re-Validierung planen",
-    "notes": "Schwere Läufe nur im Nightly-Fenster."
+    "notes": "Schwere Läufe nur im Nightly-Fenster.",
+    "report_path_hint": "reports/knowledge_validation_audit/knowledge_validation_audit.json"
   },
   {
     "area_id": "contradiction_analysis",
@@ -53,7 +56,8 @@
     "execution_mode": "analysis_only",
     "next_execution_window_hint": "Arbeitsfenster",
     "planned_action": "Widersprüche analysieren",
-    "notes": "Analyse automatisch; Auflösung nur im Prüfzentrum."
+    "notes": "Analyse automatisch; Auflösung nur im Prüfzentrum.",
+    "report_path_hint": "reports/trusted_knowledge_review_gate/trusted_knowledge_review_gate.json"
   },
   {
     "area_id": "systempflege",
@@ -67,6 +71,7 @@
     "execution_mode": "plan_only",
     "next_execution_window_hint": "bei Bedarf",
     "planned_action": "Cleanup-Plan aktualisieren",
-    "notes": "Reale Löschungen nur mit safe cleanup."
+    "notes": "Reale Löschungen nur mit safe cleanup.",
+    "report_path_hint": "reports/storage/cleanup_plan.json"
   }
 ]
