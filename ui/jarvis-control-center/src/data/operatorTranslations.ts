@@ -63,6 +63,14 @@ const OPERATOR_TRANSLATIONS = {
     whatHermesDoes: 'plant weitere Validierung',
     franksAction: 'Nein',
   },
+  knowledge_items_need_oos_validation: {
+    title: 'Zusätzliche Testdaten werden benötigt',
+    meaning: 'Einige Wissenselemente benötigen weitere Out-of-Sample-Validierung.',
+    action: 'Hermes plant weitere OOS-Validierungsläufe.',
+    severity: 'warn',
+    whatHermesDoes: 'plant weitere OOS-Validierung',
+    franksAction: 'Nein',
+  },
   knowledge_validation_queue_missing: {
     title: 'Validierungswarteschlange fehlt',
     meaning: 'Hermes hat Wissen erkannt, aber keine passende Prüfwarteschlange gefunden.',
@@ -70,6 +78,30 @@ const OPERATOR_TRANSLATIONS = {
     severity: 'warn',
     whatHermesDoes: 'sucht nach einer passenden Validierungswarteschlange',
     franksAction: 'Ja, Konfiguration prüfen',
+  },
+  hypotheses_without_validation_queue: {
+    title: 'Hypothesen warten auf Validierung',
+    meaning: 'Es gibt Hypothesen, aber noch nicht genug passende Queue-Arbeit.',
+    action: 'Hermes überführt Hypothesen in die bestehende Validierungswarteschlange.',
+    severity: 'warn',
+    whatHermesDoes: 'überführt Hypothesen in die Validierungswarteschlange',
+    franksAction: 'Nein',
+  },
+  no_robust_strategies: {
+    title: 'Noch keine ausreichend robuste Strategie',
+    meaning: 'Es liegt noch keine robuste Strategie im Status vor.',
+    action: 'Hermes plant den nächsten Research-/Robustness-Lauf.',
+    severity: 'warn',
+    whatHermesDoes: 'plant Research- und Robustness-Läufe',
+    franksAction: 'Nein',
+  },
+  knowledge_validation_audit: {
+    title: 'Validierung wird ausgewertet',
+    meaning: 'Hermes analysiert offene Validierungen und Wissenslücken.',
+    action: 'Keine direkte Aktion erforderlich.',
+    severity: 'hint',
+    whatHermesDoes: 'wertet Validation-Lücken aus',
+    franksAction: 'Nein',
   },
   human_review_required: {
     title: 'Menschliche Entscheidung erforderlich',
@@ -149,6 +181,18 @@ const FALLBACK_TRANSLATIONS = [
   {
     match: /knowledge_validation_queue_missing/i,
     value: OPERATOR_TRANSLATIONS.knowledge_validation_queue_missing,
+  },
+  {
+    match: /hypotheses_without_validation_queue/i,
+    value: OPERATOR_TRANSLATIONS.hypotheses_without_validation_queue,
+  },
+  {
+    match: /no_robust_strategies/i,
+    value: OPERATOR_TRANSLATIONS.no_robust_strategies,
+  },
+  {
+    match: /knowledge_validation_audit/i,
+    value: OPERATOR_TRANSLATIONS.knowledge_validation_audit,
   },
   {
     match: /validation_queue_missing/i,

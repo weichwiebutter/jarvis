@@ -717,6 +717,16 @@ function classifyOperatorWarning(rawWarning) {
     };
   }
 
+  if (lower.includes('knowledge_items_need_oos_validation')) {
+    return {
+      key: 'knowledge_items_need_oos_validation',
+      label: translateOperatorCode('knowledge_items_need_oos_validation').title,
+      detail: translateOperatorCode('knowledge_items_need_oos_validation').meaning,
+      tone: 'warn',
+      action: translateOperatorCode('knowledge_items_need_oos_validation').action,
+    };
+  }
+
   if (lower.includes('validation_queue_missing')) {
     return {
       key: 'validation_queue_missing',
@@ -764,6 +774,26 @@ function classifyOperatorWarning(rawWarning) {
       detail: translateOperatorCode('deferred_reviews').meaning,
       tone: 'info',
       action: translateOperatorCode('deferred_reviews').action,
+    };
+  }
+
+  if (lower.includes('hypotheses_without_validation_queue')) {
+    return {
+      key: 'hypotheses_without_validation_queue',
+      label: translateOperatorCode('hypotheses_without_validation_queue').title,
+      detail: translateOperatorCode('hypotheses_without_validation_queue').meaning,
+      tone: 'warn',
+      action: translateOperatorCode('hypotheses_without_validation_queue').action,
+    };
+  }
+
+  if (lower.includes('no_robust_strategies')) {
+    return {
+      key: 'no_robust_strategies',
+      label: translateOperatorCode('no_robust_strategies').title,
+      detail: translateOperatorCode('no_robust_strategies').meaning,
+      tone: 'warn',
+      action: translateOperatorCode('no_robust_strategies').action,
     };
   }
 

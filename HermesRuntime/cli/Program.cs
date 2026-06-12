@@ -6354,6 +6354,10 @@ internal sealed class HermesCli
 
         WriteField("Report", DisplayPath(service.AuditPath));
         WriteField("Markdown", DisplayPath(service.AuditMarkdownPath));
+        WriteField("Knowledge Items", report.TotalKnowledgeItems.ToString());
+        WriteField("Validiert", report.ValidatedKnowledgeItems.ToString());
+        WriteField("OOS nötig", report.KnowledgeItemsNeedingOosValidation.ToString());
+        WriteField("Ohne Validation Queue", report.KnowledgeItemsWithoutValidationQueue.ToString());
         WriteField("Validierung", report.ValidationCompletionLabel);
         WriteField("Offene Validierungen", report.OpenValidations.ToString());
         WriteField("Kritische Wissenslücken", report.CriticalKnowledgeGaps.ToString());
@@ -6370,6 +6374,17 @@ internal sealed class HermesCli
             WriteField("Betroffene Knowledge Items", domain.OpenKnowledgeItems.ToString());
             WriteField("Älteste offene Validierung", $"{domain.OldestOpenValidationAgeDays} Tage");
         }
+        WriteSubHeader("Top 10 offene Validierungsprobleme");
+        foreach (var finding in report.Findings ?? [])
+        {
+            WriteField(finding.Title, $"{finding.Category} · {finding.Count} · {string.Join(", ", finding.Domains.Take(3))}");
+            WriteField("Bedeutung", finding.Meaning);
+            WriteField("Aktion", finding.Action);
+        }
+        WriteSubHeader("Handlungsempfehlung");
+        Console.WriteLine((report.ImprovementTasks?.Count ?? 0) == 0
+            ? "Hermes kann die offenen Wissensaufgaben derzeit selbst weiterverfolgen."
+            : "Hermes soll OOS-Validierung, Queue-Reparatur und offene Hypothesen in die bestehende Validierungs-Pipeline überführen. Frank muss nur prüfen, wenn eine menschliche Freigabe verlangt wird.");
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();

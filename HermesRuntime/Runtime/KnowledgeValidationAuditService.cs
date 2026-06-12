@@ -9,11 +9,32 @@ public sealed record KnowledgeValidationAuditDomain(
     int OpenKnowledgeItems,
     int OldestOpenValidationAgeDays);
 
+public sealed record KnowledgeValidationAuditFinding(
+    string Code,
+    string Category,
+    string Title,
+    string Meaning,
+    string Action,
+    int Count,
+    IReadOnlyList<string> Domains);
+
+public sealed record KnowledgeValidationAuditTask(
+    string Code,
+    string Title,
+    string Action,
+    string Category,
+    IReadOnlyList<string> Domains,
+    int Count);
+
 public sealed record KnowledgeValidationAuditReport(
     string ReportVersion,
     DateTimeOffset UpdatedAtUtc,
     string ValidationCompletionLabel,
     double ValidationCompletionPercent,
+    int TotalKnowledgeItems,
+    int ValidatedKnowledgeItems,
+    int KnowledgeItemsNeedingOosValidation,
+    int KnowledgeItemsWithoutValidationQueue,
     int OpenValidations,
     int CriticalKnowledgeGaps,
     int QueueItemsOpen,
@@ -24,6 +45,8 @@ public sealed record KnowledgeValidationAuditReport(
     int OldestOpenValidationAgeDays,
     IReadOnlyList<string> AffectedDomains,
     IReadOnlyList<KnowledgeValidationAuditDomain> DomainBreakdown,
+    IReadOnlyList<KnowledgeValidationAuditFinding> Findings,
+    IReadOnlyList<KnowledgeValidationAuditTask> ImprovementTasks,
     IReadOnlyList<string> Warnings,
     bool NoTradingExecution,
     bool NoBrokerAction,
@@ -32,7 +55,9 @@ public sealed record KnowledgeValidationAuditReport(
     string PlansPath,
     string QueuePath,
     string StatusPath,
-    string EvidencePath);
+    string EvidencePath,
+    string AuditPath,
+    string MarkdownPath);
 
 public sealed class KnowledgeValidationAuditService
 {
@@ -45,17 +70,21 @@ public sealed class KnowledgeValidationAuditService
 
     public string Root => Path.Combine(_storagePaths.Root, "cognitive_core");
 
-    public string AuditPath => Path.Combine(Root, "knowledge_validation_audit.json");
+    public string AuditRoot => Path.Combine(_storagePaths.Root, "reports", "knowledge_validation_audit");
 
-    public string AuditMarkdownPath => Path.Combine(Root, "knowledge_validation_audit.md");
+    public string AuditPath => Path.Combine(AuditRoot, "knowledge_validation_audit.json");
+
+    public string AuditMarkdownPath => Path.Combine(AuditRoot, "knowledge_validation_audit.md");
 
     public KnowledgeValidationAuditReport Run()
     {
         Directory.CreateDirectory(Root);
+        Directory.CreateDirectory(AuditRoot);
         var validation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus()
             ?? new KnowledgeValidationStrategy(_storagePaths).BuildStatus();
         var plans = new KnowledgeValidationStrategy(_storagePaths).LoadPlanReport()
             ?? new KnowledgeValidationStrategy(_storagePaths).GeneratePlans(50);
+        var quality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
         var queue = new ResearchQueueService(_storagePaths).LoadOrCreateQueue();
         var validationQueueItems = queue.Items
             .Where(item => item.RequestedBy.Equals("knowledge_validation_strategy", StringComparison.OrdinalIgnoreCase)
@@ -93,6 +122,11 @@ public sealed class KnowledgeValidationAuditService
             .ThenBy(item => item.Domain, StringComparer.Ordinal)
             .ToList();
         var criticalGaps = validation.KnowledgeItemsNeedingOos;
+        var validatedKnowledgeItems = quality.Items.Count(item =>
+            item.ValidationScore >= 0.45
+            || item.LastValidatedUtc is not null
+            || item.LifecycleStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase));
+        var knowledgeWithoutQueue = Math.Max(0, plans.OpenPlans - openQueueItems.Count);
         var oldestOpenAgeDays = plans.Plans.Count == 0
             ? 0
             : plans.Plans
@@ -100,27 +134,23 @@ public sealed class KnowledgeValidationAuditService
                 .Select(plan => Math.Max(0, (int)Math.Floor((DateTimeOffset.UtcNow - plan.CreatedAtUtc).TotalDays)))
                 .DefaultIfEmpty(0)
                 .Max();
-        var warnings = new List<string>();
-        if (validation.ValidationPlansOpen > 0 && validation.ValidationTasksPending == 0)
-        {
-            warnings.Add("knowledge_validation_queue_missing");
-        }
-
-        if (validation.KnowledgeItemsNeedingOos > 0)
-        {
-            warnings.Add("knowledge_items_need_oos_validation");
-        }
-
-        if (plans.OpenPlans > 0 && openQueueItems.Count == 0)
-        {
-            warnings.Add("hypotheses_without_validation_queue");
-        }
+        var affectedByDomain = quality.Items
+            .Where(item => item.ValidationScore < 0.45 || item.LastValidatedUtc is null || !item.LifecycleStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(item => item.Domain, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+        var findings = BuildFindings(validation, plans, queue, quality, affectedByDomain);
+        var tasks = BuildTasks(findings, validation);
+        var warnings = findings.Select(finding => finding.Code).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
         var report = new KnowledgeValidationAuditReport(
             ReportVersion: "knowledge_validation_audit_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
             ValidationCompletionLabel: $"{completionPercent:0}% abgeschlossen",
             ValidationCompletionPercent: completionPercent,
+            TotalKnowledgeItems: quality.TotalKnowledgeItems,
+            ValidatedKnowledgeItems: validatedKnowledgeItems,
+            KnowledgeItemsNeedingOosValidation: criticalGaps,
+            KnowledgeItemsWithoutValidationQueue: knowledgeWithoutQueue,
             OpenValidations: openPlans,
             CriticalKnowledgeGaps: criticalGaps,
             QueueItemsOpen: validation.ValidationTasksPending,
@@ -131,6 +161,8 @@ public sealed class KnowledgeValidationAuditService
             OldestOpenValidationAgeDays: oldestOpenAgeDays,
             AffectedDomains: affectedDomains,
             DomainBreakdown: domainBreakdown,
+            Findings: findings,
+            ImprovementTasks: tasks,
             Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             NoTradingExecution: true,
             NoBrokerAction: true,
@@ -139,16 +171,24 @@ public sealed class KnowledgeValidationAuditService
             PlansPath: new KnowledgeValidationStrategy(_storagePaths).PlansPath,
             QueuePath: new ResearchQueueService(_storagePaths).QueuePath,
             StatusPath: new KnowledgeValidationStrategy(_storagePaths).StatusPath,
-            EvidencePath: new KnowledgeQualityEngine(_storagePaths).EvidencePath);
+            EvidencePath: new KnowledgeQualityEngine(_storagePaths).EvidencePath,
+            AuditPath: AuditPath,
+            MarkdownPath: AuditMarkdownPath);
 
-        File.WriteAllText(AuditPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
-        File.WriteAllText(AuditMarkdownPath, BuildMarkdown(report));
+        WriteAuditCopies(report);
         return report;
     }
 
     public KnowledgeValidationAuditReport? Load()
     {
-        if (!File.Exists(AuditPath))
+        var candidates = new[]
+        {
+            AuditPath,
+            Path.Combine(Root, "knowledge_validation_audit.json"),
+        };
+
+        var path = candidates.FirstOrDefault(File.Exists);
+        if (string.IsNullOrWhiteSpace(path))
         {
             return null;
         }
@@ -156,7 +196,7 @@ public sealed class KnowledgeValidationAuditService
         try
         {
             return JsonSerializer.Deserialize<KnowledgeValidationAuditReport>(
-                File.ReadAllText(AuditPath),
+                File.ReadAllText(path),
                 JsonDefaults.SnapshotReadOptions);
         }
         catch (Exception ex) when (ex is IOException or JsonException)
@@ -189,6 +229,10 @@ public sealed class KnowledgeValidationAuditService
             string.Empty,
             $"- Updated UTC: {report.UpdatedAtUtc:O}",
             $"- Validierung: {report.ValidationCompletionLabel}",
+            $"- Knowledge Items: {report.TotalKnowledgeItems}",
+            $"- Validiert: {report.ValidatedKnowledgeItems}",
+            $"- OOS nötig: {report.KnowledgeItemsNeedingOosValidation}",
+            $"- Ohne Validation Queue: {report.KnowledgeItemsWithoutValidationQueue}",
             $"- Offene Validierungen: {report.OpenValidations}",
             $"- Kritische Wissenslücken: {report.CriticalKnowledgeGaps}",
             $"- Älteste offene Validierung: {report.OldestOpenValidationAgeDays} Tage",
@@ -201,6 +245,173 @@ public sealed class KnowledgeValidationAuditService
         lines.Add(string.Empty);
         lines.Add("## Warnungen");
         lines.AddRange(report.Warnings.Count == 0 ? ["- keine"] : report.Warnings.Select(warning => $"- {warning}"));
+        lines.Add(string.Empty);
+        lines.Add("## Maßnahmen");
+        lines.AddRange(report.ImprovementTasks.Count == 0
+            ? ["- keine"]
+            : report.ImprovementTasks.Select(task => $"- {task.Title} [{task.Category}] ({string.Join(", ", task.Domains)})"));
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static IReadOnlyList<KnowledgeValidationAuditFinding> BuildFindings(
+        KnowledgeValidationStatus validation,
+        KnowledgeValidationPlanReport plans,
+        ResearchQueue queue,
+        KnowledgeQualityReport quality,
+        IReadOnlyDictionary<string, int> affectedByDomain)
+    {
+        var domains = affectedByDomain.Keys.OrderBy(domain => domain, StringComparer.OrdinalIgnoreCase).ToList();
+        var findings = new List<KnowledgeValidationAuditFinding>();
+
+        if (validation.KnowledgeItemsNeedingOos > 0)
+        {
+            findings.Add(new KnowledgeValidationAuditFinding(
+                Code: "oos_data_missing",
+                Category: "needs_validation_run",
+                Title: "OOS-Validierung planen",
+                Meaning: "Ein Teil des Wissens hat noch keine ausreichende Out-of-Sample-Absicherung.",
+                Action: "Weitere Walk-Forward-/OOS-Läufe einplanen.",
+                Count: validation.KnowledgeItemsNeedingOos,
+                Domains: domains));
+        }
+
+        if (validation.ValidationPlansOpen > 0 && validation.ValidationTasksPending == 0)
+        {
+            findings.Add(new KnowledgeValidationAuditFinding(
+                Code: "knowledge_validation_queue_missing",
+                Category: "configuration_missing",
+                Title: "Validation Queue erzeugen oder reparieren",
+                Meaning: "Es gibt offene Validierungspläne, aber keine passende Queue-Arbeit.",
+                Action: "Knowledge Validation Queue prüfen und neu befüllen.",
+                Count: validation.ValidationPlansOpen,
+                Domains: domains));
+        }
+
+        if (plans.OpenPlans > 0 && queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)) == 0)
+        {
+            findings.Add(new KnowledgeValidationAuditFinding(
+                Code: "hypotheses_without_validation_queue",
+                Category: "needs_research",
+                Title: "Hypothesen in Validierungswarteschlange überführen",
+                Meaning: "Es existieren offene Hypothesen, aber keine offene Queue-Arbeit.",
+                Action: "Hypothesen in die Validierungswarteschlange überführen.",
+                Count: plans.OpenPlans,
+                Domains: domains));
+        }
+
+        if (plans.OpenPlans > 0 && queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)) > 0)
+        {
+            findings.Add(new KnowledgeValidationAuditFinding(
+                Code: "validation_queue_active",
+                Category: "informational",
+                Title: "Validierungswarteschlange aktiv",
+                Meaning: "Hermes hat offene Validierungsarbeit in der Queue.",
+                Action: "Keine direkte Aktion erforderlich.",
+                Count: queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)),
+                Domains: domains));
+        }
+
+        if (quality.TrustedKnowledge == 0)
+        {
+            findings.Add(new KnowledgeValidationAuditFinding(
+                Code: "no_trusted_knowledge",
+                Category: "needs_human_review",
+                Title: "Vertrauensstufe bleibt zurückhaltend",
+                Meaning: "Es gibt noch kein ausreichend vertrauenswürdiges Wissensniveau für automatische Freigaben.",
+                Action: "Frank muss nur prüfen, wenn eine Freigabe ansteht.",
+                Count: quality.TotalKnowledgeItems,
+                Domains: domains));
+        }
+
+        return findings
+            .OrderByDescending(finding => finding.Count)
+            .ThenBy(finding => finding.Code, StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
+    }
+
+    private static IReadOnlyList<KnowledgeValidationAuditTask> BuildTasks(
+        IReadOnlyList<KnowledgeValidationAuditFinding> findings,
+        KnowledgeValidationStatus validation)
+    {
+        var tasks = new List<KnowledgeValidationAuditTask>();
+
+        foreach (var finding in findings)
+        {
+            var task = finding.Code switch
+            {
+                "oos_data_missing" => new KnowledgeValidationAuditTask(
+                    Code: finding.Code,
+                    Title: finding.Title,
+                    Action: finding.Action,
+                    Category: finding.Category,
+                    Domains: finding.Domains,
+                    Count: finding.Count),
+                "knowledge_validation_queue_missing" => new KnowledgeValidationAuditTask(
+                    Code: finding.Code,
+                    Title: finding.Title,
+                    Action: finding.Action,
+                    Category: finding.Category,
+                    Domains: finding.Domains,
+                    Count: finding.Count),
+                "hypotheses_without_validation_queue" => new KnowledgeValidationAuditTask(
+                    Code: finding.Code,
+                    Title: finding.Title,
+                    Action: finding.Action,
+                    Category: finding.Category,
+                    Domains: finding.Domains,
+                    Count: finding.Count),
+                "validation_queue_active" => new KnowledgeValidationAuditTask(
+                    Code: finding.Code,
+                    Title: finding.Title,
+                    Action: finding.Action,
+                    Category: finding.Category,
+                    Domains: finding.Domains,
+                    Count: finding.Count),
+                "no_trusted_knowledge" => new KnowledgeValidationAuditTask(
+                    Code: finding.Code,
+                    Title: "Keine automatische Trusted-Promotion",
+                    Action: "Keine automatische Trusted-Promotion ausführen. Nur in Review-/Validation-Pipeline bleiben.",
+                    Category: finding.Category,
+                    Domains: finding.Domains,
+                    Count: finding.Count),
+                _ => null
+            };
+
+            if (task is not null)
+            {
+                tasks.Add(task);
+            }
+        }
+
+        if (validation.ValidationPlansOpen > 0 && validation.ValidationTasksPending == 0)
+        {
+            tasks.Add(new KnowledgeValidationAuditTask(
+                Code: "validation_queue_missing",
+                Title: "Validation Queue erzeugen oder reparieren",
+                Action: "Queue befüllen oder Route korrigieren.",
+                Category: "configuration_missing",
+                Domains: findings.SelectMany(item => item.Domains).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                Count: validation.ValidationPlansOpen));
+        }
+
+        return tasks
+            .DistinctBy(task => task.Code, StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
+    }
+
+    private void WriteAuditCopies(KnowledgeValidationAuditReport report)
+    {
+        var json = JsonSerializer.Serialize(report, JsonDefaults.WriteOptions);
+        var markdown = BuildMarkdown(report);
+        Directory.CreateDirectory(AuditRoot);
+        File.WriteAllText(AuditPath, json);
+        File.WriteAllText(AuditMarkdownPath, markdown);
+
+        var legacyRoot = Root;
+        Directory.CreateDirectory(legacyRoot);
+        File.WriteAllText(Path.Combine(legacyRoot, "knowledge_validation_audit.json"), json);
+        File.WriteAllText(Path.Combine(legacyRoot, "knowledge_validation_audit.md"), markdown);
     }
 }
