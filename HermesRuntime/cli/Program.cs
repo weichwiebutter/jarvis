@@ -6390,10 +6390,13 @@ internal sealed class HermesCli
         WriteField("Offene Validierungen", report.OpenValidations.ToString());
         WriteField("Kritische Wissenslücken", report.CriticalKnowledgeGaps.ToString());
         WriteField("Älteste offene Validierung", $"{report.OldestOpenValidationAgeDays} Tage");
+        WriteField("Needs More Evidence", report.HumanReviewNeedsMoreEvidenceReviews.ToString());
+        WriteField("Frank nötig", report.HumanReviewPendingReviews > 0 ? "ja" : "nein");
         WriteField("Validation Queue vorhanden", report.ValidationQueueExists.ToString().ToLowerInvariant());
         WriteField("Validation Queue befüllt", report.ValidationQueueFilled.ToString().ToLowerInvariant());
         WriteField("Validation Queue verarbeitet", report.ValidationQueueProcessed.ToString().ToLowerInvariant());
         WriteMessages("Betroffene Domänen", report.AffectedDomains);
+        WriteMessages("Betroffene Domänen (Evidenz)", report.HumanReviewNeedsMoreEvidenceDomains);
         foreach (var domain in report.DomainBreakdown)
         {
             WriteSubHeader(domain.Domain);
@@ -6410,9 +6413,19 @@ internal sealed class HermesCli
             WriteField("Aktion", finding.Action);
         }
         WriteSubHeader("Handlungsempfehlung");
-        Console.WriteLine((report.ImprovementTasks?.Count ?? 0) == 0
-            ? "Hermes kann die offenen Wissensaufgaben derzeit selbst weiterverfolgen."
-            : "Hermes soll OOS-Validierung, Queue-Reparatur und offene Hypothesen in die bestehende Validierungs-Pipeline überführen. Frank muss nur prüfen, wenn eine menschliche Freigabe verlangt wird.");
+        Console.WriteLine(report.OperatorSummary);
+        if ((report.MissingAutomationJobs?.Count ?? 0) > 0)
+        {
+            WriteMessages("Fehlende automatische Jobs", report.MissingAutomationJobs);
+        }
+        if ((report.MissingQueues?.Count ?? 0) > 0)
+        {
+            WriteMessages("Fehlende Queues", report.MissingQueues);
+        }
+        if ((report.NextRecommendedCommands?.Count ?? 0) > 0)
+        {
+            WriteMessages("Nächste Commands", report.NextRecommendedCommands);
+        }
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();

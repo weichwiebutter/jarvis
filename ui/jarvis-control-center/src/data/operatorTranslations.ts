@@ -95,6 +95,14 @@ const OPERATOR_TRANSLATIONS = {
     whatHermesDoes: 'plant weitere Validierung',
     franksAction: 'Nein',
   },
+  human_review_needs_more_evidence: {
+    title: 'Hermes sammelt weitere Evidenz',
+    meaning: 'Ein Teil des Wissens wartet auf zusätzliche Evidenz und Validierung.',
+    action: 'Keine Aktion für Frank. Hermes kann weitere Evidenz- und Validierungsläufe planen.',
+    severity: 'warn',
+    whatHermesDoes: 'sammelt weitere Evidenz',
+    franksAction: 'Nein',
+  },
   knowledge_items_need_oos_validation: {
     title: 'Zusätzliche Testdaten werden benötigt',
     meaning: 'Einige Wissenselemente benötigen weitere Out-of-Sample-Validierung.',
@@ -389,6 +397,10 @@ const FALLBACK_TRANSLATIONS = [
   {
     match: /oos_data_missing/i,
     value: OPERATOR_TRANSLATIONS.oos_data_missing,
+  },
+  {
+    match: /human_review_needs_more_evidence/i,
+    value: OPERATOR_TRANSLATIONS.human_review_needs_more_evidence,
   },
   {
     match: /knowledge_validation_queue_missing/i,
