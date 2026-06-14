@@ -23,6 +23,38 @@ const OPERATOR_TRANSLATIONS = {
     whatHermesDoes: 'arbeitet selbstständig weiter',
     franksAction: 'Nein',
   },
+  continue: {
+    title: 'Weiterlaufen',
+    meaning: 'Hermes kann normal weiterarbeiten.',
+    action: 'Keine Aktion erforderlich.',
+    severity: 'good',
+    whatHermesDoes: 'arbeitet normal weiter',
+    franksAction: 'Nein',
+  },
+  pause_research: {
+    title: 'Forschung pausiert',
+    meaning: 'Hermes pausiert sichere Forschungsarbeit vorübergehend.',
+    action: 'Keine Aktion erforderlich.',
+    severity: 'warn',
+    whatHermesDoes: 'wartet auf bessere Ressourcenlage',
+    franksAction: 'Nein',
+  },
+  plan_cleanup: {
+    title: 'Cleanup planen',
+    meaning: 'Hermes hat erkannt, dass Speicherpflege sinnvoll sein könnte.',
+    action: 'Speicherstatus prüfen, bei Bedarf Cleanup planen.',
+    severity: 'hint',
+    whatHermesDoes: 'plant sichere Speicherpflege',
+    franksAction: 'Ja, Speicher prüfen',
+  },
+  safe_stop: {
+    title: 'Sicherer Stopp',
+    meaning: 'Hermes wurde aus Sicherheitsgründen angehalten.',
+    action: 'Keine Aktion erforderlich.',
+    severity: 'hint',
+    whatHermesDoes: 'wartet auf eine neue Freigabe',
+    franksAction: 'Nein',
+  },
   outside_nightly_window: {
     title: 'Außerhalb des Nachtfensters',
     meaning: 'Hermes befindet sich aktuell außerhalb des erlaubten Nachtlaufs.',
@@ -345,6 +377,10 @@ const FALLBACK_TRANSLATIONS = [
   {
     match: /safe_stop_requested/i,
     value: OPERATOR_TRANSLATIONS.safe_stop_requested,
+  },
+  {
+    match: /stopped_by_stop_request/i,
+    value: OPERATOR_TRANSLATIONS.stopped_by_stop_request,
   },
   {
     match: /storage_cleanup_candidates/i,

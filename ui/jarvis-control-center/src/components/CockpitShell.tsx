@@ -348,7 +348,8 @@ function frankActionCenterModel(operatorState) {
   const review = operatorState.humanReview || {};
   const items = Array.isArray(review.items) ? review.items : [];
   const pendingItems = items.filter((item) => item.status === 'pending');
-  const openReviews = Number(review.pending_reviews || pendingItems.length || 0);
+  const openReviews = Number(review.pending_reviews || 0);
+  const needsMoreEvidence = Number(review.needs_more_evidence_reviews || 0);
   const masterStatus = operatorState.masterStatus || {};
   const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
   const trustedGate = reportByKey(operatorState, 'trustedKnowledgeReviewGate')?.raw || {};
@@ -401,6 +402,26 @@ function frankActionCenterModel(operatorState) {
     };
   }
 
+  if (needsMoreEvidence > 0) {
+    return {
+      mode: 'yellow',
+      title: 'Hermes sammelt weitere Evidenz',
+      summary: `${formatNumber(needsMoreEvidence)} Prüfungen benötigen mehr Evidenz`,
+      headline: 'Frank muss nichts tun.',
+      action: 'Nein',
+      buttonVisible: false,
+      buttonLabel: '',
+      buttonTarget: '',
+      items: pendingItems.slice(0, 3).map((item) => ({
+        topic: reviewTopicLabel(item),
+        recommendation: 'Hermes sammelt weitere Evidenz.',
+        risk: 'mittel',
+        tone: 'warn',
+      })),
+      details: ['Hermes sammelt weitere Evidenz und bereitet weitere Validierungsschritte vor.'],
+    };
+  }
+
   if (trustedEligible > 0) {
     return {
       mode: 'red',
@@ -448,8 +469,6 @@ function frankActionCenterModel(operatorState) {
     masterStatus.knowledge_items_needing_oos ? translateOperatorCode('oos_data_missing').title : '',
     masterStatus.validation_plans_open || masterStatus.validation_tasks_pending ? translateOperatorCode('validation_queue_missing').title : '',
     operatorState.storage.cleanup_candidate_count ? translateOperatorCode('storage_cleanup_candidates').title : '',
-    review.needs_more_evidence_reviews ? translateOperatorCode('evidence_requested').title : '',
-    masterStatus.pending_reviews && !openReviews ? translateOperatorCode('review_required').title : '',
   ]);
 
   if (yellowReasons.length) {
@@ -525,10 +544,12 @@ function improvementQueueSummaryModel(operatorState) {
       ? `Zuletzt ausgeführt um ${shortTimeOnly(lastExecutionAtUtc)}`
       : revalidationStatus.includes('fehler')
         ? `Fehlgeschlagen${revalidation.result ? `: ${revalidation.result}` : ''}`
-        : (String(nextExecutionWindow).toLowerCase().includes('wartet')
-          || String(nextExecutionWindow).toLowerCase().includes('nightly'))
-          ? String(nextExecutionWindow)
-          : `Wartet auf Nightly bis ${nextExecutionWindow}${nextExecutionAtUtc ? ` (${shortTimeOnly(nextExecutionAtUtc)})` : ''}`;
+        : nextExecutionAtUtc
+          ? `wartet auf Nightly bis ${shortTimeOnly(nextExecutionAtUtc)}`
+          : (String(nextExecutionWindow).toLowerCase().includes('wartet')
+            || String(nextExecutionWindow).toLowerCase().includes('nightly'))
+            ? 'wartet auf Nightly'
+            : `wartet auf Nightly bis ${nextExecutionWindow}`;
 
   return {
     title: 'Selbstverbesserung',
@@ -1162,7 +1183,7 @@ function KnowledgeHealthCard({ operatorState }) {
         <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
         <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
         <Metric label="Vertrauenskandidaten" value={formatNumber(masterStatus.trusted_candidate_count)} tone={masterStatus.trusted_candidate_count ? 'good' : 'info'} />
-        <Metric label="Offene Prüfungen" value={formatNumber(masterStatus.pending_reviews)} tone={masterStatus.pending_reviews ? 'warn' : 'good'} />
+      <Metric label="Offene Prüfungen" value={formatNumber(operatorState.humanReview?.pending_reviews || 0)} tone={operatorState.humanReview?.pending_reviews ? 'warn' : 'good'} />
       </div>
     </details>
   );
@@ -1279,7 +1300,8 @@ function buildCommandCenterModules(operatorState) {
     : revalidationStatus.includes('fehler')
       ? `fehlgeschlagen${revalidation.result ? ` · ${revalidation.result}` : ''}`
       : `wartet auf Nightly bis ${revalidationNext}${revalidationAt ? ` (${shortTimeOnly(revalidationAt)})` : ''}`;
-  const openReviews = operatorState.humanReview?.pending_reviews || 0;
+  const openReviews = Number(operatorState.humanReview?.pending_reviews || 0);
+  const needsMoreEvidence = Number(operatorState.humanReview?.needs_more_evidence_reviews || 0);
   const warnings = [
     ...operatorState.warnings,
     ...operatorState.storage.warnings,
@@ -1325,7 +1347,11 @@ function buildCommandCenterModules(operatorState) {
       value: scorePercent(operatorState.masterStatus.average_trust_score),
       detail: trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview
         ? `${formatNumber(trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview)} Wissenselemente bereit`
-        : `${formatNumber(operatorState.masterStatus.pending_reviews)} Prüfungen`,
+        : openReviews > 0
+          ? `${formatNumber(openReviews)} Prüfungen`
+          : needsMoreEvidence > 0
+            ? 'Hermes sammelt weitere Evidenz'
+            : 'Keine Aktion erforderlich',
       tone: trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview ? 'warn' : operatorState.masterStatus.knowledge_items_needing_oos ? 'warn' : 'info',
       meta: trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview
         ? 'Im Prüfzentrum prüfen'
@@ -1662,15 +1688,23 @@ function timeControlWindowWarning(start, end, enabled) {
 }
 
 function DashboardSystemStatus({ operatorState }) {
+  const supervisorSummary = translateOperatorCode(operatorState.supervisor.next_action || operatorState.supervisor.status);
+  const resourceSummary = translateOperatorCode(operatorState.resource.action || 'continue');
   return (
     <div className="cockpit-accordion-grid">
       <OperatorSummary code={operatorState.supervisor.next_action || operatorState.supervisor.status} />
+      <Metric label="Bedeutung" value={supervisorSummary.meaning} tone="info" />
+      <Metric label="Hermes arbeitet an" value={supervisorSummary.whatHermesDoes} tone="info" />
+      <Metric label="Aktion für Frank" value={supervisorSummary.franksAction} tone={supervisorSummary.franksAction !== 'Nein' ? 'warn' : 'good'} />
       <Metric label="Gesamtstatus" value={statusDeutsch(operatorState.masterStatus.overall_status)} tone={toneFromStatus(operatorState.masterStatus.overall_status)} />
       <Metric label="Aufsicht" value={operatorState.supervisor.running ? 'läuft' : statusDeutsch(operatorState.supervisor.status)} tone={operatorState.supervisor.running ? 'good' : toneFromStatus(operatorState.supervisor.status)} />
       <Metric label="Planer" value={`${formatNumber(operatorState.schedulerJobs.filter((job) => job.enabled).length)} aktiv`} tone="info" />
       <Metric label="Nachtlauf" value={translateOperatorCode(operatorState.nightly.current_state).title} tone={toneFromStatus(operatorState.nightly.current_state)} />
       <Metric label="Letzte Analyse" value={shortDateTime(operatorState.masterStatus.last_meta_review)} tone="info" />
       <Metric label="Lernstrategie" value={operatorState.masterStatus.learning_strategy} tone="info" />
+      <Metric label="Ressourcenaktion" value={resourceSummary.title} tone={resourceSummary.severity === 'warn' ? 'warn' : 'good'} />
+      <Metric label="Ressourcenbedeutung" value={resourceSummary.meaning} tone="info" />
+      <Metric label="Aktion für Frank" value={resourceSummary.franksAction} tone={resourceSummary.franksAction !== 'Nein' ? 'warn' : 'good'} />
     </div>
   );
 }
@@ -1679,7 +1713,9 @@ function DashboardJarvisCenter({ operatorState }) {
   const activeAssets = Array.isArray(operatorState.masterStatus.scalping_assets)
     ? operatorState.masterStatus.scalping_assets
     : ['GER40', 'XAUUSD', 'EURUSD'];
-  const reviewOpen = operatorState.humanReview?.pending_reviews || 0;
+  const reviewOpen = Number(operatorState.humanReview?.pending_reviews || 0);
+  const evidenceOpen = Number(operatorState.humanReview?.needs_more_evidence_reviews || 0);
+  const frankState = reviewOpen > 0 ? 'human_review_required' : evidenceOpen > 0 ? 'evidence_requested' : 'no_action_required';
   const tradingReady = String(operatorState.masterStatus.bot_ready_assets || operatorState.masterStatus.setup_ready_assets || '').includes('GER40')
     || String(operatorState.masterStatus.ensemble_portfolio_status || '').includes('ready');
 
@@ -1693,7 +1729,7 @@ function DashboardJarvisCenter({ operatorState }) {
         <span>Fokus: {truncateText(operatorState.masterStatus.current_focus, 24)}</span>
         <div className="cockpit-decision-row">
           <i className={operatorState.supervisor.running ? 'is-good' : 'is-warn'} title="Jarvis läuft" />
-          <i className={reviewOpen ? 'is-warn' : 'is-good'} title="Frank muss handeln" />
+          <i className={reviewOpen ? 'is-warn' : evidenceOpen ? 'is-warn' : 'is-good'} title="Frank muss handeln" />
           <i className={tradingReady ? 'is-good' : 'is-warn'} title="Trading bereit" />
         </div>
       </div>
@@ -1703,7 +1739,7 @@ function DashboardJarvisCenter({ operatorState }) {
       </div>
       <div className="cockpit-jarvis-orb-caption cockpit-jarvis-orb-caption-right">
         <small>Frank</small>
-        <strong>{reviewOpen ? `${formatNumber(reviewOpen)} Prüfungen` : 'nichts offen'}</strong>
+        <strong>{reviewOpen ? `${formatNumber(reviewOpen)} Prüfungen` : evidenceOpen ? 'Hermes sammelt weitere Evidenz' : 'nichts offen'}</strong>
       </div>
       <div className="cockpit-jarvis-orb-caption cockpit-jarvis-orb-caption-bottom">
         <small>Trading</small>
@@ -2280,13 +2316,31 @@ function DashboardTimeControl({ operatorState, onRefresh }) {
 
 function DashboardReviewSummary({ operatorState }) {
   const review = operatorState.humanReview || {};
+  const openReviews = Number(review.pending_reviews || 0);
+  const needsMoreEvidence = Number(review.needs_more_evidence_reviews || 0);
+  const reviewTone = openReviews > 0 ? 'warn' : needsMoreEvidence > 0 ? 'warn' : 'good';
+  const reviewSummary = openReviews > 0
+    ? translateOperatorCode('review_required')
+    : needsMoreEvidence > 0
+      ? {
+          title: 'Hermes sammelt weitere Evidenz',
+          meaning: 'Hermes arbeitet an offenen Evidenzthemen.',
+          action: 'Keine Aktion erforderlich.',
+          severity: 'warn',
+          whatHermesDoes: 'sammelt weitere Evidenz',
+          franksAction: 'Nein',
+        }
+      : translateOperatorCode('no_action_required');
   return (
     <div className="cockpit-accordion-grid">
-      <OperatorSummary code={review.pending_reviews ? 'human_review_required' : 'ok'} />
-      <Metric label="Offene Prüfungen" value={formatNumber(review.pending_reviews)} tone={review.pending_reviews ? 'warn' : 'good'} />
+      <OperatorSummary code={openReviews ? 'human_review_required' : 'no_action_required'} />
+      <Metric label="Bedeutung" value={reviewSummary.meaning} tone={reviewTone} />
+      <Metric label="Hermes arbeitet an" value={reviewSummary.whatHermesDoes} tone="info" />
+      <Metric label="Aktion für Frank" value={reviewSummary.franksAction} tone={reviewSummary.franksAction !== 'Nein' ? 'warn' : 'good'} />
+      <Metric label="Offene Prüfungen" value={formatNumber(openReviews)} tone={openReviews ? 'warn' : 'good'} />
       <Metric label="Freigegeben" value={formatNumber(review.approved_reviews)} tone="good" />
       <Metric label="Zurückgestellt" value={formatNumber(review.deferred_reviews)} tone="info" />
-      <Metric label="Evidenz angefordert" value={formatNumber(review.needs_more_evidence_reviews)} tone={review.needs_more_evidence_reviews ? 'warn' : 'good'} />
+      <Metric label="Evidenz angefordert" value={formatNumber(needsMoreEvidence)} tone={needsMoreEvidence ? 'warn' : 'good'} />
     </div>
   );
 }
@@ -2300,6 +2354,8 @@ function DashboardLearningSummary({ operatorState }) {
   const execution = reportByKey(operatorState, 'autonomousImprovementExecution')?.raw || {};
   const trustPlan = reportByKey(operatorState, 'knowledgeTrustImprovementPlan')?.raw || {};
   const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
+  const openReviews = Number(operatorState.humanReview?.pending_reviews || 0);
+  const needsMoreEvidence = Number(operatorState.humanReview?.needs_more_evidence_reviews || 0);
   const criticalGaps = audit.critical_knowledge_gaps ?? audit.criticalKnowledgeGaps ?? masterStatus.knowledge_items_needing_oos;
   const oldestOpenValidationAgeDays = audit.oldest_open_validation_age_days ?? audit.oldestOpenValidationAgeDays ?? 0;
   const validationCompletionPercent =
@@ -2327,6 +2383,7 @@ function DashboardLearningSummary({ operatorState }) {
       <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
       <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
       <Metric label="Selbstverbesserung" value={`${formatNumber(improvementPolicy.active_areas || improvement.active_improvements || 0)} Bereiche`} tone={improvementPolicy.active_areas || improvement.active_improvements ? 'good' : 'info'} />
+      <Metric label="Prüfzentrum" value={openReviews ? `${formatNumber(openReviews)} offen` : needsMoreEvidence ? 'Hermes sammelt weitere Evidenz' : 'Keine Aktion erforderlich'} tone={openReviews ? 'warn' : needsMoreEvidence ? 'warn' : 'good'} />
       <Metric
         label="Re-Validierung"
         value={
@@ -2344,15 +2401,22 @@ function DashboardLearningSummary({ operatorState }) {
       <Metric label="Geplant" value={execution.planned ?? execution.Planned ?? 0} tone="info" />
       <Metric label="Übersprungen" value={execution.skipped ?? execution.Skipped ?? 0} tone="info" />
       <Metric label="Fehlgeschlagen" value={execution.failed ?? execution.Failed ?? 0} tone={execution.failed || execution.Failed ? 'warn' : 'good'} />
-      <Metric label="Frank" value={(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvementPolicy.frank_items) ? `${formatNumber(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvementPolicy.frank_items)} prüfen` : 'nichts offen'} tone={(execution.needs_human_review ?? execution.NeedsHumanReview ?? improvementPolicy.frank_items) ? 'warn' : 'good'} />
+      <Metric label="Frank" value={openReviews ? `${formatNumber(openReviews)} prüfen` : 'nichts offen'} tone={openReviews ? 'warn' : 'good'} />
     </div>
   );
 }
 
 function DashboardStorageResources({ operatorState }) {
+  const storageStatus = operatorState.storage.status || 'ok';
+  const storageSummary = translateOperatorCode(
+    operatorState.storage.cleanup_candidate_count ? 'storage_cleanup_candidates' : storageStatus,
+  );
   return (
     <div className="cockpit-accordion-grid">
-      <OperatorSummary code={operatorState.storage.cleanup_candidate_count ? 'storage_cleanup_candidates' : 'ok'} />
+      <OperatorSummary code={operatorState.storage.cleanup_candidate_count ? 'storage_cleanup_candidates' : storageStatus} />
+      <Metric label="Bedeutung" value={storageSummary.meaning} tone={storageSummary.severity === 'warn' ? 'warn' : 'info'} />
+      <Metric label="Hermes arbeitet an" value={storageSummary.whatHermesDoes} tone="info" />
+      <Metric label="Aktion für Frank" value={storageSummary.franksAction} tone={storageSummary.franksAction !== 'Nein' ? 'warn' : 'good'} />
       <Metric label="RAM" value={formatGb(operatorState.resource.free_memory_gb || operatorState.resource.memory_free_gb || 0)} tone="info" />
       <Metric label="CPU" value={`${Math.round(operatorState.resource.cpu_usage_percent)}%`} tone={operatorState.resource.should_stop ? 'danger' : operatorState.resource.should_pause ? 'warn' : 'good'} />
       <Metric label="Speicherplatz" value={formatGb(operatorState.storage.free_disk_gb)} tone={operatorState.storage.errors.length ? 'warn' : 'good'} />
@@ -2362,8 +2426,18 @@ function DashboardStorageResources({ operatorState }) {
 }
 
 function DashboardSafety({ operatorState }) {
+  const safetyState = operatorState.masterStatus.no_auto_trading
+    && !operatorState.masterStatus.broker_orders_enabled
+    && !operatorState.masterStatus.live_trading_enabled
+    ? 'ok'
+    : 'safe_stop_requested';
+  const safetySummary = translateOperatorCode(safetyState);
   return (
     <div className="cockpit-accordion-grid">
+      <OperatorSummary code={safetyState} />
+      <Metric label="Bedeutung" value={safetySummary.meaning} tone={safetySummary.severity === 'warn' ? 'warn' : 'good'} />
+      <Metric label="Hermes arbeitet an" value={safetySummary.whatHermesDoes} tone="info" />
+      <Metric label="Aktion für Frank" value={safetySummary.franksAction} tone={safetySummary.franksAction !== 'Nein' ? 'warn' : 'good'} />
       <Metric label="Auto-Trading" value={operatorState.masterStatus.no_auto_trading ? 'aus' : 'an'} tone={operatorState.masterStatus.no_auto_trading ? 'good' : 'danger'} />
       <Metric label="Menschliche Prüfung" value={operatorState.masterStatus.human_review_required ? 'erforderlich' : 'frei'} tone={operatorState.masterStatus.human_review_required ? 'warn' : 'good'} />
       <Metric label="Broker-Orders" value={operatorState.masterStatus.broker_orders_enabled ? 'an' : 'aus'} tone={operatorState.masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
@@ -2515,12 +2589,15 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
     items: [],
   };
   const items = Array.isArray(review.items) ? review.items : [];
+  const openReviews = Number(review.pending_reviews || 0);
   const [actionBusyId, setActionBusyId] = useState('');
   const [pendingReviewAction, setPendingReviewAction] = useState(null);
   const [reviewNotesById, setReviewNotesById] = useState({});
   const [reviewFeedbackById, setReviewFeedbackById] = useState({});
   const [resolvedReviewIds, setResolvedReviewIds] = useState([]);
-  const visibleItems = items.filter((item) => item.status === 'pending' && !resolvedReviewIds.includes(item.review_id));
+  const visibleItems = openReviews > 0
+    ? items.filter((item) => item.status === 'pending' && !resolvedReviewIds.includes(item.review_id))
+    : [];
 
   const openReviewAction = (actionKey, item) => {
     const action = REVIEW_ACTIONS[actionKey];
@@ -2630,8 +2707,8 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
           <h2>Prüfzentrum</h2>
         </div>
         <div className="control-view-badges">
-          <StatusPill tone={review.pending_reviews ? 'warn' : 'good'}>
-            {formatNumber(review.pending_reviews)} offen
+          <StatusPill tone={openReviews ? 'warn' : 'good'}>
+            {formatNumber(openReviews)} offen
           </StatusPill>
           <StatusPill tone="info">{formatNumber(review.approved_reviews)} freigegeben</StatusPill>
           <StatusPill tone={sourceTone(operatorState.dataSource)}>
@@ -2795,7 +2872,7 @@ function KnowledgeTrustView({ operatorState }) {
         <Metric label="Validierungsabdeckung" value={scorePercent(masterStatus.validation_coverage)} tone="info" />
         <Metric label="Widersprüche" value={formatNumber(masterStatus.contradiction_count)} tone={masterStatus.contradiction_count ? 'danger' : 'good'} />
         <Metric label="Menschlich geprüft" value={formatNumber(masterStatus.human_reviewed_items)} tone={masterStatus.human_reviewed_items ? 'good' : 'warn'} />
-        <Metric label="Offene Prüfungen" value={formatNumber(masterStatus.pending_reviews)} tone={masterStatus.pending_reviews ? 'warn' : 'good'} />
+        <Metric label="Offene Prüfungen" value={formatNumber(operatorState.humanReview?.pending_reviews || 0)} tone={operatorState.humanReview?.pending_reviews ? 'warn' : 'good'} />
         <Metric label="Ø Vertrauen" value={scorePercent(masterStatus.average_trust_score)} tone="info" />
       </div>
 
@@ -3043,7 +3120,10 @@ function DetailOverlay({ moduleId, modules, operatorState, onRefresh, onClose })
         <div className="cockpit-detail-grid">
           {moduleId === 'open_supervisor' ? (
             <>
-              <Metric label="Status" value={operatorState.supervisor.status} tone={module.tone} />
+              <Metric label="Status" value={translateOperatorCode(operatorState.supervisor.status).title} tone={module.tone} />
+              <Metric label="Bedeutung" value={translateOperatorCode(operatorState.supervisor.status).meaning} tone="info" />
+              <Metric label="Hermes arbeitet an" value={translateOperatorCode(operatorState.supervisor.status).whatHermesDoes} tone="info" />
+              <Metric label="Aktion für Frank" value={translateOperatorCode(operatorState.supervisor.status).franksAction} tone={translateOperatorCode(operatorState.supervisor.status).franksAction !== 'Nein' ? 'warn' : 'good'} />
               <Metric label="Heartbeat" value={shortDateTime(operatorState.supervisor.heartbeat_utc)} />
               <Metric label="Laufzeit" value={`${formatNumber(operatorState.supervisor.uptime_minutes)} min`} />
               <Metric label="Aktueller Job" value={operatorState.supervisor.current_job} />
@@ -3061,7 +3141,10 @@ function DetailOverlay({ moduleId, modules, operatorState, onRefresh, onClose })
 
           {moduleId === 'open_nightly' ? (
             <>
-              <Metric label="Status" value={operatorState.nightly.current_state} tone={module.tone} />
+              <Metric label="Status" value={translateOperatorCode(operatorState.nightly.current_state).title} tone={module.tone} />
+              <Metric label="Bedeutung" value={translateOperatorCode(operatorState.nightly.current_state).meaning} tone="info" />
+              <Metric label="Hermes arbeitet an" value={translateOperatorCode(operatorState.nightly.current_state).whatHermesDoes} tone="info" />
+              <Metric label="Aktion für Frank" value={translateOperatorCode(operatorState.nightly.current_state).franksAction} tone={translateOperatorCode(operatorState.nightly.current_state).franksAction !== 'Nein' ? 'warn' : 'good'} />
               <Metric label="Fenster" value={operatorState.nightly.next_nightly_window} />
               <Metric label="Nächster Start" value={shortDateTime(operatorState.nightly.next_scheduled_start_utc)} />
               <Metric label="Iterationen" value={formatNumber(operatorState.nightly.iterations_completed)} />
@@ -3079,8 +3162,10 @@ function DetailOverlay({ moduleId, modules, operatorState, onRefresh, onClose })
 
           {moduleId === 'open_storage' ? (
             <>
-              <Metric label="Root" value={operatorState.storage.root} />
-              <Metric label="Status" value={operatorState.storage.status} tone="good" />
+              <Metric label="Status" value={translateOperatorCode(operatorState.storage.cleanup_candidate_count ? 'storage_cleanup_candidates' : operatorState.storage.status).title} tone={module.tone} />
+              <Metric label="Bedeutung" value={translateOperatorCode(operatorState.storage.cleanup_candidate_count ? 'storage_cleanup_candidates' : operatorState.storage.status).meaning} tone="info" />
+              <Metric label="Hermes arbeitet an" value={translateOperatorCode(operatorState.storage.cleanup_candidate_count ? 'storage_cleanup_candidates' : operatorState.storage.status).whatHermesDoes} tone="info" />
+              <Metric label="Aktion für Frank" value={translateOperatorCode(operatorState.storage.cleanup_candidate_count ? 'storage_cleanup_candidates' : operatorState.storage.status).franksAction} tone={translateOperatorCode(operatorState.storage.cleanup_candidate_count ? 'storage_cleanup_candidates' : operatorState.storage.status).franksAction !== 'Nein' ? 'warn' : 'good'} />
               <Metric label="Freier Speicher" value={formatGb(operatorState.storage.free_disk_gb)} tone="good" />
               <Metric label="Cleanup-Kandidaten" value={formatNumber(operatorState.storage.cleanup_candidate_count)} tone="warn" />
             </>
@@ -3091,7 +3176,7 @@ function DetailOverlay({ moduleId, modules, operatorState, onRefresh, onClose })
               <Metric label="CPU" value={`${Math.round(operatorState.resource.cpu_usage_percent)}%`} />
               <Metric label="RAM" value={`${Math.round(operatorState.resource.memory_usage_percent)}%`} />
               <Metric label="Disk frei" value={formatGb(operatorState.resource.free_disk_gb)} tone="good" />
-              <Metric label="Aktion" value={operatorState.resource.action} tone={module.tone} />
+              <Metric label="Aktion" value={translateOperatorCode(operatorState.resource.action || 'continue').title} tone={module.tone} />
             </>
           ) : null}
 
@@ -3109,7 +3194,12 @@ function DetailOverlay({ moduleId, modules, operatorState, onRefresh, onClose })
           )) : null}
 
           {moduleId === 'open_logs' && warnings.length === 0 ? (
-            <Metric label="Status" value="Keine Warnungen gemeldet" tone="good" />
+            <>
+              <Metric label="Status" value="Keine Warnungen gemeldet" tone="good" />
+              <Metric label="Bedeutung" value="Das System läuft ohne neue Warnungen." tone="good" />
+              <Metric label="Hermes arbeitet an" value="Keine aktive Störungsbearbeitung erforderlich." tone="good" />
+              <Metric label="Aktion für Frank" value="Nein" tone="good" />
+            </>
           ) : null}
         </div>
 
