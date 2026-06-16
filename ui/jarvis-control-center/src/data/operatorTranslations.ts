@@ -159,6 +159,14 @@ const OPERATOR_TRANSLATIONS = {
     whatHermesDoes: 'sammelt Evidenz',
     franksAction: 'Nein',
   },
+  evidence_task_execution: {
+    title: 'Evidenzaufgaben werden ausgeführt',
+    meaning: 'Hermes arbeitet geplante Evidenz- und Validierungsaufgaben kontrolliert ab.',
+    action: 'Keine Aktion für Frank. Hermes führt sichere Folgeaufgaben selbst aus.',
+    severity: 'good',
+    whatHermesDoes: 'arbeitet geplante Evidenzaufgaben ab',
+    franksAction: 'Nein',
+  },
   evidence_auto_loop: {
     title: 'Evidenz-Auto-Loop',
     meaning: 'Hermes plant sichere Folgearbeiten für Reviews mit fehlender Evidenz.',

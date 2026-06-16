@@ -2509,6 +2509,7 @@ function DashboardLearningSummary({ operatorState }) {
   const improvementPolicy = reportByKey(operatorState, 'workAreaExecutorPolicy')?.raw || {};
   const reviewPrioritization = reportByKey(operatorState, 'reviewPrioritizationAudit')?.raw || {};
   const evidenceAutoLoop = reportByKey(operatorState, 'evidenceAutoLoop')?.raw || {};
+  const evidenceTaskExecution = reportByKey(operatorState, 'evidenceTaskExecution')?.raw || {};
   const nightly = reportByKey(operatorState, 'nightlyWorkAreaStatus')?.raw || {};
   const execution = reportByKey(operatorState, 'autonomousImprovementExecution')?.raw || {};
   const trustPlan = reportByKey(operatorState, 'knowledgeTrustImprovementPlan')?.raw || {};
@@ -2561,14 +2562,13 @@ function DashboardLearningSummary({ operatorState }) {
         value={evidenceAutoLoop.review_count ? `${formatNumber(evidenceAutoLoop.planned_tasks || 0)} Tasks geplant` : 'bereit'}
         tone={evidenceAutoLoop.planned_tasks ? 'info' : 'good'}
       />
+      <Metric label="Evidenzaufgaben ausgeführt" value={formatNumber(evidenceTaskExecution.tasks_executed || 0)} tone={evidenceTaskExecution.tasks_executed ? 'good' : 'info'} />
+      <Metric label="Verbleibende Aufgaben" value={formatNumber(Math.max(0, (evidenceTaskExecution.tasks_found || 0) - (evidenceTaskExecution.tasks_executed || 0) - (evidenceTaskExecution.tasks_skipped || 0)))} tone="info" />
+      <Metric label="Letzte Ausführung" value={shortDateTime(evidenceTaskExecution.updated_at_utc || evidenceTaskExecution.updatedAtUtc)} tone="info" />
+      <Metric label="Nächste Ausführung" value={shortDateTime(evidenceAutoLoopStatus.nextRun) || evidenceAutoLoopStatus.nextRun} tone="info" />
       <Metric
         label="Letzter Lauf"
         value={shortDateTime(evidenceAutoLoop.last_run_utc || evidenceAutoLoop.lastRunUtc)}
-        tone="info"
-      />
-      <Metric
-        label="Nächster Lauf"
-        value={shortDateTime(evidenceAutoLoopStatus.nextRun) || evidenceAutoLoopStatus.nextRun}
         tone="info"
       />
       <Metric

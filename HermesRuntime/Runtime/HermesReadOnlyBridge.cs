@@ -34,6 +34,8 @@ public sealed class HermesReadOnlyBridge
         new("workAreaExecutorPolicy", "Work Area Executor Policy", "/reports/work-area-executor-policy", "reports/autonomous_improvement_queue/work_area_executor_policy.json"),
         new("nightlyWorkAreaStatus", "Nightly Work Area Status", "/reports/nightly-work-area-status", "reports/autonomous_improvement_queue/nightly_work_area_status.json"),
         new("evidenceAutoLoop", "Evidence Auto Loop", "/reports/evidence-auto-loop", "reports/evidence_auto_loop/evidence_auto_loop.json"),
+        new("evidenceTaskExecution", "Evidence Task Execution", "/reports/evidence-task-execution", "reports/evidence_task_execution/evidence_task_execution.json"),
+        new("evidenceImpactAnalysis", "Evidence Impact Analysis", "/reports/evidence-impact-analysis", "reports/evidence_impact_analysis/evidence_impact_analysis.json"),
         new("autonomousImprovementExecution", "Autonomous Improvement Execution", "/reports/autonomous-improvement-execution", "reports/autonomous_improvement_execution/autonomous_improvement_execution.json"),
         new("trustedKnowledgeReviewGate", "Trusted Knowledge Review Gate", "/reports/trusted-knowledge-review-gate", "reports/trusted_knowledge_review_gate/trusted_knowledge_review_gate.json"),
         new("knowledgeTrustImprovementPlan", "Knowledge Trust Improvement Plan", "/reports/knowledge-trust-improvement-plan", "reports/knowledge_trust_improvement_plan/knowledge_trust_improvement_plan.json"),
@@ -660,7 +662,7 @@ public sealed class HermesReadOnlyBridge
             HumanReviewRequired: true,
             Reports: Reports.Select(report =>
             {
-                var path = GetWhitelistedPath(report.RelativePath);
+                var path = ResolveReadablePath(report.RelativePath);
                 var info = File.Exists(path) ? new FileInfo(path) : null;
 
                 return new ReportIndexItem(
@@ -675,7 +677,7 @@ public sealed class HermesReadOnlyBridge
 
     private ReportReadResult TryReadReport(ReportDefinition report)
     {
-        var path = GetWhitelistedPath(report.RelativePath);
+        var path = ResolveReadablePath(report.RelativePath);
         if (!File.Exists(path))
         {
             return new ReportReadResult(
@@ -719,6 +721,18 @@ public sealed class HermesReadOnlyBridge
         }
 
         return fullPath;
+    }
+
+    private string ResolveReadablePath(string relativePath)
+    {
+        var primary = GetWhitelistedPath(relativePath);
+        if (File.Exists(primary))
+        {
+            return primary;
+        }
+
+        var fallback = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", ".codex_artifacts", relativePath));
+        return File.Exists(fallback) ? fallback : primary;
     }
 
     private static void Sanitize(JsonNode? node)

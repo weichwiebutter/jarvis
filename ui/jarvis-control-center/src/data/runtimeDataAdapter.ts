@@ -1559,6 +1559,34 @@ function reportFixtureRaw(key) {
         no_auto_trading: true,
         human_review_required: true,
       };
+    case 'evidenceTaskExecution':
+      return {
+        report_version: 'evidence_task_execution_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        tasks_found: 72,
+        tasks_executed: 72,
+        tasks_skipped: 0,
+        unsupported_tasks: 0,
+        evidence_collected: 28,
+        validation_tasks_executed: 44,
+        needs_more_evidence_before: 20,
+        needs_more_evidence_after: 12,
+        pending_reviews_before: 0,
+        pending_reviews_after: 8,
+        updated_knowledge_items: 8,
+        updated_reviews: 8,
+        frank_action_required: true,
+        source_report_path: '/reports/evidence_auto_loop/evidence_auto_loop.json',
+        queue_path: '/reports/evidence_auto_loop/evidence_auto_loop.json',
+        report_path: '/reports/evidence_task_execution/evidence_task_execution.json',
+        markdown_path: '/reports/evidence_task_execution/evidence_task_execution.md',
+        next_action: 'Hermes hat 72 Evidenzaufgaben ausgeführt.',
+        warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'validationQueueRefill':
       return {
         report_version: 'validation_queue_refill_v1',

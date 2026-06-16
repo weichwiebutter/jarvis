@@ -119,6 +119,7 @@ internal sealed class HermesCli
             "review-prioritization-audit" => ShowReviewPrioritizationAudit(),
             "review-decision-assistant" => ShowReviewDecisionAssistant(),
             "evidence-auto-loop" => RunEvidenceAutoLoop(),
+            "run-evidence-tasks" => RunEvidenceTasks(),
             "review-item" => ShowReviewItem(),
             "approve-review" => DecideReview("approved"),
             "reject-review" => DecideReview("rejected"),
@@ -151,6 +152,8 @@ internal sealed class HermesCli
             "evidence-auto-loop-status" => ShowEvidenceAutoLoopStatus(),
             "evidence-auto-loop-enable" => SetEvidenceAutoLoopEnabled(true),
             "evidence-auto-loop-disable" => SetEvidenceAutoLoopEnabled(false),
+            "evidence-task-execution" => ShowEvidenceTaskExecution(),
+            "evidence-impact-analysis" => ShowEvidenceImpactAnalysis(),
             "execute-improvement-queue" => ExecuteImprovementQueue(),
             "improvement-execution-status" => ShowImprovementExecutionStatus(),
             "explain-validation" => ExplainValidation(),
@@ -381,6 +384,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes evidence-auto-loop-status Evidenz-Auto-Loop Status anzeigen");
         Console.WriteLine("  hermes evidence-auto-loop-enable Evidenz-Auto-Loop aktivieren");
         Console.WriteLine("  hermes evidence-auto-loop-disable Evidenz-Auto-Loop deaktivieren");
+        Console.WriteLine("  hermes run-evidence-tasks Evidence-/Validierungsaufgaben sicher ausfuehren");
+        Console.WriteLine("  hermes evidence-task-execution Evidence Task Execution Report anzeigen");
+        Console.WriteLine("  hermes evidence-impact-analysis Evidence Impact Analysis anzeigen");
         Console.WriteLine("  hermes review-item --id <REVIEW_ID> einzelnes Review Item anzeigen");
         Console.WriteLine("  hermes approve-review --id <REVIEW_ID> --note \"...\" Review approven");
         Console.WriteLine("  hermes reject-review --id <REVIEW_ID> --note \"...\" Review ablehnen");
@@ -6353,6 +6359,34 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunEvidenceTasks()
+    {
+        WriteHeader("Hermes Evidence Task Execution");
+        var service = new EvidenceTaskExecutionService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Quelle", DisplayPath(report.SourceReportPath));
+        WriteField("Queue", DisplayPath(report.QueuePath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Tasks gefunden", report.TasksFound.ToString());
+        WriteField("Tasks ausgeführt", report.TasksExecuted.ToString());
+        WriteField("Tasks übersprungen", report.TasksSkipped.ToString());
+        WriteField("Unbekannte Tasks", report.UnsupportedTasks.ToString());
+        WriteField("Neue Evidenz", report.EvidenceCollected.ToString());
+        WriteField("Validation Tasks", report.ValidationTasksExecuted.ToString());
+        WriteField("Needs More Evidence vorher", report.NeedsMoreEvidenceBefore.ToString());
+        WriteField("Needs More Evidence nachher", report.NeedsMoreEvidenceAfter.ToString());
+        WriteField("Pending Reviews vorher", report.PendingReviewsBefore.ToString());
+        WriteField("Pending Reviews nachher", report.PendingReviewsAfter.ToString());
+        WriteField("Frank nötig", report.FrankActionRequired ? "ja" : "nein");
+        WriteField("Nächste Aktion", report.FrankActionRequired ? "Frank muss entscheiden." : "Hermes sammelt weitere Evidenz.");
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowEvidenceAutoLoopStatus()
     {
         WriteHeader("Hermes Evidence Auto Loop Status");
@@ -6387,6 +6421,77 @@ internal sealed class HermesCli
         WriteField("Frank nötig", (report?.FrankRequired ?? 0) > 0 ? "ja" : "nein");
         WriteField("Aktueller Modus", report?.NextAction ?? (runtimeState.Enabled ? "Hermes plant weitere Evidenzläufe." : "Evidenz Auto-Loop pausiert."));
         WriteMessages("Warnings", report?.Warnings ?? []);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+
+    private int ShowEvidenceImpactAnalysis()
+    {
+        var storagePaths = BuildStoragePaths();
+        var service = new EvidenceImpactAnalysisService(storagePaths);
+        var report = service.Run();
+
+        WriteHeader("Evidence Impact Analysis");
+        WriteField("Reviews", report.ReviewCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        WriteField("High Priority", report.HighPriorityCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        WriteField("Unchanged Recommendations", report.UnchangedRecommendations.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        WriteField("Changed Recommendations", report.ChangedRecommendations.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        WriteField("Freigabe empfohlen", report.RecommendedApprove.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        WriteField("Mehr Evidenz empfohlen", report.RecommendedMoreEvidence.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        WriteField("Ablehnung empfohlen", report.RecommendedReject.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        WriteField("Operator Summary", report.OperatorSummary);
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Before Report", DisplayPath(report.BeforeReportPath));
+        WriteField("After Report", DisplayPath(report.AfterReportPath));
+        WriteField("Evidence Task Execution", DisplayPath(report.EvidenceTaskExecutionPath));
+        Console.WriteLine();
+        Console.WriteLine("Blocker");
+        foreach (var item in report.BlockingMetricCounts.OrderByDescending(entry => entry.Value).ThenBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            WriteField(item.Key, item.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        Console.WriteLine();
+        Console.WriteLine("Reviews");
+        foreach (var item in report.Reviews.Take(20))
+        {
+            Console.WriteLine($"- {item.Title} ({item.Domain}, {item.RecommendationAfter})");
+            Console.WriteLine($"  Vorher: trust={item.TrustBefore:0.####}, quality={item.QualityBefore:0.####}, validation={item.ValidationBefore:0.####}, evidence={item.EvidenceScoreBefore:0.####}, recommendation={item.RecommendationBefore}");
+            Console.WriteLine($"  Nachher: trust={item.TrustAfter:0.####}, quality={item.QualityAfter:0.####}, validation={item.ValidationAfter:0.####}, evidence={item.EvidenceScoreAfter:0.####}, recommendation={item.RecommendationAfter}");
+            Console.WriteLine($"  Blocker: {item.BlockingMetric}");
+            Console.WriteLine($"  Fehlt für Freigabe: {item.MissingForApprove}");
+            Console.WriteLine($"  Fehlt für mehr Evidenz: {item.MissingForMoreEvidence}");
+            Console.WriteLine($"  Fehlt für Ablehnung: {item.MissingForReject}");
+            Console.WriteLine($"  Hinweise: {string.Join(", ", item.BlockingReasons)}");
+        }
+
+        return 0;
+    }
+
+    private int ShowEvidenceTaskExecution()
+    {
+        WriteHeader("Hermes Evidence Task Execution");
+        var service = new EvidenceTaskExecutionService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Quelle", DisplayPath(report.SourceReportPath));
+        WriteField("Queue", DisplayPath(report.QueuePath));
+        WriteField("Tasks gefunden", report.TasksFound.ToString());
+        WriteField("Tasks ausgeführt", report.TasksExecuted.ToString());
+        WriteField("Tasks übersprungen", report.TasksSkipped.ToString());
+        WriteField("Unbekannte Tasks", report.UnsupportedTasks.ToString());
+        WriteField("Neue Evidenz", report.EvidenceCollected.ToString());
+        WriteField("Validation Tasks", report.ValidationTasksExecuted.ToString());
+        WriteField("Needs More Evidence vorher", report.NeedsMoreEvidenceBefore.ToString());
+        WriteField("Needs More Evidence nachher", report.NeedsMoreEvidenceAfter.ToString());
+        WriteField("Pending Reviews vorher", report.PendingReviewsBefore.ToString());
+        WriteField("Pending Reviews nachher", report.PendingReviewsAfter.ToString());
+        WriteField("Frank nötig", report.FrankActionRequired ? "ja" : "nein");
+        WriteField("Nächste Aktion", report.FrankActionRequired ? "Frank muss entscheiden." : "Hermes sammelt weitere Evidenz.");
+        WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -6773,7 +6878,7 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Work Area Policy");
         var service = new WorkAreaExecutorPolicyService(BuildStoragePaths(), Path.Combine(_runtimeRoot, "config", "work_area_executor_policy.json"));
-        var report = service.Load() ?? service.Run();
+        var report = service.Run();
 
         WriteField("Report", DisplayPath(service.ReportPath));
         WriteField("Markdown", DisplayPath(service.MarkdownPath));
@@ -6815,7 +6920,7 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Nightly Work Area Status");
         var service = new NightlyWorkAreaRunnerService(BuildStoragePaths(), Path.Combine(_runtimeRoot, "config", "work_area_executor_policy.json"));
-        var report = service.Load() ?? service.Run();
+        var report = service.Run();
 
         WriteField("Report", DisplayPath(service.ReportPath));
         WriteField("Markdown", DisplayPath(service.MarkdownPath));
@@ -12138,7 +12243,7 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Trusted Knowledge Review Gate");
         var service = new TrustedKnowledgeReviewGateService(BuildStoragePaths());
-        var report = service.Load() ?? service.Run();
+        var report = service.Run();
 
         WriteTrustedReviewGate(report, service);
         Console.WriteLine();
@@ -12162,7 +12267,7 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Knowledge Trust Improvement Plan");
         var service = new KnowledgeTrustImprovementPlannerService(BuildStoragePaths());
-        var report = service.Load() ?? service.Run();
+        var report = service.Run();
 
         WriteTrustImprovementPlan(report, service);
         Console.WriteLine();
