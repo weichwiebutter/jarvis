@@ -10,6 +10,20 @@ public sealed record ScheduleConfig(
 {
     public string TimeZone { get; init; } = "Europe/Berlin";
 
+    public bool EvidenceAutoLoopEnabled { get; init; } = false;
+
+    public string EvidenceAutoLoopWindow { get; init; } = "learning_window_or_nightly";
+
+    public int EvidenceAutoLoopMaxTasksPerRun { get; init; } = 72;
+
+    public bool EvidenceAutoLoopPrioritizeTrading { get; init; } = true;
+
+    public bool EvidenceAutoLoopRunOnlyInLearningWindow { get; init; } = false;
+
+    public DateTimeOffset? EvidenceAutoLoopLastRunUtc { get; init; }
+
+    public DateTimeOffset? EvidenceAutoLoopNextRunUtc { get; init; }
+
     public SchedulerWindowConfig WorkWindow { get; init; } = new("08:00", "18:00", true);
 
     public SchedulerWindowConfig NightlyWindow { get; init; } = new("23:00", "05:00", true);
@@ -81,6 +95,22 @@ public sealed record ScheduleConfig(
                 WindowEnd: "05:00",
                 MaxRuntimeMinutes: 30,
                 SleepSeconds: 60),
+            new(
+                JobId: "evidence_auto_loop",
+                JobType: "evidence_auto_loop",
+                Enabled: false,
+                ScheduleType: "window",
+                Command: "evidence-auto-loop",
+                WindowStart: "05:30",
+                WindowEnd: "06:30",
+                MaxRuntimeMinutes: 30,
+                SleepSeconds: 60,
+                Parameters: new Dictionary<string, string>
+                {
+                    ["max_tasks_per_run"] = "72",
+                    ["prioritize_trading"] = "true",
+                    ["run_only_in_learning_window"] = "false"
+                }),
             new(
                 JobId: "storage_hygiene",
                 JobType: "storage_hygiene",
@@ -303,6 +333,26 @@ public sealed record ScheduleConfig(
             LearningWindow = update.LearningWindow ?? LearningWindow,
             HumanReviewWindow = update.HumanReviewWindow ?? HumanReviewWindow,
             ActiveWeekdays = activeWeekdays.Count > 0 ? activeWeekdays : ActiveWeekdays
+        };
+    }
+
+    public ScheduleConfig WithEvidenceAutoLoopEnabled(bool enabled)
+    {
+        return this with
+        {
+            EvidenceAutoLoopEnabled = enabled,
+            Jobs = Jobs.Select(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase)
+                ? job with { Enabled = enabled }
+                : job).ToList()
+        };
+    }
+
+    public ScheduleConfig WithEvidenceAutoLoopRunState(DateTimeOffset? lastRunUtc, DateTimeOffset? nextRunUtc)
+    {
+        return this with
+        {
+            EvidenceAutoLoopLastRunUtc = lastRunUtc,
+            EvidenceAutoLoopNextRunUtc = nextRunUtc
         };
     }
 

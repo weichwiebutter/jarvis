@@ -2214,6 +2214,10 @@ function DashboardSignalPackage({ operatorState }) {
 
 function DashboardTimeControl({ operatorState, onRefresh }) {
   const timeControl = operatorState.timeControl || {};
+  const evidenceAutoLoop = reportByKey(operatorState, 'evidenceAutoLoop')?.raw || {};
+  const evidenceAutoLoopConfigured = Boolean(evidenceAutoLoop.scheduler_configured ?? evidenceAutoLoop.schedulerConfigured);
+  const evidenceAutoLoopEnabled = Boolean(evidenceAutoLoop.scheduler_enabled ?? evidenceAutoLoop.schedulerEnabled);
+  const evidenceAutoLoopActive = evidenceAutoLoopEnabled && Boolean(timeControl.learning_window?.active_now ?? timeControl.learningWindow?.active_now ?? timeControl.learning_window?.activeNow ?? timeControl.learningWindow?.activeNow ?? timeControl.nightly_window?.active_now ?? timeControl.nightlyWindow?.active_now ?? timeControl.nightly_window?.activeNow ?? timeControl.nightlyWindow?.activeNow);
   const [draft, setDraft] = useState(() => createTimeControlDraft(timeControl));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -2272,6 +2276,12 @@ function DashboardTimeControl({ operatorState, onRefresh }) {
         <Metric label="Nightly" value={`${draft.nightlyStart} - ${draft.nightlyEnd}`} tone="info" />
         <Metric label="Lernfenster" value={`${draft.learningStart} - ${draft.learningEnd}`} tone="info" />
         <Metric label="Human-Review" value={`${draft.reviewStart} - ${draft.reviewEnd}`} tone="info" />
+        <Metric label="Evidenz Auto-Loop" value={evidenceAutoLoopActive ? 'aktiviert' : evidenceAutoLoopConfigured ? 'konfiguriert, aber pausiert' : 'deaktiviert'} tone={evidenceAutoLoopActive ? 'good' : evidenceAutoLoopConfigured ? 'info' : 'warn'} />
+        <Metric label="Auto-Loop Modus" value={!evidenceAutoLoopConfigured ? 'pausiert' : evidenceAutoLoopActive ? 'läuft' : 'geplant'} tone={!evidenceAutoLoopConfigured ? 'warn' : evidenceAutoLoopActive ? 'good' : 'info'} />
+        <Metric label="Geplante Tasks" value={formatNumber(evidenceAutoLoop.planned_tasks || 0)} tone={evidenceAutoLoop.planned_tasks ? 'info' : 'good'} />
+        <Metric label="Frank nötig" value={(evidenceAutoLoop.frank_required ?? evidenceAutoLoop.frankRequired ?? 0) > 0 ? 'ja' : 'nein'} tone={(evidenceAutoLoop.frank_required ?? evidenceAutoLoop.frankRequired ?? 0) > 0 ? 'warn' : 'good'} />
+        <Metric label="Letzter Lauf" value={shortDateTime(evidenceAutoLoop.last_run_utc || evidenceAutoLoop.lastRunUtc)} tone="info" />
+        <Metric label="Nächster Lauf" value={shortDateTime(evidenceAutoLoop.next_run_utc || evidenceAutoLoop.nextRunUtc) || evidenceAutoLoop.next_run_hint || 'bereit'} tone="info" />
       </div>
 
       <div className="time-control-help">
@@ -2474,6 +2484,11 @@ function DashboardLearningSummary({ operatorState }) {
   const nightly = reportByKey(operatorState, 'nightlyWorkAreaStatus')?.raw || {};
   const execution = reportByKey(operatorState, 'autonomousImprovementExecution')?.raw || {};
   const trustPlan = reportByKey(operatorState, 'knowledgeTrustImprovementPlan')?.raw || {};
+  const evidenceAutoLoopEnabled = Boolean(evidenceAutoLoop.scheduler_enabled ?? evidenceAutoLoop.schedulerEnabled);
+  const evidenceAutoLoopConfigured = Boolean(evidenceAutoLoop.scheduler_configured ?? evidenceAutoLoop.schedulerConfigured);
+  const evidenceAutoLoopMode = evidenceAutoLoopEnabled
+    ? (evidenceAutoLoop.next_run_utc || evidenceAutoLoop.nextRunUtc ? 'läuft' : 'geplant')
+    : 'pausiert';
   const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
   const openReviews = Number(operatorState.humanReview?.pending_reviews || 0);
   const needsMoreEvidence = Number(operatorState.humanReview?.needs_more_evidence_reviews || 0);
@@ -2507,7 +2522,36 @@ function DashboardLearningSummary({ operatorState }) {
       <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
       <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
       <Metric label="Selbstverbesserung" value={`${formatNumber(improvementPolicy.active_areas || improvement.active_improvements || 0)} Bereiche`} tone={improvementPolicy.active_areas || improvement.active_improvements ? 'good' : 'info'} />
-      <Metric label="Evidenz Auto-Loop" value={evidenceAutoLoop.review_count ? `${formatNumber(evidenceAutoLoop.more_evidence_reviews || 0)} Reviews geplant` : 'bereit'} tone={evidenceAutoLoop.more_evidence_reviews ? 'warn' : 'info'} />
+      <Metric
+        label="Evidenz Auto-Loop"
+        value={evidenceAutoLoopEnabled ? 'aktiviert' : (evidenceAutoLoopConfigured ? 'konfiguriert, aber pausiert' : 'deaktiviert')}
+        tone={evidenceAutoLoopEnabled ? 'good' : evidenceAutoLoopConfigured ? 'info' : 'warn'}
+      />
+      <Metric
+        label="Auto-Loop Modus"
+        value={evidenceAutoLoopMode}
+        tone={evidenceAutoLoopMode === 'läuft' ? 'good' : evidenceAutoLoopMode === 'geplant' ? 'info' : 'warn'}
+      />
+      <Metric
+        label="Auto-Loop Lauf"
+        value={evidenceAutoLoop.review_count ? `${formatNumber(evidenceAutoLoop.planned_tasks || 0)} Tasks geplant` : 'bereit'}
+        tone={evidenceAutoLoop.planned_tasks ? 'info' : 'good'}
+      />
+      <Metric
+        label="Letzter Lauf"
+        value={shortDateTime(evidenceAutoLoop.last_run_utc || evidenceAutoLoop.lastRunUtc)}
+        tone="info"
+      />
+      <Metric
+        label="Nächster Lauf"
+        value={shortDateTime(evidenceAutoLoop.next_run_utc || evidenceAutoLoop.nextRunUtc) || evidenceAutoLoop.next_run_hint || 'bereit'}
+        tone="info"
+      />
+      <Metric
+        label="Frank nötig"
+        value={(evidenceAutoLoop.frank_required ?? evidenceAutoLoop.frankRequired ?? 0) > 0 ? 'ja' : 'nein'}
+        tone={(evidenceAutoLoop.frank_required ?? evidenceAutoLoop.frankRequired ?? 0) > 0 ? 'warn' : 'good'}
+      />
       <Metric label="Prüfzentrum" value={tradingReviews ? `${formatNumber(tradingReviews)} Trading-Entscheidungen warten` : documentationReviews ? `${formatNumber(documentationReviews)} Dokumentationsprüfungen können später erfolgen` : openReviews ? `${formatNumber(openReviews)} offen` : needsMoreEvidence ? 'Hermes sammelt weitere Evidenz' : 'Keine Aktion erforderlich'} tone={tradingReviews ? 'warn' : openReviews ? 'warn' : needsMoreEvidence ? 'warn' : 'good'} />
       <Metric label="Wichtige Entscheidungen" value={formatNumber(tradingReviews)} tone={tradingReviews ? 'warn' : 'good'} />
       <Metric label="Wissensprüfungen" value={formatNumber(knowledgeReviews)} tone={knowledgeReviews ? 'warn' : 'good'} />

@@ -78,6 +78,9 @@ public sealed class EvidenceAutoLoopService
         _resolvedReportPath = reportPath;
         _resolvedMarkdownPath = markdownPath;
 
+        var scheduler = new HermesInternalScheduler(_storagePaths, Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", "config", "schedules.json"));
+        var schedulerConfig = scheduler.LoadConfig();
+        var timeControl = scheduler.GetTimeControlStatus();
         var decisionAssistantService = new ReviewDecisionAssistantService(_storagePaths);
         var decisionAssistant = decisionAssistantService.Load() ?? decisionAssistantService.Run();
         var pendingEvidenceReviews = decisionAssistant.Entries
@@ -92,6 +95,12 @@ public sealed class EvidenceAutoLoopService
         foreach (var review in pendingEvidenceReviews)
         {
             plannedTasks.AddRange(BuildTasksForReview(review));
+        }
+
+        var maxTasksPerRun = Math.Max(1, schedulerConfig.EvidenceAutoLoopMaxTasksPerRun);
+        if (plannedTasks.Count > maxTasksPerRun)
+        {
+            plannedTasks = plannedTasks.Take(maxTasksPerRun).ToList();
         }
 
         var domains = plannedTasks
@@ -109,19 +118,21 @@ public sealed class EvidenceAutoLoopService
 
         var tradingReviews = pendingEvidenceReviews.Count(review => NormalizeDomain(review.Domain) == "trading");
         var documentationReviews = pendingEvidenceReviews.Count(review => NormalizeDomain(review.Domain) == "documentation");
-        var scheduler = new HermesInternalScheduler(_storagePaths, Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", "config", "schedules.json"));
-        var timeControl = scheduler.GetTimeControlStatus();
-        var schedulerConfigured = true;
-        var schedulerEnabled = false;
+        var schedulerConfigured = schedulerConfig.Jobs.Any(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase))
+            || schedulerConfig.EvidenceAutoLoopEnabled;
+        var schedulerEnabled = schedulerConfig.EvidenceAutoLoopEnabled
+            && schedulerConfig.Jobs.Any(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase) && job.Enabled)
+            && (timeControl.LearningWindow.ActiveNow || timeControl.NightlyWindow.ActiveNow);
         var lastRunUtc = decisionAssistant.UpdatedAtUtc.ToString("O");
-        var nextRunUtc = timeControl.NightlyWindow.ActiveNow
-            ? decisionAssistant.UpdatedAtUtc.ToString("O")
-            : null;
-        var nextRunHint = tradingReviews > 0
-            ? "Trading-Themen werden zuerst validiert."
-            : documentationReviews > 0
-                ? "Dokumentationsprüfungen folgen danach."
-                : "Keine weiteren Evidenzläufe nötig.";
+        var nextRunUtc = schedulerConfig.EvidenceAutoLoopNextRunUtc?.ToString("O")
+            ?? (schedulerEnabled ? decisionAssistant.UpdatedAtUtc.ToString("O") : null);
+        var nextRunHint = !schedulerConfig.EvidenceAutoLoopEnabled
+            ? "Evidence Auto-Loop ist deaktiviert."
+            : tradingReviews > 0
+                ? "Trading-Themen werden zuerst validiert."
+                : documentationReviews > 0
+                    ? "Dokumentationsprüfungen folgen danach."
+                    : "Keine weiteren Evidenzläufe nötig.";
 
         var report = new EvidenceAutoLoopReport(
             ReportVersion: "evidence_auto_loop_v1",
@@ -137,7 +148,7 @@ public sealed class EvidenceAutoLoopService
             DomainSummaries: domains,
             PlannedTasksList: plannedTasks,
             NextAction: pendingEvidenceReviews.Count == 0 ? "Keine Aktion erforderlich." : "Hermes plant weitere Evidenzläufe.",
-            SchedulerStatus: schedulerEnabled ? "enabled" : "disabled",
+            SchedulerStatus: schedulerConfigured ? (schedulerEnabled ? "enabled" : "configured") : "disabled",
             SchedulerConfigured: schedulerConfigured,
             SchedulerEnabled: schedulerEnabled,
             LastRunUtc: lastRunUtc,
@@ -152,6 +163,13 @@ public sealed class EvidenceAutoLoopService
             MarkdownPath: MarkdownPath);
 
         WriteTextWithFallback(reportPath, markdownPath, root, report);
+        DateTimeOffset? parsedNextRun = null;
+        if (!string.IsNullOrWhiteSpace(nextRunUtc) && DateTimeOffset.TryParse(nextRunUtc, out var parsedNextRunValue))
+        {
+            parsedNextRun = parsedNextRunValue;
+        }
+
+        scheduler.UpdateEvidenceAutoLoopRunState(report.UpdatedAtUtc, parsedNextRun);
         return report;
     }
 

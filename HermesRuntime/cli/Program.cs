@@ -148,6 +148,9 @@ internal sealed class HermesCli
             "execute-work-areas" => ExecuteWorkAreas(),
             "nightly-work-area-status" => ShowNightlyWorkAreaStatus(),
             "run-nightly-work-areas" => RunNightlyWorkAreas(),
+            "evidence-auto-loop-status" => ShowEvidenceAutoLoopStatus(),
+            "evidence-auto-loop-enable" => SetEvidenceAutoLoopEnabled(true),
+            "evidence-auto-loop-disable" => SetEvidenceAutoLoopEnabled(false),
             "execute-improvement-queue" => ExecuteImprovementQueue(),
             "improvement-execution-status" => ShowImprovementExecutionStatus(),
             "explain-validation" => ExplainValidation(),
@@ -375,6 +378,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes review-prioritization-audit Reviews priorisieren und gruppieren");
         Console.WriteLine("  hermes review-decision-assistant Review-Entscheidungshilfe anzeigen");
         Console.WriteLine("  hermes evidence-auto-loop Sicheren Evidenz-Auto-Loop planen");
+        Console.WriteLine("  hermes evidence-auto-loop-status Evidenz-Auto-Loop Status anzeigen");
+        Console.WriteLine("  hermes evidence-auto-loop-enable Evidenz-Auto-Loop aktivieren");
+        Console.WriteLine("  hermes evidence-auto-loop-disable Evidenz-Auto-Loop deaktivieren");
         Console.WriteLine("  hermes review-item --id <REVIEW_ID> einzelnes Review Item anzeigen");
         Console.WriteLine("  hermes approve-review --id <REVIEW_ID> --note \"...\" Review approven");
         Console.WriteLine("  hermes reject-review --id <REVIEW_ID> --note \"...\" Review ablehnen");
@@ -2393,6 +2399,8 @@ internal sealed class HermesCli
             "execute_validation_tasks" => ExecuteValidationTasksJob(storagePaths, job),
             "validate_domain_knowledge" => ExecuteDomainKnowledgeValidationJob(storagePaths, job),
             "run_scalping_robustness_expansion" => ExecuteScalpingRobustnessExpansionJob(storagePaths),
+            "run_nightly_work_areas" => ExecuteNightlyWorkAreasJob(storagePaths, job),
+            "evidence_auto_loop" => ExecuteEvidenceAutoLoopJob(storagePaths, job),
             "market_data_refresh" => new ScheduledJobExecutionResult(
                 Status: "skipped",
                 WorkPerformed: false,
@@ -2438,7 +2446,9 @@ internal sealed class HermesCli
         || jobType.Equals("review_goals", StringComparison.OrdinalIgnoreCase)
         || jobType.Equals("evaluate_knowledge_quality", StringComparison.OrdinalIgnoreCase)
         || jobType.Equals("consolidate_memory", StringComparison.OrdinalIgnoreCase)
-        || jobType.Equals("validate_domain_knowledge", StringComparison.OrdinalIgnoreCase);
+        || jobType.Equals("validate_domain_knowledge", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("run_nightly_work_areas", StringComparison.OrdinalIgnoreCase)
+        || jobType.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase);
 
     private ScheduledJobExecutionResult ExecuteNightlyBeta3ScheduledJob(ScheduledJobDefinition job, SupervisorJobContext context)
     {
@@ -2481,6 +2491,55 @@ internal sealed class HermesCli
             Action: $"cleanup_plan candidates={plan.Candidates.Count}",
             ReportPath: hygiene.CleanupPlanPath,
             Warnings: []);
+    }
+
+    private ScheduledJobExecutionResult ExecuteEvidenceAutoLoopJob(StoragePaths storagePaths, ScheduledJobDefinition job)
+    {
+        var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var config = scheduler.LoadConfig();
+        var timeControl = scheduler.GetTimeControlStatus();
+
+        if (!config.EvidenceAutoLoopEnabled || !job.Enabled)
+        {
+            return new ScheduledJobExecutionResult(
+                Status: "skipped",
+                WorkPerformed: false,
+                Action: "evidence_auto_loop_disabled",
+                ReportPath: null,
+                Warnings: ["evidence_auto_loop_disabled"]);
+        }
+
+        var learningActive = timeControl.LearningWindow.ActiveNow;
+        var nightlyActive = timeControl.NightlyWindow.ActiveNow;
+
+        if (config.EvidenceAutoLoopRunOnlyInLearningWindow && !learningActive)
+        {
+            return new ScheduledJobExecutionResult(
+                Status: "skipped",
+                WorkPerformed: false,
+                Action: "evidence_auto_loop_waiting_for_learning_window",
+                ReportPath: null,
+                Warnings: ["evidence_auto_loop_waiting_for_learning_window"]);
+        }
+
+        if (!learningActive && !nightlyActive)
+        {
+            return new ScheduledJobExecutionResult(
+                Status: "skipped",
+                WorkPerformed: false,
+                Action: "evidence_auto_loop_waiting_for_window",
+                ReportPath: null,
+                Warnings: ["evidence_auto_loop_waiting_for_window"]);
+        }
+
+        var service = new EvidenceAutoLoopService(storagePaths);
+        var report = service.Run();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: report.PlannedTasks > 0,
+            Action: $"evidence_auto_loop planned={report.PlannedTasks}; trading={report.TradingTasks}; documentation={report.DocumentationTasks}; no_auto_trading=true; human_review_required=true",
+            ReportPath: service.ReportPath,
+            Warnings: report.Warnings);
     }
 
     private static ScheduledJobExecutionResult ExecuteResearchInsightsJob(StoragePaths storagePaths)
@@ -6294,6 +6353,61 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowEvidenceAutoLoopStatus()
+    {
+        WriteHeader("Hermes Evidence Auto Loop Status");
+
+        var storagePaths = BuildStoragePaths();
+        var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var config = scheduler.LoadConfig();
+        var service = new EvidenceAutoLoopService(storagePaths);
+        var report = service.Load();
+        var timeControl = scheduler.GetTimeControlStatus();
+        var enabled = config.EvidenceAutoLoopEnabled
+            && config.Jobs.Any(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase) && job.Enabled);
+        var active = enabled && (timeControl.LearningWindow.ActiveNow || timeControl.NightlyWindow.ActiveNow);
+        var mode = !enabled ? "pausiert" : active ? "läuft" : "geplant";
+
+        WriteField("Konfiguriert", config.Jobs.Any(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase)).ToString().ToLowerInvariant());
+        WriteField("Aktiviert", enabled.ToString().ToLowerInvariant());
+        WriteField("Modus", mode);
+        WriteField("Arbeitsfenster", config.EvidenceAutoLoopWindow);
+        WriteField("Max Tasks pro Lauf", config.EvidenceAutoLoopMaxTasksPerRun.ToString(CultureInfo.InvariantCulture));
+        WriteField("Trading priorisiert", config.EvidenceAutoLoopPrioritizeTrading.ToString().ToLowerInvariant());
+        WriteField("Nur Lernfenster", config.EvidenceAutoLoopRunOnlyInLearningWindow.ToString().ToLowerInvariant());
+        WriteField("Letzter Lauf", report?.LastRunUtc ?? config.EvidenceAutoLoopLastRunUtc?.ToString("O") ?? "-");
+        WriteField("Nächster Lauf", report?.NextRunUtc ?? config.EvidenceAutoLoopNextRunUtc?.ToString("O") ?? "-");
+        WriteField("Geplante Tasks", report?.PlannedTasks.ToString(CultureInfo.InvariantCulture) ?? "0");
+        WriteField("Frank nötig", (report?.FrankRequired ?? 0) > 0 ? "ja" : "nein");
+        WriteField("Aktueller Modus", report?.NextAction ?? (enabled ? "Hermes plant weitere Evidenzläufe." : "Evidenz Auto-Loop pausiert."));
+        WriteMessages("Warnings", report?.Warnings ?? []);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int SetEvidenceAutoLoopEnabled(bool enabled)
+    {
+        WriteHeader(enabled ? "Hermes Evidence Auto Loop Aktivieren" : "Hermes Evidence Auto Loop Deaktivieren");
+
+        var storagePaths = BuildStoragePaths();
+        var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var updated = scheduler.UpdateEvidenceAutoLoopEnabled(enabled);
+        var status = updated.BuildTimeControlStatus(DateTimeOffset.UtcNow, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+
+        WriteField("Aktiviert", updated.EvidenceAutoLoopEnabled.ToString().ToLowerInvariant());
+        WriteField("Job vorhanden", updated.Jobs.Any(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase)).ToString().ToLowerInvariant());
+        WriteField("Konfigurationsfenster", updated.EvidenceAutoLoopWindow);
+        WriteField("Max Tasks pro Lauf", updated.EvidenceAutoLoopMaxTasksPerRun.ToString(CultureInfo.InvariantCulture));
+        WriteField("Zeitsteuerung", status.StatusLabel);
+        WriteField("In Work Window", status.InWorkWindow.ToString().ToLowerInvariant());
+        WriteField("Last Run", updated.EvidenceAutoLoopLastRunUtc?.ToString("O") ?? "-");
+        WriteField("Next Run", updated.EvidenceAutoLoopNextRunUtc?.ToString("O") ?? "-");
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ConsolidateMemory()
     {
         WriteHeader("Hermes Memory Consolidation");
@@ -6727,6 +6841,31 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private ScheduledJobExecutionResult ExecuteNightlyWorkAreasJob(StoragePaths storagePaths, ScheduledJobDefinition job)
+    {
+        var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var timeControl = scheduler.GetTimeControlStatus();
+
+        if (!timeControl.NightlyWindow.ActiveNow)
+        {
+            return new ScheduledJobExecutionResult(
+                Status: "skipped",
+                WorkPerformed: false,
+                Action: "nightly_work_areas_waiting_for_nightly_window",
+                ReportPath: null,
+                Warnings: ["nightly_work_areas_waiting_for_nightly_window"]);
+        }
+
+        var service = new NightlyWorkAreaRunnerService(storagePaths, Path.Combine(_runtimeRoot, "config", "work_area_executor_policy.json"));
+        var report = service.Run();
+        return new ScheduledJobExecutionResult(
+            Status: "completed",
+            WorkPerformed: !string.Equals(report.Revalidation.Status, "skipped", StringComparison.OrdinalIgnoreCase),
+            Action: $"run_nightly_work_areas status={report.Revalidation.Status}; no_auto_trading=true; human_review_required=true",
+            ReportPath: service.ReportPath,
+            Warnings: report.Warnings);
     }
 
     private int ExecuteImprovementQueue()

@@ -34,7 +34,8 @@ public sealed class HermesInternalScheduler
         "execute_validation_tasks",
         "validate_domain_knowledge",
         "run_scalping_robustness_expansion",
-        "run_nightly_work_areas"
+        "run_nightly_work_areas",
+        "evidence_auto_loop"
     };
 
     private readonly StoragePaths _storagePaths;
@@ -62,6 +63,22 @@ public sealed class HermesInternalScheduler
     {
         var config = LoadConfig();
         var updated = config.WithTimeControl(update);
+        updated.Save(_configPath);
+        return updated;
+    }
+
+    public ScheduleConfig UpdateEvidenceAutoLoopEnabled(bool enabled)
+    {
+        var config = LoadConfig();
+        var updated = config.WithEvidenceAutoLoopEnabled(enabled);
+        updated.Save(_configPath);
+        return updated;
+    }
+
+    public ScheduleConfig UpdateEvidenceAutoLoopRunState(DateTimeOffset? lastRunUtc, DateTimeOffset? nextRunUtc)
+    {
+        var config = LoadConfig();
+        var updated = config.WithEvidenceAutoLoopRunState(lastRunUtc, nextRunUtc);
         updated.Save(_configPath);
         return updated;
     }
@@ -315,6 +332,8 @@ public sealed class HermesInternalScheduler
             "execute_validation_tasks" => job.Command.Equals("execute-validation-tasks", StringComparison.OrdinalIgnoreCase),
             "validate_domain_knowledge" => job.Command.Equals("validate-domain-knowledge", StringComparison.OrdinalIgnoreCase),
             "run_scalping_robustness_expansion" => job.Command.Equals("run-scalping-robustness-expansion", StringComparison.OrdinalIgnoreCase),
+            "run_nightly_work_areas" => job.Command.Equals("run-nightly-work-areas", StringComparison.OrdinalIgnoreCase),
+            "evidence_auto_loop" => job.Command.Equals("evidence-auto-loop", StringComparison.OrdinalIgnoreCase),
             _ => false
         };
     }

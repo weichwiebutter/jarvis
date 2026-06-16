@@ -33,6 +33,7 @@ public sealed class HermesReadOnlyBridge
         new("autonomousImprovementWorkAreas", "Autonomous Improvement Work Areas", "/reports/autonomous-improvement-work-areas", "reports/autonomous_improvement_queue/autonomous_improvement_work_areas.json"),
         new("workAreaExecutorPolicy", "Work Area Executor Policy", "/reports/work-area-executor-policy", "reports/autonomous_improvement_queue/work_area_executor_policy.json"),
         new("nightlyWorkAreaStatus", "Nightly Work Area Status", "/reports/nightly-work-area-status", "reports/autonomous_improvement_queue/nightly_work_area_status.json"),
+        new("evidenceAutoLoop", "Evidence Auto Loop", "/reports/evidence-auto-loop", "reports/evidence_auto_loop/evidence_auto_loop.json"),
         new("autonomousImprovementExecution", "Autonomous Improvement Execution", "/reports/autonomous-improvement-execution", "reports/autonomous_improvement_execution/autonomous_improvement_execution.json"),
         new("trustedKnowledgeReviewGate", "Trusted Knowledge Review Gate", "/reports/trusted-knowledge-review-gate", "reports/trusted_knowledge_review_gate/trusted_knowledge_review_gate.json"),
         new("knowledgeTrustImprovementPlan", "Knowledge Trust Improvement Plan", "/reports/knowledge-trust-improvement-plan", "reports/knowledge_trust_improvement_plan/knowledge_trust_improvement_plan.json"),
