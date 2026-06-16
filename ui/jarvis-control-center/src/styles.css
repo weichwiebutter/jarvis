@@ -1911,6 +1911,13 @@ h2 {
   font-weight: 800;
 }
 
+.review-action-row button.is-recommended {
+  color: #0b1520;
+  border-color: rgba(103, 241, 182, 0.8);
+  background: linear-gradient(135deg, rgba(103, 241, 182, 0.95), rgba(83, 200, 255, 0.9));
+  box-shadow: 0 0 0 1px rgba(103, 241, 182, 0.18), 0 0 22px rgba(83, 200, 255, 0.18);
+}
+
 .review-action-row button:disabled,
 .review-inline-actions button:disabled {
   cursor: wait;

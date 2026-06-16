@@ -1495,6 +1495,40 @@ function reportFixtureRaw(key) {
         no_auto_trading: true,
         human_review_required: true,
       };
+    case 'reviewDecisionAssistant':
+      return {
+        report_version: 'review_decision_assistant_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        review_count: 20,
+        high_priority_count: 12,
+        recommended_approve: 6,
+        recommended_more_evidence: 8,
+        recommended_reject: 6,
+        entries: [
+          {
+            review_id: 'decision_assistant_trading_1',
+            knowledge_item_id: 'liquidity_sweep',
+            title: 'Liquidity Sweep',
+            domain: 'trading',
+            priority: 'hoch',
+            trust_before: 0.6317,
+            evidence_quality: 0.5086,
+            validation_score: 0.586,
+            trading_risk: 'mittel',
+            recommendation_key: 'more_evidence',
+            recommendation_label: 'Mehr Evidenz empfohlen',
+            recommendation_reason: 'Mehr Evidenz sinnvoll. Vertrauen mittel. Evidenzqualität mittel. Validierung noch nicht stark genug. Trading-Risiko mittel.',
+            frank_action: 'Prüfzentrum: mehr Evidenz prüfen',
+            requires_human_review: true,
+          },
+        ],
+        operator_summary: '🔴 12 wichtige Entscheidungen\n🟡 8 Reviews brauchen mehr Evidenz\n🟢 6 Freigaben plausibel\n⚫ 6 Ablehnungen empfohlen\n\nFrank muss weiterhin selbst entscheiden. Hermes liefert nur die Empfehlung.',
+        warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'validationQueueRefill':
       return {
         report_version: 'validation_queue_refill_v1',
@@ -2812,6 +2846,22 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
     .length;
   const fixtureReportCount = reports.length - liveReportCount;
   const masterStatusReport = reports.find((report) => report.key === 'masterStatus');
+  const reviewDecisionAssistantReport = reports.find((report) => report.key === 'reviewDecisionAssistant');
+  const normalizedReports = reviewDecisionAssistantReport || !rawReports.reviewDecisionAssistant
+    ? reports
+    : [
+        ...reports,
+        normalizeReportEntry(
+          'reviewDecisionAssistant',
+          {
+            label: 'Review Decision Assistant',
+            path: '/reports/review_decision_assistant/review_decision_assistant.json',
+          },
+          rawReports.reviewDecisionAssistant,
+          DATA_SOURCE.FIXTURE,
+          '',
+        ),
+      ];
 
   return {
     masterStatus,
@@ -2851,7 +2901,7 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
     demoSignalFeed,
     latestDemoSignals,
     forwardTest,
-    reports,
+    reports: normalizedReports,
     logLines,
     dataSource,
     bridgeAvailable: dataSource === DATA_SOURCE.LIVE_FILE,
@@ -2975,6 +3025,8 @@ export async function loadOperatorDashboard() {
         latestDemoSignals: dashboard.latestDemoSignals,
         forwardTestStatus: dashboard.forwardTestStatus,
         knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
+        reviewPrioritizationAudit: dashboard.reviewPrioritizationAudit,
+        reviewDecisionAssistant: dashboard.reviewDecisionAssistant,
         validationQueueRefill: dashboard.validationQueueRefill,
         evidenceValidationRunner: dashboard.evidenceValidationRunner,
         autonomousImprovementQueue: dashboard.autonomousImprovementQueue,
@@ -3056,6 +3108,7 @@ export async function loadOperatorDashboard() {
   rawReports.multiAssetResearchStatus = reportFixtureRaw('multiAssetResearchStatus');
   rawReports.knowledgeValidationAudit = reportFixtureRaw('knowledgeValidationAudit');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
+  rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
   rawReports.validationQueueRefill = reportFixtureRaw('validationQueueRefill');
   rawReports.evidenceValidationRunner = reportFixtureRaw('evidenceValidationRunner');
   rawReports.autonomousImprovementQueue = reportFixtureRaw('autonomousImprovementQueue');

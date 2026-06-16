@@ -117,6 +117,7 @@ internal sealed class HermesCli
             "review-status" => ShowReviewStatus(),
             "review-queue" => ShowReviewQueue(),
             "review-prioritization-audit" => ShowReviewPrioritizationAudit(),
+            "review-decision-assistant" => ShowReviewDecisionAssistant(),
             "review-item" => ShowReviewItem(),
             "approve-review" => DecideReview("approved"),
             "reject-review" => DecideReview("rejected"),
@@ -371,6 +372,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes review-status      Human Review Evidence Status anzeigen");
         Console.WriteLine("  hermes review-queue       offene Human Review Queue anzeigen");
         Console.WriteLine("  hermes review-prioritization-audit Reviews priorisieren und gruppieren");
+        Console.WriteLine("  hermes review-decision-assistant Review-Entscheidungshilfe anzeigen");
         Console.WriteLine("  hermes review-item --id <REVIEW_ID> einzelnes Review Item anzeigen");
         Console.WriteLine("  hermes approve-review --id <REVIEW_ID> --note \"...\" Review approven");
         Console.WriteLine("  hermes reject-review --id <REVIEW_ID> --note \"...\" Review ablehnen");
@@ -6222,6 +6224,38 @@ internal sealed class HermesCli
         foreach (var group in report.DomainGroups)
         {
             WriteField(group.Domain, group.Count.ToString());
+        }
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowReviewDecisionAssistant()
+    {
+        WriteHeader("Hermes Review Decision Assistant");
+        var service = new ReviewDecisionAssistantService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Review Count", report.ReviewCount.ToString());
+        WriteField("High Priority", report.HighPriorityCount.ToString());
+        WriteField("Freigabe empfohlen", report.RecommendedApprove.ToString());
+        WriteField("Mehr Evidenz empfohlen", report.RecommendedMoreEvidence.ToString());
+        WriteField("Ablehnung empfohlen", report.RecommendedReject.ToString());
+        WriteSubHeader("Operator Summary");
+        Console.WriteLine(report.OperatorSummary);
+        WriteSubHeader("Top Candidates");
+        foreach (var entry in report.Entries.Take(10))
+        {
+            WriteField(entry.Title, $"{entry.RecommendationLabel} · {entry.Domain} · trust={entry.TrustBefore:0.####}");
+            WriteField("Domäne", entry.Domain);
+            WriteField("Priorität", entry.Priority);
+            WriteField("Ampel", entry.RecommendationLabel);
+            WriteField("Hermes Empfehlung", entry.RecommendationLabel);
+            WriteField("Warum", entry.RecommendationReason);
+            WriteField("Aktion für Frank", entry.FrankAction);
         }
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();

@@ -736,11 +736,57 @@ function reviewTrafficLight(item) {
   };
 }
 
+function reviewDecisionAssistant(item) {
+  const trust = Number(item.trust_before || 0);
+  const evidenceQuality = reviewEvidenceQuality(item);
+  const validationScore = evidenceMetric(item.evidence_summary, 'validation');
+  const risk = reviewRisk(item);
+  const criticalWarning = /contradict|widerspruch/i.test(`${item.reason || ''} ${item.evidence_summary || ''}`);
+  let recommendationKey = 'more_evidence';
+
+  if (criticalWarning || trust < 0.45 || evidenceQuality < 0.45 || validationScore < 0.45) {
+    recommendationKey = 'reject';
+  } else if (trust >= 0.70 && evidenceQuality >= 0.65 && validationScore >= 0.65) {
+    recommendationKey = 'approve';
+  } else if (trust >= 0.45 && trust < 0.70) {
+    recommendationKey = 'more_evidence';
+  } else if (validationScore < 0.65 || evidenceQuality < 0.70) {
+    recommendationKey = 'more_evidence';
+  }
+
+  const recommendation = recommendationKey === 'approve'
+    ? 'Freigabe empfohlen'
+    : recommendationKey === 'reject'
+      ? 'Ablehnung empfohlen'
+      : 'Mehr Evidenz empfohlen';
+
+  const trustText = trust >= 0.70 ? 'Vertrauen ausreichend' : trust >= 0.45 ? 'Vertrauen mittel' : 'Vertrauen zu niedrig';
+  const evidenceText = evidenceQuality >= 0.65 ? 'Evidenzqualität ausreichend' : evidenceQuality >= 0.45 ? 'Evidenzqualität mittel' : 'Evidenzqualität zu schwach';
+  const validationText = validationScore >= 0.65 ? 'Validierung vollständig genug' : 'Validierung noch nicht stark genug';
+  const riskText = risk.label === 'niedrig' ? 'Trading-Risiko niedrig' : risk.label === 'mittel' ? 'Trading-Risiko mittel' : 'Trading-Risiko hoch';
+  const tone = recommendationKey === 'approve' ? 'good' : recommendationKey === 'reject' ? 'danger' : 'warn';
+  const frankAction = recommendationKey === 'approve'
+    ? 'Freigabe im Prüfzentrum prüfen'
+    : recommendationKey === 'reject'
+      ? 'Ablehnung im Prüfzentrum prüfen'
+      : 'Mehr Evidenz im Prüfzentrum prüfen';
+
+  return {
+    recommendationKey,
+    recommendation,
+    tone,
+    reason: `${trustText}. ${evidenceText}. ${validationText}. ${riskText}.`,
+    frankAction,
+    trustText,
+    evidenceText,
+    validationText,
+    riskText,
+  };
+}
+
 function reviewClearReason(item) {
-  const trust = scorePercent(item.trust_before);
-  const evidenceQuality = scorePercent(reviewEvidenceQuality(item));
-  const risk = reviewRisk(item).label;
-  return `${reviewReasonDeutsch(item.reason)} Vertrauen ${trust}, Evidenzqualität ${evidenceQuality}, Risiko ${risk}.`;
+  const assistant = reviewDecisionAssistant(item);
+  return `${reviewReasonDeutsch(item.reason)} ${assistant.reason}`;
 }
 
 async function assertReviewEndpointAvailable(endpoint) {
@@ -2679,6 +2725,12 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
   const [reviewNotesById, setReviewNotesById] = useState({});
   const [reviewFeedbackById, setReviewFeedbackById] = useState({});
   const [resolvedReviewIds, setResolvedReviewIds] = useState([]);
+  const assistantEntries = items
+    .filter((item) => item.status === 'pending' && !resolvedReviewIds.includes(item.review_id))
+    .map((item) => reviewDecisionAssistant(item));
+  const assistantApprove = assistantEntries.filter((entry) => entry.recommendationKey === 'approve').length;
+  const assistantMoreEvidence = assistantEntries.filter((entry) => entry.recommendationKey === 'more_evidence').length;
+  const assistantReject = assistantEntries.filter((entry) => entry.recommendationKey === 'reject').length;
   const visibleItems = openReviews > 0
     ? items.filter((item) => item.status === 'pending' && !resolvedReviewIds.includes(item.review_id))
       .sort((left, right) => {
@@ -2833,6 +2885,15 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
             ? `${formatNumber(documentationPriorityCount)} Dokumentationsprüfungen können später erfolgen.`
             : 'Keine offenen Reviews mit hoher Priorität.'}
       </p>
+      <p className="control-view-note">
+        {assistantApprove
+          ? `${formatNumber(assistantApprove)} Freigaben plausibel.`
+          : assistantMoreEvidence
+            ? `${formatNumber(assistantMoreEvidence)} Reviews brauchen mehr Evidenz.`
+            : assistantReject
+              ? `${formatNumber(assistantReject)} Ablehnungen empfohlen.`
+              : 'Keine Entscheidungshilfe verfügbar.'}
+      </p>
       <div className="operator-safety-flags">
         <StatusPill tone="warn">no_auto_trading=true</StatusPill>
         <StatusPill tone="warn">human_review_required=true</StatusPill>
@@ -2842,14 +2903,20 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
       </div>
       <div className="review-grid">
         {visibleItems.slice(0, 8).map((item) => {
-          const trafficLight = reviewTrafficLight(item);
+          const assistant = reviewDecisionAssistant(item);
+          const trafficLight = assistant;
           const risk = reviewRisk(item);
           const evidenceQuality = reviewEvidenceQuality(item);
           const pendingAction = pendingReviewAction?.reviewId === item.review_id ? REVIEW_ACTIONS[pendingReviewAction.actionKey] : null;
           const feedback = reviewFeedbackById[item.review_id];
+          const recommendedActionKey = assistant.recommendationKey === 'approve'
+            ? 'approve'
+            : assistant.recommendationKey === 'reject'
+              ? 'reject'
+              : 'more';
 
           return (
-          <article className={`review-card review-operator-card ${trafficLight.className}`} key={item.review_id}>
+          <article className={`review-card review-operator-card ${assistant.tone === 'good' ? 'is-green' : assistant.tone === 'danger' ? 'is-red' : 'is-yellow'}`} key={item.review_id}>
             <div className="review-card-head">
               <div>
                 <span>{domainLabel(item.domain)}</span>
@@ -2869,9 +2936,9 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
             </div>
 
             <div className="review-cleartext">
-              <p><strong>Hermes Empfehlung:</strong> {trafficLight.label}</p>
-              <p><strong>Begründung:</strong> {reviewClearReason(item)}</p>
-              <p><strong>Hinweis:</strong> {reviewRecommendationDeutsch(item.recommendation)}</p>
+              <p><strong>Hermes Empfehlung:</strong> {assistant.recommendation}</p>
+              <p><strong>Warum Hermes das empfiehlt:</strong> {assistant.reason}</p>
+              <p><strong>Aktion für Frank:</strong> {assistant.frankAction}</p>
             </div>
 
             {feedback ? (
@@ -2885,7 +2952,7 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
               <div className="review-inline-confirmation">
                 <strong>{pendingAction.label} wirklich ausführen?</strong>
                 <p><b>Thema:</b> {item.title}</p>
-                <p><b>Hermes Empfehlung:</b> {trafficLight.label}</p>
+                <p><b>Hermes Empfehlung:</b> {assistant.recommendation}</p>
                 <p><b>Safety-Hinweis:</b> no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false</p>
                 <label className="review-inline-note">
                   <span>Notiz für Learning Feedback</span>
@@ -2897,7 +2964,12 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
                   />
                 </label>
                 <div className="review-inline-actions">
-                  <button disabled={actionBusyId === item.review_id} onClick={() => runReviewAction(pendingReviewAction.actionKey, item)} type="button">
+                  <button
+                    className={recommendedActionKey === pendingReviewAction.actionKey ? 'is-recommended' : ''}
+                    disabled={actionBusyId === item.review_id}
+                    onClick={() => runReviewAction(pendingReviewAction.actionKey, item)}
+                    type="button"
+                  >
                     {actionBusyId === item.review_id ? 'Speichere...' : 'Bestätigen'}
                   </button>
                   <button disabled={actionBusyId === item.review_id} onClick={() => cancelReviewAction(item.review_id)} type="button">
@@ -2907,9 +2979,9 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
               </div>
             ) : (
               <div className="review-action-row" aria-label="Vorbereitete Prüfaktionen">
-                <button disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('approve', item)} type="button">Freigeben</button>
-                <button disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('reject', item)} type="button">Ablehnen</button>
-                <button disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('more', item)} type="button">Mehr Evidenz</button>
+                <button className={recommendedActionKey === 'approve' ? 'is-recommended' : ''} disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('approve', item)} type="button">Freigeben</button>
+                <button className={recommendedActionKey === 'reject' ? 'is-recommended' : ''} disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('reject', item)} type="button">Ablehnen</button>
+                <button className={recommendedActionKey === 'more' ? 'is-recommended' : ''} disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('more', item)} type="button">Mehr Evidenz</button>
                 <button disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('defer', item)} type="button">Zurückstellen</button>
               </div>
             )}
