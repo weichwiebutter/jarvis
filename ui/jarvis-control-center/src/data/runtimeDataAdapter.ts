@@ -1543,10 +1543,10 @@ function reportFixtureRaw(key) {
         frank_required: 0,
         scheduler_status: 'configured',
         scheduler_configured: true,
-        scheduler_enabled: false,
+        scheduler_enabled: true,
         last_run_utc: runtimeMasterStatusMock.updated_at_utc,
-        next_run_utc: null,
-        next_run_hint: 'Hermes plant weitere Evidenzläufe im Lernfenster oder Nightly.',
+        next_run_utc: '2026-06-16T20:30:00.0000000+02:00',
+        next_run_hint: 'Nächster Lauf wird beim Scheduler-Lauf berechnet.',
         next_action: 'Hermes plant weitere Evidenzläufe.',
         domain_summaries: [
           { domain: 'trading', review_count: 12, evidence_tasks: 24, validation_tasks: 24, highest_priority: 'hoch', status: 'geplant', next_action: 'Trading-Themen werden zuerst validiert.' },

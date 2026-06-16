@@ -125,14 +125,12 @@ public sealed class EvidenceAutoLoopService
             && (timeControl.LearningWindow.ActiveNow || timeControl.NightlyWindow.ActiveNow);
         var lastRunUtc = decisionAssistant.UpdatedAtUtc.ToString("O");
         var nextRunUtc = schedulerConfig.EvidenceAutoLoopNextRunUtc?.ToString("O")
-            ?? (schedulerEnabled ? decisionAssistant.UpdatedAtUtc.ToString("O") : null);
-        var nextRunHint = !schedulerConfig.EvidenceAutoLoopEnabled
-            ? "Evidence Auto-Loop ist deaktiviert."
-            : tradingReviews > 0
-                ? "Trading-Themen werden zuerst validiert."
-                : documentationReviews > 0
-                    ? "Dokumentationsprüfungen folgen danach."
-                    : "Keine weiteren Evidenzläufe nötig.";
+            ?? (schedulerEnabled
+                ? DateTimeOffset.UtcNow.ToString("O")
+                : schedulerConfig.EvidenceAutoLoopEnabled
+                    ? CalculateNextWindowStartUtc(timeControl, schedulerConfig.EvidenceAutoLoopRunOnlyInLearningWindow)?.ToString("O")
+                    : null);
+        var nextRunHint = BuildNextRunHint(schedulerConfig.EvidenceAutoLoopEnabled, schedulerEnabled, schedulerConfig.EvidenceAutoLoopRunOnlyInLearningWindow, nextRunUtc is not null);
 
         var report = new EvidenceAutoLoopReport(
             ReportVersion: "evidence_auto_loop_v1",
@@ -171,6 +169,98 @@ public sealed class EvidenceAutoLoopService
 
         scheduler.UpdateEvidenceAutoLoopRunState(report.UpdatedAtUtc, parsedNextRun);
         return report;
+    }
+
+    public EvidenceAutoLoopState GetRuntimeState()
+    {
+        var scheduler = new HermesInternalScheduler(_storagePaths, Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", "config", "schedules.json"));
+        var config = scheduler.LoadConfig();
+        var timeControl = scheduler.GetTimeControlStatus();
+        var enabled = config.EvidenceAutoLoopEnabled
+            && config.Jobs.Any(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase) && job.Enabled);
+        var active = enabled && (timeControl.LearningWindow.ActiveNow || timeControl.NightlyWindow.ActiveNow);
+        var mode = !enabled ? "deaktiviert"
+            : active ? "läuft"
+            : "wartet auf Lernfenster";
+        var nextRunUtc = config.EvidenceAutoLoopNextRunUtc
+            ?? (enabled ? CalculateNextWindowStartUtc(timeControl, config.EvidenceAutoLoopRunOnlyInLearningWindow) : null);
+        var nextRunHint = BuildNextRunHint(config.EvidenceAutoLoopEnabled, active, config.EvidenceAutoLoopRunOnlyInLearningWindow, nextRunUtc is not null);
+
+        return new EvidenceAutoLoopState(
+            Configured: config.Jobs.Any(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase)) || config.EvidenceAutoLoopEnabled,
+            Enabled: enabled,
+            Active: active,
+            Mode: mode,
+            NextRunUtc: nextRunUtc,
+            NextRunHint: nextRunHint,
+            LastRunUtc: config.EvidenceAutoLoopLastRunUtc);
+    }
+
+    private static string BuildNextRunHint(bool enabled, bool active, bool learningOnly, bool hasNextRun)
+    {
+        if (!enabled)
+        {
+            return "Evidence Auto-Loop ist deaktiviert.";
+        }
+
+        if (active)
+        {
+            return "Aktiviert – wartet auf Ausführung oder läuft.";
+        }
+
+        if (!hasNextRun)
+        {
+            return "Nächster Lauf wird beim Scheduler-Lauf berechnet.";
+        }
+
+        return learningOnly
+            ? "Aktiviert – wartet auf Lernfenster."
+            : "Aktiviert – wartet auf Lern- oder Nightly-Fenster.";
+    }
+
+    private static DateTimeOffset? CalculateNextWindowStartUtc(ScheduleTimeControlStatus timeControl, bool learningOnly)
+    {
+        var currentLocal = timeControl.CurrentLocal;
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(timeControl.TimeZone);
+        if (TryNextWindowStart(currentLocal, timeControl.LearningWindow, zone, out var learningNext))
+        {
+            if (learningOnly)
+            {
+                return learningNext;
+            }
+
+            if (TryNextWindowStart(currentLocal, timeControl.NightlyWindow, zone, out var nightlyNext))
+            {
+                return learningNext <= nightlyNext ? learningNext : nightlyNext;
+            }
+
+            return learningNext;
+        }
+
+        return TryNextWindowStart(currentLocal, timeControl.NightlyWindow, zone, out var nightly) ? nightly : null;
+    }
+
+    private static bool TryNextWindowStart(DateTimeOffset currentLocal, SchedulerWindowStatus window, TimeZoneInfo zone, out DateTimeOffset nextStartUtc)
+    {
+        nextStartUtc = default;
+        if (!window.Enabled)
+        {
+            return false;
+        }
+
+        var start = TimeOnly.Parse(window.Start);
+        var localDate = DateOnly.FromDateTime(currentLocal.DateTime);
+        var candidate = localDate.ToDateTime(start, DateTimeKind.Unspecified);
+        var candidateOffset = new DateTimeOffset(candidate, currentLocal.Offset);
+        if (candidateOffset > currentLocal)
+        {
+            nextStartUtc = TimeZoneInfo.ConvertTimeToUtc(candidateOffset.DateTime, zone);
+            return true;
+        }
+
+        var tomorrow = localDate.AddDays(1).ToDateTime(start, DateTimeKind.Unspecified);
+        nextStartUtc = TimeZoneInfo.ConvertTimeToUtc(tomorrow, zone);
+        return true;
     }
 
     public EvidenceAutoLoopReport? Load()
@@ -345,3 +435,12 @@ public sealed class EvidenceAutoLoopService
         return string.Join(Environment.NewLine, lines);
     }
 }
+
+public sealed record EvidenceAutoLoopState(
+    bool Configured,
+    bool Enabled,
+    bool Active,
+    string Mode,
+    DateTimeOffset? NextRunUtc,
+    string NextRunHint,
+    DateTimeOffset? LastRunUtc);

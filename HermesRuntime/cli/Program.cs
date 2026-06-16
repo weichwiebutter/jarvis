@@ -6363,23 +6363,29 @@ internal sealed class HermesCli
         var service = new EvidenceAutoLoopService(storagePaths);
         var report = service.Load();
         var timeControl = scheduler.GetTimeControlStatus();
-        var enabled = config.EvidenceAutoLoopEnabled
-            && config.Jobs.Any(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase) && job.Enabled);
-        var active = enabled && (timeControl.LearningWindow.ActiveNow || timeControl.NightlyWindow.ActiveNow);
-        var mode = !enabled ? "pausiert" : active ? "läuft" : "geplant";
+        var runtimeState = service.GetRuntimeState();
+        var nextRunDisplay = report?.NextRunUtc
+            ?? runtimeState.NextRunUtc?.ToString("O")
+            ?? config.EvidenceAutoLoopNextRunUtc?.ToString("O")
+            ?? runtimeState.NextRunHint;
+        var statusLabel = runtimeState.Enabled
+            ? (runtimeState.Active ? "Aktiv – wartet auf Ausführung oder läuft" : "Aktiviert – wartet auf Lernfenster")
+            : "Deaktiviert";
+        var configured = config.Jobs.Any(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase))
+            || config.EvidenceAutoLoopEnabled;
 
-        WriteField("Konfiguriert", config.Jobs.Any(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase)).ToString().ToLowerInvariant());
-        WriteField("Aktiviert", enabled.ToString().ToLowerInvariant());
-        WriteField("Modus", mode);
+        WriteField("Konfiguriert", configured.ToString().ToLowerInvariant());
+        WriteField("Aktiviert", runtimeState.Enabled.ToString().ToLowerInvariant());
+        WriteField("Modus", statusLabel);
         WriteField("Arbeitsfenster", config.EvidenceAutoLoopWindow);
         WriteField("Max Tasks pro Lauf", config.EvidenceAutoLoopMaxTasksPerRun.ToString(CultureInfo.InvariantCulture));
         WriteField("Trading priorisiert", config.EvidenceAutoLoopPrioritizeTrading.ToString().ToLowerInvariant());
         WriteField("Nur Lernfenster", config.EvidenceAutoLoopRunOnlyInLearningWindow.ToString().ToLowerInvariant());
         WriteField("Letzter Lauf", report?.LastRunUtc ?? config.EvidenceAutoLoopLastRunUtc?.ToString("O") ?? "-");
-        WriteField("Nächster Lauf", report?.NextRunUtc ?? config.EvidenceAutoLoopNextRunUtc?.ToString("O") ?? "-");
+        WriteField("Nächster Lauf", nextRunDisplay);
         WriteField("Geplante Tasks", report?.PlannedTasks.ToString(CultureInfo.InvariantCulture) ?? "0");
         WriteField("Frank nötig", (report?.FrankRequired ?? 0) > 0 ? "ja" : "nein");
-        WriteField("Aktueller Modus", report?.NextAction ?? (enabled ? "Hermes plant weitere Evidenzläufe." : "Evidenz Auto-Loop pausiert."));
+        WriteField("Aktueller Modus", report?.NextAction ?? (runtimeState.Enabled ? "Hermes plant weitere Evidenzläufe." : "Evidenz Auto-Loop pausiert."));
         WriteMessages("Warnings", report?.Warnings ?? []);
         Console.WriteLine();
         WriteSafety();
@@ -6394,6 +6400,12 @@ internal sealed class HermesCli
         var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
         var updated = scheduler.UpdateEvidenceAutoLoopEnabled(enabled);
         var status = updated.BuildTimeControlStatus(DateTimeOffset.UtcNow, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var runtimeState = new EvidenceAutoLoopService(storagePaths).GetRuntimeState();
+        var nextRunHint = runtimeState.NextRunUtc?.ToString("O") ?? runtimeState.NextRunHint;
+        if (enabled && runtimeState.NextRunUtc is not null)
+        {
+            updated = scheduler.UpdateEvidenceAutoLoopRunState(updated.EvidenceAutoLoopLastRunUtc, runtimeState.NextRunUtc);
+        }
 
         WriteField("Aktiviert", updated.EvidenceAutoLoopEnabled.ToString().ToLowerInvariant());
         WriteField("Job vorhanden", updated.Jobs.Any(job => job.JobId.Equals("evidence_auto_loop", StringComparison.OrdinalIgnoreCase)).ToString().ToLowerInvariant());
@@ -6402,7 +6414,7 @@ internal sealed class HermesCli
         WriteField("Zeitsteuerung", status.StatusLabel);
         WriteField("In Work Window", status.InWorkWindow.ToString().ToLowerInvariant());
         WriteField("Last Run", updated.EvidenceAutoLoopLastRunUtc?.ToString("O") ?? "-");
-        WriteField("Next Run", updated.EvidenceAutoLoopNextRunUtc?.ToString("O") ?? "-");
+        WriteField("Next Run", updated.EvidenceAutoLoopNextRunUtc?.ToString("O") ?? nextRunHint);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -9147,7 +9159,30 @@ internal sealed class HermesCli
         var summary = summaryService.LoadSummary();
         var sources = new KnowledgeSourceRegistry(storagePaths).LoadSources();
         var insights = new HypothesisGenerator(storagePaths).LoadInsights();
-        var cognitiveStatus = new CognitiveCoreService(storagePaths).BuildStatus();
+        CognitiveStatus cognitiveStatus;
+        try
+        {
+            cognitiveStatus = new CognitiveCoreService(storagePaths).BuildStatus();
+        }
+        catch (IOException)
+        {
+            cognitiveStatus = new CognitiveStatus(
+                StatusVersion: "cognitive_status_unknown",
+                UpdatedAtUtc: DateTimeOffset.UtcNow,
+                Domains: [],
+                SourceCount: 0,
+                KnowledgeItemCount: 0,
+                QueueItemCount: 0,
+                InsightCount: 0,
+                MemoryEntryCount: 0,
+                ActiveDomains: [],
+                NextActions: [],
+                CognitiveRoot: storagePaths.Root,
+                NoTradingExecution: true,
+                NoBrokerAction: true,
+                NoAutoTrading: true,
+                HumanReviewRequired: true);
+        }
         var queuedResearchItems = summary?.QueuedResearchItems;
 
         if (queuedResearchItems is null)
