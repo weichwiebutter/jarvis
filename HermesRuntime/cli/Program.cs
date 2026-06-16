@@ -116,6 +116,7 @@ internal sealed class HermesCli
             "review-knowledge" => ReviewKnowledge(),
             "review-status" => ShowReviewStatus(),
             "review-queue" => ShowReviewQueue(),
+            "review-prioritization-audit" => ShowReviewPrioritizationAudit(),
             "review-item" => ShowReviewItem(),
             "approve-review" => DecideReview("approved"),
             "reject-review" => DecideReview("rejected"),
@@ -135,6 +136,8 @@ internal sealed class HermesCli
             "explain-validation-routing" => ExplainValidationRouting(),
             "knowledge-validation-status" => ShowKnowledgeValidationStatus(),
             "knowledge-validation-audit" => ShowKnowledgeValidationAudit(),
+            "validation-queue-refill" => RunValidationQueueRefill(),
+            "run-evidence-validation" => RunEvidenceValidation(),
             "generate-improvement-queue" => GenerateImprovementQueue(),
             "improvement-queue-summary" => ShowImprovementQueueSummary(),
             "improvement-work-areas" => ShowImprovementWorkAreas(),
@@ -367,6 +370,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes review-knowledge --id <ID> [--result approved|rejected|needs_review] Human Review Evidence speichern");
         Console.WriteLine("  hermes review-status      Human Review Evidence Status anzeigen");
         Console.WriteLine("  hermes review-queue       offene Human Review Queue anzeigen");
+        Console.WriteLine("  hermes review-prioritization-audit Reviews priorisieren und gruppieren");
         Console.WriteLine("  hermes review-item --id <REVIEW_ID> einzelnes Review Item anzeigen");
         Console.WriteLine("  hermes approve-review --id <REVIEW_ID> --note \"...\" Review approven");
         Console.WriteLine("  hermes reject-review --id <REVIEW_ID> --note \"...\" Review ablehnen");
@@ -386,6 +390,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes explain-validation-routing --domain documentation Routing-Profil erklaeren");
         Console.WriteLine("  hermes knowledge-validation-status Validation Fortschritt anzeigen");
         Console.WriteLine("  hermes knowledge-validation-audit Knowledge Validation Audit anzeigen");
+        Console.WriteLine("  hermes validation-queue-refill Validation Queue aus offenen Plaenen auffuellen");
+        Console.WriteLine("  hermes run-evidence-validation sichere Evidenz-/Validierungs-Aufgaben ausfuehren");
         Console.WriteLine("  hermes generate-improvement-queue Verbesserungs-Warteschlange aus Audit/Warnungen erzeugen");
         Console.WriteLine("  hermes improvement-queue-summary Verbesserungs-Warteschlange kompakt anzeigen");
         Console.WriteLine("  hermes improvement-work-areas Verbesserungs-Arbeitsbereiche anzeigen");
@@ -6188,6 +6194,41 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowReviewPrioritizationAudit()
+    {
+        WriteHeader("Hermes Review Prioritization Audit");
+        var service = new ReviewPrioritizationAuditService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Pending Reviews", report.TotalPendingReviews.ToString());
+        WriteField("Trading Reviews", report.TradingReviews.ToString());
+        WriteField("Documentation Reviews", report.DocumentationReviews.ToString());
+        WriteField("Research Reviews", report.ResearchReviews.ToString());
+        WriteField("Software Reviews", report.SoftwareReviews.ToString());
+        WriteField("Process Reviews", report.ProcessReviews.ToString());
+        WriteSubHeader("Operator Summary");
+        Console.WriteLine(report.OperatorSummary);
+        WriteSubHeader("Top Priority Reviews");
+        foreach (var review in report.TopPriorityReviews)
+        {
+            WriteField(review.Title, $"{review.Priority.ToUpperInvariant()} · {review.Domain} · trust={review.TrustBefore:0.####}");
+            WriteField("Vorgeschlagene Aktion", review.Recommendation);
+            WriteField("Warum", review.Reason);
+            WriteField("Warum jetzt", review.PriorityReason);
+        }
+        WriteSubHeader("Gruppen");
+        foreach (var group in report.DomainGroups)
+        {
+            WriteField(group.Domain, group.Count.ToString());
+        }
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ConsolidateMemory()
     {
         WriteHeader("Hermes Memory Consolidation");
@@ -6388,6 +6429,7 @@ internal sealed class HermesCli
         WriteField("Ohne Validation Queue", report.KnowledgeItemsWithoutValidationQueue.ToString());
         WriteField("Validierung", report.ValidationCompletionLabel);
         WriteField("Offene Validierungen", report.OpenValidations.ToString());
+        WriteField("Validation Tasks Pending", report.ValidationTasksPending.ToString());
         WriteField("Kritische Wissenslücken", report.CriticalKnowledgeGaps.ToString());
         WriteField("Älteste offene Validierung", $"{report.OldestOpenValidationAgeDays} Tage");
         WriteField("Needs More Evidence", report.HumanReviewNeedsMoreEvidenceReviews.ToString());
@@ -6426,6 +6468,51 @@ internal sealed class HermesCli
         {
             WriteMessages("Nächste Commands", report.NextRecommendedCommands);
         }
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunValidationQueueRefill()
+    {
+        WriteHeader("Hermes Validation Queue Refill");
+        var service = new ValidationQueueRefillService(BuildStoragePaths());
+        var report = service.Refill();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Offene Pläne", report.OpenPlans.ToString());
+        WriteField("Pläne mit Queue-Arbeit", report.PlansWithQueuedTasks.ToString());
+        WriteField("Neue Tasks", report.TasksCreated.ToString());
+        WriteField("Übersprungene Pläne", report.PlansSkipped.ToString());
+        WriteMessages("Domänen", report.Domains);
+        WriteMessages("Neu erzeugte Tasks", report.CreatedTasks.Select(task => $"{task.Domain}: {task.KnowledgeItemId} -> {string.Join(", ", task.RequiredTaskIds)}").ToList());
+        WriteMessages("Übersprungene Pläne", report.SkippedPlans);
+        WriteField("Nächste Aktion", report.NextAction);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunEvidenceValidation()
+    {
+        WriteHeader("Hermes Evidence Validation Runner");
+        var service = new EvidenceValidationRunnerService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Validation Tasks ausgeführt", report.ValidationTasksExecuted.ToString());
+        WriteField("Evidence Tasks ausgeführt", report.EvidenceTasksExecuted.ToString());
+        WriteField("Needs More Evidence vorher", report.NeedsMoreEvidenceBefore.ToString());
+        WriteField("Needs More Evidence nachher", report.NeedsMoreEvidenceAfter.ToString());
+        WriteField("Pending Reviews vorher", report.PendingReviewsBefore.ToString());
+        WriteField("Pending Reviews nachher", report.PendingReviewsAfter.ToString());
+        WriteField("Neue Pending Reviews", report.NewPendingReviews.ToString());
+        WriteField("Frank nötig", report.FrankActionRequired ? "ja" : "nein");
+        WriteMessages("Domänen", report.Domains);
+        WriteMessages("Ausgeführte Tasks", report.ExecutedTasks.Select(task => $"{task.Domain}: {task.Result}").ToList());
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();

@@ -690,6 +690,7 @@ public sealed class ContradictionDetector
 public sealed class HumanReviewEvidenceStore
 {
     private readonly StoragePaths _storagePaths;
+    private string? _resolvedReviewPath;
 
     public HumanReviewEvidenceStore(StoragePaths storagePaths)
     {
@@ -698,11 +699,11 @@ public sealed class HumanReviewEvidenceStore
 
     public string Root => Path.Combine(_storagePaths.Root, "cognitive_core");
 
-    public string ReviewPath => Path.Combine(Root, "human_review_evidence.json");
+    public string ReviewPath => _resolvedReviewPath ?? Path.Combine(Root, "human_review_evidence.json");
 
     public HumanReviewResult AddReview(string knowledgeId, string result, string reviewer, string notes)
     {
-        Directory.CreateDirectory(Root);
+        _resolvedReviewPath = ResolveWritablePath();
         var catalogItem = new KnowledgeCatalog(_storagePaths).FindById(knowledgeId);
         var normalizedResult = NormalizeReviewResult(result);
         var current = LoadOrCreateReport();
@@ -723,12 +724,14 @@ public sealed class HumanReviewEvidenceStore
 
     public HumanReviewResult LoadOrCreateReport()
     {
-        if (File.Exists(ReviewPath))
+        var path = ResolveWritablePath();
+        _resolvedReviewPath = path;
+        if (File.Exists(path))
         {
             try
             {
                 return JsonSerializer.Deserialize<HumanReviewResult>(
-                    File.ReadAllText(ReviewPath),
+                    File.ReadAllText(path),
                     JsonDefaults.SnapshotReadOptions) ?? Empty();
             }
             catch (Exception ex) when (ex is IOException or JsonException)
@@ -737,9 +740,9 @@ public sealed class HumanReviewEvidenceStore
             }
         }
 
-        Directory.CreateDirectory(Root);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var empty = Empty();
-        File.WriteAllText(ReviewPath, JsonSerializer.Serialize(empty, JsonDefaults.WriteOptions));
+        File.WriteAllText(path, JsonSerializer.Serialize(empty, JsonDefaults.WriteOptions));
         return empty;
     }
 
@@ -768,7 +771,8 @@ public sealed class HumanReviewEvidenceStore
             NoBrokerAction: true,
             NoAutoTrading: true,
             HumanReviewRequired: true);
-        File.WriteAllText(ReviewPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
+        var path = _resolvedReviewPath ?? ResolveWritablePath();
+        File.WriteAllText(path, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
         return report;
     }
 
@@ -795,4 +799,20 @@ public sealed class HumanReviewEvidenceStore
             "rejected" => "rejected",
             _ => "needs_review"
         };
+
+    private string ResolveWritablePath()
+    {
+        var primaryRoot = Root;
+        try
+        {
+            Directory.CreateDirectory(primaryRoot);
+            return Path.Combine(primaryRoot, "human_review_evidence.json");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var fallbackRoot = Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", ".codex_artifacts", "reports", "cognitive_core");
+            Directory.CreateDirectory(fallbackRoot);
+            return Path.Combine(fallbackRoot, "human_review_evidence.json");
+        }
+    }
 }

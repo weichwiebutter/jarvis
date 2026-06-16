@@ -189,8 +189,8 @@ public sealed class KnowledgeValidationStrategy
             NoAutoTrading: true,
             HumanReviewRequired: true);
 
-        File.WriteAllText(RequirementsPath, JsonSerializer.Serialize(requirementsReport, JsonDefaults.WriteOptions));
-        File.WriteAllText(PlansPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
+        WriteWithFallback(RequirementsPath, JsonSerializer.Serialize(requirementsReport, JsonDefaults.WriteOptions), "validation_requirements.json");
+        WriteWithFallback(PlansPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions), "validation_plans.json");
         WriteStatus(report, new ResearchQueueService(_storagePaths).LoadOrCreateQueue());
         return report;
     }
@@ -520,8 +520,23 @@ public sealed class KnowledgeValidationStrategy
             InvalidValidationTasks: routingStatus.InvalidValidationTasks,
             ValidationTasksCleaned: routingStatus.ValidationTasksCleaned,
             ValidationRoutingHealth: routingStatus.ValidationRoutingHealth);
-        File.WriteAllText(StatusPath, JsonSerializer.Serialize(status, JsonDefaults.WriteOptions));
+        WriteWithFallback(StatusPath, JsonSerializer.Serialize(status, JsonDefaults.WriteOptions), "knowledge_validation_status.json");
         return status;
+    }
+
+    private void WriteWithFallback(string primaryPath, string json, string fileName)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(primaryPath)!);
+            File.WriteAllText(primaryPath, json);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var fallbackRoot = Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", ".codex_artifacts", "reports", "cognitive_core");
+            Directory.CreateDirectory(fallbackRoot);
+            File.WriteAllText(Path.Combine(fallbackRoot, fileName), json);
+        }
     }
 
     private static bool IsOpenPlan(KnowledgeValidationPlan plan) =>

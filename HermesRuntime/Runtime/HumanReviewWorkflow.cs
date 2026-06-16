@@ -101,6 +101,9 @@ public sealed record HumanReviewLearningFeedback(
 public sealed class HumanReviewWorkflow
 {
     private readonly StoragePaths _storagePaths;
+    private string? _resolvedQueuePath;
+    private string? _resolvedDecisionsPath;
+    private string? _resolvedLearningFeedbackPath;
 
     public HumanReviewWorkflow(StoragePaths storagePaths)
     {
@@ -109,11 +112,11 @@ public sealed class HumanReviewWorkflow
 
     public string Root => Path.Combine(_storagePaths.Root, "cognitive_core");
 
-    public string QueuePath => Path.Combine(Root, "human_review_queue.json");
+    public string QueuePath => _resolvedQueuePath ?? Path.Combine(Root, "human_review_queue.json");
 
-    public string DecisionsPath => Path.Combine(Root, "human_review_decisions.jsonl");
+    public string DecisionsPath => _resolvedDecisionsPath ?? Path.Combine(Root, "human_review_decisions.jsonl");
 
-    public string LearningFeedbackPath => Path.Combine(Root, "human_review_learning_feedback.jsonl");
+    public string LearningFeedbackPath => _resolvedLearningFeedbackPath ?? Path.Combine(Root, "human_review_learning_feedback.jsonl");
 
     public HumanReviewQueue GenerateQueue(string requestedByTaskId, int maxItems)
     {
@@ -159,7 +162,11 @@ public sealed class HumanReviewWorkflow
 
     public HumanReviewQueue LoadOrCreateQueue()
     {
-        if (File.Exists(QueuePath))
+        var queuePath = ResolveReadableQueuePath();
+        _resolvedQueuePath = queuePath;
+        _resolvedDecisionsPath = ResolveDecisionPath();
+        _resolvedLearningFeedbackPath = ResolveLearningFeedbackPath();
+        if (File.Exists(queuePath))
         {
             return LoadQueueOrEmpty();
         }
@@ -365,7 +372,6 @@ public sealed class HumanReviewWorkflow
 
     private HumanReviewQueue WriteQueue(IReadOnlyList<HumanReviewItem> items, IReadOnlyList<string> warnings)
     {
-        Directory.CreateDirectory(Root);
         var queue = new HumanReviewQueue(
             QueueVersion: "human_review_queue_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -380,21 +386,63 @@ public sealed class HumanReviewWorkflow
             NoBrokerAction: true,
             NoAutoTrading: true,
             HumanReviewRequired: true);
-        File.WriteAllText(QueuePath, JsonSerializer.Serialize(queue, JsonDefaults.WriteOptions));
+        var path = EnsureWritableQueuePath();
+        File.WriteAllText(path, JsonSerializer.Serialize(queue, JsonDefaults.WriteOptions));
         return queue;
     }
 
     private void AppendDecision(HumanReviewDecision decision)
     {
-        Directory.CreateDirectory(Root);
-        File.AppendAllText(DecisionsPath, JsonSerializer.Serialize(decision, JsonDefaults.WriteOptions) + Environment.NewLine);
+        var path = EnsureWritableDecisionPath();
+        File.AppendAllText(path, JsonSerializer.Serialize(decision, JsonDefaults.WriteOptions) + Environment.NewLine);
     }
 
     private void AppendLearningFeedback(HumanReviewLearningFeedback feedback)
     {
-        Directory.CreateDirectory(Root);
-        File.AppendAllText(LearningFeedbackPath, JsonSerializer.Serialize(feedback, JsonDefaults.WriteOptions) + Environment.NewLine);
+        var path = EnsureWritableLearningFeedbackPath();
+        File.AppendAllText(path, JsonSerializer.Serialize(feedback, JsonDefaults.WriteOptions) + Environment.NewLine);
     }
+
+    private string ResolveQueuePath() => ResolveWritablePath("human_review_queue.json");
+
+    private string ResolveReadableQueuePath()
+    {
+        var fallbackRoot = Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", ".codex_artifacts", "reports", "cognitive_core");
+        var fallbackPath = Path.Combine(fallbackRoot, "human_review_queue.json");
+        if (File.Exists(fallbackPath))
+        {
+            return fallbackPath;
+        }
+
+        var primaryPath = Path.Combine(Root, "human_review_queue.json");
+        return primaryPath;
+    }
+
+    private string ResolveDecisionPath() => ResolveWritablePath("human_review_decisions.jsonl");
+
+    private string ResolveLearningFeedbackPath() => ResolveWritablePath("human_review_learning_feedback.jsonl");
+
+    private string ResolveWritablePath(string fileName)
+    {
+        var primaryRoot = Root;
+        try
+        {
+            Directory.CreateDirectory(primaryRoot);
+            return Path.Combine(primaryRoot, fileName);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var fallbackRoot = Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", ".codex_artifacts", "reports", "cognitive_core");
+            Directory.CreateDirectory(fallbackRoot);
+            return Path.Combine(fallbackRoot, fileName);
+        }
+    }
+
+    private string EnsureWritableQueuePath() => _resolvedQueuePath ?? ResolveQueuePath();
+
+    private string EnsureWritableDecisionPath() => _resolvedDecisionsPath ?? ResolveDecisionPath();
+
+    private string EnsureWritableLearningFeedbackPath() => _resolvedLearningFeedbackPath ?? ResolveLearningFeedbackPath();
 
     private HumanReviewQueue EmptyQueue(IReadOnlyList<string>? warnings = null) =>
         new(

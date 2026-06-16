@@ -374,6 +374,7 @@ public sealed class TradingKnowledgeMapper
 public sealed class ResearchQueueService
 {
     private readonly StoragePaths _storagePaths;
+    private string? _resolvedQueuePath;
 
     public ResearchQueueService(StoragePaths storagePaths)
     {
@@ -382,11 +383,11 @@ public sealed class ResearchQueueService
 
     public string Root => Path.Combine(_storagePaths.Root, "cognitive_core");
 
-    public string QueuePath => Path.Combine(Root, "research_queue.json");
+    public string QueuePath => _resolvedQueuePath ?? Path.Combine(Root, "research_queue.json");
 
     public ResearchQueue LoadOrCreateQueue()
     {
-        Directory.CreateDirectory(Root);
+        _resolvedQueuePath = ResolveWritableQueuePath();
         var existing = LoadQueue();
         if (existing is not null)
         {
@@ -713,15 +714,44 @@ public sealed class ResearchQueueService
 
     private ResearchQueue Write(IReadOnlyList<ResearchQueueItem> items)
     {
-        Directory.CreateDirectory(Root);
+        var path = _resolvedQueuePath ?? ResolveWritableQueuePath();
+        _resolvedQueuePath = path;
         var queue = new ResearchQueue(
             QueueVersion: "research_queue_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
             Items: items,
             NoTradingExecution: true,
             HumanReviewRequired: true);
-        File.WriteAllText(QueuePath, JsonSerializer.Serialize(queue, JsonDefaults.WriteOptions));
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(queue, JsonDefaults.WriteOptions));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var fallbackRoot = Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", ".codex_artifacts", "reports", "cognitive_core");
+            Directory.CreateDirectory(fallbackRoot);
+            var fallbackPath = Path.Combine(fallbackRoot, "research_queue.json");
+            _resolvedQueuePath = fallbackPath;
+            File.WriteAllText(fallbackPath, JsonSerializer.Serialize(queue, JsonDefaults.WriteOptions));
+        }
         return queue;
+    }
+
+    private string ResolveWritableQueuePath()
+    {
+        var primaryRoot = Root;
+        try
+        {
+            Directory.CreateDirectory(primaryRoot);
+            return Path.Combine(primaryRoot, "research_queue.json");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var fallbackRoot = Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", ".codex_artifacts", "reports", "cognitive_core");
+            Directory.CreateDirectory(fallbackRoot);
+            return Path.Combine(fallbackRoot, "research_queue.json");
+        }
     }
 
     private static ResearchQueueItem NewItem(

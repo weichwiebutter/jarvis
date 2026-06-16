@@ -37,6 +37,7 @@ public sealed record KnowledgeValidationAuditReport(
     int KnowledgeItemsWithoutValidationQueue,
     int OpenValidations,
     int CriticalKnowledgeGaps,
+    int ValidationTasksPending,
     int QueueItemsOpen,
     int QueueItemsProcessed,
     bool ValidationQueueExists,
@@ -51,6 +52,11 @@ public sealed record KnowledgeValidationAuditReport(
     IReadOnlyList<string> MissingQueues,
     IReadOnlyList<string> NextRecommendedCommands,
     string OperatorSummary,
+    int ValidationTasksCreatedLastRun,
+    int EvidenceTasksExecutedLastRun,
+    int NeedsMoreEvidenceBefore,
+    int NeedsMoreEvidenceAfter,
+    bool FrankActionRequired,
     IReadOnlyList<string> AffectedDomains,
     IReadOnlyList<KnowledgeValidationAuditDomain> DomainBreakdown,
     IReadOnlyList<KnowledgeValidationAuditFinding> Findings,
@@ -94,6 +100,8 @@ public sealed class KnowledgeValidationAuditService
         var plans = new KnowledgeValidationStrategy(_storagePaths).LoadPlanReport()
             ?? new KnowledgeValidationStrategy(_storagePaths).GeneratePlans(50);
         var quality = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
+        var refill = new ValidationQueueRefillService(_storagePaths).Load();
+        var evidenceRunner = new EvidenceValidationRunnerService(_storagePaths).Load();
         var queue = new ResearchQueueService(_storagePaths).LoadOrCreateQueue();
         var validationQueueItems = queue.Items
             .Where(item => item.RequestedBy.Equals("knowledge_validation_strategy", StringComparison.OrdinalIgnoreCase)
@@ -211,6 +219,7 @@ public sealed class KnowledgeValidationAuditService
             KnowledgeItemsWithoutValidationQueue: knowledgeWithoutQueue,
             OpenValidations: openPlans,
             CriticalKnowledgeGaps: criticalGaps,
+            ValidationTasksPending: validation.ValidationTasksPending,
             QueueItemsOpen: validation.ValidationTasksPending,
             QueueItemsProcessed: processedQueueItems,
             ValidationQueueExists: queueExists,
@@ -225,6 +234,11 @@ public sealed class KnowledgeValidationAuditService
             MissingQueues: missingQueues.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             NextRecommendedCommands: nextRecommendedCommands.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             OperatorSummary: operatorSummary,
+            ValidationTasksCreatedLastRun: refill?.TasksCreated ?? 0,
+            EvidenceTasksExecutedLastRun: evidenceRunner?.EvidenceTasksExecuted ?? 0,
+            NeedsMoreEvidenceBefore: evidenceRunner?.NeedsMoreEvidenceBefore ?? humanReview.NeedsMoreEvidenceReviews,
+            NeedsMoreEvidenceAfter: evidenceRunner?.NeedsMoreEvidenceAfter ?? humanReview.NeedsMoreEvidenceReviews,
+            FrankActionRequired: humanReview.PendingReviews > 0,
             AffectedDomains: affectedDomains,
             DomainBreakdown: domainBreakdown,
             Findings: findings,
@@ -300,6 +314,7 @@ public sealed class KnowledgeValidationAuditService
             $"- OOS nötig: {report.KnowledgeItemsNeedingOosValidation}",
             $"- Ohne Validation Queue: {report.KnowledgeItemsWithoutValidationQueue}",
             $"- Offene Validierungen: {report.OpenValidations}",
+            $"- Validation Tasks Pending: {report.ValidationTasksPending}",
             $"- Kritische Wissenslücken: {report.CriticalKnowledgeGaps}",
             $"- Älteste offene Validierung: {report.OldestOpenValidationAgeDays} Tage",
             $"- Needs More Evidence: {report.HumanReviewNeedsMoreEvidenceReviews}",
@@ -315,7 +330,11 @@ public sealed class KnowledgeValidationAuditService
         lines.Add(string.Empty);
         lines.Add("## Evidenz- und Validierungsplan");
         lines.Add($"- Operator: {report.OperatorSummary}");
-        lines.Add($"- Frank nötig: {(report.HumanReviewPendingReviews > 0 ? "ja" : "nein")}");
+        lines.Add($"- Frank nötig: {(report.FrankActionRequired ? "ja" : "nein")}");
+        lines.Add($"- Validation Tasks neu: {report.ValidationTasksCreatedLastRun}");
+        lines.Add($"- Evidence Tasks ausgeführt: {report.EvidenceTasksExecutedLastRun}");
+        lines.Add($"- Needs More Evidence vorher: {report.NeedsMoreEvidenceBefore}");
+        lines.Add($"- Needs More Evidence nachher: {report.NeedsMoreEvidenceAfter}");
         lines.AddRange(report.MissingAutomationJobs.Count == 0 ? ["- fehlende Jobs: keine"] : report.MissingAutomationJobs.Select(job => $"- fehlender Job: {job}"));
         lines.AddRange(report.MissingQueues.Count == 0 ? ["- fehlende Queues: keine"] : report.MissingQueues.Select(queue => $"- fehlende Queue: {queue}"));
         lines.AddRange(report.NextRecommendedCommands.Count == 0 ? ["- nächste Commands: keine"] : report.NextRecommendedCommands.Select(command => $"- nächster Command: {command}"));

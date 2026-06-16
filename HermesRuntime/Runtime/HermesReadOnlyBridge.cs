@@ -26,6 +26,8 @@ public sealed class HermesReadOnlyBridge
         new("overfitReport", "Overfit Report", "/reports/overfit-report", "strategy_research/overfit_report.json"),
         new("humanReviewQueue", "Human Review Queue", "/reports/human-review-queue", "cognitive_core/human_review_queue.json"),
         new("knowledgeValidationAudit", "Knowledge Validation Audit", "/reports/knowledge-validation-audit", "reports/knowledge_validation_audit/knowledge_validation_audit.json"),
+        new("validationQueueRefill", "Validation Queue Refill", "/reports/validation-queue-refill", "reports/validation_queue_refill/validation_queue_refill.json"),
+        new("evidenceValidationRunner", "Evidence Validation Runner", "/reports/evidence-validation-runner", "reports/evidence_validation_runner/evidence_validation_runner.json"),
         new("autonomousImprovementQueue", "Autonomous Improvement Queue", "/reports/autonomous-improvement-queue", "reports/autonomous_improvement_queue/autonomous_improvement_queue.json"),
         new("autonomousImprovementQueueSummary", "Autonomous Improvement Queue Summary", "/reports/autonomous-improvement-queue-summary", "reports/autonomous_improvement_queue/autonomous_improvement_queue_summary.json"),
         new("autonomousImprovementWorkAreas", "Autonomous Improvement Work Areas", "/reports/autonomous-improvement-work-areas", "reports/autonomous_improvement_queue/autonomous_improvement_work_areas.json"),
