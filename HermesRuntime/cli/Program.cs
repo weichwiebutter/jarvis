@@ -118,6 +118,7 @@ internal sealed class HermesCli
             "review-queue" => ShowReviewQueue(),
             "review-prioritization-audit" => ShowReviewPrioritizationAudit(),
             "review-decision-assistant" => ShowReviewDecisionAssistant(),
+            "review-status-consistency-audit" => ShowReviewStatusConsistencyAudit(),
             "evidence-auto-loop" => RunEvidenceAutoLoop(),
             "run-evidence-tasks" => RunEvidenceTasks(),
             "review-item" => ShowReviewItem(),
@@ -154,6 +155,7 @@ internal sealed class HermesCli
             "evidence-auto-loop-disable" => SetEvidenceAutoLoopEnabled(false),
             "evidence-task-execution" => ShowEvidenceTaskExecution(),
             "evidence-impact-analysis" => ShowEvidenceImpactAnalysis(),
+            "review-evidence-refresh" => ShowReviewEvidenceRefresh(),
             "execute-improvement-queue" => ExecuteImprovementQueue(),
             "improvement-execution-status" => ShowImprovementExecutionStatus(),
             "explain-validation" => ExplainValidation(),
@@ -380,6 +382,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes review-queue       offene Human Review Queue anzeigen");
         Console.WriteLine("  hermes review-prioritization-audit Reviews priorisieren und gruppieren");
         Console.WriteLine("  hermes review-decision-assistant Review-Entscheidungshilfe anzeigen");
+        Console.WriteLine("  hermes review-status-consistency-audit Review-/Master-Status Konsistenz anzeigen");
         Console.WriteLine("  hermes evidence-auto-loop Sicheren Evidenz-Auto-Loop planen");
         Console.WriteLine("  hermes evidence-auto-loop-status Evidenz-Auto-Loop Status anzeigen");
         Console.WriteLine("  hermes evidence-auto-loop-enable Evidenz-Auto-Loop aktivieren");
@@ -387,6 +390,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes run-evidence-tasks Evidence-/Validierungsaufgaben sicher ausfuehren");
         Console.WriteLine("  hermes evidence-task-execution Evidence Task Execution Report anzeigen");
         Console.WriteLine("  hermes evidence-impact-analysis Evidence Impact Analysis anzeigen");
+        Console.WriteLine("  hermes review-evidence-refresh Review Evidence Refresh anzeigen");
         Console.WriteLine("  hermes review-item --id <REVIEW_ID> einzelnes Review Item anzeigen");
         Console.WriteLine("  hermes approve-review --id <REVIEW_ID> --note \"...\" Review approven");
         Console.WriteLine("  hermes reject-review --id <REVIEW_ID> --note \"...\" Review ablehnen");
@@ -6330,6 +6334,40 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowReviewStatusConsistencyAudit()
+    {
+        WriteHeader("Hermes Review / Master Status Consistency Audit");
+        var service = new ReviewStatusConsistencyAuditService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Reviews gesamt", report.TotalReviews.ToString());
+        WriteField("Pending laut Queue", report.PendingReviewsQueue.ToString());
+        WriteField("Pending laut Master", report.PendingReviewsMaster.ToString());
+        WriteField("Needs More Evidence laut Queue", report.NeedsMoreEvidenceQueue.ToString());
+        WriteField("Needs More Evidence laut Master", report.NeedsMoreEvidenceMaster.ToString());
+        WriteField("Source of Truth", report.SourceOfTruth);
+        WriteField("Ursache", report.Cause);
+        WriteField("Korrektur", report.RecommendedCorrection);
+        WriteMessages("Abweichungen", report.Deviations);
+        WriteSubHeader("Snapshot-Kandidaten");
+        foreach (var snapshot in report.MasterSnapshots)
+        {
+            WriteField(snapshot.Source, $"{DisplayPath(snapshot.Path)} · pending={snapshot.PendingReviews} · needs_more_evidence={snapshot.NeedsMoreEvidenceReviews} · updated={snapshot.LastUpdatedUtc:O}");
+        }
+        WriteSubHeader("Top-Reviews");
+        foreach (var review in report.Reviews.Take(10))
+        {
+            WriteField(review.Title, $"{review.Domain} · {review.QueueStatus} · {review.QueueRecommendation} · source={review.Source}");
+            WriteField("Letzte Aktualisierung", review.LastUpdatedUtc?.ToString("O") ?? "-");
+        }
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int RunEvidenceAutoLoop()
     {
         WriteHeader("Hermes Evidence Auto Loop");
@@ -6426,6 +6464,45 @@ internal sealed class HermesCli
         return 0;
     }
 
+
+
+    private int ShowReviewEvidenceRefresh()
+    {
+        var storagePaths = BuildStoragePaths();
+        var service = new ReviewEvidenceRefreshService(storagePaths);
+        var report = service.Run();
+
+        WriteHeader("Review Evidence Refresh");
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Pending Reviews gelesen", report.PendingReviewsRead.ToString(CultureInfo.InvariantCulture));
+        WriteField("Reviews aktualisiert", report.ReviewsUpdated.ToString(CultureInfo.InvariantCulture));
+        WriteField("Reviews unverändert", report.ReviewsUnchanged.ToString(CultureInfo.InvariantCulture));
+        WriteField("Vertrauen verbessert", report.TrustImprovedCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Qualität verbessert", report.QualityImprovedCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Validierung verbessert", report.ValidationImprovedCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Evidenz verbessert", report.EvidenceImprovedCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Empfehlung geändert", report.RecommendationChangedCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Freigabe empfohlen", report.RecommendedApprove.ToString(CultureInfo.InvariantCulture));
+        WriteField("Mehr Evidenz empfohlen", report.RecommendedMoreEvidence.ToString(CultureInfo.InvariantCulture));
+        WriteField("Ablehnung empfohlen", report.RecommendedReject.ToString(CultureInfo.InvariantCulture));
+        WriteField("Frank nötig", report.FrankActionRequired ? "ja" : "nein");
+        WriteField("Operator Summary", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+
+        WriteHeader("Reviews");
+        foreach (var item in report.Reviews.Take(20))
+        {
+            Console.WriteLine($"- {item.Title} ({item.Domain}, {item.RecommendationAfter})");
+            Console.WriteLine($"  Vorher: trust={item.TrustBefore:0.####}, quality={item.QualityBefore:0.####}, validation={item.ValidationBefore:0.####}, evidence={item.EvidenceBefore:0.####}, recommendation={item.RecommendationBefore}");
+            Console.WriteLine($"  Nachher: trust={item.TrustAfter:0.####}, quality={item.QualityAfter:0.####}, validation={item.ValidationAfter:0.####}, evidence={item.EvidenceAfter:0.####}, recommendation={item.RecommendationAfter}");
+            Console.WriteLine($"  Frank-Aktion: {item.FrankAction}");
+            Console.WriteLine($"  Warum: {string.Join(", ", item.BlockingReasons)}");
+        }
+
+        WriteSafety();
+        return 0;
+    }
 
     private int ShowEvidenceImpactAnalysis()
     {

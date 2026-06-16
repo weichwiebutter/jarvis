@@ -1473,6 +1473,48 @@ function reportFixtureRaw(key) {
         no_auto_trading: true,
         human_review_required: true,
       };
+    case 'reviewStatusConsistencyAudit':
+      return {
+        report_version: 'review_status_consistency_audit_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        total_reviews: 20,
+        pending_reviews_queue: 20,
+        pending_reviews_master: 20,
+        needs_more_evidence_queue: 0,
+        needs_more_evidence_master: 0,
+        abnormal_review_count: 0,
+        same_count: 20,
+        different_count: 0,
+        source_of_truth: 'HumanReviewQueue',
+        leading_queue_source: 'HumanReviewQueue',
+        leading_master_source: 'master-status',
+        master_snapshots: [
+          {
+            source: 'master-status',
+            path: '/reports/master-status/master_status.json',
+            last_updated_utc: runtimeMasterStatusMock.updated_at_utc,
+            pending_reviews: 20,
+            needs_more_evidence_reviews: 0,
+            top_review_priorities: runtimeHumanReviewMock.items?.slice?.(0, 10)?.map?.((item) => item.review_id) || [],
+          },
+        ],
+        reviews: runtimeHumanReviewMock.items || [],
+        deviations: [],
+        cause: 'Die Statusquellen sind aktuell konsistent. HumanReviewQueue und Master-Status zeigen denselben Zählstand.',
+        recommended_correction: 'HumanReviewQueue als führende Quelle verwenden; Master-Status nur als Snapshot/Anzeige verstehen; Dashboard direkt aus der Queue lesen.',
+        operator_summary: 'Die Statusquellen sind aktuell konsistent. Frank sieht dieselbe Review-Wahrheit im Prüfzentrum und im Master Status.',
+        queue_path: '/reports/human-review-queue',
+        review_queue_path: '/reports/human-review-queue',
+        review_decision_assistant_path: '/reports/review_decision_assistant/review_decision_assistant.json',
+        review_prioritization_path: '/reports/review_prioritization_audit/review_prioritization_audit.json',
+        review_evidence_refresh_path: '/reports/review_evidence_refresh/review_evidence_refresh.json',
+        master_status_path: '/reports/master-status/master_status.json',
+        warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'reviewPrioritizationAudit':
       return {
         report_version: 'review_prioritization_audit_v1',
@@ -3007,6 +3049,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       autonomousLoopState: reportFixtureRaw('autonomousLoopState'),
       metaReview: reportFixtureRaw('metaReview'),
       domainStatus: reportFixtureRaw('domainStatus'),
+      reviewStatusConsistencyAudit: reportFixtureRaw('reviewStatusConsistencyAudit'),
       supervisorState: operatorDashboardMock.supervisorState,
       schedulerState: operatorDashboardMock.schedulerState,
       timeControl: reportFixtureRaw('timeControl'),
@@ -3076,7 +3119,8 @@ export async function loadOperatorDashboard() {
       const warnings = bridgeResponseWarnings(response);
       const rawReports = {
         masterStatus: masterStatusEntry?.raw,
-        humanReviewQueue: dashboard.humanReviewQueue,
+      humanReviewQueue: dashboard.humanReviewQueue,
+        reviewStatusConsistencyAudit: dashboard.reviewStatusConsistencyAudit,
         cognitiveStatus: dashboard.cognitiveStatus,
         planningStatus: dashboard.planningStatus,
         taskExecutionState: dashboard.taskExecutionState,
@@ -3177,6 +3221,7 @@ export async function loadOperatorDashboard() {
   rawReports.signalAgentSpecs = reportFixtureRaw('signalAgentSpecs');
   rawReports.multiAssetResearchStatus = reportFixtureRaw('multiAssetResearchStatus');
   rawReports.knowledgeValidationAudit = reportFixtureRaw('knowledgeValidationAudit');
+  rawReports.reviewStatusConsistencyAudit = reportFixtureRaw('reviewStatusConsistencyAudit');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
   rawReports.evidenceAutoLoop = reportFixtureRaw('evidenceAutoLoop');

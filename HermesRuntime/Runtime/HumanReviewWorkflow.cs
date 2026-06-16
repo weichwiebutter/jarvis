@@ -174,6 +174,12 @@ public sealed class HumanReviewWorkflow
         return WriteQueue([], []);
     }
 
+
+    public void PersistQueue(HumanReviewQueue queue)
+    {
+        WriteQueue(queue.Items, queue.Warnings);
+    }
+
     public HumanReviewItem? FindItem(string reviewId) =>
         LoadOrCreateQueue().Items.FirstOrDefault(item =>
             item.ReviewId.Equals(reviewId, StringComparison.OrdinalIgnoreCase));

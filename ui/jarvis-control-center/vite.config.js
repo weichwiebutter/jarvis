@@ -32,6 +32,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/knowledge-validation-audit'),
     path: 'read-only bridge:/reports/knowledge-validation-audit',
   },
+  reviewStatusConsistencyAudit: {
+    label: 'Review Status Consistency Audit',
+    url: bridgeUrl('/reports/review-status-consistency-audit'),
+    path: 'read-only bridge:/reports/review-status-consistency-audit',
+  },
   cognitiveStatus: {
     label: 'Hermes Gehirn Status',
     url: bridgeUrl('/reports/cognitive-status'),
