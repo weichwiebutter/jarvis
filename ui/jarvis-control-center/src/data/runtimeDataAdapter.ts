@@ -1529,6 +1529,36 @@ function reportFixtureRaw(key) {
         no_auto_trading: true,
         human_review_required: true,
       };
+    case 'evidenceAutoLoop':
+      return {
+        report_version: 'evidence_auto_loop_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        review_count: 20,
+        more_evidence_reviews: 20,
+        planned_tasks: 52,
+        trading_tasks: 36,
+        documentation_tasks: 16,
+        validation_tasks: 36,
+        evidence_tasks: 16,
+        frank_required: 0,
+        scheduler_status: 'disabled',
+        scheduler_configured: true,
+        scheduler_enabled: false,
+        last_run_utc: runtimeMasterStatusMock.updated_at_utc,
+        next_run_utc: null,
+        next_run_hint: 'Trading-Themen werden zuerst validiert.',
+        next_action: 'Hermes plant weitere Evidenzläufe.',
+        domain_summaries: [
+          { domain: 'trading', review_count: 12, evidence_tasks: 24, validation_tasks: 24, highest_priority: 'hoch', status: 'geplant', next_action: 'Trading-Themen werden zuerst validiert.' },
+          { domain: 'documentation', review_count: 8, evidence_tasks: 8, validation_tasks: 12, highest_priority: 'mittel', status: 'geplant', next_action: 'Dokumentationsprüfungen folgen danach.' },
+        ],
+        planned_tasks_list: [],
+        warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'validationQueueRefill':
       return {
         report_version: 'validation_queue_refill_v1',
@@ -2847,7 +2877,8 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
   const fixtureReportCount = reports.length - liveReportCount;
   const masterStatusReport = reports.find((report) => report.key === 'masterStatus');
   const reviewDecisionAssistantReport = reports.find((report) => report.key === 'reviewDecisionAssistant');
-  const normalizedReports = reviewDecisionAssistantReport || !rawReports.reviewDecisionAssistant
+  const evidenceAutoLoopReport = reports.find((report) => report.key === 'evidenceAutoLoop');
+  const normalizedReports = reviewDecisionAssistantReport || evidenceAutoLoopReport || (!rawReports.reviewDecisionAssistant && !rawReports.evidenceAutoLoop)
     ? reports
     : [
         ...reports,
@@ -2858,6 +2889,16 @@ function buildOperatorDashboard(rawReports, reports, logLines, dataSource, warni
             path: '/reports/review_decision_assistant/review_decision_assistant.json',
           },
           rawReports.reviewDecisionAssistant,
+          DATA_SOURCE.FIXTURE,
+          '',
+        ),
+        normalizeReportEntry(
+          'evidenceAutoLoop',
+          {
+            label: 'Evidence Auto Loop',
+            path: '/reports/evidence_auto_loop/evidence_auto_loop.json',
+          },
+          rawReports.evidenceAutoLoop,
           DATA_SOURCE.FIXTURE,
           '',
         ),
@@ -3027,6 +3068,7 @@ export async function loadOperatorDashboard() {
         knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
         reviewPrioritizationAudit: dashboard.reviewPrioritizationAudit,
         reviewDecisionAssistant: dashboard.reviewDecisionAssistant,
+        evidenceAutoLoop: dashboard.evidenceAutoLoop,
         validationQueueRefill: dashboard.validationQueueRefill,
         evidenceValidationRunner: dashboard.evidenceValidationRunner,
         autonomousImprovementQueue: dashboard.autonomousImprovementQueue,
@@ -3109,6 +3151,7 @@ export async function loadOperatorDashboard() {
   rawReports.knowledgeValidationAudit = reportFixtureRaw('knowledgeValidationAudit');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
+  rawReports.evidenceAutoLoop = reportFixtureRaw('evidenceAutoLoop');
   rawReports.validationQueueRefill = reportFixtureRaw('validationQueueRefill');
   rawReports.evidenceValidationRunner = reportFixtureRaw('evidenceValidationRunner');
   rawReports.autonomousImprovementQueue = reportFixtureRaw('autonomousImprovementQueue');

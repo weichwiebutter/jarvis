@@ -2470,6 +2470,7 @@ function DashboardLearningSummary({ operatorState }) {
   const improvement = reportByKey(operatorState, 'autonomousImprovementQueue')?.raw || {};
   const improvementPolicy = reportByKey(operatorState, 'workAreaExecutorPolicy')?.raw || {};
   const reviewPrioritization = reportByKey(operatorState, 'reviewPrioritizationAudit')?.raw || {};
+  const evidenceAutoLoop = reportByKey(operatorState, 'evidenceAutoLoop')?.raw || {};
   const nightly = reportByKey(operatorState, 'nightlyWorkAreaStatus')?.raw || {};
   const execution = reportByKey(operatorState, 'autonomousImprovementExecution')?.raw || {};
   const trustPlan = reportByKey(operatorState, 'knowledgeTrustImprovementPlan')?.raw || {};
@@ -2506,6 +2507,7 @@ function DashboardLearningSummary({ operatorState }) {
       <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
       <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
       <Metric label="Selbstverbesserung" value={`${formatNumber(improvementPolicy.active_areas || improvement.active_improvements || 0)} Bereiche`} tone={improvementPolicy.active_areas || improvement.active_improvements ? 'good' : 'info'} />
+      <Metric label="Evidenz Auto-Loop" value={evidenceAutoLoop.review_count ? `${formatNumber(evidenceAutoLoop.more_evidence_reviews || 0)} Reviews geplant` : 'bereit'} tone={evidenceAutoLoop.more_evidence_reviews ? 'warn' : 'info'} />
       <Metric label="Prüfzentrum" value={tradingReviews ? `${formatNumber(tradingReviews)} Trading-Entscheidungen warten` : documentationReviews ? `${formatNumber(documentationReviews)} Dokumentationsprüfungen können später erfolgen` : openReviews ? `${formatNumber(openReviews)} offen` : needsMoreEvidence ? 'Hermes sammelt weitere Evidenz' : 'Keine Aktion erforderlich'} tone={tradingReviews ? 'warn' : openReviews ? 'warn' : needsMoreEvidence ? 'warn' : 'good'} />
       <Metric label="Wichtige Entscheidungen" value={formatNumber(tradingReviews)} tone={tradingReviews ? 'warn' : 'good'} />
       <Metric label="Wissensprüfungen" value={formatNumber(knowledgeReviews)} tone={knowledgeReviews ? 'warn' : 'good'} />
@@ -2709,6 +2711,7 @@ const REVIEW_ACTIONS = {
 
 function HumanReviewCenter({ operatorState, onRefresh }) {
   const reviewPrioritization = reportByKey(operatorState, 'reviewPrioritizationAudit')?.raw || {};
+  const evidenceAutoLoop = reportByKey(operatorState, 'evidenceAutoLoop')?.raw || {};
   const review = operatorState.humanReview || {
     pending_reviews: 0,
     approved_reviews: 0,
@@ -2893,6 +2896,11 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
             : assistantReject
               ? `${formatNumber(assistantReject)} Ablehnungen empfohlen.`
               : 'Keine Entscheidungshilfe verfügbar.'}
+      </p>
+      <p className="control-view-note">
+        {evidenceAutoLoop.review_count
+          ? 'Hermes plant weitere Evidenzläufe. Frank muss aktuell nichts freigeben.'
+          : 'Keine weiteren Evidenzläufe geplant.'}
       </p>
       <div className="operator-safety-flags">
         <StatusPill tone="warn">no_auto_trading=true</StatusPill>

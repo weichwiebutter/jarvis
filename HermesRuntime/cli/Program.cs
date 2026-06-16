@@ -118,6 +118,7 @@ internal sealed class HermesCli
             "review-queue" => ShowReviewQueue(),
             "review-prioritization-audit" => ShowReviewPrioritizationAudit(),
             "review-decision-assistant" => ShowReviewDecisionAssistant(),
+            "evidence-auto-loop" => RunEvidenceAutoLoop(),
             "review-item" => ShowReviewItem(),
             "approve-review" => DecideReview("approved"),
             "reject-review" => DecideReview("rejected"),
@@ -373,6 +374,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes review-queue       offene Human Review Queue anzeigen");
         Console.WriteLine("  hermes review-prioritization-audit Reviews priorisieren und gruppieren");
         Console.WriteLine("  hermes review-decision-assistant Review-Entscheidungshilfe anzeigen");
+        Console.WriteLine("  hermes evidence-auto-loop Sicheren Evidenz-Auto-Loop planen");
         Console.WriteLine("  hermes review-item --id <REVIEW_ID> einzelnes Review Item anzeigen");
         Console.WriteLine("  hermes approve-review --id <REVIEW_ID> --note \"...\" Review approven");
         Console.WriteLine("  hermes reject-review --id <REVIEW_ID> --note \"...\" Review ablehnen");
@@ -6257,6 +6259,35 @@ internal sealed class HermesCli
             WriteField("Warum", entry.RecommendationReason);
             WriteField("Aktion für Frank", entry.FrankAction);
         }
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunEvidenceAutoLoop()
+    {
+        WriteHeader("Hermes Evidence Auto Loop");
+        var service = new EvidenceAutoLoopService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Reviews gelesen", report.ReviewCount.ToString());
+        WriteField("Mehr-Evidenz-Reviews", report.MoreEvidenceReviews.ToString());
+        WriteField("Geplante Tasks", report.PlannedTasks.ToString());
+        WriteField("Trading Tasks", report.TradingTasks.ToString());
+        WriteField("Documentation Tasks", report.DocumentationTasks.ToString());
+        WriteField("Validation Tasks", report.ValidationTasks.ToString());
+        WriteField("Evidence Tasks", report.EvidenceTasks.ToString());
+        WriteField("Frank nötig", report.FrankRequired > 0 ? "ja" : "nein");
+        WriteField("Scheduler configured", report.SchedulerConfigured.ToString().ToLowerInvariant());
+        WriteField("Scheduler enabled", report.SchedulerEnabled.ToString().ToLowerInvariant());
+        WriteField("last_run", report.LastRunUtc ?? "-");
+        WriteField("next_run", report.NextRunUtc ?? report.NextRunHint);
+        WriteSubHeader("Operator Summary");
+        Console.WriteLine(report.NextAction);
+        WriteField("Hauptpriorität", report.TradingTasks > 0 ? "Trading" : report.DocumentationTasks > 0 ? "Documentation" : "allgemein");
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();
