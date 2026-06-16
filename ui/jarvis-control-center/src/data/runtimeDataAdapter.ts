@@ -1440,6 +1440,7 @@ function reportFixtureRaw(key) {
         updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
         validation_completion_label: '87% abgeschlossen',
         validation_completion_percent: 87,
+        validation_tasks_pending: 33,
         open_validations: 33,
         critical_knowledge_gaps: 3,
         queue_items_open: 33,
@@ -1452,6 +1453,11 @@ function reportFixtureRaw(key) {
         human_review_needs_more_evidence_reviews: 20,
         human_review_deferred_reviews: 0,
         human_review_needs_more_evidence_domains: ['documentation', 'trading'],
+        validation_tasks_created_last_run: 33,
+        evidence_tasks_executed_last_run: 12,
+        needs_more_evidence_before: 20,
+        needs_more_evidence_after: 20,
+        frank_action_required: false,
         missing_automation_jobs: ['collect_evidence', 'generate_validation_plans', 'validate_knowledge_items', 'execute_validation_tasks'],
         missing_queues: ['validation_queue', 'evidence_queue'],
         next_recommended_commands: ['collect_evidence', 'generate_validation_plans', 'validate_knowledge_items', 'execute_validation_tasks'],
@@ -1462,6 +1468,66 @@ function reportFixtureRaw(key) {
           { domain: 'knowledge', open_plans: 12, open_queue_items: 12, open_knowledge_items: 1, oldest_open_validation_age_days: 9 },
         ],
         warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'reviewPrioritizationAudit':
+      return {
+        report_version: 'review_prioritization_audit_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        total_pending_reviews: 20,
+        trading_reviews: 12,
+        documentation_reviews: 8,
+        research_reviews: 0,
+        software_reviews: 0,
+        process_reviews: 0,
+        domain_groups: [
+          { domain: 'trading', count: 12, reviews: [] },
+          { domain: 'documentation', count: 8, reviews: [] },
+        ],
+        top_priority_reviews: [],
+        operator_summary: '🔴 12 wichtige Entscheidungen\n🟡 0 Wissensprüfungen\n🟢 8 Dokumentationsprüfungen\n\nFrank muss nichts tun. Hermes bereitet die Reviews nur vor.',
+        warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'validationQueueRefill':
+      return {
+        report_version: 'validation_queue_refill_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        open_plans: 50,
+        plans_with_queued_tasks: 50,
+        plans_skipped: 0,
+        tasks_created: 50,
+        domains: ['documentation', 'trading'],
+        created_tasks: [],
+        skipped_plans: [],
+        next_action: 'Validation Tasks ausführen.',
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
+    case 'evidenceValidationRunner':
+      return {
+        report_version: 'evidence_validation_runner_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        validation_tasks_executed: 50,
+        evidence_tasks_executed: 50,
+        needs_more_evidence_before: 20,
+        needs_more_evidence_after: 12,
+        pending_reviews_before: 0,
+        pending_reviews_after: 4,
+        new_pending_reviews: 4,
+        prepared_for_review_count: 8,
+        still_needs_more_evidence_count: 12,
+        frank_action_required: true,
+        domains: ['documentation', 'trading'],
+        executed_tasks: [],
         no_trading_execution: true,
         no_broker_action: true,
         no_auto_trading: true,
@@ -2831,6 +2897,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       latestDemoSignals: operatorDashboardMock.latestDemoSignals,
       forwardTestStatus: operatorDashboardMock.forwardTestStatus,
       knowledgeValidationAudit: reportFixtureRaw('knowledgeValidationAudit'),
+      reviewPrioritizationAudit: reportFixtureRaw('reviewPrioritizationAudit'),
       autonomousImprovementQueue: reportFixtureRaw('autonomousImprovementQueue'),
       autonomousImprovementQueueSummary: reportFixtureRaw('autonomousImprovementQueueSummary'),
       autonomousImprovementWorkAreas: reportFixtureRaw('autonomousImprovementWorkAreas'),
@@ -2908,6 +2975,8 @@ export async function loadOperatorDashboard() {
         latestDemoSignals: dashboard.latestDemoSignals,
         forwardTestStatus: dashboard.forwardTestStatus,
         knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
+        validationQueueRefill: dashboard.validationQueueRefill,
+        evidenceValidationRunner: dashboard.evidenceValidationRunner,
         autonomousImprovementQueue: dashboard.autonomousImprovementQueue,
         autonomousImprovementQueueSummary: dashboard.autonomousImprovementQueueSummary,
         autonomousImprovementWorkAreas: dashboard.autonomousImprovementWorkAreas,
@@ -2986,6 +3055,9 @@ export async function loadOperatorDashboard() {
   rawReports.signalAgentSpecs = reportFixtureRaw('signalAgentSpecs');
   rawReports.multiAssetResearchStatus = reportFixtureRaw('multiAssetResearchStatus');
   rawReports.knowledgeValidationAudit = reportFixtureRaw('knowledgeValidationAudit');
+  rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
+  rawReports.validationQueueRefill = reportFixtureRaw('validationQueueRefill');
+  rawReports.evidenceValidationRunner = reportFixtureRaw('evidenceValidationRunner');
   rawReports.autonomousImprovementQueue = reportFixtureRaw('autonomousImprovementQueue');
   rawReports.autonomousImprovementQueueSummary = reportFixtureRaw('autonomousImprovementQueueSummary');
   rawReports.autonomousImprovementWorkAreas = reportFixtureRaw('autonomousImprovementWorkAreas');

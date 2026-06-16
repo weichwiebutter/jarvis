@@ -613,6 +613,30 @@ function priorityTone(priority) {
   return 'info';
 }
 
+function reviewPriorityRank(priority) {
+  const lowered = String(priority || '').toLowerCase();
+
+  if (lowered === 'hoch' || lowered === 'high') {
+    return 3;
+  }
+
+  if (lowered === 'mittel' || lowered === 'medium') {
+    return 2;
+  }
+
+  return 1;
+}
+
+function reviewDomainRank(domain) {
+  const lowered = String(domain || '').toLowerCase();
+  if (lowered === 'trading') return 0;
+  if (lowered === 'research') return 1;
+  if (lowered === 'software') return 2;
+  if (lowered === 'process') return 3;
+  if (lowered === 'documentation') return 4;
+  return 5;
+}
+
 function cliReviewCommand(action, reviewId) {
   const commands = {
     approve: `dotnet run --project ./cli/Hermes.Cli.csproj -- approve-review --id ${reviewId} --note "Manuell geprüft und plausibel."`,
@@ -1139,6 +1163,10 @@ function KnowledgeHealthCard({ operatorState }) {
   const audit = reportByKey(operatorState, 'knowledgeValidationAudit')?.raw || {};
   const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
   const criticalGaps = audit.critical_knowledge_gaps ?? audit.criticalKnowledgeGaps ?? masterStatus.knowledge_items_needing_oos;
+  const createdLastRun = audit.validation_tasks_created_last_run ?? audit.validationTasksCreatedLastRun ?? 0;
+  const executedLastRun = audit.evidence_tasks_executed_last_run ?? audit.evidenceTasksExecutedLastRun ?? 0;
+  const needsMoreEvidenceBefore = audit.needs_more_evidence_before ?? audit.needsMoreEvidenceBefore ?? Number(operatorState.humanReview?.needs_more_evidence_reviews || 0);
+  const needsMoreEvidenceAfter = audit.needs_more_evidence_after ?? audit.needsMoreEvidenceAfter ?? needsMoreEvidenceBefore;
   const oldestOpenValidationAgeDays = audit.oldest_open_validation_age_days ?? audit.oldestOpenValidationAgeDays ?? 0;
   const validationCompletionPercent =
     audit.validation_completion_percent
@@ -1174,6 +1202,10 @@ function KnowledgeHealthCard({ operatorState }) {
         <Metric label="Offene Validierungen" value={formatNumber(openValidations)} tone={openValidations ? 'warn' : 'good'} />
         <Metric label="Kritische Wissenslücken" value={formatNumber(criticalGaps)} tone={criticalGaps ? 'warn' : 'good'} />
         <Metric label="Älteste offene Validierung" value={`${formatNumber(oldestOpenValidationAgeDays)} Tage`} tone={oldestOpenValidationAgeDays >= 14 ? 'warn' : 'info'} />
+        <Metric label="Tasks neu" value={formatNumber(createdLastRun)} tone={createdLastRun ? 'good' : 'info'} />
+        <Metric label="Evidenz ausgeführt" value={formatNumber(executedLastRun)} tone={executedLastRun ? 'good' : 'info'} />
+        <Metric label="Needs More Evidence vorher" value={formatNumber(needsMoreEvidenceBefore)} tone={needsMoreEvidenceBefore ? 'warn' : 'good'} />
+        <Metric label="Needs More Evidence nachher" value={formatNumber(needsMoreEvidenceAfter)} tone={needsMoreEvidenceAfter ? 'warn' : 'good'} />
         <Metric label="Vertrauenswürdig" value={formatNumber(masterStatus.trusted_knowledge)} tone="good" />
         <Metric label="Schwach" value={formatNumber(masterStatus.weak_knowledge)} tone={masterStatus.weak_knowledge ? 'warn' : 'good'} />
         <Metric label="Veraltet" value={formatNumber(masterStatus.deprecated_knowledge)} tone={masterStatus.deprecated_knowledge ? 'warn' : 'good'} />
@@ -1290,6 +1322,7 @@ function buildCommandCenterModules(operatorState) {
   const handoffReport = reportByKey(operatorState, 'systemBHandoffBundle')?.raw || {};
   const specsReport = reportByKey(operatorState, 'signalAgentSpecs')?.raw || {};
   const trustedGateReport = reportByKey(operatorState, 'trustedKnowledgeReviewGate')?.raw || {};
+  const reviewPrioritization = reportByKey(operatorState, 'reviewPrioritizationAudit')?.raw || {};
   const nightly = reportByKey(operatorState, 'nightlyWorkAreaStatus')?.raw || {};
   const revalidation = nightly.revalidation || nightly.Revalidation || {};
   const revalidationStatus = String(revalidation.status || revalidation.Status || 'bereit').toLowerCase();
@@ -1302,6 +1335,8 @@ function buildCommandCenterModules(operatorState) {
       : `wartet auf Nightly bis ${revalidationNext}${revalidationAt ? ` (${shortTimeOnly(revalidationAt)})` : ''}`;
   const openReviews = Number(operatorState.humanReview?.pending_reviews || 0);
   const needsMoreEvidence = Number(operatorState.humanReview?.needs_more_evidence_reviews || 0);
+  const tradingReviews = Number(reviewPrioritization.trading_reviews || 0);
+  const documentationReviews = Number(reviewPrioritization.documentation_reviews || 0);
   const warnings = [
     ...operatorState.warnings,
     ...operatorState.storage.warnings,
@@ -1347,11 +1382,15 @@ function buildCommandCenterModules(operatorState) {
       value: scorePercent(operatorState.masterStatus.average_trust_score),
       detail: trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview
         ? `${formatNumber(trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview)} Wissenselemente bereit`
-        : openReviews > 0
-          ? `${formatNumber(openReviews)} Prüfungen`
-          : needsMoreEvidence > 0
-            ? 'Hermes sammelt weitere Evidenz'
-            : 'Keine Aktion erforderlich',
+        : tradingReviews > 0
+          ? `${formatNumber(tradingReviews)} Trading-Entscheidungen warten`
+          : documentationReviews > 0
+            ? `${formatNumber(documentationReviews)} Dokumentationsprüfungen können später erfolgen`
+            : openReviews > 0
+              ? `${formatNumber(openReviews)} Prüfungen`
+              : needsMoreEvidence > 0
+                ? 'Hermes sammelt weitere Evidenz'
+                : 'Keine Aktion erforderlich',
       tone: trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview ? 'warn' : operatorState.masterStatus.knowledge_items_needing_oos ? 'warn' : 'info',
       meta: trustedGateReport.eligible_for_trusted_review || trustedGateReport.eligibleForTrustedReview
         ? 'Im Prüfzentrum prüfen'
@@ -1361,8 +1400,14 @@ function buildCommandCenterModules(operatorState) {
       id: 'review',
       title: 'Prüfzentrum',
       value: `${formatNumber(openReviews)} offen`,
-      detail: openReviews ? 'Frank muss prüfen' : 'Kein Eingriff nötig',
-      tone: openReviews ? 'warn' : 'good',
+      detail: tradingReviews > 0
+        ? `${formatNumber(tradingReviews)} Trading-Entscheidungen warten`
+        : documentationReviews > 0
+          ? `${formatNumber(documentationReviews)} Dokumentationsprüfungen können später erfolgen`
+          : openReviews
+            ? 'Prüfungen offen'
+            : 'Kein Eingriff nötig',
+      tone: tradingReviews > 0 ? 'warn' : openReviews ? 'info' : 'good',
       meta: `${formatNumber(operatorState.humanReview?.deferred_reviews || 0)} zurückgestellt`,
     },
     {
@@ -1713,8 +1758,11 @@ function DashboardJarvisCenter({ operatorState }) {
   const activeAssets = Array.isArray(operatorState.masterStatus.scalping_assets)
     ? operatorState.masterStatus.scalping_assets
     : ['GER40', 'XAUUSD', 'EURUSD'];
+  const reviewPrioritization = reportByKey(operatorState, 'reviewPrioritizationAudit')?.raw || {};
   const reviewOpen = Number(operatorState.humanReview?.pending_reviews || 0);
   const evidenceOpen = Number(operatorState.humanReview?.needs_more_evidence_reviews || 0);
+  const tradingReviews = Number(reviewPrioritization.trading_reviews || 0);
+  const documentationReviews = Number(reviewPrioritization.documentation_reviews || 0);
   const frankState = reviewOpen > 0 ? 'human_review_required' : evidenceOpen > 0 ? 'evidence_requested' : 'no_action_required';
   const tradingReady = String(operatorState.masterStatus.bot_ready_assets || operatorState.masterStatus.setup_ready_assets || '').includes('GER40')
     || String(operatorState.masterStatus.ensemble_portfolio_status || '').includes('ready');
@@ -1739,7 +1787,7 @@ function DashboardJarvisCenter({ operatorState }) {
       </div>
       <div className="cockpit-jarvis-orb-caption cockpit-jarvis-orb-caption-right">
         <small>Frank</small>
-        <strong>{reviewOpen ? `${formatNumber(reviewOpen)} Prüfungen` : evidenceOpen ? 'Hermes sammelt weitere Evidenz' : 'nichts offen'}</strong>
+        <strong>{tradingReviews ? `${formatNumber(tradingReviews)} Trading-Entscheidungen warten` : documentationReviews ? `${formatNumber(documentationReviews)} Dokumentationsprüfungen können später erfolgen` : reviewOpen ? `${formatNumber(reviewOpen)} Prüfungen` : evidenceOpen ? 'Hermes sammelt weitere Evidenz' : 'nichts offen'}</strong>
       </div>
       <div className="cockpit-jarvis-orb-caption cockpit-jarvis-orb-caption-bottom">
         <small>Trading</small>
@@ -2315,28 +2363,53 @@ function DashboardTimeControl({ operatorState, onRefresh }) {
 }
 
 function DashboardReviewSummary({ operatorState }) {
+  const reviewPrioritization = reportByKey(operatorState, 'reviewPrioritizationAudit')?.raw || {};
   const review = operatorState.humanReview || {};
   const openReviews = Number(review.pending_reviews || 0);
   const needsMoreEvidence = Number(review.needs_more_evidence_reviews || 0);
+  const tradingReviews = Number(reviewPrioritization.trading_reviews || 0);
+  const documentationReviews = Number(reviewPrioritization.documentation_reviews || 0);
+  const knowledgeReviews = Number(reviewPrioritization.research_reviews || 0) + Number(reviewPrioritization.software_reviews || 0) + Number(reviewPrioritization.process_reviews || 0);
   const reviewTone = openReviews > 0 ? 'warn' : needsMoreEvidence > 0 ? 'warn' : 'good';
-  const reviewSummary = openReviews > 0
-    ? translateOperatorCode('review_required')
-    : needsMoreEvidence > 0
+  const reviewSummary = tradingReviews > 0
+    ? {
+        title: 'Wichtige Entscheidungen warten',
+        meaning: 'Hermes hat Prioritäten für Trading-Entscheidungen vorbereitet.',
+        action: 'Ja, im Prüfzentrum',
+        severity: 'warn',
+        whatHermesDoes: 'ordnet Trading-Reviews nach Priorität',
+        franksAction: 'Ja, im Prüfzentrum',
+      }
+    : documentationReviews > 0
       ? {
-          title: 'Hermes sammelt weitere Evidenz',
-          meaning: 'Hermes arbeitet an offenen Evidenzthemen.',
-          action: 'Keine Aktion erforderlich.',
-          severity: 'warn',
-          whatHermesDoes: 'sammelt weitere Evidenz',
+          title: 'Dokumentationsprüfungen können später erfolgen',
+          meaning: 'Hermes kann Dokumentationsprüfungen warten lassen.',
+          action: 'Nein',
+          severity: 'info',
+          whatHermesDoes: 'bearbeitet Dokumentationsprüfungen im Hintergrund',
           franksAction: 'Nein',
         }
-      : translateOperatorCode('no_action_required');
+      : openReviews > 0
+        ? translateOperatorCode('review_required')
+        : needsMoreEvidence > 0
+          ? {
+              title: 'Hermes sammelt weitere Evidenz',
+              meaning: 'Hermes arbeitet an offenen Evidenzthemen.',
+              action: 'Keine Aktion erforderlich.',
+              severity: 'warn',
+              whatHermesDoes: 'sammelt weitere Evidenz',
+              franksAction: 'Nein',
+            }
+          : translateOperatorCode('no_action_required');
   return (
     <div className="cockpit-accordion-grid">
       <OperatorSummary code={openReviews ? 'human_review_required' : 'no_action_required'} />
       <Metric label="Bedeutung" value={reviewSummary.meaning} tone={reviewTone} />
       <Metric label="Hermes arbeitet an" value={reviewSummary.whatHermesDoes} tone="info" />
       <Metric label="Aktion für Frank" value={reviewSummary.franksAction} tone={reviewSummary.franksAction !== 'Nein' ? 'warn' : 'good'} />
+      <Metric label="Wichtige Entscheidungen" value={formatNumber(tradingReviews)} tone={tradingReviews ? 'warn' : 'good'} />
+      <Metric label="Wissensprüfungen" value={formatNumber(knowledgeReviews)} tone={knowledgeReviews ? 'warn' : 'good'} />
+      <Metric label="Dokumentation" value={formatNumber(documentationReviews)} tone={documentationReviews ? 'good' : 'info'} />
       <Metric label="Offene Prüfungen" value={formatNumber(openReviews)} tone={openReviews ? 'warn' : 'good'} />
       <Metric label="Freigegeben" value={formatNumber(review.approved_reviews)} tone="good" />
       <Metric label="Zurückgestellt" value={formatNumber(review.deferred_reviews)} tone="info" />
@@ -2350,12 +2423,16 @@ function DashboardLearningSummary({ operatorState }) {
   const audit = reportByKey(operatorState, 'knowledgeValidationAudit')?.raw || {};
   const improvement = reportByKey(operatorState, 'autonomousImprovementQueue')?.raw || {};
   const improvementPolicy = reportByKey(operatorState, 'workAreaExecutorPolicy')?.raw || {};
+  const reviewPrioritization = reportByKey(operatorState, 'reviewPrioritizationAudit')?.raw || {};
   const nightly = reportByKey(operatorState, 'nightlyWorkAreaStatus')?.raw || {};
   const execution = reportByKey(operatorState, 'autonomousImprovementExecution')?.raw || {};
   const trustPlan = reportByKey(operatorState, 'knowledgeTrustImprovementPlan')?.raw || {};
   const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
   const openReviews = Number(operatorState.humanReview?.pending_reviews || 0);
   const needsMoreEvidence = Number(operatorState.humanReview?.needs_more_evidence_reviews || 0);
+  const tradingReviews = Number(reviewPrioritization.trading_reviews || 0);
+  const documentationReviews = Number(reviewPrioritization.documentation_reviews || 0);
+  const knowledgeReviews = Number(reviewPrioritization.research_reviews || 0) + Number(reviewPrioritization.software_reviews || 0) + Number(reviewPrioritization.process_reviews || 0);
   const criticalGaps = audit.critical_knowledge_gaps ?? audit.criticalKnowledgeGaps ?? masterStatus.knowledge_items_needing_oos;
   const oldestOpenValidationAgeDays = audit.oldest_open_validation_age_days ?? audit.oldestOpenValidationAgeDays ?? 0;
   const validationCompletionPercent =
@@ -2383,7 +2460,10 @@ function DashboardLearningSummary({ operatorState }) {
       <Metric label="Offene Pläne" value={formatNumber(masterStatus.validation_plans_open)} tone={masterStatus.validation_plans_open ? 'warn' : 'good'} />
       <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
       <Metric label="Selbstverbesserung" value={`${formatNumber(improvementPolicy.active_areas || improvement.active_improvements || 0)} Bereiche`} tone={improvementPolicy.active_areas || improvement.active_improvements ? 'good' : 'info'} />
-      <Metric label="Prüfzentrum" value={openReviews ? `${formatNumber(openReviews)} offen` : needsMoreEvidence ? 'Hermes sammelt weitere Evidenz' : 'Keine Aktion erforderlich'} tone={openReviews ? 'warn' : needsMoreEvidence ? 'warn' : 'good'} />
+      <Metric label="Prüfzentrum" value={tradingReviews ? `${formatNumber(tradingReviews)} Trading-Entscheidungen warten` : documentationReviews ? `${formatNumber(documentationReviews)} Dokumentationsprüfungen können später erfolgen` : openReviews ? `${formatNumber(openReviews)} offen` : needsMoreEvidence ? 'Hermes sammelt weitere Evidenz' : 'Keine Aktion erforderlich'} tone={tradingReviews ? 'warn' : openReviews ? 'warn' : needsMoreEvidence ? 'warn' : 'good'} />
+      <Metric label="Wichtige Entscheidungen" value={formatNumber(tradingReviews)} tone={tradingReviews ? 'warn' : 'good'} />
+      <Metric label="Wissensprüfungen" value={formatNumber(knowledgeReviews)} tone={knowledgeReviews ? 'warn' : 'good'} />
+      <Metric label="Dokumentationsprüfungen" value={formatNumber(documentationReviews)} tone={documentationReviews ? 'good' : 'info'} />
       <Metric
         label="Re-Validierung"
         value={
@@ -2582,6 +2662,7 @@ const REVIEW_ACTIONS = {
 };
 
 function HumanReviewCenter({ operatorState, onRefresh }) {
+  const reviewPrioritization = reportByKey(operatorState, 'reviewPrioritizationAudit')?.raw || {};
   const review = operatorState.humanReview || {
     pending_reviews: 0,
     approved_reviews: 0,
@@ -2590,6 +2671,9 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
   };
   const items = Array.isArray(review.items) ? review.items : [];
   const openReviews = Number(review.pending_reviews || 0);
+  const tradingPriorityCount = Number(reviewPrioritization.trading_reviews || 0);
+  const knowledgePriorityCount = Number(reviewPrioritization.research_reviews || 0) + Number(reviewPrioritization.software_reviews || 0);
+  const documentationPriorityCount = Number(reviewPrioritization.documentation_reviews || 0);
   const [actionBusyId, setActionBusyId] = useState('');
   const [pendingReviewAction, setPendingReviewAction] = useState(null);
   const [reviewNotesById, setReviewNotesById] = useState({});
@@ -2597,6 +2681,19 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
   const [resolvedReviewIds, setResolvedReviewIds] = useState([]);
   const visibleItems = openReviews > 0
     ? items.filter((item) => item.status === 'pending' && !resolvedReviewIds.includes(item.review_id))
+      .sort((left, right) => {
+        const priorityDelta = reviewPriorityRank(right.priority) - reviewPriorityRank(left.priority);
+        if (priorityDelta !== 0) {
+          return priorityDelta;
+        }
+
+        const domainDelta = reviewDomainRank(left.domain) - reviewDomainRank(right.domain);
+        if (domainDelta !== 0) {
+          return domainDelta;
+        }
+
+        return Number(right.trust_before || 0) - Number(left.trust_before || 0);
+      })
     : [];
 
   const openReviewAction = (actionKey, item) => {
@@ -2710,6 +2807,15 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
           <StatusPill tone={openReviews ? 'warn' : 'good'}>
             {formatNumber(openReviews)} offen
           </StatusPill>
+          <StatusPill tone={tradingPriorityCount ? 'danger' : 'good'}>
+            🔴 {formatNumber(tradingPriorityCount)} wichtig
+          </StatusPill>
+          <StatusPill tone={knowledgePriorityCount ? 'warn' : 'good'}>
+            🟡 {formatNumber(knowledgePriorityCount)} Wissensprüfungen
+          </StatusPill>
+          <StatusPill tone={documentationPriorityCount ? 'good' : 'info'}>
+            🟢 {formatNumber(documentationPriorityCount)} Dokumentationsprüfungen
+          </StatusPill>
           <StatusPill tone="info">{formatNumber(review.approved_reviews)} freigegeben</StatusPill>
           <StatusPill tone={sourceTone(operatorState.dataSource)}>
             {sourceModeLabel(operatorState.dataSource)}
@@ -2719,6 +2825,13 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
 
       <p className="control-view-note">
         Die UI kann Review-Aktionen auslösen, aber niemals Trading-Aktionen. Jede Entscheidung läuft über den Human-Review-Workflow und bleibt menschlich kontrolliert.
+      </p>
+      <p className="control-view-note">
+        {tradingPriorityCount
+          ? `${formatNumber(tradingPriorityCount)} Trading-Entscheidungen warten.`
+          : documentationPriorityCount
+            ? `${formatNumber(documentationPriorityCount)} Dokumentationsprüfungen können später erfolgen.`
+            : 'Keine offenen Reviews mit hoher Priorität.'}
       </p>
       <div className="operator-safety-flags">
         <StatusPill tone="warn">no_auto_trading=true</StatusPill>

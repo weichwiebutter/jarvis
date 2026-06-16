@@ -143,6 +143,22 @@ const OPERATOR_TRANSLATIONS = {
     whatHermesDoes: 'wertet Validation-Lücken aus',
     franksAction: 'Nein',
   },
+  validation_queue_refill: {
+    title: 'Validation Queue wird aufgefüllt',
+    meaning: 'Hermes überführt offene Validierungspläne in konkrete Aufgaben.',
+    action: 'Keine Aktion für Frank. Hermes kann die Queue selbst nachfüllen.',
+    severity: 'info',
+    whatHermesDoes: 'füllt die Validation Queue auf',
+    franksAction: 'Nein',
+  },
+  evidence_validation_runner: {
+    title: 'Evidenz wird gesammelt',
+    meaning: 'Hermes führt sichere Validierungsaufgaben aus und sammelt Evidenz.',
+    action: 'Keine Aktion für Frank. Hermes baut Evidenz weiter aus.',
+    severity: 'info',
+    whatHermesDoes: 'sammelt Evidenz',
+    franksAction: 'Nein',
+  },
   autonomous_improvement_queue: {
     title: 'Selbstverbesserung läuft',
     meaning: 'Hermes erzeugt und verfolgt konkrete Verbesserungsaufgaben.',
