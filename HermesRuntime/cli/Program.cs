@@ -6522,6 +6522,7 @@ internal sealed class HermesCli
 
         WriteField("Report", DisplayPath(report.ReportPath));
         WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Report Role", report.ReportRole);
         WriteField("Queue", DisplayPath(report.QueuePath));
         WriteField("Contract Markdown", DisplayPath(report.ContractMarkdownPath));
         WriteField("Contract JSON", DisplayPath(report.ContractJsonPath));
@@ -6531,6 +6532,8 @@ internal sealed class HermesCli
         WriteField("Executed", report.JobsExecuted.ToString());
         WriteField("Skipped", report.JobsSkipped.ToString());
         WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Latest Success", report.LatestSuccessAvailable ? "ja" : "nein");
+        WriteField("Latest Success Path", DisplayPath(report.LatestSuccessPath));
         WriteField("Operator", report.OperatorSummary);
         WriteMessages("Warnings", report.Warnings);
         WriteMessages("Status", report.StatusDistribution);

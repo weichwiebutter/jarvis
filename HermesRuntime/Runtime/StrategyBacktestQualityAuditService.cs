@@ -65,52 +65,12 @@ public sealed class StrategyBacktestQualityAuditService
     {
         Directory.CreateDirectory(Root);
 
-        var executor = LoadExecutor();
-        var queue = LoadQueue();
-        var planner = LoadPlanner();
+        var latestSuccess = StrategyBacktestResultArchiveService.LoadLatestSuccess(_storagePaths);
         var entries = new List<StrategyBacktestQualityAuditEntry>();
 
-        if (executor?.Execution is not null && executor.SelectedJob is not null)
+        if (latestSuccess is not null)
         {
-            entries.Add(BuildEntry(executor.SelectedJob, executor.Execution));
-        }
-
-        var resultFiles = Directory.Exists(RootDirectoryForResults())
-            ? Directory.EnumerateFiles(RootDirectoryForResults(), "backtest_result_*.json", SearchOption.TopDirectoryOnly).OrderBy(path => path).ToList()
-            : [];
-        foreach (var resultFile in resultFiles)
-        {
-            var json = File.ReadAllText(resultFile);
-            var legacy = JsonSerializer.Deserialize<LegacyBacktestResult>(json, JsonDefaults.SnapshotReadOptions);
-            if (legacy is null)
-            {
-                continue;
-            }
-
-            var matchingJob = queue.FirstOrDefault(job => job.BacktestJobId.Equals(legacy.BacktestJobId, StringComparison.OrdinalIgnoreCase))
-                ?? planner.FirstOrDefault(job => job.BacktestJobId.Equals(legacy.BacktestJobId, StringComparison.OrdinalIgnoreCase));
-            if (matchingJob is null)
-            {
-                continue;
-            }
-
-            var execution = new StrategyBacktestResult(
-                ExecutionId: legacy.ExecutionId,
-                BacktestJobId: legacy.BacktestJobId,
-                ExecutionSupported: legacy.ExecutionSupported,
-                Status: legacy.Status,
-                TradesSimulated: legacy.TradesSimulated,
-                WinRate: legacy.WinRate,
-                ProfitFactor: legacy.ProfitFactor,
-                MaxDrawdown: legacy.MaxDrawdown,
-                Expectancy: legacy.Expectancy,
-                RMultipleAvg: legacy.RMultipleAvg,
-                CostSpreadModelUsed: legacy.CostSpreadModelUsed,
-                Warnings: legacy.Warnings ?? [],
-                Errors: legacy.Errors ?? [],
-                RequiresHumanReview: legacy.RequiresHumanReview,
-                GeneratedAtUtc: legacy.GeneratedAtUtc);
-            entries.Add(BuildEntry(matchingJob, execution));
+            entries.Add(BuildEntry(latestSuccess.Job, latestSuccess.Execution));
         }
 
         var audited = entries.Count;
@@ -142,7 +102,7 @@ public sealed class StrategyBacktestQualityAuditService
                 ["medium_confidence_max_trades"] = 300,
                 ["high_confidence_min_trades"] = 301,
             },
-            Warnings: audited == 0 ? ["no_backtest_results_found"] : [],
+            Warnings: audited == 0 ? ["no_successful_backtest_found"] : [],
             OperatorSummary: BuildOperatorSummary(entries),
             FrankRequired: false,
             ReportPath: ReportPath,
@@ -281,7 +241,7 @@ public sealed class StrategyBacktestQualityAuditService
     {
         if (entries.Count == 0)
         {
-            return "Keine Backtest-Ergebnisse gefunden. Frank nötig: nein.";
+            return "Kein erfolgreicher Backtest vorhanden. Frank nötig: nein.";
         }
 
         var entry = entries[0];
@@ -322,77 +282,4 @@ public sealed class StrategyBacktestQualityAuditService
         return sb.ToString();
     }
 
-    private string RootDirectoryForResults() => Path.Combine(_storagePaths.Root, "reports", "strategy_backtest_execution");
-
-    private StrategyBacktestExecutorReport? LoadExecutor()
-    {
-        var path = Path.Combine(RootDirectoryForResults(), "strategy_backtest_executor.json");
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<StrategyBacktestExecutorReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
-        }
-        catch (Exception ex) when (ex is IOException or JsonException)
-        {
-            return null;
-        }
-    }
-
-    private IReadOnlyList<StrategyBacktestJobPlan> LoadQueue()
-    {
-        var path = Path.Combine(_storagePaths.Root, "queues", "strategy_backtest_jobs.json");
-        if (!File.Exists(path))
-        {
-            return [];
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<List<StrategyBacktestJobPlan>>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions) ?? [];
-        }
-        catch (Exception ex) when (ex is IOException or JsonException)
-        {
-            return [];
-        }
-    }
-
-    private IReadOnlyList<StrategyBacktestJobPlan> LoadPlanner()
-    {
-        var path = Path.Combine(_storagePaths.Root, "reports", "strategy_backtest_jobs", "strategy_backtest_job_planner.json");
-        if (!File.Exists(path))
-        {
-            return [];
-        }
-
-        try
-        {
-            var planner = JsonSerializer.Deserialize<StrategyBacktestJobPlannerReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
-            return planner?.Jobs ?? [];
-        }
-        catch (Exception ex) when (ex is IOException or JsonException)
-        {
-            return [];
-        }
-    }
-
-    private sealed record LegacyBacktestResult(
-        string ExecutionId,
-        string BacktestJobId,
-        bool ExecutionSupported,
-        string Status,
-        int? TradesSimulated,
-        double? WinRate,
-        double? ProfitFactor,
-        double? MaxDrawdown,
-        double? Expectancy,
-        double? RMultipleAvg,
-        bool CostSpreadModelUsed,
-        IReadOnlyList<string>? Warnings,
-        IReadOnlyList<string>? Errors,
-        bool RequiresHumanReview,
-        DateTimeOffset GeneratedAtUtc);
 }

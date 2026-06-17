@@ -55,11 +55,11 @@ public sealed class StrategyBacktestEvidenceGateService
     {
         Directory.CreateDirectory(Root);
 
-        var qualityAudit = LoadQualityAudit();
         var entries = new List<StrategyBacktestEvidenceGateEntry>();
-        foreach (var entry in qualityAudit?.Entries ?? [])
+        var latestSuccess = StrategyBacktestResultArchiveService.LoadLatestSuccess(_storagePaths);
+        if (latestSuccess is not null)
         {
-            entries.Add(BuildEntry(entry));
+            entries.Add(BuildEntry(latestSuccess.Job, latestSuccess.Execution));
         }
 
         var report = new StrategyBacktestEvidenceGateReport(
@@ -81,7 +81,7 @@ public sealed class StrategyBacktestEvidenceGateService
                 ["certification_gate_historical_period_days_min"] = 730,
                 ["certification_gate_trades_min"] = 100,
             },
-            Warnings: entries.Count == 0 ? ["no_backtest_results_found"] : [],
+            Warnings: entries.Count == 0 ? ["no_successful_backtest_found"] : [],
             OperatorSummary: BuildOperatorSummary(entries),
             FrankRequired: false,
             ReportPath: ReportPath,
@@ -108,22 +108,22 @@ public sealed class StrategyBacktestEvidenceGateService
         }
     }
 
-    private StrategyBacktestEvidenceGateEntry BuildEntry(StrategyBacktestQualityAuditEntry quality)
+    private StrategyBacktestEvidenceGateEntry BuildEntry(StrategyBacktestJobPlan job, StrategyBacktestResult result)
     {
-        var job = FindJob(quality.BacktestJobId);
-        var datasetPath = Path.Combine(_storagePaths.Root, "market_data", "candles", quality.Asset.ToUpperInvariant(), quality.Timeframe.ToUpperInvariant());
-        var candles = LoadCandles(datasetPath, quality.Asset, quality.Timeframe);
+        var datasetPath = Path.Combine(_storagePaths.Root, "market_data", "candles", job.Asset.ToUpperInvariant(), job.Timeframe.ToUpperInvariant());
+        var candles = LoadCandles(datasetPath, job.Asset, job.Timeframe);
         var historicalBars = candles.Count;
         var historicalPeriodDays = candles.Count == 0
             ? 0
             : Math.Max(1, (int)Math.Round((candles[^1].TimestampUtc.Date - candles[0].TimestampUtc.Date).TotalDays) + 1);
         var tradingDays = candles.Select(candle => candle.TimestampUtc.Date).Distinct().Count();
 
-        var passedResearchGate = historicalPeriodDays >= 180 && quality.TradesSimulated >= 30;
-        var passedOosGate = historicalPeriodDays >= 365 && quality.TradesSimulated >= 100;
-        var passedCertificationGate = historicalPeriodDays >= 730 && quality.TradesSimulated >= 100 && quality.EligibleForCertification;
+        var trades = result.TradesSimulated ?? 0;
+        var passedResearchGate = historicalPeriodDays >= 180 && trades >= 30;
+        var passedOosGate = historicalPeriodDays >= 365 && trades >= 100;
+        var passedCertificationGate = historicalPeriodDays >= 730 && trades >= 100 && result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase);
 
-        var rootCause = DetermineRootCause(historicalPeriodDays, quality.TradesSimulated);
+        var rootCause = DetermineRootCause(historicalPeriodDays, trades);
         var warnings = new List<string>();
         if (historicalBars == 0)
         {
@@ -131,15 +131,15 @@ public sealed class StrategyBacktestEvidenceGateService
         }
 
         return new StrategyBacktestEvidenceGateEntry(
-            BacktestJobId: quality.BacktestJobId,
-            StrategyPattern: quality.StrategyPattern,
-            Asset: quality.Asset,
-            Timeframe: quality.Timeframe,
+            BacktestJobId: job.BacktestJobId,
+            StrategyPattern: job.StrategyPattern,
+            Asset: job.Asset,
+            Timeframe: job.Timeframe,
             HistoricalPeriodDays: historicalPeriodDays,
             HistoricalBars: historicalBars,
             TradingDays: tradingDays,
-            TradesSimulated: quality.TradesSimulated,
-            SampleClassification: Classify(historicalPeriodDays, quality.TradesSimulated),
+            TradesSimulated: trades,
+            SampleClassification: Classify(historicalPeriodDays, trades),
             PassedResearchGate: passedResearchGate,
             PassedOosGate: passedOosGate,
             PassedCertificationGate: passedCertificationGate,
@@ -227,48 +227,11 @@ public sealed class StrategyBacktestEvidenceGateService
         return candles.OrderBy(candle => candle.TimestampUtc).ToList();
     }
 
-    private StrategyBacktestJobPlan? FindJob(string backtestJobId)
-    {
-        var queuePath = Path.Combine(_storagePaths.Root, "queues", "strategy_backtest_jobs.json");
-        if (!File.Exists(queuePath))
-        {
-            return null;
-        }
-
-        try
-        {
-            var items = JsonSerializer.Deserialize<List<StrategyBacktestJobPlan>>(File.ReadAllText(queuePath), JsonDefaults.SnapshotReadOptions) ?? [];
-            return items.FirstOrDefault(item => item.BacktestJobId.Equals(backtestJobId, StringComparison.OrdinalIgnoreCase));
-        }
-        catch (Exception ex) when (ex is IOException or JsonException)
-        {
-            return null;
-        }
-    }
-
-    private StrategyBacktestQualityAuditReport? LoadQualityAudit()
-    {
-        var path = Path.Combine(_storagePaths.Root, "reports", "strategy_backtest_quality", "strategy_backtest_quality_audit.json");
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<StrategyBacktestQualityAuditReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
-        }
-        catch (Exception ex) when (ex is IOException or JsonException)
-        {
-            return null;
-        }
-    }
-
     private static string BuildOperatorSummary(IReadOnlyList<StrategyBacktestEvidenceGateEntry> entries)
     {
         if (entries.Count == 0)
         {
-            return "Keine Backtest-Ergebnisse gefunden. Frank nötig: nein.";
+            return "Kein erfolgreicher Backtest vorhanden. Frank nötig: nein.";
         }
 
         var entry = entries[0];

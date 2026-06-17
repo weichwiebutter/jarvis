@@ -29,6 +29,7 @@ public sealed record StrategyBacktestExecutionResult(
 public sealed record StrategyBacktestExecutorReport(
     string ReportVersion,
     DateTimeOffset UpdatedAtUtc,
+    string ReportRole,
     string QueuePath,
     int QueueItemsLoaded,
     int ReadyJobsFound,
@@ -46,6 +47,8 @@ public sealed record StrategyBacktestExecutorReport(
     bool NoBrokerAction,
     bool NoAutoTrading,
     bool HumanReviewRequired,
+    bool LatestSuccessAvailable,
+    string LatestSuccessPath,
     string ContractMarkdownPath,
     string ContractJsonPath,
     string ReportPath,
@@ -65,15 +68,15 @@ public sealed class StrategyBacktestExecutorService
 
     public string Root => Path.Combine(_storagePaths.Root, "reports", "strategy_backtest_execution");
     public string QueuePath => Path.Combine(_storagePaths.Root, "queues", "strategy_backtest_jobs.json");
-    public string ReportPath => _resolvedReportPath ?? Path.Combine(Root, "strategy_backtest_executor.json");
-    public string MarkdownPath => _resolvedMarkdownPath ?? Path.Combine(Root, "strategy_backtest_executor.md");
+    public string ReportPath => _resolvedReportPath ?? StrategyBacktestResultArchiveService.LastRunReportPath(_storagePaths);
+    public string MarkdownPath => _resolvedMarkdownPath ?? StrategyBacktestResultArchiveService.LastRunMarkdownPath(_storagePaths);
     public string QueueResolvedPath => _resolvedQueuePath ?? QueuePath;
     public string ContractMarkdownPath => Path.Combine(Root, "strategy_backtest_engine_contract.md");
     public string ContractJsonPath => Path.Combine(Root, "strategy_backtest_engine_contract.json");
 
     public StrategyBacktestExecutorReport Run()
     {
-        Directory.CreateDirectory(Root);
+        StrategyBacktestResultArchiveService.EnsureDirectories(_storagePaths);
 
         var jobs = LoadJobs(QueuePath);
         var readyJobs = jobs.Where(job => job.Status.Equals("ready_to_execute", StringComparison.OrdinalIgnoreCase) && job.DatasetAvailable).ToList();
@@ -116,9 +119,13 @@ public sealed class StrategyBacktestExecutorService
             }
         }
 
+        var latestSuccessPath = StrategyBacktestResultArchiveService.LatestSuccessReportPath(_storagePaths);
+        var latestSuccessAvailable = File.Exists(latestSuccessPath);
+
         var report = new StrategyBacktestExecutorReport(
             ReportVersion: "strategy_backtest_executor_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
+            ReportRole: "last_run",
             QueuePath: QueuePath,
             QueueItemsLoaded: jobs.Count,
             ReadyJobsFound: readyJobs.Count,
@@ -141,12 +148,14 @@ public sealed class StrategyBacktestExecutorService
             NoBrokerAction: true,
             NoAutoTrading: true,
             HumanReviewRequired: true,
+            LatestSuccessAvailable: latestSuccessAvailable,
+            LatestSuccessPath: latestSuccessPath,
             ContractMarkdownPath: ContractMarkdownPath,
             ContractJsonPath: ContractJsonPath,
             ReportPath: ReportPath,
             MarkdownPath: MarkdownPath);
 
-        WriteArtifacts(report);
+        WriteArtifacts(report, selected, execution, updatedJobs);
         WriteContractArtifacts();
         return report;
     }
@@ -230,14 +239,35 @@ public sealed class StrategyBacktestExecutorService
         }
     }
 
-    private void WriteArtifacts(StrategyBacktestExecutorReport report)
+    private void WriteArtifacts(
+        StrategyBacktestExecutorReport report,
+        StrategyBacktestJobPlan? selected,
+        StrategyBacktestResult? execution,
+        IReadOnlyList<StrategyBacktestJobPlan> jobs)
     {
-        var json = JsonSerializer.Serialize(report, JsonDefaults.WriteOptions);
-        var markdown = BuildMarkdown(report);
-        File.WriteAllText(ReportPath, json);
-        File.WriteAllText(MarkdownPath, markdown);
+        StrategyBacktestResultArchiveService.WriteLastRun(_storagePaths, report);
         _resolvedReportPath = ReportPath;
         _resolvedMarkdownPath = MarkdownPath;
+
+        var attemptedJob = selected;
+        var historyEntry = new StrategyBacktestRunHistoryEntry(
+            AttemptedAtUtc: DateTimeOffset.UtcNow,
+            BacktestJobId: attemptedJob?.BacktestJobId ?? "-",
+            StrategyPattern: attemptedJob?.StrategyPattern ?? "-",
+            Asset: attemptedJob?.Asset ?? "-",
+            Timeframe: attemptedJob?.Timeframe ?? "-",
+            ExecutionSupported: execution?.ExecutionSupported ?? false,
+            Status: execution?.Status ?? "not_attempted",
+            Successful: execution is not null && execution.ExecutionSupported && IsTerminalSuccess(execution.Status),
+            Source: execution is not null && execution.ExecutionSupported && IsTerminalSuccess(execution.Status) ? "success" : "last_run",
+            Warnings: execution?.Warnings ?? report.Warnings,
+            Errors: execution?.Errors ?? []);
+        StrategyBacktestResultArchiveService.WriteRunHistory(_storagePaths, historyEntry);
+
+        if (selected is not null && execution is not null && execution.ExecutionSupported && IsTerminalSuccess(execution.Status))
+        {
+            StrategyBacktestResultArchiveService.WriteResult(_storagePaths, selected, execution);
+        }
     }
 
     private void WriteQueue(IReadOnlyList<StrategyBacktestJobPlan> jobs)
