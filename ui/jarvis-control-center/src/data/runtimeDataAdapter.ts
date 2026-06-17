@@ -1892,6 +1892,7 @@ function reportFixtureRaw(key) {
       return {
         report_version: 'strategy_backtest_executor_v1',
         updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        report_role: 'last_run',
         queue_path: '/mnt/d/HermesData/queues/strategy_backtest_jobs.json',
         queue_items_loaded: 12,
         ready_jobs_found: 12,
@@ -1907,8 +1908,43 @@ function reportFixtureRaw(key) {
         no_broker_action: true,
         no_auto_trading: true,
         human_review_required: true,
+        latest_success_available: true,
+        latest_success_path: '/mnt/d/HermesData/reports/strategy_backtest_execution/strategy_backtest_latest_success.json',
         selected_job: null,
         execution: null,
+      };
+    case 'strategyBacktestLatestSuccess':
+      return {
+        report_version: 'strategy_backtest_latest_success_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        report_role: 'latest_success',
+        job: {
+          backtest_job_id:
+            'backtest_job_validation_plan_trading_research_mean_reversion_rejection_bollinger_band_width',
+          strategy_pattern: 'Mean Reversion Rejection',
+          asset: 'XAUUSD',
+          timeframe: 'M5',
+        },
+        execution: {
+          execution_id:
+            'backtest_execution_backtest_job_validation_plan_trading_research_mean_reversion_rejection_bollinger_band_width_20260617124010',
+          backtest_job_id:
+            'backtest_job_validation_plan_trading_research_mean_reversion_rejection_bollinger_band_width',
+          execution_supported: true,
+          status: 'completed',
+          trades_simulated: 3,
+          win_rate: 0.6667,
+          profit_factor: 268.6567,
+          max_drawdown: -0.0067,
+          expectancy: 0.5978,
+          r_multiple_avg: 0.5978,
+          cost_spread_model_used: true,
+          warnings: [],
+          errors: [],
+          requires_human_review: false,
+          generated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        },
+        generated_at_utc: runtimeMasterStatusMock.updated_at_utc,
       };
     case 'strategyBacktestQualityAudit':
       return {
@@ -3685,6 +3721,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       knowledgeConsolidationExecutor: reportFixtureRaw('knowledgeConsolidationExecutor'),
       validationBacklogExecutor: reportFixtureRaw('validationBacklogExecutor'),
       strategyParameterResearchPlanner: reportFixtureRaw('strategyParameterResearchPlanner'),
+      strategyBacktestLatestSuccess: reportFixtureRaw('strategyBacktestLatestSuccess'),
       strategyBacktestSignalDensityAnalyzer: reportFixtureRaw('strategyBacktestSignalDensityAnalyzer'),
       supervisorState: operatorDashboardMock.supervisorState,
       schedulerState: operatorDashboardMock.schedulerState,
@@ -3784,8 +3821,9 @@ export async function loadOperatorDashboard() {
         strategyValidationQueueExport: dashboard.strategyValidationQueueExport,
         strategyValidationReadinessAnalyzer: dashboard.strategyValidationReadinessAnalyzer,
         strategyBacktestJobPlanner: dashboard.strategyBacktestJobPlanner,
-        strategyBacktestExecutor: dashboard.strategyBacktestExecutor,
-        strategyBacktestQualityAudit: dashboard.strategyBacktestQualityAudit,
+      strategyBacktestExecutor: dashboard.strategyBacktestExecutor,
+      strategyBacktestLatestSuccess: dashboard.strategyBacktestLatestSuccess,
+      strategyBacktestQualityAudit: dashboard.strategyBacktestQualityAudit,
         strategyBacktestEvidenceGate: dashboard.strategyBacktestEvidenceGate,
         strategyBacktestSignalDensityAnalyzer: dashboard.strategyBacktestSignalDensityAnalyzer,
         strategyDatasetGateAudit: dashboard.strategyDatasetGateAudit,
@@ -3882,6 +3920,7 @@ export async function loadOperatorDashboard() {
   rawReports.strategyValidationReadinessAnalyzer = reportFixtureRaw('strategyValidationReadinessAnalyzer');
   rawReports.strategyBacktestJobPlanner = reportFixtureRaw('strategyBacktestJobPlanner');
   rawReports.strategyBacktestExecutor = reportFixtureRaw('strategyBacktestExecutor');
+  rawReports.strategyBacktestLatestSuccess = reportFixtureRaw('strategyBacktestLatestSuccess');
   rawReports.strategyBacktestQualityAudit = reportFixtureRaw('strategyBacktestQualityAudit');
   rawReports.strategyBacktestEvidenceGate = reportFixtureRaw('strategyBacktestEvidenceGate');
   rawReports.strategyBacktestSignalDensityAnalyzer = reportFixtureRaw('strategyBacktestSignalDensityAnalyzer');

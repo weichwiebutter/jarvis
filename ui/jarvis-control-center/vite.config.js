@@ -87,6 +87,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/strategy-backtest-executor'),
     path: 'read-only bridge:/reports/strategy-backtest-executor',
   },
+  strategyBacktestLatestSuccess: {
+    label: 'Strategy Backtest Latest Success',
+    url: bridgeUrl('/reports/strategy-backtest-latest-success'),
+    path: 'read-only bridge:/reports/strategy-backtest-latest-success',
+  },
   strategyBacktestQualityAudit: {
     label: 'Strategy Backtest Quality Audit',
     url: bridgeUrl('/reports/strategy-backtest-quality-audit'),

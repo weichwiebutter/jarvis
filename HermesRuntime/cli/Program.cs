@@ -6517,12 +6517,19 @@ internal sealed class HermesCli
     private int ShowStrategyBacktestExecutor()
     {
         WriteHeader("Hermes Strategy Backtest Executor");
-        var service = new StrategyBacktestExecutorService(BuildStoragePaths());
+        var targetJobId = ReadOption(_args, "--job");
+        var maxRuns = ReadIntOption(_args, "--max-runs", fallback: 0, min: 0, max: 1000);
+        var service = new StrategyBacktestExecutorService(
+            BuildStoragePaths(),
+            string.IsNullOrWhiteSpace(targetJobId) ? null : targetJobId,
+            maxRuns > 0 ? maxRuns : null);
         var report = service.Run();
 
         WriteField("Report", DisplayPath(report.ReportPath));
         WriteField("Markdown", DisplayPath(report.MarkdownPath));
         WriteField("Report Role", report.ReportRole);
+        WriteField("Selected Job Filter", string.IsNullOrWhiteSpace(targetJobId) ? "-" : targetJobId);
+        WriteField("Max Runs Override", maxRuns > 0 ? maxRuns.ToString() : "-");
         WriteField("Queue", DisplayPath(report.QueuePath));
         WriteField("Contract Markdown", DisplayPath(report.ContractMarkdownPath));
         WriteField("Contract JSON", DisplayPath(report.ContractJsonPath));

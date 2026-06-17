@@ -57,13 +57,17 @@ public sealed record StrategyBacktestExecutorReport(
 public sealed class StrategyBacktestExecutorService
 {
     private readonly StoragePaths _storagePaths;
+    private readonly string? _targetJobId;
+    private readonly int? _maxRunsOverride;
     private string? _resolvedReportPath;
     private string? _resolvedMarkdownPath;
     private string? _resolvedQueuePath;
 
-    public StrategyBacktestExecutorService(StoragePaths storagePaths)
+    public StrategyBacktestExecutorService(StoragePaths storagePaths, string? targetJobId = null, int? maxRunsOverride = null)
     {
         _storagePaths = storagePaths;
+        _targetJobId = targetJobId;
+        _maxRunsOverride = maxRunsOverride;
     }
 
     public string Root => Path.Combine(_storagePaths.Root, "reports", "strategy_backtest_execution");
@@ -81,8 +85,17 @@ public sealed class StrategyBacktestExecutorService
         var jobs = LoadJobs(QueuePath);
         var readyJobs = jobs.Where(job => job.Status.Equals("ready_to_execute", StringComparison.OrdinalIgnoreCase) && job.DatasetAvailable).ToList();
         var engine = new MinimalHistoricalBacktestEngine(_storagePaths);
-        var selected = readyJobs.FirstOrDefault(job => CanEngineExecute(engine, job));
-        selected ??= readyJobs.FirstOrDefault();
+        StrategyBacktestJobPlan? selected = null;
+        if (!string.IsNullOrWhiteSpace(_targetJobId))
+        {
+            selected = jobs.FirstOrDefault(job => job.BacktestJobId.Equals(_targetJobId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (selected is null)
+        {
+            selected = readyJobs.FirstOrDefault(job => CanEngineExecute(engine, job));
+            selected ??= readyJobs.FirstOrDefault();
+        }
 
         StrategyBacktestResult? execution = null;
         var attempted = selected is null ? 0 : 1;
@@ -160,14 +173,15 @@ public sealed class StrategyBacktestExecutorService
         return report;
     }
 
-    private static bool CanEngineExecute(MinimalHistoricalBacktestEngine engine, StrategyBacktestJobPlan job)
+    private bool CanEngineExecute(MinimalHistoricalBacktestEngine engine, StrategyBacktestJobPlan job)
     {
         var (request, dataset, safety) = BuildExecutionContext(job);
         return engine.CanExecute(request, dataset, safety);
     }
 
-    private static (StrategyBacktestRequest Request, StrategyBacktestDatasetDescriptor Dataset, StrategyBacktestSafetyContext Safety) BuildExecutionContext(StrategyBacktestJobPlan selected)
+    private (StrategyBacktestRequest Request, StrategyBacktestDatasetDescriptor Dataset, StrategyBacktestSafetyContext Safety) BuildExecutionContext(StrategyBacktestJobPlan selected)
     {
+        var maxRuns = _maxRunsOverride is null or <= 0 ? selected.MaxRuns : _maxRunsOverride.Value;
         var request = new StrategyBacktestRequest(
             BacktestJobId: selected.BacktestJobId,
             StrategyPattern: selected.StrategyPattern,
@@ -179,7 +193,7 @@ public sealed class StrategyBacktestExecutorService
             BacktestPeriod: selected.BacktestPeriod,
             OosPeriod: selected.OosPeriod,
             CostSpreadModel: selected.CostSpreadModelRequired ? "required" : "not_required",
-            MaxRuns: selected.MaxRuns,
+            MaxRuns: maxRuns,
             TimeoutSeconds: selected.TimeoutSeconds,
             SafetyMode: selected.SafetyMode);
         var dataset = new StrategyBacktestDatasetDescriptor(
