@@ -36,7 +36,7 @@ public sealed record StrategyBacktestExecutorReport(
     int JobsExecuted,
     int JobsSkipped,
     StrategyBacktestJobPlan? SelectedJob,
-    StrategyBacktestExecutionResult? Execution,
+    StrategyBacktestResult? Execution,
     IReadOnlyList<string> StatusDistribution,
     IReadOnlyList<string> Warnings,
     string OperatorSummary,
@@ -46,6 +46,8 @@ public sealed record StrategyBacktestExecutorReport(
     bool NoBrokerAction,
     bool NoAutoTrading,
     bool HumanReviewRequired,
+    string ContractMarkdownPath,
+    string ContractJsonPath,
     string ReportPath,
     string MarkdownPath);
 
@@ -64,6 +66,8 @@ public sealed class StrategyBacktestExecutorService
     public string QueuePath => Path.Combine(_storagePaths.Root, "queues", "strategy_backtest_jobs.json");
     public string ReportPath => _resolvedReportPath ?? Path.Combine(Root, "strategy_backtest_executor.json");
     public string MarkdownPath => _resolvedMarkdownPath ?? Path.Combine(Root, "strategy_backtest_executor.md");
+    public string ContractMarkdownPath => Path.Combine(Root, "strategy_backtest_engine_contract.md");
+    public string ContractJsonPath => Path.Combine(Root, "strategy_backtest_engine_contract.json");
 
     public StrategyBacktestExecutorReport Run()
     {
@@ -76,7 +80,7 @@ public sealed class StrategyBacktestExecutorService
             .ThenByDescending(job => job.Asset, StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault();
 
-        StrategyBacktestExecutionResult? execution = null;
+        StrategyBacktestResult? execution = null;
         var attempted = selected is null ? 0 : 1;
         var executed = 0;
         var skipped = jobs.Count - attempted;
@@ -88,28 +92,40 @@ public sealed class StrategyBacktestExecutorService
         }
         else
         {
-            execution = new StrategyBacktestExecutionResult(
-                BacktestExecutionId: $"backtest_execution_{NormalizeId(selected.ValidationPlanId)}_{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
+            var engine = new StrategyBacktestEngineStub();
+            var request = new StrategyBacktestRequest(
                 BacktestJobId: selected.BacktestJobId,
                 StrategyPattern: selected.StrategyPattern,
                 Asset: selected.Asset,
                 Timeframe: selected.Timeframe,
-                ParametersTested: selected.ParametersToTest,
-                DatasetUsed: selected.DatasetRequired,
-                PeriodUsed: selected.BacktestPeriod,
-                TradesSimulated: null,
-                WinRate: null,
-                ProfitFactor: null,
-                MaxDrawdown: null,
-                Expectancy: null,
-                RMultipleAvg: null,
-                CostSpreadModelUsed: selected.CostSpreadModelRequired,
-                SimulatedPlaceholder: false,
-                ExecutionSupported: false,
-                Status: "ready_to_execute",
-                Warnings: ["execution_engine_missing", "backtest_not_started"],
-                RequiresHumanReview: true,
-                AttemptedAtUtc: DateTimeOffset.UtcNow);
+                ParametersToTest: selected.ParametersToTest,
+                DatasetPath: selected.DatasetRequired,
+                DatasetId: selected.DatasetRequired,
+                BacktestPeriod: selected.BacktestPeriod,
+                OosPeriod: selected.OosPeriod,
+                CostSpreadModel: selected.CostSpreadModelRequired ? "required" : "not_required",
+                MaxRuns: selected.MaxRuns,
+                TimeoutSeconds: selected.TimeoutSeconds,
+                SafetyMode: selected.SafetyMode);
+            var dataset = new StrategyBacktestDatasetDescriptor(
+                DatasetPath: selected.DatasetRequired,
+                DatasetId: selected.DatasetRequired,
+                Asset: selected.Asset,
+                Timeframe: selected.Timeframe,
+                Period: selected.BacktestPeriod,
+                Available: selected.DatasetAvailable,
+                Warnings: selected.Blockers);
+            var safety = new StrategyBacktestSafetyContext(
+                NoAutoTrading: true,
+                BrokerOrdersEnabled: false,
+                LiveTradingEnabled: false,
+                HumanReviewRequired: true,
+                ResearchOnly: true,
+                SafetyMode: selected.SafetyMode,
+                SafetyFlags: selected.Blockers);
+            execution = engine.CanExecute(request, dataset, safety)
+                ? engine.Execute(request, dataset, safety)
+                : engine.Execute(request, dataset, safety);
             warnings.AddRange(execution.Warnings);
         }
 
@@ -140,10 +156,13 @@ public sealed class StrategyBacktestExecutorService
             NoBrokerAction: true,
             NoAutoTrading: true,
             HumanReviewRequired: true,
+            ContractMarkdownPath: ContractMarkdownPath,
+            ContractJsonPath: ContractJsonPath,
             ReportPath: ReportPath,
             MarkdownPath: MarkdownPath);
 
         WriteArtifacts(report);
+        WriteContractArtifacts();
         return report;
     }
 
@@ -191,6 +210,51 @@ public sealed class StrategyBacktestExecutorService
         _resolvedMarkdownPath = MarkdownPath;
     }
 
+    private void WriteContractArtifacts()
+    {
+        var contract = new StrategyBacktestEngineContractDocument(
+            Title: "Strategy Backtest Engine Contract",
+            Purpose: "Defines the safe interface between the strategy backtest executor and a future backtest engine.",
+            InputContracts:
+            [
+                "StrategyBacktestRequest",
+                "StrategyBacktestDatasetDescriptor",
+                "StrategyBacktestSafetyContext",
+            ],
+            OutputContracts:
+            [
+                "StrategyBacktestResult",
+                "IStrategyBacktestEngine",
+                "StrategyBacktestEngineStub",
+            ],
+            ErrorCodes:
+            [
+                "execution_engine_missing",
+                "dataset_missing",
+                "unsupported_strategy_pattern",
+                "unsupported_timeframe",
+                "invalid_parameters",
+                "timeout_limit_exceeded",
+                "safety_gate_failed",
+                "no_trades_generated",
+            ],
+            SafetyRules:
+            [
+                "No live trading",
+                "No broker orders",
+                "No cTrader API",
+                "No demo orders",
+                "No fake metrics",
+                "No queue item completion without a real engine",
+            ],
+            StubEngineAvailable: true);
+
+        var markdown = BuildContractMarkdown(contract);
+        var json = JsonSerializer.Serialize(contract, JsonDefaults.WriteOptions);
+        File.WriteAllText(ContractMarkdownPath, markdown);
+        File.WriteAllText(ContractJsonPath, json);
+    }
+
     private static string BuildMarkdown(StrategyBacktestExecutorReport report)
     {
         var sb = new StringBuilder();
@@ -202,6 +266,8 @@ public sealed class StrategyBacktestExecutorService
         sb.AppendLine($"- Jobs attempted: {report.JobsAttempted}");
         sb.AppendLine($"- Jobs executed: {report.JobsExecuted}");
         sb.AppendLine($"- Jobs skipped: {report.JobsSkipped}");
+        sb.AppendLine($"- Contract markdown: {report.ContractMarkdownPath}");
+        sb.AppendLine($"- Contract json: {report.ContractJsonPath}");
         sb.AppendLine();
         sb.AppendLine("## Operator Summary");
         sb.AppendLine(report.OperatorSummary);
@@ -218,8 +284,41 @@ public sealed class StrategyBacktestExecutorService
             sb.AppendLine();
             sb.AppendLine("## Execution");
             sb.AppendLine($"- supported: {report.Execution.ExecutionSupported}");
-            sb.AppendLine($"- simulated_placeholder: {report.Execution.SimulatedPlaceholder}");
             sb.AppendLine($"- status: {report.Execution.Status}");
+        }
+        return sb.ToString();
+    }
+
+    private static string BuildContractMarkdown(StrategyBacktestEngineContractDocument contract)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Strategy Backtest Engine Contract");
+        sb.AppendLine();
+        sb.AppendLine($"- Purpose: {contract.Purpose}");
+        sb.AppendLine($"- Stub engine available: {contract.StubEngineAvailable}");
+        sb.AppendLine();
+        sb.AppendLine("## Input Contracts");
+        foreach (var item in contract.InputContracts)
+        {
+            sb.AppendLine($"- {item}");
+        }
+        sb.AppendLine();
+        sb.AppendLine("## Output Contracts");
+        foreach (var item in contract.OutputContracts)
+        {
+            sb.AppendLine($"- {item}");
+        }
+        sb.AppendLine();
+        sb.AppendLine("## Error Codes");
+        foreach (var item in contract.ErrorCodes)
+        {
+            sb.AppendLine($"- {item}");
+        }
+        sb.AppendLine();
+        sb.AppendLine("## Safety Rules");
+        foreach (var item in contract.SafetyRules)
+        {
+            sb.AppendLine($"- {item}");
         }
         return sb.ToString();
     }

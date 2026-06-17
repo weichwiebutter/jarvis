@@ -6517,6 +6517,8 @@ internal sealed class HermesCli
         WriteField("Report", DisplayPath(report.ReportPath));
         WriteField("Markdown", DisplayPath(report.MarkdownPath));
         WriteField("Queue", DisplayPath(report.QueuePath));
+        WriteField("Contract Markdown", DisplayPath(report.ContractMarkdownPath));
+        WriteField("Contract JSON", DisplayPath(report.ContractJsonPath));
         WriteField("Queue Items", report.QueueItemsLoaded.ToString());
         WriteField("Ready Jobs", report.ReadyJobsFound.ToString());
         WriteField("Attempted", report.JobsAttempted.ToString());
@@ -6536,9 +6538,9 @@ internal sealed class HermesCli
         if (report.Execution is not null)
         {
             WriteSubHeader("Execution");
-            WriteField("Execution Id", report.Execution.BacktestExecutionId);
+            WriteField("Execution Id", report.Execution.ExecutionId);
             WriteField("Execution Supported", report.Execution.ExecutionSupported.ToString().ToLowerInvariant());
-            WriteField("Simulated Placeholder", report.Execution.SimulatedPlaceholder.ToString().ToLowerInvariant());
+            WriteField("Cost Spread Model Used", report.Execution.CostSpreadModelUsed.ToString().ToLowerInvariant());
             WriteField("Status", report.Execution.Status);
             WriteMessages("Warnings", report.Execution.Warnings);
         }
