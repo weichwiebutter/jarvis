@@ -42,6 +42,11 @@ public sealed record ReviewStatusConsistencyAuditReport(
     string SourceOfTruth,
     string LeadingQueueSource,
     string LeadingMasterSource,
+    string MasterSnapshotSource,
+    double MasterSnapshotAgeHours,
+    bool MasterSnapshotIsFallback,
+    bool LegacySnapshotsIgnored,
+    IReadOnlyList<string> LegacySnapshotCandidates,
     IReadOnlyList<ReviewStatusConsistencySnapshot> MasterSnapshots,
     IReadOnlyList<ReviewStatusConsistencyEntry> Reviews,
     IReadOnlyList<string> Deviations,
@@ -101,6 +106,13 @@ public sealed class ReviewStatusConsistencyAuditService
                 TopReviewPriorities: []);
         var leadingQueueSource = "HumanReviewQueue";
         var sourceOfTruth = "HumanReviewQueue";
+
+        var masterSnapshot = masterSnapshots.FirstOrDefault(snapshot => snapshot.Source.Equals("master-status", StringComparison.OrdinalIgnoreCase))
+            ?? leadingMaster;
+        var legacySnapshotCandidates = masterSnapshots
+            .Where(snapshot => snapshot.Source.Contains("local", StringComparison.OrdinalIgnoreCase))
+            .Select(snapshot => snapshot.Path)
+            .ToList();
 
         var reviewById = queue.Items
             .ToDictionary(item => item.ReviewId, StringComparer.OrdinalIgnoreCase);
@@ -174,11 +186,18 @@ public sealed class ReviewStatusConsistencyAuditService
             SourceOfTruth: sourceOfTruth,
             LeadingQueueSource: leadingQueueSource,
             LeadingMasterSource: leadingMaster.Source,
+            MasterSnapshotSource: masterSnapshot.Source,
+            MasterSnapshotAgeHours: masterSnapshot.LastUpdatedUtc == DateTimeOffset.MinValue
+                ? double.NaN
+                : Math.Round((DateTimeOffset.UtcNow - masterSnapshot.LastUpdatedUtc).TotalHours, 2),
+            MasterSnapshotIsFallback: masterSnapshot.Source.Contains("local", StringComparison.OrdinalIgnoreCase),
+            LegacySnapshotsIgnored: legacySnapshotCandidates.Count > 0 && !masterSnapshot.Source.Contains("local", StringComparison.OrdinalIgnoreCase),
+            LegacySnapshotCandidates: legacySnapshotCandidates,
             MasterSnapshots: masterSnapshots,
             Reviews: reviews,
             Deviations: deviations,
             Cause: BuildCause(queue, leadingMaster, masterSnapshots, deviations),
-            RecommendedCorrection: "HumanReviewQueue als führende Quelle verwenden; Master-Status nur als Snapshot/Anzeige verstehen; Dashboard direkt aus der Queue lesen.",
+            RecommendedCorrection: "HumanReviewQueue als führende Quelle verwenden; Master-Status nur als Snapshot/Anzeige verstehen; Dashboard direkt aus der Queue lesen; Legacy .codex_artifacts-Snapshots ignorieren.",
             OperatorSummary: BuildOperatorSummary(queue, leadingMaster, masterSnapshots, deviations),
             QueuePath: workflow.QueuePath,
             ReviewQueuePath: workflow.QueuePath,
@@ -385,6 +404,10 @@ public sealed class ReviewStatusConsistencyAuditService
         sb.AppendLine($"- Needs More Evidence laut Queue: {report.NeedsMoreEvidenceQueue}");
         sb.AppendLine($"- Needs More Evidence laut Master: {report.NeedsMoreEvidenceMaster}");
         sb.AppendLine($"- Source of Truth: {report.SourceOfTruth}");
+        sb.AppendLine($"- Snapshot-Quelle: {report.MasterSnapshotSource}");
+        sb.AppendLine($"- Snapshot-Alter (h): {(double.IsNaN(report.MasterSnapshotAgeHours) ? "-" : report.MasterSnapshotAgeHours.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))}");
+        sb.AppendLine($"- Fallback verwendet: {report.MasterSnapshotIsFallback}");
+        sb.AppendLine($"- Legacy-Snapshots ignoriert: {report.LegacySnapshotsIgnored}");
         sb.AppendLine($"- Ursache: {report.Cause}");
         sb.AppendLine($"- Korrektur: {report.RecommendedCorrection}");
         sb.AppendLine();
@@ -402,6 +425,16 @@ public sealed class ReviewStatusConsistencyAuditService
         foreach (var snapshot in report.MasterSnapshots)
         {
             sb.AppendLine($"- {snapshot.Source}: {snapshot.Path} | pending={snapshot.PendingReviews} | needs_more_evidence={snapshot.NeedsMoreEvidenceReviews} | updated={snapshot.LastUpdatedUtc:O}");
+        }
+        if (report.LegacySnapshotCandidates.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Legacy Snapshot Candidates");
+            foreach (var path in report.LegacySnapshotCandidates)
+            {
+                sb.AppendLine($"- {path}");
+            }
+            sb.AppendLine("- empfohlener manueller Cleanup-Befehl: `rm -f HermesRuntime/.codex_artifacts/reports/master-status/master_status.json`");
         }
         return sb.ToString();
     }

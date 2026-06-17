@@ -664,7 +664,7 @@ public sealed class HermesReadOnlyBridge
             HumanReviewRequired: true,
             Reports: Reports.Select(report =>
             {
-                var path = ResolveReadablePath(report.RelativePath);
+                var path = ResolveReadablePath(report.RelativePath, allowFallback: !IsMasterStatusReport(report.Key));
                 var info = File.Exists(path) ? new FileInfo(path) : null;
 
                 return new ReportIndexItem(
@@ -679,7 +679,7 @@ public sealed class HermesReadOnlyBridge
 
     private ReportReadResult TryReadReport(ReportDefinition report)
     {
-        var path = ResolveReadablePath(report.RelativePath);
+        var path = ResolveReadablePath(report.RelativePath, allowFallback: !IsMasterStatusReport(report.Key));
         if (!File.Exists(path))
         {
             return new ReportReadResult(
@@ -694,10 +694,16 @@ public sealed class HermesReadOnlyBridge
             var node = JsonNode.Parse(json);
             Sanitize(node);
 
+            var warnings = new List<string>();
+            if (IsLegacySnapshotPath(path))
+            {
+                warnings.Add($"{report.Label} legacy_snapshot_candidate");
+            }
+
             return new ReportReadResult(
                 Available: true,
                 Data: node,
-                Warnings: []);
+                Warnings: warnings);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -725,7 +731,7 @@ public sealed class HermesReadOnlyBridge
         return fullPath;
     }
 
-    private string ResolveReadablePath(string relativePath)
+    private string ResolveReadablePath(string relativePath, bool allowFallback = true)
     {
         var primary = GetWhitelistedPath(relativePath);
         if (File.Exists(primary))
@@ -733,9 +739,21 @@ public sealed class HermesReadOnlyBridge
             return primary;
         }
 
+        if (!allowFallback)
+        {
+            return primary;
+        }
+
         var fallback = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "HermesRuntime", ".codex_artifacts", relativePath));
         return File.Exists(fallback) ? fallback : primary;
     }
+
+    private static bool IsMasterStatusReport(string key) =>
+        string.Equals(key, "masterStatus", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsLegacySnapshotPath(string path) =>
+        path.Contains(Path.Combine(".codex_artifacts", "reports", "master-status"), StringComparison.OrdinalIgnoreCase)
+        || path.Contains(Path.Combine(".codex_artifacts", "reports"), StringComparison.OrdinalIgnoreCase);
 
     private static void Sanitize(JsonNode? node)
     {

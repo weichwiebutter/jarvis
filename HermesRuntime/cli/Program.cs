@@ -561,7 +561,7 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Master Status Snapshot");
         var writer = BuildMasterStatusWriter(BuildStoragePaths());
-        var snapshot = writer.LoadSnapshot() ?? writer.WriteSnapshot();
+        var snapshot = writer.WriteSnapshot();
 
         PrintMasterStatusSnapshot(snapshot, writer.SnapshotPath);
         Console.WriteLine();
@@ -573,12 +573,58 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Master Status");
         var writer = BuildMasterStatusWriter(BuildStoragePaths());
-        var snapshot = writer.LoadSnapshot() ?? writer.WriteSnapshot();
+        var snapshot = writer.LoadSnapshot();
+        if (snapshot is null)
+        {
+            WriteWarning("Master-Status-Snapshot fehlt. Erzeuge schnellen Snapshot aus aktueller Wahrheit.");
+            snapshot = writer.WriteSnapshot();
+        }
+        else if (!IsMasterStatusSnapshotFresh(writer.SnapshotPath))
+        {
+            WriteWarning("Master-Status-Snapshot ist veraltet. Verwende Queue-Wahrheit für Review-Counts.");
+            var humanReview = new HumanReviewWorkflow(BuildStoragePaths()).BuildSummary();
+            snapshot = snapshot with
+            {
+                PendingReviews = humanReview.PendingReviews,
+                ApprovedReviews = humanReview.ApprovedReviews,
+                RejectedReviews = humanReview.RejectedReviews,
+                NeedsMoreEvidenceReviews = humanReview.NeedsMoreEvidenceReviews,
+                DeferredReviews = humanReview.DeferredReviews,
+                ReviewCoverage = humanReview.ReviewCoverage,
+                TopReviewPriorities = humanReview.TopReviewPriorities,
+                LastUpdatedUtc = DateTimeOffset.UtcNow,
+                Warnings = snapshot.Warnings
+                    .Append("legacy_snapshot_candidate")
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+            };
+        }
 
         PrintMasterStatusSnapshot(snapshot, writer.SnapshotPath);
         Console.WriteLine();
         WriteSafety();
         return snapshot.OverallStatus.Equals("critical", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+    }
+
+    private bool IsMasterStatusSnapshotFresh(string snapshotPath)
+    {
+        if (!File.Exists(snapshotPath))
+        {
+            return false;
+        }
+
+        var snapshot = JsonSerializer.Deserialize<MasterStatusSnapshot>(File.ReadAllText(snapshotPath), JsonDefaults.SnapshotReadOptions);
+        if (snapshot is null)
+        {
+            return false;
+        }
+
+        var humanReview = new HumanReviewWorkflow(BuildStoragePaths()).BuildSummary();
+        return snapshot.PendingReviews == humanReview.PendingReviews
+            && snapshot.NeedsMoreEvidenceReviews == humanReview.NeedsMoreEvidenceReviews
+            && snapshot.ApprovedReviews == humanReview.ApprovedReviews
+            && snapshot.RejectedReviews == humanReview.RejectedReviews
+            && snapshot.DeferredReviews == humanReview.DeferredReviews;
     }
 
     private MasterStatusWriter BuildMasterStatusWriter(StoragePaths storagePaths) =>

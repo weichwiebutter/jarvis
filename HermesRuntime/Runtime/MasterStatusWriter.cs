@@ -16,15 +16,17 @@ public sealed class MasterStatusWriter
 
     public MasterStatusSnapshot? LoadSnapshot()
     {
-        foreach (var path in CandidateSnapshotPaths())
+        var primary = _service.SnapshotPath;
+        if (!File.Exists(primary))
         {
-            if (!File.Exists(path)) continue;
-            var snapshot = JsonSerializer.Deserialize<MasterStatusSnapshot>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
-            if (snapshot is not null)
-            {
-                _resolvedSnapshotPath = path;
-                return snapshot;
-            }
+            return null;
+        }
+
+        var snapshot = JsonSerializer.Deserialize<MasterStatusSnapshot>(File.ReadAllText(primary), JsonDefaults.SnapshotReadOptions);
+        if (snapshot is not null)
+        {
+            _resolvedSnapshotPath = primary;
+            return snapshot;
         }
 
         return null;
@@ -60,9 +62,4 @@ public sealed class MasterStatusWriter
         return fallbackPath;
     }
 
-    private IEnumerable<string> CandidateSnapshotPaths()
-    {
-        yield return _service.SnapshotPath;
-        yield return Path.Combine(Directory.GetCurrentDirectory(), ".codex_artifacts", "reports", "master-status", "master_status.json");
-    }
 }
