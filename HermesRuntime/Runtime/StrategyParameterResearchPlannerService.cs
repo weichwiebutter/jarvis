@@ -80,6 +80,25 @@ public sealed class StrategyParameterResearchPlannerService
 
     public string MarkdownPath => _resolvedMarkdownPath ?? Path.Combine(Root, "strategy_parameter_research_planner.md");
 
+    public StrategyParameterResearchPlannerReport? Load()
+    {
+        if (!File.Exists(ReportPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<StrategyParameterResearchPlannerReport>(
+                File.ReadAllText(ReportPath),
+                JsonDefaults.SnapshotReadOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
     public StrategyParameterResearchPlannerReport Run()
     {
         Directory.CreateDirectory(Root);

@@ -80,6 +80,25 @@ public sealed class TradingResearchSynthesizerService
 
     public string MarkdownPath => _resolvedMarkdownPath ?? Path.Combine(Root, "trading_research_synthesizer.md");
 
+    public TradingResearchSynthesizerReport? Load()
+    {
+        if (!File.Exists(ReportPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<TradingResearchSynthesizerReport>(
+                File.ReadAllText(ReportPath),
+                JsonDefaults.SnapshotReadOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
     public TradingResearchSynthesizerReport Run()
     {
         Directory.CreateDirectory(Root);

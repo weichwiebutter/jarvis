@@ -1822,6 +1822,72 @@ function reportFixtureRaw(key) {
         no_auto_trading: true,
         human_review_required: true,
       };
+    case 'strategyValidationQueueExport':
+      return {
+        report_version: 'strategy_validation_queue_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        source_planner_path: '/reports/strategy-mutation-validation-planner',
+        queue_path: '/mnt/d/HermesData/queues/strategy_validation_queue.json',
+        planned_count: 12,
+        ready_for_backtest_count: 0,
+        waiting_for_oos_data_count: 0,
+        waiting_for_forward_observation_count: 0,
+        blocked_count: 0,
+        completed_count: 0,
+        status_distribution: ['planned:12'],
+        warnings: ['validation_queue_exported', 'no_backtests_started', 'no_broker_action', 'no_auto_trading'],
+        operator_summary: '12 Validierungsaufträge in Queue übernommen. 12 geplant. 0 laufend. 0 abgeschlossen. Frank nötig: nein. Keine Backtests gestartet.',
+        safety_summary: 'no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        queue_items: [
+          {
+            queue_item_id: 'strategy_validation_queue_validation_plan_trading_research_ema_pullback_vwap_01',
+            validation_plan_id: 'validation_plan_trading_research_ema_pullback_vwap',
+            strategy_pattern: 'EMA Pullback',
+            asset: 'XAUUSD',
+            timeframe: 'M15',
+            parameters_to_validate: ['VWAP', 'EMA', 'ATR', 'session filter', 'pullback depth'],
+            priority: 'high',
+            status: 'planned',
+            required_backtest: true,
+            required_oos_test: true,
+            required_walk_forward: true,
+            required_monte_carlo: true,
+            required_cost_spread_test: true,
+            required_forward_observation: true,
+            safety_flags: ['no_auto_trading=true', 'no_broker_action=true', 'no_live_trading=true', 'human_review_required=true'],
+            created_at_utc: runtimeMasterStatusMock.updated_at_utc,
+            updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+            next_action: 'Planned validation queue entry ready for scheduler or manual validation planning.',
+          },
+        ],
+      };
+    case 'strategyValidationReadinessAnalyzer':
+      return {
+        report_version: 'strategy_validation_readiness_analyzer_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        queue_path: '/mnt/d/HermesData/queues/strategy_validation_queue.json',
+        queue_items_analyzed: 12,
+        ready_for_backtest_count: 2,
+        waiting_for_oos_data_count: 0,
+        waiting_for_forward_observation_count: 0,
+        blocked_count: 10,
+        warnings: [],
+        operator_summary: '12 Validierungsaufträge analysiert. 2 sofort testbar. 0 warten auf OOS-Daten. 0 warten auf Forward-Beobachtungen. 10 blockiert. Frank nötig: nein.',
+        safety_summary: 'no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        top_ready_candidates: [],
+        top_information_gain_candidates: [],
+        top_low_effort_candidates: [],
+      };
     case 'validationBacklogExecutor':
       return {
         report_version: 'validation_backlog_executor_v1',
@@ -3500,11 +3566,13 @@ export async function loadOperatorDashboard() {
         forwardTestStatus: dashboard.forwardTestStatus,
         knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
         validationBacklogAnalyzer: dashboard.validationBacklogAnalyzer,
-        validationBacklogExecutor: dashboard.validationBacklogExecutor,
+      validationBacklogExecutor: dashboard.validationBacklogExecutor,
       reviewPrioritizationAudit: dashboard.reviewPrioritizationAudit,
       reviewDecisionAssistant: dashboard.reviewDecisionAssistant,
       tradingResearchSynthesizer: dashboard.tradingResearchSynthesizer,
       strategyMutationValidationPlanner: dashboard.strategyMutationValidationPlanner,
+      strategyValidationQueueExport: dashboard.strategyValidationQueueExport,
+      strategyValidationReadinessAnalyzer: dashboard.strategyValidationReadinessAnalyzer,
       evidenceAutoLoop: dashboard.evidenceAutoLoop,
         validationQueueRefill: dashboard.validationQueueRefill,
         evidenceValidationRunner: dashboard.evidenceValidationRunner,
@@ -3594,6 +3662,8 @@ export async function loadOperatorDashboard() {
   rawReports.tradingResearchSynthesizer = reportFixtureRaw('tradingResearchSynthesizer');
   rawReports.storageCleanupSafetyAudit = reportFixtureRaw('storageCleanupSafetyAudit');
   rawReports.strategyMutationValidationPlanner = reportFixtureRaw('strategyMutationValidationPlanner');
+  rawReports.strategyValidationQueueExport = reportFixtureRaw('strategyValidationQueueExport');
+  rawReports.strategyValidationReadinessAnalyzer = reportFixtureRaw('strategyValidationReadinessAnalyzer');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
   rawReports.evidenceAutoLoop = reportFixtureRaw('evidenceAutoLoop');

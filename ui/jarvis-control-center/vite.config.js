@@ -67,6 +67,16 @@ const operatorReports = {
     url: bridgeUrl('/reports/strategy-mutation-validation-planner'),
     path: 'read-only bridge:/reports/strategy-mutation-validation-planner',
   },
+  strategyValidationQueueExport: {
+    label: 'Strategy Validation Queue Export',
+    url: bridgeUrl('/reports/strategy-validation-queue'),
+    path: 'read-only bridge:/reports/strategy-validation-queue',
+  },
+  strategyValidationReadinessAnalyzer: {
+    label: 'Strategy Validation Readiness Analyzer',
+    url: bridgeUrl('/reports/strategy-validation-readiness'),
+    path: 'read-only bridge:/reports/strategy-validation-readiness',
+  },
   validationBacklogExecutor: {
     label: 'Validation Backlog Executor',
     url: bridgeUrl('/reports/validation-backlog-executor'),

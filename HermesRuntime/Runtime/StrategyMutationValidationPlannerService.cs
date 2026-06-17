@@ -58,6 +58,25 @@ public sealed class StrategyMutationValidationPlannerService
 
     public string MarkdownPath => _resolvedMarkdownPath ?? Path.Combine(Root, "strategy_mutation_validation_planner.md");
 
+    public StrategyMutationValidationPlannerReport? Load()
+    {
+        if (!File.Exists(ReportPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<StrategyMutationValidationPlannerReport>(
+                File.ReadAllText(ReportPath),
+                JsonDefaults.SnapshotReadOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
     public StrategyMutationValidationPlannerReport Run()
     {
         Directory.CreateDirectory(Root);

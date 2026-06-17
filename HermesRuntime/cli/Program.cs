@@ -111,6 +111,8 @@ internal sealed class HermesCli
             "strategy-parameter-research-planner" => ShowStrategyParameterResearchPlanner(),
             "trading-research-synthesizer" => ShowTradingResearchSynthesizer(),
             "strategy-mutation-validation-planner" => ShowStrategyMutationValidationPlanner(),
+            "strategy-validation-queue-export" => ShowStrategyValidationQueueExport(),
+            "strategy-validation-readiness-analyzer" => ShowStrategyValidationReadinessAnalyzer(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
             "generate-trusted-review-candidates" => GenerateTrustedReviewCandidates(),
@@ -387,6 +389,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-parameter-research-planner Strategy Parameter Research Planner anzeigen");
         Console.WriteLine("  hermes trading-research-synthesizer Trading Research Synthesizer anzeigen");
         Console.WriteLine("  hermes strategy-mutation-validation-planner Strategy Mutation Validierung planen");
+        Console.WriteLine("  hermes strategy-validation-queue-export Strategy Validation Queue exportieren");
+        Console.WriteLine("  hermes strategy-validation-readiness-analyzer Strategy Validation Readiness analysieren");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
         Console.WriteLine("  hermes generate-trusted-review-candidates Trusted Review Kandidaten erzeugen");
@@ -6401,6 +6405,67 @@ internal sealed class HermesCli
             WriteField(plan.ValidationPlanId, $"{plan.StrategyPattern} · {plan.Asset} {plan.Timeframe} · priority={plan.Priority} · info_gain={plan.ExpectedInformationGain:0.###} · effort={plan.ValidationEffort:0.###}");
             WriteField("Parameter", string.Join(", ", plan.ParametersToValidate));
             WriteField("Backtest/OOS/Forward", $"{plan.RequiredBacktest}/{plan.RequiredOosTest}/{plan.RequiredWalkForward}/{plan.RequiredForwardObservation}");
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyValidationQueueExport()
+    {
+        WriteHeader("Hermes Strategy Validation Queue Export");
+        var service = new StrategyValidationQueueExportService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Queue", DisplayPath(report.QueuePath ?? string.Empty));
+        WriteField("Validierungsaufträge", report.PlannedCount.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Statusverteilung");
+        WriteMessages("Status", report.StatusDistribution);
+        WriteSubHeader("Queue-Einträge");
+        foreach (var item in report.QueueItems.Take(12))
+        {
+            WriteField(item.QueueItemId, $"{item.StrategyPattern} · {item.Asset} {item.Timeframe} · priority={item.Priority} · status={item.Status}");
+            WriteField("Parameter", string.Join(", ", item.ParametersToValidate));
+            WriteField("Next Action", item.NextAction);
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyValidationReadinessAnalyzer()
+    {
+        WriteHeader("Hermes Strategy Validation Readiness Analyzer");
+        var service = new StrategyValidationReadinessAnalyzerService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Queue", DisplayPath(report.QueuePath));
+        WriteField("Analysiert", report.QueueItemsAnalyzed.ToString());
+        WriteField("Sofort testbar", report.ReadyForBacktestCount.ToString());
+        WriteField("Warten auf OOS", report.WaitingForOosDataCount.ToString());
+        WriteField("Warten auf Forward", report.WaitingForForwardObservationCount.ToString());
+        WriteField("Blockiert", report.BlockedCount.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Top Ready Candidates");
+        foreach (var item in report.TopReadyCandidates.Take(5))
+        {
+            WriteField(item.ValidationPlanId, $"{item.StrategyPattern} · {item.Asset} {item.Timeframe} · readiness={item.ReadinessScore:0} · gain={item.ExpectedInformationGain:0.###}");
+            WriteMessages("Missing", item.MissingRequirements);
+            WriteMessages("Blockers", item.Blockers);
+        }
+        WriteSubHeader("Top Information Gain Candidates");
+        foreach (var item in report.TopInformationGainCandidates.Take(5))
+        {
+            WriteField(item.ValidationPlanId, $"{item.StrategyPattern} · {item.Asset} {item.Timeframe} · readiness={item.ReadinessScore:0} · gain={item.ExpectedInformationGain:0.###}");
         }
         Console.WriteLine();
         WriteSafety();
