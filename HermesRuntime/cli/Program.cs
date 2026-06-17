@@ -114,6 +114,7 @@ internal sealed class HermesCli
             "strategy-validation-queue-export" => ShowStrategyValidationQueueExport(),
             "strategy-validation-readiness-analyzer" => ShowStrategyValidationReadinessAnalyzer(),
             "strategy-backtest-job-planner" => ShowStrategyBacktestJobPlanner(),
+            "strategy-backtest-executor" => ShowStrategyBacktestExecutor(),
             "strategy-dataset-gate-audit" => ShowStrategyDatasetGateAudit(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
@@ -394,6 +395,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-validation-queue-export Strategy Validation Queue exportieren");
         Console.WriteLine("  hermes strategy-validation-readiness-analyzer Strategy Validation Readiness analysieren");
         Console.WriteLine("  hermes strategy-backtest-job-planner Strategy Backtest Job Planner anzeigen");
+        Console.WriteLine("  hermes strategy-backtest-executor Strategy Backtest Executor anzeigen");
         Console.WriteLine("  hermes strategy-dataset-gate-audit Strategy Dataset Gate Audit anzeigen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
@@ -6500,6 +6502,45 @@ internal sealed class HermesCli
             WriteField(job.BacktestJobId, $"{job.StrategyPattern} · {job.Asset} {job.Timeframe} · status={job.Status} · runs={job.MaxRuns} · timeout={job.TimeoutSeconds}s");
             WriteField("Dataset", $"{job.DatasetRequired} · available={job.DatasetAvailable}");
             WriteField("Next Action", job.NextAction);
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyBacktestExecutor()
+    {
+        WriteHeader("Hermes Strategy Backtest Executor");
+        var service = new StrategyBacktestExecutorService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Queue", DisplayPath(report.QueuePath));
+        WriteField("Queue Items", report.QueueItemsLoaded.ToString());
+        WriteField("Ready Jobs", report.ReadyJobsFound.ToString());
+        WriteField("Attempted", report.JobsAttempted.ToString());
+        WriteField("Executed", report.JobsExecuted.ToString());
+        WriteField("Skipped", report.JobsSkipped.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Status", report.StatusDistribution);
+        if (report.SelectedJob is not null)
+        {
+            WriteSubHeader("Selected Job");
+            WriteField(report.SelectedJob.BacktestJobId, $"{report.SelectedJob.StrategyPattern} · {report.SelectedJob.Asset} {report.SelectedJob.Timeframe} · status={report.SelectedJob.Status}");
+            WriteField("Dataset", $"{report.SelectedJob.DatasetRequired} · available={report.SelectedJob.DatasetAvailable}");
+            WriteField("Next Action", report.SelectedJob.NextAction);
+        }
+        if (report.Execution is not null)
+        {
+            WriteSubHeader("Execution");
+            WriteField("Execution Id", report.Execution.BacktestExecutionId);
+            WriteField("Execution Supported", report.Execution.ExecutionSupported.ToString().ToLowerInvariant());
+            WriteField("Simulated Placeholder", report.Execution.SimulatedPlaceholder.ToString().ToLowerInvariant());
+            WriteField("Status", report.Execution.Status);
+            WriteMessages("Warnings", report.Execution.Warnings);
         }
         Console.WriteLine();
         WriteSafety();

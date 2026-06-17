@@ -1888,6 +1888,28 @@ function reportFixtureRaw(key) {
         top_information_gain_candidates: [],
         top_low_effort_candidates: [],
       };
+    case 'strategyBacktestExecutor':
+      return {
+        report_version: 'strategy_backtest_executor_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        queue_path: '/mnt/d/HermesData/queues/strategy_backtest_jobs.json',
+        queue_items_loaded: 12,
+        ready_jobs_found: 12,
+        jobs_attempted: 1,
+        jobs_executed: 0,
+        jobs_skipped: 11,
+        status_distribution: ['attempted:1', 'executed:0', 'skipped:11'],
+        warnings: ['execution_engine_missing', 'backtest_not_started', 'no_broker_action', 'no_auto_trading'],
+        operator_summary: '1 Backtest-Job geprüft. 0/1 ausgeführt. Backtest-Engine noch nicht vorhanden. Frank nötig: nein. Keine Broker-Aktionen.',
+        safety_summary: 'no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        selected_job: null,
+        execution: null,
+      };
     case 'strategyBacktestJobPlanner':
       return {
         report_version: 'strategy_backtest_job_planner_v1',
@@ -3620,6 +3642,7 @@ export async function loadOperatorDashboard() {
       strategyValidationQueueExport: dashboard.strategyValidationQueueExport,
       strategyValidationReadinessAnalyzer: dashboard.strategyValidationReadinessAnalyzer,
       strategyBacktestJobPlanner: dashboard.strategyBacktestJobPlanner,
+      strategyBacktestExecutor: dashboard.strategyBacktestExecutor,
       strategyDatasetGateAudit: dashboard.strategyDatasetGateAudit,
       evidenceAutoLoop: dashboard.evidenceAutoLoop,
         validationQueueRefill: dashboard.validationQueueRefill,
@@ -3713,6 +3736,7 @@ export async function loadOperatorDashboard() {
   rawReports.strategyValidationQueueExport = reportFixtureRaw('strategyValidationQueueExport');
   rawReports.strategyValidationReadinessAnalyzer = reportFixtureRaw('strategyValidationReadinessAnalyzer');
   rawReports.strategyBacktestJobPlanner = reportFixtureRaw('strategyBacktestJobPlanner');
+  rawReports.strategyBacktestExecutor = reportFixtureRaw('strategyBacktestExecutor');
   rawReports.strategyDatasetGateAudit = reportFixtureRaw('strategyDatasetGateAudit');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
