@@ -1712,6 +1712,43 @@ function reportFixtureRaw(key) {
           },
         ],
       };
+    case 'strategyMutationValidationPlanner':
+      return {
+        report_version: 'strategy_mutation_validation_planner_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        hypotheses_analyzed: 48,
+        validation_plans_prepared: 12,
+        domains: ['trading'],
+        warnings: [],
+        operator_summary: '48 Hypothesen analysiert. 12 Validierungsaufträge vorbereitet. Frank nötig: nein. Keine Backtests gestartet. Keine Broker-Aktionen.',
+        safety_summary: 'no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        validation_plans: [
+          {
+            validation_plan_id: 'validation_plan_trading_research_ema_pullback_vwap',
+            source_hypothesis_id: 'trading_research_ema_pullback_vwap',
+            strategy_pattern: 'EMA Pullback',
+            asset: 'XAUUSD',
+            timeframe: 'M15',
+            parameters_to_validate: ['VWAP', 'EMA', 'ATR', 'session filter', 'pullback depth'],
+            required_backtest: true,
+            required_oos_test: true,
+            required_walk_forward: true,
+            required_monte_carlo: true,
+            required_cost_spread_test: true,
+            required_forward_observation: true,
+            expected_information_gain: 0.86,
+            validation_effort: 0.55,
+            priority: 'high',
+            safety_flags: ['no_auto_trading=true', 'no_broker_action=true', 'no_live_trading=true', 'human_review_required=true'],
+          },
+        ],
+        sources_used: ['trading_research_synthesizer.json', 'strategy_parameter_research_planner.json', 'strategy_mutation_analyzer.json'],
+      };
     case 'reviewStatusConsistencyAudit':
       return {
         report_version: 'review_status_consistency_audit_v1',
@@ -3432,10 +3469,11 @@ export async function loadOperatorDashboard() {
         knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
         validationBacklogAnalyzer: dashboard.validationBacklogAnalyzer,
         validationBacklogExecutor: dashboard.validationBacklogExecutor,
-        reviewPrioritizationAudit: dashboard.reviewPrioritizationAudit,
-        reviewDecisionAssistant: dashboard.reviewDecisionAssistant,
-        tradingResearchSynthesizer: dashboard.tradingResearchSynthesizer,
-        evidenceAutoLoop: dashboard.evidenceAutoLoop,
+      reviewPrioritizationAudit: dashboard.reviewPrioritizationAudit,
+      reviewDecisionAssistant: dashboard.reviewDecisionAssistant,
+      tradingResearchSynthesizer: dashboard.tradingResearchSynthesizer,
+      strategyMutationValidationPlanner: dashboard.strategyMutationValidationPlanner,
+      evidenceAutoLoop: dashboard.evidenceAutoLoop,
         validationQueueRefill: dashboard.validationQueueRefill,
         evidenceValidationRunner: dashboard.evidenceValidationRunner,
         autonomousImprovementQueue: dashboard.autonomousImprovementQueue,
@@ -3522,6 +3560,7 @@ export async function loadOperatorDashboard() {
   rawReports.validationBacklogExecutor = reportFixtureRaw('validationBacklogExecutor');
   rawReports.strategyParameterResearchPlanner = reportFixtureRaw('strategyParameterResearchPlanner');
   rawReports.tradingResearchSynthesizer = reportFixtureRaw('tradingResearchSynthesizer');
+  rawReports.strategyMutationValidationPlanner = reportFixtureRaw('strategyMutationValidationPlanner');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
   rawReports.evidenceAutoLoop = reportFixtureRaw('evidenceAutoLoop');

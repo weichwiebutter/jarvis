@@ -109,6 +109,7 @@ internal sealed class HermesCli
             "strategy-mutation-analyzer" => ShowStrategyMutationAnalyzer(),
             "strategy-parameter-research-planner" => ShowStrategyParameterResearchPlanner(),
             "trading-research-synthesizer" => ShowTradingResearchSynthesizer(),
+            "strategy-mutation-validation-planner" => ShowStrategyMutationValidationPlanner(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
             "generate-trusted-review-candidates" => GenerateTrustedReviewCandidates(),
@@ -383,6 +384,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-mutation-analyzer Strategy Mutation Kandidaten anzeigen");
         Console.WriteLine("  hermes strategy-parameter-research-planner Strategy Parameter Research Planner anzeigen");
         Console.WriteLine("  hermes trading-research-synthesizer Trading Research Synthesizer anzeigen");
+        Console.WriteLine("  hermes strategy-mutation-validation-planner Strategy Mutation Validierung planen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
         Console.WriteLine("  hermes generate-trusted-review-candidates Trusted Review Kandidaten erzeugen");
@@ -6338,6 +6340,32 @@ internal sealed class HermesCli
             WriteField("Hypothese", hypothesis.Hypothesis);
             WriteField("Nächste Validierung", hypothesis.SuggestedNextValidation);
             WriteField("Begründung", $"{hypothesis.AgreementSummary} / {hypothesis.ContradictionSummary}");
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyMutationValidationPlanner()
+    {
+        WriteHeader("Hermes Strategy Mutation Validation Planner");
+        var service = new StrategyMutationValidationPlannerService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Hypothesen analysiert", report.HypothesesAnalyzed.ToString());
+        WriteField("Validierungsaufträge", report.ValidationPlansPrepared.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Quellen", report.SourcesUsed);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Top Validierungsaufträge");
+        foreach (var plan in report.ValidationPlans.Take(12))
+        {
+            WriteField(plan.ValidationPlanId, $"{plan.StrategyPattern} · {plan.Asset} {plan.Timeframe} · priority={plan.Priority} · info_gain={plan.ExpectedInformationGain:0.###} · effort={plan.ValidationEffort:0.###}");
+            WriteField("Parameter", string.Join(", ", plan.ParametersToValidate));
+            WriteField("Backtest/OOS/Forward", $"{plan.RequiredBacktest}/{plan.RequiredOosTest}/{plan.RequiredWalkForward}/{plan.RequiredForwardObservation}");
         }
         Console.WriteLine();
         WriteSafety();
