@@ -162,6 +162,11 @@ const operatorReports = {
     url: bridgeUrl('/runtime/storage'),
     path: 'read-only bridge:/runtime/storage',
   },
+  storageCleanupSafetyAudit: {
+    label: 'Storage Cleanup Safety Audit',
+    url: bridgeUrl('/reports/storage-cleanup-safety-audit'),
+    path: 'read-only bridge:/reports/storage-cleanup-safety-audit',
+  },
   cleanupPlan: {
     label: 'Cleanup Plan',
     url: bridgeUrl('/runtime/cleanup-plan'),

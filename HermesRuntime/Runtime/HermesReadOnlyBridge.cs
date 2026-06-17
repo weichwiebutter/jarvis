@@ -19,6 +19,7 @@ public sealed class HermesReadOnlyBridge
         new("timeControl", "Zeitsteuerung", "/reports/time-control", "config/schedules.json"),
         new("resourceStatus", "Resource Status", "/runtime/resource", "reports/resource/resource_status.json"),
         new("storageStatus", "Storage Status", "/runtime/storage", "reports/storage/storage_status.json"),
+        new("storageCleanupSafetyAudit", "Storage Cleanup Safety Audit", "/reports/storage-cleanup-safety-audit", "reports/storage_cleanup/storage_cleanup_safety_audit.json"),
         new("cleanupPlan", "Cleanup Plan", "/runtime/cleanup-plan", "reports/storage/cleanup_plan.json"),
         new("nightlyState", "Nightly State", "/runtime/nightly", "reports/nightly_beta3/nightly_state.json"),
         new("researchInsights", "Research Insights", "/reports/research-insights", "strategy_research/research_insights.json"),

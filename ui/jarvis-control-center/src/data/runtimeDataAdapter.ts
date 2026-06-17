@@ -1712,6 +1712,37 @@ function reportFixtureRaw(key) {
           },
         ],
       };
+    case 'storageCleanupSafetyAudit':
+      return {
+        report_version: 'storage_cleanup_safety_audit_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        free_disk_gb: 0.42,
+        free_disk_percent: 1.03,
+        disk_usage_percent: 98.97,
+        cleanup_candidates: 90105,
+        estimated_free_bytes: 446397665,
+        protected_paths_count: 13,
+        auto_cleanup_policy_enabled: true,
+        auto_cleanup_allowed: false,
+        warnings: ['storage_must_be_protected', 'cleanup_candidates_high'],
+        operator_summary: 'Speicher knapp. 90000+ Dateien könnten später sicher entfernt werden. 13 Pfade brauchen Schutz. Frank nötig: optional.',
+        safety_summary: 'Speicher knapp; Kandidaten wurden gruppiert; keine Datei wurde geloescht oder archiviert.',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        groups: [
+          { group_id: 'reports', title: 'Alte Reports', file_count: 64000, estimated_bytes: 210000000, risk: 'low', automatically_safe: true, manually_recommended: true, example_paths: ['/mnt/d/HermesData/reports/...'] },
+          { group_id: 'snapshots', title: 'Alte Snapshots', file_count: 18000, estimated_bytes: 110000000, risk: 'medium', automatically_safe: false, manually_recommended: true, example_paths: ['/mnt/d/HermesData/snapshots/...'] },
+          { group_id: 'temp', title: 'Temporäre Dateien', file_count: 12000, estimated_bytes: 70000000, risk: 'low', automatically_safe: true, manually_recommended: true, example_paths: ['/mnt/d/HermesData/temp/...'] },
+          { group_id: 'logs', title: 'Logs', file_count: 2500, estimated_bytes: 22000000, risk: 'low', automatically_safe: false, manually_recommended: true, example_paths: ['/mnt/d/HermesData/logs/...'] },
+          { group_id: 'build', title: 'Build-Artefakte', file_count: 1800, estimated_bytes: 18000000, risk: 'medium', automatically_safe: true, manually_recommended: true, example_paths: ['/home/home/jarvis/HermesRuntime/bin/...'] },
+          { group_id: 'codex', title: 'Alte .codex_artifacts', file_count: 1805, estimated_bytes: 16700000, risk: 'medium', automatically_safe: false, manually_recommended: true, example_paths: ['/home/home/jarvis/HermesRuntime/.codex_artifacts/...'] },
+          { group_id: 'protected', title: 'Sicher geschützte Pfade', file_count: 13, estimated_bytes: 0, risk: 'high', automatically_safe: false, manually_recommended: true, example_paths: ['/mnt/d/HermesData/reports/signal_agent_specs/...'] },
+        ],
+        protected_paths: ['/mnt/d/HermesData/reports/signal_agent_specs', '/mnt/d/HermesData/reports/scalping_bot_specs'],
+      };
     case 'strategyMutationValidationPlanner':
       return {
         report_version: 'strategy_mutation_validation_planner_v1',
@@ -3461,6 +3492,7 @@ export async function loadOperatorDashboard() {
         timeControl: dashboard.timeControl,
         resourceStatus: dashboard.resourceStatus,
         storageStatus: dashboard.storageStatus,
+        storageCleanupSafetyAudit: dashboard.storageCleanupSafetyAudit,
         cleanupPlan: dashboard.cleanupPlan,
         nightlyState: dashboard.nightlyState,
         demoSignalFeedStatus: dashboard.demoSignalFeedStatus,
@@ -3560,6 +3592,7 @@ export async function loadOperatorDashboard() {
   rawReports.validationBacklogExecutor = reportFixtureRaw('validationBacklogExecutor');
   rawReports.strategyParameterResearchPlanner = reportFixtureRaw('strategyParameterResearchPlanner');
   rawReports.tradingResearchSynthesizer = reportFixtureRaw('tradingResearchSynthesizer');
+  rawReports.storageCleanupSafetyAudit = reportFixtureRaw('storageCleanupSafetyAudit');
   rawReports.strategyMutationValidationPlanner = reportFixtureRaw('strategyMutationValidationPlanner');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');

@@ -66,6 +66,7 @@ internal sealed class HermesCli
             "supervisor-stop-request" => RequestSupervisorStop(),
             "resource-status" => ShowResourceStatus(),
             "storage-status" => ShowStorageStatus(),
+            "storage-cleanup-safety-audit" => ShowStorageCleanupSafetyAudit(),
             "cleanup-plan" => ShowCleanupPlan(),
             "cleanup-apply" => ApplyCleanup(),
             "research-status" => ShowResearchStatus(),
@@ -345,6 +346,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes supervisor-stop-request sicheren Supervisor Stop Request setzen");
         Console.WriteLine("  hermes resource-status   CPU/RAM/Disk ResourceGuard anzeigen");
         Console.WriteLine("  hermes storage-status    Storage-/Retention-Status anzeigen");
+        Console.WriteLine("  hermes storage-cleanup-safety-audit Cleanup-Kandidaten sicher analysieren");
         Console.WriteLine("  hermes cleanup-plan      sicheren Storage Cleanup-Plan erzeugen");
         Console.WriteLine("  hermes cleanup-apply --safe sicheren Cleanup-Plan anwenden");
         Console.WriteLine("  hermes research-status    letzten Nightly-Research-Report anzeigen");
@@ -2934,6 +2936,39 @@ internal sealed class HermesCli
         WriteField("Storage Status", DisplayPath(hygiene.StatusPath));
         WriteStorageStatus(status);
         WriteCleanupPlan(plan, limit: 8);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStorageCleanupSafetyAudit()
+    {
+        WriteHeader("Hermes Storage Cleanup Safety Audit");
+        var service = new StorageCleanupSafetyAuditService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Free Disk", $"{report.FreeDiskGb:0.##} GB ({report.FreeDiskPercent:0.##}%)");
+        WriteField("Disk Usage", $"{report.DiskUsagePercent:0.##}%");
+        WriteField("cleanup_candidates", report.CleanupCandidates.ToString());
+        WriteField("estimated_free_bytes", report.EstimatedFreeBytes.ToString());
+        WriteField("protected_paths_count", report.ProtectedPathsCount.ToString());
+        WriteField("auto_cleanup_policy_enabled", report.AutoCleanupPolicyEnabled.ToString().ToLowerInvariant());
+        WriteField("auto_cleanup_allowed", report.AutoCleanupAllowed.ToString().ToLowerInvariant());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Cleanup-Gruppen");
+        foreach (var group in report.Groups)
+        {
+            WriteField(group.Title, $"{group.FileCount} Dateien · {group.EstimatedBytes} bytes · Risiko {group.Risk}");
+            WriteField("Automatisch sicher", group.AutomaticallySafe.ToString().ToLowerInvariant());
+            WriteField("Manuell empfohlen", group.ManuallyRecommended.ToString().ToLowerInvariant());
+            WriteMessages("Beispiele", group.ExamplePaths.Take(6).ToList());
+        }
+        WriteSubHeader("Geschützte Pfade");
+        WriteMessages("Protected", report.ProtectedPaths.Take(13).ToList());
         Console.WriteLine();
         WriteSafety();
         return 0;
