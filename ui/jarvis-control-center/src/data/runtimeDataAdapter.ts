@@ -1548,6 +1548,49 @@ function reportFixtureRaw(key) {
           },
         ],
       };
+    case 'strategyMutationAnalyzer':
+      return {
+        report_version: 'strategy_mutation_analyzer_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        patterns_analyzed: 6,
+        mutations_prepared: 20,
+        candidate_count: 20,
+        knowledge_items_analyzed: 138,
+        review_items_analyzed: 20,
+        research_entries_analyzed: 115941,
+        domains: ['trading'],
+        warnings: [],
+        operator_summary: '6 Muster analysiert. 20 Mutationen vorbereitet. Frank nötig: nein.',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        patterns: [
+          {
+            pattern_id: 'ema_pullback',
+            pattern_name: 'EMA Pullback',
+            domain: 'trading',
+            pattern_description: 'Pullback into EMA area with continuation confirmation.',
+            parameters_available: ['EMA20', 'EMA50', 'EMA100', 'EMA200', 'ATR7', 'ATR14', 'ATR21', 'ATR28', 'SL1ATR', 'SL1.5ATR', 'SL2ATR', 'TP1R', 'TP1.5R', 'TP2R', 'TP3R', 'London', 'New York', 'London + New York'],
+            parameters_variations: ['EMA20 + ATR14', 'EMA20 + ATR21', 'EMA50 + ATR14', 'EMA50 + ATR21'],
+            supporting_signals: ['london', 'london_new_york_overlap'],
+            mutation_count: 4,
+          },
+        ],
+        candidates: [
+          {
+            mutation_id: 'mutation_ema_pullback_ema20_atr14',
+            source_pattern: 'EMA Pullback',
+            parameter_changes: ['EMA20 + ATR14'],
+            expected_benefit: 'Bessere EMA-/ATR-Filterung und stabilere Pullback-Selektion',
+            validation_required: true,
+            oos_required: true,
+            forward_observation_required: true,
+            trust_baseline: 0.55,
+          },
+        ],
+      };
     case 'reviewStatusConsistencyAudit':
       return {
         report_version: 'review_status_consistency_audit_v1',
@@ -3175,6 +3218,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       domainStatus: reportFixtureRaw('domainStatus'),
       reviewStatusConsistencyAudit: reportFixtureRaw('reviewStatusConsistencyAudit'),
       validationBacklogAnalyzer: reportFixtureRaw('validationBacklogAnalyzer'),
+      knowledgeConsolidationExecutor: reportFixtureRaw('knowledgeConsolidationExecutor'),
       validationBacklogExecutor: reportFixtureRaw('validationBacklogExecutor'),
       supervisorState: operatorDashboardMock.supervisorState,
       schedulerState: operatorDashboardMock.schedulerState,
@@ -3351,6 +3395,7 @@ export async function loadOperatorDashboard() {
   rawReports.knowledgeValidationAudit = reportFixtureRaw('knowledgeValidationAudit');
   rawReports.reviewStatusConsistencyAudit = reportFixtureRaw('reviewStatusConsistencyAudit');
   rawReports.validationBacklogAnalyzer = reportFixtureRaw('validationBacklogAnalyzer');
+  rawReports.knowledgeConsolidationExecutor = reportFixtureRaw('knowledgeConsolidationExecutor');
   rawReports.validationBacklogExecutor = reportFixtureRaw('validationBacklogExecutor');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');

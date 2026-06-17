@@ -106,6 +106,7 @@ internal sealed class HermesCli
             "promotion-status" => ShowPromotionStatus(),
             "knowledge-consolidation-analyzer" => ShowKnowledgeConsolidationAnalyzer(),
             "knowledge-consolidation-executor" => ShowKnowledgeConsolidationExecutor(),
+            "strategy-mutation-analyzer" => ShowStrategyMutationAnalyzer(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
             "generate-trusted-review-candidates" => GenerateTrustedReviewCandidates(),
@@ -377,6 +378,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-analyzer Knowledge Consolidation Analyzer anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-executor Knowledge Consolidation Kandidaten erzeugen");
+        Console.WriteLine("  hermes strategy-mutation-analyzer Strategy Mutation Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
         Console.WriteLine("  hermes generate-trusted-review-candidates Trusted Review Kandidaten erzeugen");
@@ -6217,6 +6219,37 @@ internal sealed class HermesCli
             WriteField("Nächste Aktion", candidate.RecommendedNextAction);
             WriteField("Risiko", candidate.RiskNotes);
             WriteField("Frank nötig", candidate.FrankRequired.ToString().ToLowerInvariant());
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyMutationAnalyzer()
+    {
+        WriteHeader("Hermes Strategy Mutation Analyzer");
+        var service = new StrategyMutationAnalyzerService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Muster analysiert", report.PatternsAnalyzed.ToString());
+        WriteField("Mutationen vorbereitet", report.MutationsPrepared.ToString());
+        WriteField("Kandidaten", report.CandidateCount.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Domänen", report.Domains);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Muster");
+        foreach (var pattern in report.Patterns.Take(20))
+        {
+            WriteField(pattern.PatternName, $"{pattern.PatternDescription} · params={string.Join(", ", pattern.ParametersVariations)}");
+        }
+        WriteSubHeader("Mutationen");
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            WriteField(candidate.SourcePattern, $"{string.Join(", ", candidate.ParameterChanges)} · trust={candidate.TrustBaseline:0.####} · validation={(candidate.ValidationRequired ? "yes" : "no")} · oos={(candidate.OosRequired ? "yes" : "no")} · forward={(candidate.ForwardObservationRequired ? "yes" : "no")}");
+            WriteField("Erwarteter Nutzen", candidate.ExpectedBenefit);
         }
         Console.WriteLine();
         WriteSafety();

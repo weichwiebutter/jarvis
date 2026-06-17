@@ -47,6 +47,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/knowledge-consolidation-executor'),
     path: 'read-only bridge:/reports/knowledge-consolidation-executor',
   },
+  strategyMutationAnalyzer: {
+    label: 'Strategy Mutation Analyzer',
+    url: bridgeUrl('/reports/strategy-mutation-analyzer'),
+    path: 'read-only bridge:/reports/strategy-mutation-analyzer',
+  },
   validationBacklogExecutor: {
     label: 'Validation Backlog Executor',
     url: bridgeUrl('/reports/validation-backlog-executor'),
