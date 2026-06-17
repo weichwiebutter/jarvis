@@ -114,6 +114,7 @@ internal sealed class HermesCli
             "strategy-validation-queue-export" => ShowStrategyValidationQueueExport(),
             "strategy-validation-readiness-analyzer" => ShowStrategyValidationReadinessAnalyzer(),
             "strategy-backtest-job-planner" => ShowStrategyBacktestJobPlanner(),
+            "strategy-dataset-gate-audit" => ShowStrategyDatasetGateAudit(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
             "generate-trusted-review-candidates" => GenerateTrustedReviewCandidates(),
@@ -393,6 +394,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-validation-queue-export Strategy Validation Queue exportieren");
         Console.WriteLine("  hermes strategy-validation-readiness-analyzer Strategy Validation Readiness analysieren");
         Console.WriteLine("  hermes strategy-backtest-job-planner Strategy Backtest Job Planner anzeigen");
+        Console.WriteLine("  hermes strategy-dataset-gate-audit Strategy Dataset Gate Audit anzeigen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
         Console.WriteLine("  hermes generate-trusted-review-candidates Trusted Review Kandidaten erzeugen");
@@ -6498,6 +6500,42 @@ internal sealed class HermesCli
             WriteField(job.BacktestJobId, $"{job.StrategyPattern} · {job.Asset} {job.Timeframe} · status={job.Status} · runs={job.MaxRuns} · timeout={job.TimeoutSeconds}s");
             WriteField("Dataset", $"{job.DatasetRequired} · available={job.DatasetAvailable}");
             WriteField("Next Action", job.NextAction);
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyDatasetGateAudit()
+    {
+        WriteHeader("Hermes Strategy Dataset Gate Audit");
+        var service = new StrategyDatasetGateAuditService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Queue", DisplayPath(Path.Combine(_runtimeRoot, "queues", "strategy_validation_queue.json")));
+        WriteField("Analysiert", report.QueueItemsAnalyzed.ToString());
+        WriteField("Datenquelle", report.DatasetSourceOfTruth);
+        WriteField("Ready for Backtest", report.ReadyForBacktestCount.ToString());
+        WriteField("Ready to Execute", report.ReadyToExecuteCount.ToString());
+        WriteField("Waiting for Data", report.WaitingForDataCount.ToString());
+        WriteField("Blocked", report.BlockedCount.ToString());
+        WriteField("Inkonsistenzen", report.MismatchCount.ToString());
+        WriteField("Behoben", report.FixedCount.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Inconsistencies", report.Inconsistencies);
+        WriteMessages("Correction Plan", report.CorrectionPlan);
+        WriteSubHeader("Assets");
+        foreach (var item in report.Items)
+        {
+            WriteField($"{item.Asset} {item.Timeframe}", $"dataset_available={item.DatasetAvailable} · source={item.DatasetSource} · period={item.DatasetPeriod}");
+            WriteField("Readiness", item.ReadinessView);
+            WriteField("Planner", item.PlannerView);
+            WriteField("Mismatch", item.Mismatch.ToString().ToLowerInvariant());
+            WriteMessages("Missing", item.MissingRequirements);
+            WriteMessages("Warnings", item.Warnings);
         }
         Console.WriteLine();
         WriteSafety();

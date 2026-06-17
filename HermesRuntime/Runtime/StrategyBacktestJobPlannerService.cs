@@ -78,13 +78,7 @@ public sealed class StrategyBacktestJobPlannerService
         var readinessPath = Path.Combine(_storagePaths.Root, "reports", "strategy_validation_readiness", "strategy_validation_readiness_analyzer.json");
         var queueItems = LoadQueue(queuePath);
         var readiness = LoadReadiness(readinessPath) ?? new StrategyValidationReadinessAnalyzerService(_storagePaths, _runtimeRoot).Run();
-        var marketInventory = new MarketDataAvailabilityService(_storagePaths, _runtimeRoot);
-        var inventory = new CertifiedCandidateInventoryService(_storagePaths, _runtimeRoot).LoadInventory()
-            ?? new CertifiedCandidateInventoryService(_storagePaths, _runtimeRoot).BuildInventory();
-        var setupRegistry = new CertifiedCandidateInventoryService(_storagePaths, _runtimeRoot).LoadRegistry()
-            ?? new CertifiedCandidateInventoryService(_storagePaths, _runtimeRoot).BuildRegistry();
-        var marketSnapshot = new CurrentMarketSnapshotService(_storagePaths, _runtimeRoot).LoadStatus();
-        var jobs = BuildJobs(queueItems, readiness, marketInventory, inventory, setupRegistry, marketSnapshot);
+        var jobs = BuildJobs(queueItems, readiness);
 
         var readyCount = jobs.Count(job => job.Status == "ready_to_execute");
         var waitingCount = jobs.Count(job => job.Status == "waiting_for_data");
@@ -167,20 +161,18 @@ public sealed class StrategyBacktestJobPlannerService
         }
     }
 
-    private static IReadOnlyList<StrategyBacktestJobPlan> BuildJobs(
+    private IReadOnlyList<StrategyBacktestJobPlan> BuildJobs(
         IReadOnlyList<StrategyValidationQueueItem> queueItems,
-        StrategyValidationReadinessAnalyzerReport readiness,
-        MarketDataAvailabilityService marketInventory,
-        CertifiedCandidateInventory inventory,
-        SetupRegistry setupRegistry,
-        CurrentMarketStatusSnapshot? marketSnapshot)
+        StrategyValidationReadinessAnalyzerReport readiness)
     {
         var readinessByQueueId = readiness.Items.ToDictionary(item => item.QueueItemId, StringComparer.OrdinalIgnoreCase);
+        var datasetGateService = new StrategyDatasetGateService(_storagePaths, _runtimeRoot);
         var jobs = new List<StrategyBacktestJobPlan>();
 
         foreach (var item in queueItems.Where(item => readinessByQueueId.TryGetValue(item.QueueItemId, out var readinessItem) && readinessItem.Status == "ready_for_backtest"))
         {
-            var datasetAvailable = IsDatasetAvailable(item.Asset, item.Timeframe, marketInventory, inventory, setupRegistry, marketSnapshot);
+            var datasetGate = datasetGateService.Evaluate(item.Asset, item.Timeframe);
+            var datasetAvailable = datasetGate.DatasetAvailable;
             var status = datasetAvailable ? "ready_to_execute" : "waiting_for_data";
             var blockers = new List<string>();
             if (!datasetAvailable)
@@ -188,20 +180,6 @@ public sealed class StrategyBacktestJobPlannerService
                 blockers.Add("dataset_missing");
             }
 
-            if (!setupRegistry.Assets.Any(entry => entry.Asset.Equals(item.Asset, StringComparison.OrdinalIgnoreCase)))
-            {
-                blockers.Add("setup_registry_missing");
-                status = "blocked";
-            }
-
-            if (!inventory.Items.Any(entry => entry.Asset.Equals(item.Asset, StringComparison.OrdinalIgnoreCase)))
-            {
-                blockers.Add("certified_candidate_missing");
-                status = "blocked";
-            }
-
-            var backtestPeriod = GetBacktestPeriod(item.Asset, item.Timeframe);
-            var oosPeriod = GetOosPeriod(item.Asset, item.Timeframe);
             jobs.Add(new StrategyBacktestJobPlan(
                 BacktestJobId: $"backtest_job_{NormalizeId(item.ValidationPlanId)}",
                 SourceQueueItemId: item.QueueItemId,
@@ -210,14 +188,14 @@ public sealed class StrategyBacktestJobPlannerService
                 Asset: item.Asset,
                 Timeframe: item.Timeframe,
                 ParametersToTest: item.ParametersToValidate,
-                DatasetRequired: $"historical_data:{item.Asset}:{item.Timeframe}",
+                DatasetRequired: datasetGate.DatasetPeriod,
                 DatasetAvailable: datasetAvailable,
-                BacktestPeriod: backtestPeriod,
-                OosPeriod: oosPeriod,
+                BacktestPeriod: GetBacktestPeriod(item.Asset, item.Timeframe),
+                OosPeriod: GetOosPeriod(item.Asset, item.Timeframe),
                 WalkForwardRequired: true,
                 MonteCarloRequired: true,
                 CostSpreadModelRequired: true,
-                AssumedSpreadSource: marketSnapshot?.AssetsAvailable.Contains(item.Asset, StringComparer.OrdinalIgnoreCase) == true ? "current_market_snapshot" : "market_data_inventory",
+                AssumedSpreadSource: datasetGate.DatasetSource,
                 MaxRuns: 3,
                 TimeoutSeconds: 1800,
                 SafetyMode: "no_auto_trading=true; human_review_required=true; broker_orders_enabled=false; live_trading_enabled=false; research_only=true",
@@ -225,32 +203,13 @@ public sealed class StrategyBacktestJobPlannerService
                 Blockers: blockers.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 NextAction: status == "ready_to_execute"
                     ? "Backtest-Job kann sicher an den Executor übergeben werden."
-                    : status == "waiting_for_data"
-                        ? "Dataset ergänzen, dann erneut prüfen."
-                        : "Pflichtfelder oder Setup fehlen.")); 
+                    : "Dataset ergänzen, dann erneut prüfen."));
         }
 
         return jobs
             .OrderByDescending(job => job.Status == "ready_to_execute")
             .ThenByDescending(job => job.ValidationPlanId, StringComparer.OrdinalIgnoreCase)
             .ToList();
-    }
-
-    private static bool IsDatasetAvailable(
-        string asset,
-        string timeframe,
-        MarketDataAvailabilityService marketInventory,
-        CertifiedCandidateInventory inventory,
-        SetupRegistry setupRegistry,
-        CurrentMarketStatusSnapshot? marketSnapshot)
-    {
-        var normalizedAsset = asset.ToUpperInvariant();
-        var availability = marketInventory.LoadAvailability() ?? marketInventory.Scan();
-        var marketAvailable = marketSnapshot?.AssetsAvailable.Contains(normalizedAsset, StringComparer.OrdinalIgnoreCase) == true;
-        var setupReady = setupRegistry.Assets.Any(entry => entry.Asset.Equals(normalizedAsset, StringComparison.OrdinalIgnoreCase) && entry.ReadinessStatus is "setup_ready" or "bot_ready");
-        var certifiedAvailable = inventory.Items.Any(item => item.Asset.Equals(normalizedAsset, StringComparison.OrdinalIgnoreCase));
-        var hasData = availability.AssetsAvailable.Contains(normalizedAsset, StringComparer.OrdinalIgnoreCase);
-        return marketAvailable && setupReady && certifiedAvailable && hasData;
     }
 
     private static string GetBacktestPeriod(string asset, string timeframe) => $"{asset}:{timeframe}:historical";

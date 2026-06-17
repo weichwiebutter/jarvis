@@ -1910,6 +1910,30 @@ function reportFixtureRaw(key) {
         human_review_required: true,
         jobs: [],
       };
+    case 'strategyDatasetGateAudit':
+      return {
+        report_version: 'strategy_dataset_gate_audit_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        queue_items_analyzed: 12,
+        dataset_source_of_truth: 'market_data_inventory',
+        ready_for_backtest_count: 12,
+        ready_to_execute_count: 12,
+        waiting_for_data_count: 0,
+        blocked_count: 0,
+        mismatch_count: 0,
+        fixed_count: 1,
+        operator_summary: '12 Strategie-Aufträge geprüft. 0 Inkonsistenzen gefunden. 1 behoben. Aktive Datenquelle: market_data_inventory. Frank nötig: nein.',
+        frank_required: false,
+        report_path: '/mnt/d/HermesData/reports/strategy_dataset_gate/strategy_dataset_gate_audit.json',
+        markdown_path: '/mnt/d/HermesData/reports/strategy_dataset_gate/strategy_dataset_gate_audit.md',
+        items: [],
+        inconsistencies: [],
+        correction_plan: [
+          'Dataset-Verfügbarkeit nur noch über Market Data Inventory bestimmen.',
+          'Readiness Analyzer und Backtest Job Planner nutzen dieselbe Gate-Schicht.',
+          'status ready_for_backtest und ready_to_execute müssen dieselbe Datenlage abbilden.',
+        ],
+      };
     case 'validationBacklogExecutor':
       return {
         report_version: 'validation_backlog_executor_v1',
@@ -3596,6 +3620,7 @@ export async function loadOperatorDashboard() {
       strategyValidationQueueExport: dashboard.strategyValidationQueueExport,
       strategyValidationReadinessAnalyzer: dashboard.strategyValidationReadinessAnalyzer,
       strategyBacktestJobPlanner: dashboard.strategyBacktestJobPlanner,
+      strategyDatasetGateAudit: dashboard.strategyDatasetGateAudit,
       evidenceAutoLoop: dashboard.evidenceAutoLoop,
         validationQueueRefill: dashboard.validationQueueRefill,
         evidenceValidationRunner: dashboard.evidenceValidationRunner,
@@ -3688,6 +3713,7 @@ export async function loadOperatorDashboard() {
   rawReports.strategyValidationQueueExport = reportFixtureRaw('strategyValidationQueueExport');
   rawReports.strategyValidationReadinessAnalyzer = reportFixtureRaw('strategyValidationReadinessAnalyzer');
   rawReports.strategyBacktestJobPlanner = reportFixtureRaw('strategyBacktestJobPlanner');
+  rawReports.strategyDatasetGateAudit = reportFixtureRaw('strategyDatasetGateAudit');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
   rawReports.evidenceAutoLoop = reportFixtureRaw('evidenceAutoLoop');

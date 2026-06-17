@@ -75,12 +75,10 @@ public sealed class StrategyValidationReadinessAnalyzerService
         var synth = synthService.Load() ?? synthService.Run();
         var parameterPlannerService = new StrategyParameterResearchPlannerService(_storagePaths, _runtimeRoot);
         var parameterPlanner = parameterPlannerService.Load() ?? parameterPlannerService.Run();
-        var inventoryService = new CertifiedCandidateInventoryService(_storagePaths, _runtimeRoot);
-        var inventory = inventoryService.LoadInventory() ?? inventoryService.BuildInventory();
-        var setupRegistry = inventoryService.LoadRegistry() ?? inventoryService.BuildRegistry();
         var forwardStatus = new ForwardTestService(_storagePaths, _runtimeRoot).LoadStatus();
         var knowledgeCatalog = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
-        var analysis = AnalyzeQueue(queueItems, planner, synth, parameterPlanner, inventory, setupRegistry, forwardStatus, knowledgeCatalog);
+        var datasetGateService = new StrategyDatasetGateService(_storagePaths, _runtimeRoot);
+        var analysis = AnalyzeQueue(queueItems, planner, synth, parameterPlanner, datasetGateService, forwardStatus, knowledgeCatalog);
 
         var report = new StrategyValidationReadinessAnalyzerReport(
             ReportVersion: "strategy_validation_readiness_analyzer_v1",
@@ -162,14 +160,10 @@ public sealed class StrategyValidationReadinessAnalyzerService
         StrategyMutationValidationPlannerReport planner,
         TradingResearchSynthesizerReport synth,
         StrategyParameterResearchPlannerReport parameterPlanner,
-        CertifiedCandidateInventory inventory,
-        SetupRegistry setupRegistry,
+        StrategyDatasetGateService datasetGateService,
         ForwardTestStatusSnapshot? forwardStatus,
         IReadOnlyList<KnowledgeCatalogItem> knowledgeCatalog)
     {
-        var knowledgeByDomain = knowledgeCatalog.GroupBy(item => item.Domain, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
-        var setupCounts = setupRegistry.SetupCountsByAsset;
         var forwardObservationCount = forwardStatus?.ForwardTestObservationsTotal ?? 0;
         var items = new List<StrategyValidationReadinessItem>();
         var warnings = new List<string>();
@@ -177,29 +171,24 @@ public sealed class StrategyValidationReadinessAnalyzerService
         foreach (var item in queueItems)
         {
             var asset = item.Asset.ToUpperInvariant();
-            var hasSetup = setupCounts.TryGetValue(asset, out var setupCount) && setupCount > 0;
+            var datasetGate = datasetGateService.Evaluate(asset, item.Timeframe);
             var hasForwardObservations = forwardObservationCount > 0;
-            var hasCertifiedInventory = inventory.Items.Any(entry => entry.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase));
             var paramCandidate = parameterPlanner.Candidates.FirstOrDefault(candidate => candidate.SourcePattern.Equals(item.StrategyPattern, StringComparison.OrdinalIgnoreCase));
             var hypothesis = synth.Hypotheses.FirstOrDefault(entry => entry.PatternName.Equals(item.StrategyPattern, StringComparison.OrdinalIgnoreCase));
             var plan = planner.ValidationPlans.FirstOrDefault(entry => entry.ValidationPlanId.Equals(item.ValidationPlanId, StringComparison.OrdinalIgnoreCase));
 
             var missing = new List<string>();
             var blockers = new List<string>();
-            var status = "ready_for_backtest";
-            var hasOosData = true;
-
-            if (!hasSetup)
+            var status = datasetGate.DatasetAvailable ? "ready_for_backtest" : "blocked";
+            if (!datasetGate.DatasetAvailable)
             {
-                blockers.Add("setup_registry_missing");
-                missing.Add("setup_registry_entry");
-                status = "blocked";
+                missing.AddRange(datasetGate.MissingRequirements);
+                blockers.AddRange(datasetGate.Warnings);
             }
 
             if (item.RequiredOosTest && forwardStatus is null)
             {
                 missing.Add("oos_data");
-                hasOosData = false;
                 status = "waiting_for_oos_data";
             }
 
@@ -209,25 +198,12 @@ public sealed class StrategyValidationReadinessAnalyzerService
                 status = status == "blocked" ? status : "waiting_for_forward_observation";
             }
 
-            if (!hasCertifiedInventory && item.Asset.Equals("GER40", StringComparison.OrdinalIgnoreCase))
-            {
-                blockers.Add("no_certified_candidate_inventory");
-                missing.Add("certified_candidate");
-                status = "blocked";
-            }
-
-            if (item.Asset.Equals("GER40", StringComparison.OrdinalIgnoreCase) && !knowledgeByDomain.ContainsKey("trading"))
-            {
-                blockers.Add("trading_knowledge_missing");
-                status = "blocked";
-            }
-
             if (item.Asset.Equals("GER40", StringComparison.OrdinalIgnoreCase) && !item.StrategyPattern.Contains("Breakout", StringComparison.OrdinalIgnoreCase))
             {
                 missing.Add("asset_specific_validation_context");
             }
 
-            var readinessScore = ComputeReadinessScore(item, status, hasSetup, hasForwardObservations, hypothesis, paramCandidate, plan);
+            var readinessScore = ComputeReadinessScore(item, status, datasetGate.DatasetAvailable, hasForwardObservations, hypothesis, paramCandidate, plan);
             items.Add(new StrategyValidationReadinessItem(
                 ValidationPlanId: item.ValidationPlanId,
                 QueueItemId: item.QueueItemId,
@@ -235,7 +211,7 @@ public sealed class StrategyValidationReadinessAnalyzerService
                 Asset: item.Asset,
                 Timeframe: item.Timeframe,
                 BacktestReady: status == "ready_for_backtest",
-                OosReady: hasOosData,
+                OosReady: datasetGate.DatasetAvailable,
                 ForwardReady: hasForwardObservations,
                 ReadinessScore: readinessScore,
                 ExpectedInformationGain: plan?.ExpectedInformationGain ?? hypothesis?.ExpectedInformationGain ?? 0,
@@ -260,7 +236,7 @@ public sealed class StrategyValidationReadinessAnalyzerService
     private static double ComputeReadinessScore(
         StrategyValidationQueueItem item,
         string status,
-        bool hasSetup,
+        bool hasDataset,
         bool hasForwardObservations,
         TradingResearchHypothesis? hypothesis,
         StrategyParameterMutationPlan? paramCandidate,
@@ -274,7 +250,7 @@ public sealed class StrategyValidationReadinessAnalyzerService
             _ => 20,
         };
 
-        if (hasSetup)
+        if (hasDataset)
         {
             score += 10;
         }
