@@ -24,6 +24,18 @@ public sealed record ScheduleConfig(
 
     public DateTimeOffset? EvidenceAutoLoopNextRunUtc { get; init; }
 
+    public bool ValidationBacklogExecutorEnabled { get; init; } = false;
+
+    public string ValidationBacklogExecutorWindow { get; init; } = "learning_window_or_nightly";
+
+    public int ValidationBacklogExecutorMaxTasksPerRun { get; init; } = 20;
+
+    public bool ValidationBacklogExecutorRunOnlyInLearningWindow { get; init; } = true;
+
+    public DateTimeOffset? ValidationBacklogExecutorLastRunUtc { get; init; }
+
+    public DateTimeOffset? ValidationBacklogExecutorNextRunUtc { get; init; }
+
     public SchedulerWindowConfig WorkWindow { get; init; } = new("08:00", "18:00", true);
 
     public SchedulerWindowConfig NightlyWindow { get; init; } = new("23:00", "05:00", true);
@@ -110,6 +122,21 @@ public sealed record ScheduleConfig(
                     ["max_tasks_per_run"] = "72",
                     ["prioritize_trading"] = "true",
                     ["run_only_in_learning_window"] = "false"
+                }),
+            new(
+                JobId: "validation_backlog_executor",
+                JobType: "validation_backlog_executor",
+                Enabled: false,
+                ScheduleType: "window",
+                Command: "validation-backlog-executor",
+                WindowStart: "05:30",
+                WindowEnd: "06:30",
+                MaxRuntimeMinutes: 30,
+                SleepSeconds: 60,
+                Parameters: new Dictionary<string, string>
+                {
+                    ["max_tasks_per_run"] = "20",
+                    ["run_only_in_learning_window"] = "true"
                 }),
             new(
                 JobId: "storage_hygiene",
@@ -353,6 +380,26 @@ public sealed record ScheduleConfig(
         {
             EvidenceAutoLoopLastRunUtc = lastRunUtc,
             EvidenceAutoLoopNextRunUtc = nextRunUtc
+        };
+    }
+
+    public ScheduleConfig WithValidationBacklogExecutorEnabled(bool enabled)
+    {
+        return this with
+        {
+            ValidationBacklogExecutorEnabled = enabled,
+            Jobs = Jobs.Select(job => job.JobId.Equals("validation_backlog_executor", StringComparison.OrdinalIgnoreCase)
+                ? job with { Enabled = enabled }
+                : job).ToList()
+        };
+    }
+
+    public ScheduleConfig WithValidationBacklogExecutorRunState(DateTimeOffset? lastRunUtc, DateTimeOffset? nextRunUtc)
+    {
+        return this with
+        {
+            ValidationBacklogExecutorLastRunUtc = lastRunUtc,
+            ValidationBacklogExecutorNextRunUtc = nextRunUtc
         };
     }
 

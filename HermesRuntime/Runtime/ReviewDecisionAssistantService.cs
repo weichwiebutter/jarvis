@@ -285,12 +285,46 @@ public sealed class ReviewDecisionAssistantService
 
     private static void WriteTextWithFallback(string reportPath, string markdownPath, string fallbackRoot, ReviewDecisionAssistantReport report)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(reportPath) ?? fallbackRoot);
-        Directory.CreateDirectory(Path.GetDirectoryName(markdownPath) ?? fallbackRoot);
-
         var json = JsonSerializer.Serialize(report, JsonDefaults.WriteOptions);
-        File.WriteAllText(reportPath, json, Encoding.UTF8);
-        File.WriteAllText(markdownPath, BuildMarkdown(report), Encoding.UTF8);
+        var markdown = BuildMarkdown(report);
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(reportPath) ?? fallbackRoot);
+            Directory.CreateDirectory(Path.GetDirectoryName(markdownPath) ?? fallbackRoot);
+            File.WriteAllText(reportPath, json, Encoding.UTF8);
+            File.WriteAllText(markdownPath, markdown, Encoding.UTF8);
+            return;
+        }
+        catch
+        {
+            // Fall through to safe local fallbacks.
+        }
+
+        var fallbackRoots = new[]
+        {
+            fallbackRoot,
+            Path.Combine(Path.GetTempPath(), "hermes", "reports", "review_decision_assistant"),
+        };
+
+        foreach (var root in fallbackRoots)
+        {
+            try
+            {
+                Directory.CreateDirectory(root);
+                var fallbackReportPath = Path.Combine(root, "review_decision_assistant.json");
+                var fallbackMarkdownPath = Path.Combine(root, "review_decision_assistant.md");
+                File.WriteAllText(fallbackReportPath, json, Encoding.UTF8);
+                File.WriteAllText(fallbackMarkdownPath, markdown, Encoding.UTF8);
+                return;
+            }
+            catch
+            {
+                // Try next fallback root.
+            }
+        }
+
+        throw new IOException("Unable to write Review Decision Assistant report to primary or fallback locations.");
     }
 
     private static string BuildMarkdown(ReviewDecisionAssistantReport report)

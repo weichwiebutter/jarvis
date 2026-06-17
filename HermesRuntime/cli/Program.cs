@@ -140,6 +140,11 @@ internal sealed class HermesCli
             "explain-validation-routing" => ExplainValidationRouting(),
             "knowledge-validation-status" => ShowKnowledgeValidationStatus(),
             "knowledge-validation-audit" => ShowKnowledgeValidationAudit(),
+            "validation-backlog-analyzer" => ShowValidationBacklogAnalyzer(),
+            "validation-backlog-executor" => ShowValidationBacklogExecutor(),
+            "validation-backlog-executor-status" => ShowValidationBacklogExecutorStatus(),
+            "validation-backlog-executor-enable" => SetValidationBacklogExecutorEnabled(true),
+            "validation-backlog-executor-disable" => SetValidationBacklogExecutorEnabled(false),
             "validation-queue-refill" => RunValidationQueueRefill(),
             "run-evidence-validation" => RunEvidenceValidation(),
             "generate-improvement-queue" => GenerateImprovementQueue(),
@@ -410,6 +415,11 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes explain-validation-routing --domain documentation Routing-Profil erklaeren");
         Console.WriteLine("  hermes knowledge-validation-status Validation Fortschritt anzeigen");
         Console.WriteLine("  hermes knowledge-validation-audit Knowledge Validation Audit anzeigen");
+        Console.WriteLine("  hermes validation-backlog-analyzer Validierungsstau und Auto-Plan anzeigen");
+        Console.WriteLine("  hermes validation-backlog-executor Validierungsstau sicher abarbeiten");
+        Console.WriteLine("  hermes validation-backlog-executor-status Validierungsstau Executor Status anzeigen");
+        Console.WriteLine("  hermes validation-backlog-executor-enable Validierungsstau Executor aktivieren");
+        Console.WriteLine("  hermes validation-backlog-executor-disable Validierungsstau Executor deaktivieren");
         Console.WriteLine("  hermes validation-queue-refill Validation Queue aus offenen Plaenen auffuellen");
         Console.WriteLine("  hermes run-evidence-validation sichere Evidenz-/Validierungs-Aufgaben ausfuehren");
         Console.WriteLine("  hermes generate-improvement-queue Verbesserungs-Warteschlange aus Audit/Warnungen erzeugen");
@@ -6648,6 +6658,149 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int SetValidationBacklogExecutorEnabled(bool enabled)
+    {
+        WriteHeader(enabled ? "Hermes Validation Backlog Executor Aktivieren" : "Hermes Validation Backlog Executor Deaktivieren");
+
+        var storagePaths = BuildStoragePaths();
+        var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var updated = scheduler.UpdateValidationBacklogExecutorEnabled(enabled);
+        var status = updated.BuildTimeControlStatus(DateTimeOffset.UtcNow, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var service = new ValidationBacklogExecutorService(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var runtimeReport = service.Load();
+
+        if (enabled)
+        {
+            var nextRun = updated.ValidationBacklogExecutorNextRunUtc
+                ?? runtimeReport?.NextRunUtc
+                ?? DetermineValidationBacklogExecutorNextRun(updated, status, enabled);
+            if (nextRun is not null)
+            {
+                updated = scheduler.UpdateValidationBacklogExecutorRunState(updated.ValidationBacklogExecutorLastRunUtc, nextRun);
+            }
+        }
+
+        WriteField("Aktiviert", updated.ValidationBacklogExecutorEnabled.ToString().ToLowerInvariant());
+        WriteField("Job vorhanden", updated.Jobs.Any(job => job.JobId.Equals("validation_backlog_executor", StringComparison.OrdinalIgnoreCase)).ToString().ToLowerInvariant());
+        WriteField("Konfigurationsfenster", updated.ValidationBacklogExecutorWindow);
+        WriteField("Max Tasks pro Lauf", updated.ValidationBacklogExecutorMaxTasksPerRun.ToString(CultureInfo.InvariantCulture));
+        WriteField("Zeitsteuerung", status.StatusLabel);
+        WriteField("In Work Window", status.InWorkWindow.ToString().ToLowerInvariant());
+        WriteField("Last Run", updated.ValidationBacklogExecutorLastRunUtc?.ToString("O") ?? runtimeReport?.LastRunUtc?.ToString("O") ?? "-");
+        WriteField("Next Run", updated.ValidationBacklogExecutorNextRunUtc?.ToString("O") ?? runtimeReport?.NextRunUtc?.ToString("O") ?? "Nächster Lauf wird beim Scheduler-Lauf berechnet.");
+        WriteField("Frank nötig", ((runtimeReport?.FrankRequired ?? 0) > 0).ToString().ToLowerInvariant());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowValidationBacklogExecutorStatus()
+    {
+        WriteHeader("Hermes Validation Backlog Executor Status");
+
+        var storagePaths = BuildStoragePaths();
+        var scheduler = new HermesInternalScheduler(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var config = scheduler.LoadConfig();
+        var service = new ValidationBacklogExecutorService(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var report = service.Load();
+        var timeControl = scheduler.GetTimeControlStatus();
+
+        var configured = config.Jobs.Any(job => job.JobId.Equals("validation_backlog_executor", StringComparison.OrdinalIgnoreCase))
+            || config.ValidationBacklogExecutorEnabled;
+        var enabled = config.ValidationBacklogExecutorEnabled
+            || config.Jobs.Any(job => job.JobId.Equals("validation_backlog_executor", StringComparison.OrdinalIgnoreCase) && job.Enabled);
+        var statusLabel = enabled
+            ? (timeControl.LearningWindow.ActiveNow || timeControl.NightlyWindow.ActiveNow
+                ? "Aktiv"
+                : "Aktiviert – wartet auf Lernfenster")
+            : "Deaktiviert";
+        var modeLabel = enabled
+            ? (timeControl.LearningWindow.ActiveNow || timeControl.NightlyWindow.ActiveNow
+                ? "läuft oder wartet auf Ausführung"
+                : "wartet auf Lernfenster")
+            : "deaktiviert";
+        var computedNextRun = DetermineValidationBacklogExecutorNextRun(config, timeControl, enabled);
+
+        WriteField("Konfiguriert", configured.ToString().ToLowerInvariant());
+        WriteField("Aktiviert", enabled.ToString().ToLowerInvariant());
+        WriteField("Modus", modeLabel);
+        WriteField("Status", statusLabel);
+        WriteField("Fenster", config.ValidationBacklogExecutorWindow);
+        WriteField("Zeitsteuerung", timeControl.StatusLabel);
+        WriteField("Max Tasks pro Lauf", (report?.MaxTasksPerRun ?? config.ValidationBacklogExecutorMaxTasksPerRun).ToString(CultureInfo.InvariantCulture));
+        WriteField("Letzter Lauf", report?.LastRunUtc?.ToString("O") ?? config.ValidationBacklogExecutorLastRunUtc?.ToString("O") ?? "-");
+        WriteField("Nächster Lauf", report?.NextRunUtc?.ToString("O") ?? config.ValidationBacklogExecutorNextRunUtc?.ToString("O") ?? computedNextRun?.ToString("O") ?? "Nächster Lauf wird beim Scheduler-Lauf berechnet.");
+        WriteField("Ausgeführte Schritte", report?.ExecutedSteps.ToString(CultureInfo.InvariantCulture) ?? "0");
+        WriteField("Validation Tasks erzeugt", report?.ValidationTasksCreated.ToString(CultureInfo.InvariantCulture) ?? "0");
+        WriteField("Evidence Tasks ausgeführt", report?.EvidenceTasksExecuted.ToString(CultureInfo.InvariantCulture) ?? "0");
+        WriteField("Reviews aktualisiert", report?.ReviewsRefreshed.ToString(CultureInfo.InvariantCulture) ?? "0");
+        WriteField("Frank nötig", ((report?.FrankRequired ?? 0) > 0).ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report?.Warnings ?? []);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private static DateTimeOffset? DetermineValidationBacklogExecutorNextRun(
+        ScheduleConfig config,
+        ScheduleTimeControlStatus timeControl,
+        bool enabled)
+    {
+        if (!enabled)
+        {
+            return null;
+        }
+
+        if (timeControl.LearningWindow.ActiveNow || timeControl.NightlyWindow.ActiveNow)
+        {
+            return DateTimeOffset.UtcNow;
+        }
+
+        var zone = ResolveTimeZone(config.TimeZone);
+        var currentLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone);
+        var candidates = new List<DateTimeOffset>();
+
+        foreach (var windowStart in new[]
+        {
+            config.LearningWindow.Enabled ? config.LearningWindow.Start : null,
+            config.NightlyWindow.Enabled ? config.NightlyWindow.Start : null,
+        })
+        {
+            if (!TimeOnly.TryParse(windowStart, out var start))
+            {
+                continue;
+            }
+
+            var candidateLocal = currentLocal.Date + start.ToTimeSpan();
+            if (candidateLocal <= currentLocal.DateTime)
+            {
+                candidateLocal = candidateLocal.AddDays(1);
+            }
+
+            candidates.Add(new DateTimeOffset(candidateLocal, zone.GetUtcOffset(candidateLocal)));
+        }
+
+        return candidates.Count > 0 ? candidates.Min() : null;
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string timeZoneId)
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(timeZoneId)
+                ? TimeZoneInfo.Local
+                : TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.Local;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Local;
+        }
+    }
+
     private int ConsolidateMemory()
     {
         WriteHeader("Hermes Memory Consolidation");
@@ -6886,6 +7039,89 @@ internal sealed class HermesCli
         if ((report.NextRecommendedCommands?.Count ?? 0) > 0)
         {
             WriteMessages("Nächste Commands", report.NextRecommendedCommands);
+        }
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowValidationBacklogAnalyzer()
+    {
+        WriteHeader("Hermes Validation Backlog Analyzer");
+        var service = new ValidationBacklogAnalyzerService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Load() ?? service.Build();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Validierungsstau", report.OpenValidationsByDomain.Sum(item => item.PendingCount).ToString());
+        WriteField("software_validation_pending", report.SoftwareValidationPending.ToString());
+        WriteField("process_validation_pending", report.ProcessValidationPending.ToString());
+        WriteField("research_validation_pending", report.ResearchValidationPending.ToString());
+        WriteField("documentation_validation_pending", report.DocumentationValidationPending.ToString());
+        WriteField("validation_plans_open", report.ValidationPlansOpen.ToString());
+        WriteField("robust_strategies", report.RobustStrategies.ToString());
+        WriteField("cleanup_candidates", report.CleanupCandidates.ToString());
+        WriteField("knowledge_health", report.KnowledgeHealth);
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Open Validations", report.OpenValidationsByDomain
+            .Select(item => $"{item.Domain}: {item.PendingCount} · {item.Severity} · {item.Cause} · Frank: {(item.FrankRequired ? "ja" : "nein")} · Hermes: {(item.HermesCanExecuteAutomatically ? "ja" : "nein")} · {item.RecommendedNextAction}")
+            .ToList());
+        WriteMessages("Auto Resolution Plan", report.AutoResolutionPlan
+            .Select(item => $"{item.Category}: {item.Title} ({item.Domain}) x{item.Count} · {item.Priority} · Frank: {(item.FrankRequired ? "ja" : "nein")} · {item.RecommendedNextAction}")
+            .ToList());
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowValidationBacklogExecutor()
+    {
+        WriteHeader("Hermes Validation Backlog Executor");
+        var maxTasks = ReadIntOption(_args, "--max-items", fallback: 20, min: 1, max: 200);
+        var service = new ValidationBacklogExecutorService(BuildStoragePaths(), Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var report = service.Execute(maxTasks);
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Konfiguriert", report.Configured.ToString().ToLowerInvariant());
+        WriteField("Aktiviert", report.Enabled.ToString().ToLowerInvariant());
+        WriteField("Modus", report.Mode);
+        WriteField("Status", report.StatusLabel);
+        WriteField("Fenster", report.WindowLabel);
+        WriteField("Max Tasks pro Lauf", report.MaxTasksPerRun.ToString(CultureInfo.InvariantCulture));
+        WriteField("Letzter Lauf", report.LastRunUtc?.ToString("O") ?? "-");
+        WriteField("Nächster Lauf", report.NextRunUtc?.ToString("O") ?? report.NextRunHint);
+        WriteField("Validierungsstau", report.BacklogItemsAnalyzed.ToString(CultureInfo.InvariantCulture));
+        WriteField("Geplante Aufgaben", report.PlannedWorkItems.ToString(CultureInfo.InvariantCulture));
+        WriteField("Ausgeführte Aufgaben", report.ExecutedWorkItems.ToString(CultureInfo.InvariantCulture));
+        WriteField("Übersprungene Aufgaben", report.SkippedWorkItems.ToString(CultureInfo.InvariantCulture));
+        WriteField("Geplante Schritte", report.PlannedSteps.ToString(CultureInfo.InvariantCulture));
+        WriteField("Ausgeführte Schritte", report.ExecutedSteps.ToString(CultureInfo.InvariantCulture));
+        WriteField("Übersprungene Schritte", report.SkippedSteps.ToString(CultureInfo.InvariantCulture));
+        WriteField("Validation Tasks erzeugt", report.ValidationTasksCreated.ToString(CultureInfo.InvariantCulture));
+        WriteField("Evidence Tasks ausgeführt", report.EvidenceTasksExecuted.ToString(CultureInfo.InvariantCulture));
+        WriteField("Reviews aktualisiert", report.ReviewsRefreshed.ToString(CultureInfo.InvariantCulture));
+        WriteField("Frank nötig", report.FrankRequired > 0 ? "ja" : "nein");
+        WriteField("Operator", report.NoTradingExecution && report.NoBrokerAction ? "Hermes arbeitet sicher an Validierung und Evidenz." : report.StatusLabel);
+        WriteSubHeader("Arbeitsbereiche");
+        foreach (var area in report.PriorityAreas)
+        {
+            WriteField(area.AreaTitle, $"{area.ItemCount} · {area.Priority} · {area.Status} · {area.NextAction}");
+            WriteField("Begründung", area.Reason);
+            WriteField("Frank nötig", area.FrankRequired.ToString().ToLowerInvariant());
+        }
+        WriteSubHeader("Schritte");
+        foreach (var step in report.Steps)
+        {
+            WriteField(step.Title, $"{step.Status} · {step.Result} · geplant={step.PlannedCount} · ausgeführt={step.ExecutedCount}");
+            WriteField("Nächste Aktion", step.NextAction);
+            if (!string.IsNullOrWhiteSpace(step.OutputReportPath))
+            {
+                WriteField("Report", DisplayPath(step.OutputReportPath));
+            }
         }
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();

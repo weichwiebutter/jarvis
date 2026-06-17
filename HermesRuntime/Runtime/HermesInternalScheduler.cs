@@ -35,7 +35,8 @@ public sealed class HermesInternalScheduler
         "validate_domain_knowledge",
         "run_scalping_robustness_expansion",
         "run_nightly_work_areas",
-        "evidence_auto_loop"
+        "evidence_auto_loop",
+        "validation_backlog_executor"
     };
 
     private readonly StoragePaths _storagePaths;
@@ -79,6 +80,22 @@ public sealed class HermesInternalScheduler
     {
         var config = LoadConfig();
         var updated = config.WithEvidenceAutoLoopRunState(lastRunUtc, nextRunUtc);
+        updated.Save(_configPath);
+        return updated;
+    }
+
+    public ScheduleConfig UpdateValidationBacklogExecutorEnabled(bool enabled)
+    {
+        var config = LoadConfig();
+        var updated = config.WithValidationBacklogExecutorEnabled(enabled);
+        updated.Save(_configPath);
+        return updated;
+    }
+
+    public ScheduleConfig UpdateValidationBacklogExecutorRunState(DateTimeOffset? lastRunUtc, DateTimeOffset? nextRunUtc)
+    {
+        var config = LoadConfig();
+        var updated = config.WithValidationBacklogExecutorRunState(lastRunUtc, nextRunUtc);
         updated.Save(_configPath);
         return updated;
     }
@@ -334,6 +351,7 @@ public sealed class HermesInternalScheduler
             "run_scalping_robustness_expansion" => job.Command.Equals("run-scalping-robustness-expansion", StringComparison.OrdinalIgnoreCase),
             "run_nightly_work_areas" => job.Command.Equals("run-nightly-work-areas", StringComparison.OrdinalIgnoreCase),
             "evidence_auto_loop" => job.Command.Equals("evidence-auto-loop", StringComparison.OrdinalIgnoreCase),
+            "validation_backlog_executor" => job.Command.Equals("validation-backlog-executor", StringComparison.OrdinalIgnoreCase),
             _ => false
         };
     }

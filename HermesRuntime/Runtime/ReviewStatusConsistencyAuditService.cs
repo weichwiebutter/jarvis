@@ -387,8 +387,43 @@ public sealed class ReviewStatusConsistencyAuditService
     private static void WriteReport(string reportPath, string markdownPath, ReviewStatusConsistencyAuditReport report)
     {
         var json = JsonSerializer.Serialize(report, JsonDefaults.WriteOptions);
-        File.WriteAllText(reportPath, json);
-        File.WriteAllText(markdownPath, BuildMarkdown(report));
+        var markdown = BuildMarkdown(report);
+
+        try
+        {
+            File.WriteAllText(reportPath, json);
+            File.WriteAllText(markdownPath, markdown);
+            return;
+        }
+        catch
+        {
+            // Fall through to safe local fallbacks.
+        }
+
+        var fallbackRoots = new[]
+        {
+            Path.Combine(Directory.GetCurrentDirectory(), ".codex_artifacts", "reports", "review_status_consistency_audit"),
+            Path.Combine(Path.GetTempPath(), "hermes", "reports", "review_status_consistency_audit"),
+        };
+
+        foreach (var fallbackRoot in fallbackRoots)
+        {
+            try
+            {
+                Directory.CreateDirectory(fallbackRoot);
+                var fallbackReportPath = Path.Combine(fallbackRoot, "review_status_consistency_audit.json");
+                var fallbackMarkdownPath = Path.Combine(fallbackRoot, "review_status_consistency_audit.md");
+                File.WriteAllText(fallbackReportPath, json);
+                File.WriteAllText(fallbackMarkdownPath, markdown);
+                return;
+            }
+            catch
+            {
+                // Try next fallback root.
+            }
+        }
+
+        throw new IOException("Unable to write review status consistency audit report.");
     }
 
     private static string BuildMarkdown(ReviewStatusConsistencyAuditReport report)

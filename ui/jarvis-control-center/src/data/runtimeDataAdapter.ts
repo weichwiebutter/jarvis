@@ -1515,6 +1515,55 @@ function reportFixtureRaw(key) {
         no_auto_trading: true,
         human_review_required: true,
       };
+    case 'validationBacklogExecutor':
+      return {
+        report_version: 'validation_backlog_executor_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        configured: true,
+        enabled: true,
+        mode: 'Aktiviert – wartet auf Lernfenster',
+        status_label: 'Aktiviert',
+        window_label: 'Lernfenster',
+        in_work_window: true,
+        in_nightly_window: false,
+        resource_healthy: true,
+        max_tasks_per_run: 20,
+        last_run_utc: runtimeMasterStatusMock.updated_at_utc,
+        next_run_utc: '2026-06-17T20:30:00.0000000+02:00',
+        next_run_hint: 'Aktiviert – wartet auf Lern- oder Nightly-Fenster.',
+        backlog_items_analyzed: 223,
+        planned_work_items: 20,
+        executed_work_items: 20,
+        skipped_work_items: 203,
+        planned_steps: 7,
+        executed_steps: 7,
+        skipped_steps: 0,
+        validation_tasks_created: 50,
+        evidence_tasks_executed: 20,
+        reviews_refreshed: 20,
+        frank_required: 0,
+        priority_areas: [
+          { area_id: 'gather_more_evidence', area_title: 'Evidenz sammeln', item_count: 138, priority: 'high', status: 'bereit', next_action: 'Mehr Evidenz sammeln', reason: 'Trust- und Qualitätsblocker werden zuerst adressiert.', automatically_allowed: true, requires_human_review: false, safe_to_execute: true, window_hint: 'Arbeitsfenster' },
+          { area_id: 'source_expansion', area_title: 'Quellen erweitern', item_count: 138, priority: 'high', status: 'bereit', next_action: 'Quellen erweitern', reason: 'Zusätzliche Quellen werden zuerst geprüft.', automatically_allowed: true, requires_human_review: false, safe_to_execute: true, window_hint: 'Arbeitsfenster' },
+          { area_id: 'schedule_revalidation', area_title: 'Re-Validierung', item_count: 92, priority: 'high', status: 'wartet auf Nightly', next_action: 'Re-Validierung planen', reason: 'Validierungsläufe und OOS-Absicherung werden priorisiert.', automatically_allowed: true, requires_human_review: false, safe_to_execute: true, window_hint: 'Nightly' },
+          { area_id: 'contradiction_analysis', area_title: 'Widersprüche prüfen', item_count: 5, priority: 'high', status: 'bereit', next_action: 'Widersprüche prüfen', reason: 'Aktive Widersprüche werden analysiert, nicht automatisch aufgelöst.', automatically_allowed: true, requires_human_review: true, safe_to_execute: true, window_hint: 'Arbeitsfenster' },
+          { area_id: 'systempflege', area_title: 'Systempflege', item_count: 1, priority: 'low', status: 'geplant', next_action: 'Cleanup-Plan aktualisieren', reason: 'Cleanup bleibt Wartung, kein Löschlauf.', automatically_allowed: true, requires_human_review: false, safe_to_execute: true, window_hint: 'bei Bedarf' },
+        ],
+        steps: [
+          { step_id: 'validation_queue_refill', title: 'Validation Queue nachfüllen', area_id: 'schedule_revalidation', area_title: 'Re-Validierung', priority: 'high', status: 'executed', result: 'executed', planned_count: 50, executed_count: 50, skipped_count: 0, next_action: 'Offene Validierungspläne in Tasks überführen.', frank_required: false, automatically_allowed: true, safe_to_execute: true, window_hint: 'Nightly', output_report_path: '/reports/validation-queue-refill', executed_at_utc: runtimeMasterStatusMock.updated_at_utc, warnings: [] },
+          { step_id: 'evidence_auto_loop', title: 'Evidence Auto-Loop ausführen', area_id: 'gather_more_evidence', area_title: 'Evidenz sammeln', priority: 'high', status: 'executed', result: 'executed', planned_count: 20, executed_count: 20, skipped_count: 0, next_action: 'Weitere Evidenzläufe planen.', frank_required: false, automatically_allowed: true, safe_to_execute: true, window_hint: 'Arbeitsfenster', output_report_path: '/reports/evidence-auto-loop', executed_at_utc: runtimeMasterStatusMock.updated_at_utc, warnings: [] },
+          { step_id: 'run_evidence_tasks', title: 'Evidenzaufgaben abarbeiten', area_id: 'schedule_revalidation', area_title: 'Re-Validierung', priority: 'high', status: 'executed', result: 'executed', planned_count: 20, executed_count: 20, skipped_count: 0, next_action: 'Sichere Evidenz- und Validierungsaufgaben ausführen.', frank_required: false, automatically_allowed: true, safe_to_execute: true, window_hint: 'Nightly', output_report_path: '/reports/evidence-task-execution', executed_at_utc: runtimeMasterStatusMock.updated_at_utc, warnings: [] },
+          { step_id: 'review_evidence_refresh', title: 'Review Evidence Refresh', area_id: 'contradiction_analysis', area_title: 'Widersprüche prüfen', priority: 'high', status: 'executed', result: 'executed', planned_count: 20, executed_count: 20, skipped_count: 0, next_action: 'Reviews mit neuer Evidenz aktualisieren.', frank_required: true, automatically_allowed: true, safe_to_execute: true, window_hint: 'Arbeitsfenster', output_report_path: '/reports/review-evidence-refresh', executed_at_utc: runtimeMasterStatusMock.updated_at_utc, warnings: [] },
+          { step_id: 'review_decision_assistant', title: 'Review Decision Assistant aktualisieren', area_id: 'contradiction_analysis', area_title: 'Widersprüche prüfen', priority: 'high', status: 'executed', result: 'executed', planned_count: 20, executed_count: 20, skipped_count: 0, next_action: 'Empfehlungen für Frank aktualisieren.', frank_required: true, automatically_allowed: true, safe_to_execute: true, window_hint: 'Arbeitsfenster', output_report_path: '/reports/review-decision-assistant', executed_at_utc: runtimeMasterStatusMock.updated_at_utc, warnings: [] },
+          { step_id: 'knowledge_validation_audit', title: 'Knowledge Validation Audit aktualisieren', area_id: 'schedule_revalidation', area_title: 'Re-Validierung', priority: 'high', status: 'executed', result: 'executed', planned_count: 223, executed_count: 223, skipped_count: 0, next_action: 'Audit und Konsistenz neu schreiben.', frank_required: false, automatically_allowed: true, safe_to_execute: true, window_hint: 'Nightly', output_report_path: '/reports/knowledge-validation-audit', executed_at_utc: runtimeMasterStatusMock.updated_at_utc, warnings: [] },
+          { step_id: 'validation_backlog_analyzer', title: 'Validation Backlog Analyzer aktualisieren', area_id: 'systempflege', area_title: 'Systempflege', priority: 'low', status: 'executed', result: 'executed', planned_count: 223, executed_count: 223, skipped_count: 0, next_action: 'Validierungsstau neu analysieren.', frank_required: false, automatically_allowed: true, safe_to_execute: true, window_hint: 'bei Bedarf', output_report_path: '/reports/validation-backlog-analyzer', executed_at_utc: runtimeMasterStatusMock.updated_at_utc, warnings: [] },
+        ],
+        warnings: [],
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+      };
     case 'reviewPrioritizationAudit':
       return {
         report_version: 'review_prioritization_audit_v1',
@@ -3050,6 +3099,8 @@ export function createOperatorDashboardFallback(loadError = '') {
       metaReview: reportFixtureRaw('metaReview'),
       domainStatus: reportFixtureRaw('domainStatus'),
       reviewStatusConsistencyAudit: reportFixtureRaw('reviewStatusConsistencyAudit'),
+      validationBacklogAnalyzer: reportFixtureRaw('validationBacklogAnalyzer'),
+      validationBacklogExecutor: reportFixtureRaw('validationBacklogExecutor'),
       supervisorState: operatorDashboardMock.supervisorState,
       schedulerState: operatorDashboardMock.schedulerState,
       timeControl: reportFixtureRaw('timeControl'),
@@ -3138,6 +3189,8 @@ export async function loadOperatorDashboard() {
         latestDemoSignals: dashboard.latestDemoSignals,
         forwardTestStatus: dashboard.forwardTestStatus,
         knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
+        validationBacklogAnalyzer: dashboard.validationBacklogAnalyzer,
+        validationBacklogExecutor: dashboard.validationBacklogExecutor,
         reviewPrioritizationAudit: dashboard.reviewPrioritizationAudit,
         reviewDecisionAssistant: dashboard.reviewDecisionAssistant,
         evidenceAutoLoop: dashboard.evidenceAutoLoop,
@@ -3222,6 +3275,8 @@ export async function loadOperatorDashboard() {
   rawReports.multiAssetResearchStatus = reportFixtureRaw('multiAssetResearchStatus');
   rawReports.knowledgeValidationAudit = reportFixtureRaw('knowledgeValidationAudit');
   rawReports.reviewStatusConsistencyAudit = reportFixtureRaw('reviewStatusConsistencyAudit');
+  rawReports.validationBacklogAnalyzer = reportFixtureRaw('validationBacklogAnalyzer');
+  rawReports.validationBacklogExecutor = reportFixtureRaw('validationBacklogExecutor');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
   rawReports.evidenceAutoLoop = reportFixtureRaw('evidenceAutoLoop');

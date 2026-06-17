@@ -32,6 +32,16 @@ const operatorReports = {
     url: bridgeUrl('/reports/knowledge-validation-audit'),
     path: 'read-only bridge:/reports/knowledge-validation-audit',
   },
+  validationBacklogAnalyzer: {
+    label: 'Validation Backlog Analyzer',
+    url: bridgeUrl('/reports/validation-backlog-analyzer'),
+    path: 'read-only bridge:/reports/validation-backlog-analyzer',
+  },
+  validationBacklogExecutor: {
+    label: 'Validation Backlog Executor',
+    url: bridgeUrl('/reports/validation-backlog-executor'),
+    path: 'read-only bridge:/reports/validation-backlog-executor',
+  },
   reviewStatusConsistencyAudit: {
     label: 'Review Status Consistency Audit',
     url: bridgeUrl('/reports/review-status-consistency-audit'),
