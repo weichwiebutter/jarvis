@@ -1998,6 +1998,59 @@ function reportFixtureRaw(key) {
           },
         ],
       };
+    case 'strategyBacktestSignalDensityAnalyzer':
+      return {
+        report_version: 'strategy_backtest_signal_density_analyzer_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        audited_backtests: 1,
+        funnel_totals: {
+          historical_bars: 210000,
+          raw_price_events: 210000,
+          band_touches: 1800,
+          rejections: 120,
+          band_width_passes: 120,
+          entry_candidates: 12,
+          simulated_trades: 3,
+        },
+        density_scores: {
+          touch_rate: 0.0086,
+          rejection_rate: 0.0667,
+          filter_pass_rate: 1.0,
+          trade_conversion_rate: 0.25,
+        },
+        warnings: ['max_runs_cap_reached'],
+        operator_summary:
+          'Mean Reversion Rejection · XAUUSD M5\n\nSignal-Funnel:\n210000 Kerzen\n↓ 1800 Band-Touches\n↓ 120 Rejections\n↓ 120 Band-Width-Passes\n↓ 12 Entry-Kandidaten\n↓ 3 Trades\n\nErgebnis: Backtest wurde durch das max_runs-Limit begrenzt.\n\nEmpfehlung:\nmax_runs-Limit erhöhen oder Job aufteilen\n\nFrank nötig:\nnein',
+        frank_required: false,
+        report_path:
+          '/mnt/d/HermesData/reports/strategy_backtest_density/strategy_backtest_signal_density_analyzer.json',
+        markdown_path:
+          '/mnt/d/HermesData/reports/strategy_backtest_density/strategy_backtest_signal_density_analyzer.md',
+        entries: [
+          {
+            backtest_job_id:
+              'backtest_job_validation_plan_trading_research_mean_reversion_rejection_bollinger_band_width',
+            strategy_pattern: 'Mean Reversion Rejection',
+            asset: 'XAUUSD',
+            timeframe: 'M5',
+            historical_bars: 210000,
+            trading_days: 731,
+            raw_price_events: 210000,
+            bollinger_band_touches: 1800,
+            bollinger_rejections: 120,
+            band_width_passes: 120,
+            entry_candidates: 12,
+            simulated_trades: 3,
+            touch_rate: 0.0086,
+            rejection_rate: 0.0667,
+            filter_pass_rate: 1.0,
+            trade_conversion_rate: 0.25,
+            root_cause: 'unknown',
+            recommendations: ['max_runs-Limit erhöhen oder Job aufteilen', 'Signaldefinition analysieren'],
+            warnings: ['max_runs_cap_reached'],
+          },
+        ],
+      };
     case 'strategyBacktestJobPlanner':
       return {
         report_version: 'strategy_backtest_job_planner_v1',
@@ -3632,6 +3685,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       knowledgeConsolidationExecutor: reportFixtureRaw('knowledgeConsolidationExecutor'),
       validationBacklogExecutor: reportFixtureRaw('validationBacklogExecutor'),
       strategyParameterResearchPlanner: reportFixtureRaw('strategyParameterResearchPlanner'),
+      strategyBacktestSignalDensityAnalyzer: reportFixtureRaw('strategyBacktestSignalDensityAnalyzer'),
       supervisorState: operatorDashboardMock.supervisorState,
       schedulerState: operatorDashboardMock.schedulerState,
       timeControl: reportFixtureRaw('timeControl'),
@@ -3701,7 +3755,7 @@ export async function loadOperatorDashboard() {
       const warnings = bridgeResponseWarnings(response);
       const rawReports = {
         masterStatus: masterStatusEntry?.raw,
-      humanReviewQueue: dashboard.humanReviewQueue,
+        humanReviewQueue: dashboard.humanReviewQueue,
         reviewStatusConsistencyAudit: dashboard.reviewStatusConsistencyAudit,
         cognitiveStatus: dashboard.cognitiveStatus,
         planningStatus: dashboard.planningStatus,
@@ -3722,19 +3776,20 @@ export async function loadOperatorDashboard() {
         forwardTestStatus: dashboard.forwardTestStatus,
         knowledgeValidationAudit: dashboard.knowledgeValidationAudit,
         validationBacklogAnalyzer: dashboard.validationBacklogAnalyzer,
-      validationBacklogExecutor: dashboard.validationBacklogExecutor,
-      reviewPrioritizationAudit: dashboard.reviewPrioritizationAudit,
-      reviewDecisionAssistant: dashboard.reviewDecisionAssistant,
-      tradingResearchSynthesizer: dashboard.tradingResearchSynthesizer,
-      strategyMutationValidationPlanner: dashboard.strategyMutationValidationPlanner,
-      strategyValidationQueueExport: dashboard.strategyValidationQueueExport,
-      strategyValidationReadinessAnalyzer: dashboard.strategyValidationReadinessAnalyzer,
-      strategyBacktestJobPlanner: dashboard.strategyBacktestJobPlanner,
-      strategyBacktestExecutor: dashboard.strategyBacktestExecutor,
-      strategyBacktestQualityAudit: dashboard.strategyBacktestQualityAudit,
-      strategyBacktestEvidenceGate: dashboard.strategyBacktestEvidenceGate,
-      strategyDatasetGateAudit: dashboard.strategyDatasetGateAudit,
-      evidenceAutoLoop: dashboard.evidenceAutoLoop,
+        validationBacklogExecutor: dashboard.validationBacklogExecutor,
+        reviewPrioritizationAudit: dashboard.reviewPrioritizationAudit,
+        reviewDecisionAssistant: dashboard.reviewDecisionAssistant,
+        tradingResearchSynthesizer: dashboard.tradingResearchSynthesizer,
+        strategyMutationValidationPlanner: dashboard.strategyMutationValidationPlanner,
+        strategyValidationQueueExport: dashboard.strategyValidationQueueExport,
+        strategyValidationReadinessAnalyzer: dashboard.strategyValidationReadinessAnalyzer,
+        strategyBacktestJobPlanner: dashboard.strategyBacktestJobPlanner,
+        strategyBacktestExecutor: dashboard.strategyBacktestExecutor,
+        strategyBacktestQualityAudit: dashboard.strategyBacktestQualityAudit,
+        strategyBacktestEvidenceGate: dashboard.strategyBacktestEvidenceGate,
+        strategyBacktestSignalDensityAnalyzer: dashboard.strategyBacktestSignalDensityAnalyzer,
+        strategyDatasetGateAudit: dashboard.strategyDatasetGateAudit,
+        evidenceAutoLoop: dashboard.evidenceAutoLoop,
         validationQueueRefill: dashboard.validationQueueRefill,
         evidenceValidationRunner: dashboard.evidenceValidationRunner,
         autonomousImprovementQueue: dashboard.autonomousImprovementQueue,
@@ -3829,6 +3884,7 @@ export async function loadOperatorDashboard() {
   rawReports.strategyBacktestExecutor = reportFixtureRaw('strategyBacktestExecutor');
   rawReports.strategyBacktestQualityAudit = reportFixtureRaw('strategyBacktestQualityAudit');
   rawReports.strategyBacktestEvidenceGate = reportFixtureRaw('strategyBacktestEvidenceGate');
+  rawReports.strategyBacktestSignalDensityAnalyzer = reportFixtureRaw('strategyBacktestSignalDensityAnalyzer');
   rawReports.strategyDatasetGateAudit = reportFixtureRaw('strategyDatasetGateAudit');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');

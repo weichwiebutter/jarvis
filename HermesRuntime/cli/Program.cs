@@ -117,6 +117,7 @@ internal sealed class HermesCli
             "strategy-backtest-executor" => ShowStrategyBacktestExecutor(),
             "strategy-backtest-quality-audit" => ShowStrategyBacktestQualityAudit(),
             "strategy-backtest-evidence-gate" => ShowStrategyBacktestEvidenceGate(),
+            "strategy-backtest-signal-density-analyzer" => ShowStrategyBacktestSignalDensityAnalyzer(),
             "strategy-dataset-gate-audit" => ShowStrategyDatasetGateAudit(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
@@ -400,7 +401,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-backtest-executor Strategy Backtest Executor anzeigen");
         Console.WriteLine("  hermes strategy-backtest-quality-audit Strategy Backtest Quality Audit anzeigen");
         Console.WriteLine("  hermes strategy-backtest-evidence-gate Strategy Backtest Evidence Gate anzeigen");
-        Console.WriteLine("  hermes strategy-backtest-evidence-gate Strategy Backtest Evidence Gate anzeigen");
+        Console.WriteLine("  hermes strategy-backtest-signal-density-analyzer Strategy Backtest Signal Density Analyzer anzeigen");
         Console.WriteLine("  hermes strategy-dataset-gate-audit Strategy Dataset Gate Audit anzeigen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
@@ -6661,6 +6662,42 @@ internal sealed class HermesCli
             WriteField(entry.BacktestJobId, $"{entry.StrategyPattern} · {entry.Asset} {entry.Timeframe} · history={entry.HistoricalPeriodDays}d · trades={entry.TradesSimulated} · gate={entry.SampleClassification}");
             WriteField("Root Cause", entry.RootCause);
             WriteField("Passed", $"research={entry.PassedResearchGate} oos={entry.PassedOosGate} cert={entry.PassedCertificationGate}");
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyBacktestSignalDensityAnalyzer()
+    {
+        WriteHeader("Hermes Strategy Backtest Signal Density Analyzer");
+        var service = new StrategyBacktestSignalDensityAnalyzerService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Audited Backtests", report.AuditedBacktests.ToString());
+        WriteField("Historical Bars", report.FunnelTotals["historical_bars"].ToString());
+        WriteField("Band Touches", report.FunnelTotals["band_touches"].ToString());
+        WriteField("Rejections", report.FunnelTotals["rejections"].ToString());
+        WriteField("Entry Candidates", report.FunnelTotals["entry_candidates"].ToString());
+        WriteField("Simulated Trades", report.FunnelTotals["simulated_trades"].ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Density Scores");
+        foreach (var density in report.DensityScores)
+        {
+            WriteField(density.Key, density.Value.ToString("0.####"));
+        }
+        WriteSubHeader("Entries");
+        foreach (var entry in report.Entries)
+        {
+            WriteField(entry.BacktestJobId, $"{entry.StrategyPattern} · {entry.Asset} {entry.Timeframe} · bars={entry.HistoricalBars} · touches={entry.BollingerBandTouches} · rejections={entry.BollingerRejections} · candidates={entry.EntryCandidates} · trades={entry.SimulatedTrades}");
+            WriteField("Root Cause", entry.RootCause);
+            WriteField("Funnel", $"touch_rate={entry.TouchRate:0.####} rejection_rate={entry.RejectionRate:0.####} filter_pass_rate={entry.FilterPassRate:0.####} trade_conversion_rate={entry.TradeConversionRate:0.####}");
+            WriteMessages("Recommendations", entry.Recommendations);
+            WriteMessages("Warnings", entry.Warnings);
         }
         Console.WriteLine();
         WriteSafety();

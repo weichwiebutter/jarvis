@@ -97,6 +97,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/strategy-backtest-evidence-gate'),
     path: 'read-only bridge:/reports/strategy-backtest-evidence-gate',
   },
+  strategyBacktestSignalDensityAnalyzer: {
+    label: 'Strategy Backtest Signal Density Analyzer',
+    url: bridgeUrl('/reports/strategy-backtest-signal-density-analyzer'),
+    path: 'read-only bridge:/reports/strategy-backtest-signal-density-analyzer',
+  },
   strategyDatasetGateAudit: {
     label: 'Strategy Dataset Gate Audit',
     url: bridgeUrl('/reports/strategy-dataset-gate-audit'),
