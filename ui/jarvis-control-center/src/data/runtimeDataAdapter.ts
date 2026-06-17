@@ -1473,6 +1473,40 @@ function reportFixtureRaw(key) {
         no_auto_trading: true,
         human_review_required: true,
       };
+    case 'knowledgeConsolidationAnalyzer':
+      return {
+        report_version: 'knowledge_consolidation_analyzer_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        total_knowledge_items: 138,
+        raw_observation_count: 532,
+        raw_hypothesis_count: 32,
+        raw_research_result_count: 64,
+        cluster_count: 14,
+        duplicate_count: 121,
+        consolidatable_group_count: 14,
+        active_item_count: 411,
+        archived_potential_count: 121,
+        redundant_item_count: 121,
+        trusted_knowledge_items: 0,
+        weak_knowledge_items: 73,
+        domains: ['trading', 'research', 'software', 'process', 'documentation'],
+        warnings: [],
+        operator_summary: '532 Einträge beschreiben 14 ähnliche Muster. Hermes kann Muster verdichten, Frank muss nichts freigeben.',
+        cleanup_potential_summary: '121 Einträge könnten später archiviert werden; 121 Einträge wirken redundant; 411 Einträge werden aktiv genutzt.',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        clusters: [
+          { cluster_id: 'cluster_trading_breakout', domain: 'trading', pattern_description: 'Breakout- und Continuation-Muster', normalized_signature: 'trading_breakout', raw_item_count: 214, knowledge_item_count: 12, hypothesis_count: 8, observation_count: 194, duplicate_count: 193, consolidatable_count: 17, average_trust_score: 0.62, average_evidence_score: 0.68, average_validation_score: 0.54, confidence_score: 0.59, validation_state: 'teilvalidiert', trust_state: 'mittel', next_action: 'Trading-Beobachtungen verdichten', rule_candidate_summary: 'Musterkandidat aus 214 Einträgen · Vertrauen mittel · Evidenz mittel · Validierung mittel', frank_required: false, safe_to_execute: true, item_ids: [], item_titles: [], sample_sources: [] },
+          { cluster_id: 'cluster_trading_reversal', domain: 'trading', pattern_description: 'Reversal- und Candle-Muster', normalized_signature: 'trading_reversal', raw_item_count: 176, knowledge_item_count: 10, hypothesis_count: 6, observation_count: 160, duplicate_count: 159, consolidatable_count: 12, average_trust_score: 0.6, average_evidence_score: 0.64, average_validation_score: 0.53, confidence_score: 0.57, validation_state: 'teilvalidiert', trust_state: 'mittel', next_action: 'Trading-Beobachtungen verdichten', rule_candidate_summary: 'Musterkandidat aus 176 Einträgen · Vertrauen mittel · Evidenz mittel · Validierung mittel', frank_required: false, safe_to_execute: true, item_ids: [], item_titles: [], sample_sources: [] },
+          { cluster_id: 'cluster_docs_runtime', domain: 'documentation', pattern_description: 'Runtime- und Architektur-Dokumentation', normalized_signature: 'documentation_runtime', raw_item_count: 54, knowledge_item_count: 8, hypothesis_count: 0, observation_count: 46, duplicate_count: 45, consolidatable_count: 6, average_trust_score: 0.58, average_evidence_score: 0.67, average_validation_score: 0.52, confidence_score: 0.56, validation_state: 'teilvalidiert', trust_state: 'mittel', next_action: 'Dokumentationsfunde verdichten', rule_candidate_summary: 'Musterkandidat aus 54 Einträgen · Vertrauen mittel · Evidenz mittel · Validierung mittel', frank_required: false, safe_to_execute: true, item_ids: [], item_titles: [], sample_sources: [] },
+          { cluster_id: 'cluster_research_robustness', domain: 'research', pattern_description: 'Research- und Robustness-Muster', normalized_signature: 'research_robustness', raw_item_count: 52, knowledge_item_count: 5, hypothesis_count: 4, observation_count: 43, duplicate_count: 42, consolidatable_count: 4, average_trust_score: 0.57, average_evidence_score: 0.6, average_validation_score: 0.5, confidence_score: 0.55, validation_state: 'offen', trust_state: 'mittel', next_action: 'Research-Hypothesen verdichten', rule_candidate_summary: 'Musterkandidat aus 52 Einträgen · Vertrauen mittel · Evidenz mittel · Validierung mittel', frank_required: false, safe_to_execute: true, item_ids: [], item_titles: [], sample_sources: [] },
+          { cluster_id: 'cluster_process_queue', domain: 'process', pattern_description: 'Prozess- und Queue-Muster', normalized_signature: 'process_queue', raw_item_count: 18, knowledge_item_count: 3, hypothesis_count: 2, observation_count: 13, duplicate_count: 12, consolidatable_count: 2, average_trust_score: 0.55, average_evidence_score: 0.58, average_validation_score: 0.5, confidence_score: 0.53, validation_state: 'offen', trust_state: 'mittel', next_action: 'Prozesswissen gruppieren', rule_candidate_summary: 'Musterkandidat aus 18 Einträgen · Vertrauen mittel · Evidenz mittel · Validierung mittel', frank_required: false, safe_to_execute: true, item_ids: [], item_titles: [], sample_sources: [] },
+          { cluster_id: 'cluster_generic_support', domain: 'software', pattern_description: 'Software- und Infrastrukturwissen', normalized_signature: 'software_support', raw_item_count: 18, knowledge_item_count: 7, hypothesis_count: 2, observation_count: 9, duplicate_count: 9, consolidatable_count: 4, average_trust_score: 0.56, average_evidence_score: 0.59, average_validation_score: 0.51, confidence_score: 0.54, validation_state: 'offen', trust_state: 'mittel', next_action: 'Softwarewissen verdichten', rule_candidate_summary: 'Musterkandidat aus 18 Einträgen · Vertrauen mittel · Evidenz mittel · Validierung mittel', frank_required: false, safe_to_execute: true, item_ids: [], item_titles: [], sample_sources: [] },
+        ],
+      };
     case 'reviewStatusConsistencyAudit':
       return {
         report_version: 'review_status_consistency_audit_v1',

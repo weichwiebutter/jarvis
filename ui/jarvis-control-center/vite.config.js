@@ -37,6 +37,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/validation-backlog-analyzer'),
     path: 'read-only bridge:/reports/validation-backlog-analyzer',
   },
+  knowledgeConsolidationAnalyzer: {
+    label: 'Knowledge Consolidation Analyzer',
+    url: bridgeUrl('/reports/knowledge-consolidation-analyzer'),
+    path: 'read-only bridge:/reports/knowledge-consolidation-analyzer',
+  },
   validationBacklogExecutor: {
     label: 'Validation Backlog Executor',
     url: bridgeUrl('/reports/validation-backlog-executor'),

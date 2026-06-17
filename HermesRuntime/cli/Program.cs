@@ -104,6 +104,7 @@ internal sealed class HermesCli
             "knowledge-item" => ShowKnowledgeItem(),
             "knowledge-health" => ShowKnowledgeHealth(),
             "promotion-status" => ShowPromotionStatus(),
+            "knowledge-consolidation-analyzer" => ShowKnowledgeConsolidationAnalyzer(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
             "generate-trusted-review-candidates" => GenerateTrustedReviewCandidates(),
@@ -373,6 +374,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-item --id <ID> einzelnes Knowledge Item anzeigen");
         Console.WriteLine("  hermes knowledge-health   Knowledge Trust/Quality Scores erzeugen und anzeigen");
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
+        Console.WriteLine("  hermes knowledge-consolidation-analyzer Knowledge Consolidation Analyzer anzeigen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
         Console.WriteLine("  hermes generate-trusted-review-candidates Trusted Review Kandidaten erzeugen");
@@ -6154,6 +6156,36 @@ internal sealed class HermesCli
 
         WriteKnowledgeQualityReport(report, engine.QualityPath);
         TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowKnowledgeConsolidationAnalyzer()
+    {
+        WriteHeader("Hermes Knowledge Consolidation Analyzer");
+        var service = new KnowledgeConsolidationAnalyzerService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Rohwissen", (report.RawObservationCount + report.RawHypothesisCount + report.RawResearchResultCount).ToString());
+        WriteField("Cluster", report.ClusterCount.ToString());
+        WriteField("Duplikate", report.DuplicateCount.ToString());
+        WriteField("Konsolidierbare Gruppen", report.ConsolidatableGroupCount.ToString());
+        WriteField("Cleanup-Potenzial", report.CleanupPotentialSummary);
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Domänen", report.Domains);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Cluster");
+        foreach (var cluster in report.Clusters.Take(20))
+        {
+            WriteField(cluster.Domain, $"{cluster.PatternDescription} · raw={cluster.RawItemCount} · dup={cluster.DuplicateCount} · trust={cluster.AverageTrustScore:0.####} · evidence={cluster.AverageEvidenceScore:0.####} · validation={cluster.AverageValidationScore:0.####}");
+            WriteField("Regel-Kandidat", cluster.RuleCandidateSummary);
+            WriteField("Nächste Aktion", cluster.NextAction);
+            WriteField("Frank nötig", cluster.FrankRequired.ToString().ToLowerInvariant());
+        }
         Console.WriteLine();
         WriteSafety();
         return 0;
