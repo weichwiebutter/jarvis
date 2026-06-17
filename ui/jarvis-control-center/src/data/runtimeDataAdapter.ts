@@ -1653,6 +1653,65 @@ function reportFixtureRaw(key) {
           },
         ],
       };
+    case 'tradingResearchSynthesizer':
+      return {
+        report_version: 'trading_research_synthesizer_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        patterns_analyzed: 6,
+        internal_sources_analyzed: 209,
+        external_sources_analyzed: 9,
+        hypotheses_count: 24,
+        high_priority_count: 12,
+        medium_priority_count: 8,
+        low_priority_count: 4,
+        external_research_source: 'existing_artifacts_only',
+        domains: ['trading'],
+        warnings: [],
+        operator_summary: 'Externe Forschung analysiert. 24 Hypothesen erkannt. 12 hohe Priorität. Frank nötig: nein.',
+        safety_summary: 'no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        internal_sources: ['Knowledge Catalog: 138', 'Research Memory: 115936', 'Setup Registry: 10', 'Certified Candidates: 31'],
+        external_sources: ['Trading.de strategy_overview', 'Trading.de breakout_trading', 'Trading.de backtesting'],
+        comparisons: [
+          {
+            pattern_id: 'ema_pullback',
+            pattern_name: 'EMA Pullback',
+            domain: 'trading',
+            internal_evidence: 'Research Memory vorhanden; Setup Registry mit 10 Assets; Forward Observations: 2; Reviews: 20',
+            external_evidence: 'existing_artifacts_only: Trading.de',
+            agreements: ['Pullback- und Trendkontext wird intern wie extern bestätigt'],
+            contradictions: [],
+            open_questions: ['Welche Sessionfilter erhöhen die Signalqualität?', 'Welche Volatilitätsregime sind robust?'],
+            relevant_parameter_classes: ['VWAP', 'EMA', 'ATR', 'session filter'],
+          },
+        ],
+        hypotheses: [
+          {
+            hypothesis_id: 'trading_research_ema_pullback_vwap',
+            pattern_id: 'ema_pullback',
+            pattern_name: 'EMA Pullback',
+            domain: 'trading',
+            title: 'EMA Pullback: VWAP',
+            hypothesis: 'Hypothese: EMA Pullback könnte mit VWAP als Kontextfilter stabiler sein als nur mit klassischen Trendfiltern.',
+            internal_evidence: 'Research Memory vorhanden; Setup Registry mit 10 Assets; Forward Observations: 2; Reviews: 20',
+            external_evidence: 'existing_artifacts_only: Trading.de',
+            agreement_summary: 'Pullback- und Trendkontext wird intern wie extern bestätigt',
+            contradiction_summary: 'keine wesentlichen Widersprüche',
+            open_question_summary: 'Welche Sessionfilter erhöhen die Signalqualität?; Welche Volatilitätsregime sind robust?',
+            parameter_classes: ['VWAP'],
+            expected_information_gain: 0.86,
+            validation_effort: 0.55,
+            risk_level: 'low',
+            priority: 'high',
+            suggested_next_validation: 'EMA Pullback: VWAP in bestehende Validierungs-/Forward-Landschaft überführen',
+            frank_required: false,
+          },
+        ],
+      };
     case 'reviewStatusConsistencyAudit':
       return {
         report_version: 'review_status_consistency_audit_v1',
@@ -3375,6 +3434,7 @@ export async function loadOperatorDashboard() {
         validationBacklogExecutor: dashboard.validationBacklogExecutor,
         reviewPrioritizationAudit: dashboard.reviewPrioritizationAudit,
         reviewDecisionAssistant: dashboard.reviewDecisionAssistant,
+        tradingResearchSynthesizer: dashboard.tradingResearchSynthesizer,
         evidenceAutoLoop: dashboard.evidenceAutoLoop,
         validationQueueRefill: dashboard.validationQueueRefill,
         evidenceValidationRunner: dashboard.evidenceValidationRunner,
@@ -3461,6 +3521,7 @@ export async function loadOperatorDashboard() {
   rawReports.knowledgeConsolidationExecutor = reportFixtureRaw('knowledgeConsolidationExecutor');
   rawReports.validationBacklogExecutor = reportFixtureRaw('validationBacklogExecutor');
   rawReports.strategyParameterResearchPlanner = reportFixtureRaw('strategyParameterResearchPlanner');
+  rawReports.tradingResearchSynthesizer = reportFixtureRaw('tradingResearchSynthesizer');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
   rawReports.evidenceAutoLoop = reportFixtureRaw('evidenceAutoLoop');

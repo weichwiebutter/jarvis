@@ -108,6 +108,7 @@ internal sealed class HermesCli
             "knowledge-consolidation-executor" => ShowKnowledgeConsolidationExecutor(),
             "strategy-mutation-analyzer" => ShowStrategyMutationAnalyzer(),
             "strategy-parameter-research-planner" => ShowStrategyParameterResearchPlanner(),
+            "trading-research-synthesizer" => ShowTradingResearchSynthesizer(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
             "generate-trusted-review-candidates" => GenerateTrustedReviewCandidates(),
@@ -381,6 +382,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-consolidation-executor Knowledge Consolidation Kandidaten erzeugen");
         Console.WriteLine("  hermes strategy-mutation-analyzer Strategy Mutation Kandidaten anzeigen");
         Console.WriteLine("  hermes strategy-parameter-research-planner Strategy Parameter Research Planner anzeigen");
+        Console.WriteLine("  hermes trading-research-synthesizer Trading Research Synthesizer anzeigen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
         Console.WriteLine("  hermes generate-trusted-review-candidates Trusted Review Kandidaten erzeugen");
@@ -6292,6 +6294,50 @@ internal sealed class HermesCli
             WriteField(candidate.SourcePattern, $"{string.Join(", ", candidate.ParameterRanges.Select(range => $"{range.Name}[{string.Join("|", range.Values)}]"))} · trust={candidate.TrustBaseline:0.####} · validation={(candidate.ValidationRequired ? "yes" : "no")} · oos={(candidate.OosRequired ? "yes" : "no")} · forward={(candidate.ForwardObservationRequired ? "yes" : "no")}");
             WriteField("Erwarteter Nutzen", candidate.ExpectedBenefit);
             WriteField("Evidenz", candidate.EvidenceBasis);
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowTradingResearchSynthesizer()
+    {
+        WriteHeader("Hermes Trading Research Synthesizer");
+        var service = new TradingResearchSynthesizerService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Muster analysiert", report.PatternsAnalyzed.ToString());
+        WriteField("Hypothesen", report.HypothesesCount.ToString());
+        WriteField("High Priority", report.HighPriorityCount.ToString());
+        WriteField("Medium Priority", report.MediumPriorityCount.ToString());
+        WriteField("Low Priority", report.LowPriorityCount.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Externe Evidenz", report.ExternalResearchSource);
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Interne Quellen", report.InternalSources);
+        WriteMessages("Externe Quellen", report.ExternalSources);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Vergleiche");
+        foreach (var comparison in report.Comparisons.Take(12))
+        {
+            WriteField(comparison.PatternName, $"{comparison.InternalEvidence} | {comparison.ExternalEvidence}");
+            WriteField("Übereinstimmungen", string.Join("; ", comparison.Agreements));
+            if (comparison.Contradictions.Count > 0)
+            {
+                WriteField("Widersprüche", string.Join("; ", comparison.Contradictions));
+            }
+            WriteField("Offene Fragen", string.Join("; ", comparison.OpenQuestions));
+            WriteField("Parameterklassen", string.Join(", ", comparison.RelevantParameterClasses));
+        }
+        WriteSubHeader("Hypothesen");
+        foreach (var hypothesis in report.Hypotheses.Take(20))
+        {
+            WriteField(hypothesis.Title, $"{hypothesis.Priority} · info_gain={hypothesis.ExpectedInformationGain:0.###} · risk={hypothesis.RiskLevel}");
+            WriteField("Hypothese", hypothesis.Hypothesis);
+            WriteField("Nächste Validierung", hypothesis.SuggestedNextValidation);
+            WriteField("Begründung", $"{hypothesis.AgreementSummary} / {hypothesis.ContradictionSummary}");
         }
         Console.WriteLine();
         WriteSafety();

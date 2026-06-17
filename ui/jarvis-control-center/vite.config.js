@@ -57,6 +57,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/strategy-parameter-research-planner'),
     path: 'read-only bridge:/reports/strategy-parameter-research-planner',
   },
+  tradingResearchSynthesizer: {
+    label: 'Trading Research Synthesizer',
+    url: bridgeUrl('/reports/trading-research-synthesizer'),
+    path: 'read-only bridge:/reports/trading-research-synthesizer',
+  },
   validationBacklogExecutor: {
     label: 'Validation Backlog Executor',
     url: bridgeUrl('/reports/validation-backlog-executor'),
