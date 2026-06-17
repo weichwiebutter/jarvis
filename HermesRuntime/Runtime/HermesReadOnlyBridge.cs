@@ -28,6 +28,7 @@ public sealed class HermesReadOnlyBridge
         new("knowledgeValidationAudit", "Knowledge Validation Audit", "/reports/knowledge-validation-audit", "reports/knowledge_validation_audit/knowledge_validation_audit.json"),
         new("validationBacklogAnalyzer", "Validation Backlog Analyzer", "/reports/validation-backlog-analyzer", "reports/validation_backlog/validation_backlog_analyzer.json"),
         new("knowledgeConsolidationAnalyzer", "Knowledge Consolidation Analyzer", "/reports/knowledge-consolidation-analyzer", "reports/knowledge_consolidation/knowledge_consolidation_analyzer.json"),
+        new("knowledgeConsolidationExecutor", "Knowledge Consolidation Executor", "/reports/knowledge-consolidation-executor", "reports/knowledge_consolidation/knowledge_consolidation_executor.json"),
         new("validationBacklogExecutor", "Validation Backlog Executor", "/reports/validation-backlog-executor", "reports/validation_backlog/validation_backlog_executor.json"),
         new("reviewStatusConsistencyAudit", "Review Status Consistency Audit", "/reports/review-status-consistency-audit", "reports/review_status_consistency_audit/review_status_consistency_audit.json"),
         new("validationQueueRefill", "Validation Queue Refill", "/reports/validation-queue-refill", "reports/validation_queue_refill/validation_queue_refill.json"),

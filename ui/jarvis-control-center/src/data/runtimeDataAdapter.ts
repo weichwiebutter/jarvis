@@ -1507,6 +1507,47 @@ function reportFixtureRaw(key) {
           { cluster_id: 'cluster_generic_support', domain: 'software', pattern_description: 'Software- und Infrastrukturwissen', normalized_signature: 'software_support', raw_item_count: 18, knowledge_item_count: 7, hypothesis_count: 2, observation_count: 9, duplicate_count: 9, consolidatable_count: 4, average_trust_score: 0.56, average_evidence_score: 0.59, average_validation_score: 0.51, confidence_score: 0.54, validation_state: 'offen', trust_state: 'mittel', next_action: 'Softwarewissen verdichten', rule_candidate_summary: 'Musterkandidat aus 18 Einträgen · Vertrauen mittel · Evidenz mittel · Validierung mittel', frank_required: false, safe_to_execute: true, item_ids: [], item_titles: [], sample_sources: [] },
         ],
       };
+    case 'knowledgeConsolidationExecutor':
+      return {
+        report_version: 'knowledge_consolidation_executor_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        analyzer_cluster_count: 240,
+        candidates_prepared_count: 97,
+        raw_items_count: 115941,
+        duplicate_items_count: 115839,
+        consolidatable_group_count: 97,
+        trusted_knowledge_items: 0,
+        weak_knowledge_items: 73,
+        domains: ['trading', 'research', 'software', 'process', 'documentation'],
+        warnings: [],
+        operator_summary: '240 Muster erkannt. Davon wurden 97 als Konsolidierungs-Kandidaten vorbereitet. Frank muss nichts freigeben. Keine Rohdaten wurden gelöscht.',
+        safety_summary: 'no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        candidates: [
+          {
+            consolidation_candidate_id: 'consolidation_cluster_trading_breakout',
+            domain: 'trading',
+            title: 'Breakout- und Continuation-Muster',
+            summary: 'Musterkandidat aus 214 Einträgen · Vertrauen mittel · Evidenz mittel · Validierung mittel',
+            pattern_description: 'Breakout- und Continuation-Muster',
+            supporting_items_count: 214,
+            duplicate_items_count: 193,
+            evidence_strength: 0.61,
+            validation_status: 'teilvalidiert',
+            trust_baseline: 0.62,
+            risk_notes: 'Dubletten nur als Kandidat verdichtet, keine Löschung; Validierung noch nicht stark genug',
+            recommended_next_action: 'Pattern-Regel als Review-Kandidat vorbereiten',
+            frank_required: false,
+            item_ids: [],
+            item_titles: [],
+            sample_sources: [],
+          },
+        ],
+      };
     case 'reviewStatusConsistencyAudit':
       return {
         report_version: 'review_status_consistency_audit_v1',
