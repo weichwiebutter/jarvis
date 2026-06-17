@@ -1591,6 +1591,68 @@ function reportFixtureRaw(key) {
           },
         ],
       };
+    case 'strategyParameterResearchPlanner':
+      return {
+        report_version: 'strategy_parameter_research_planner_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        patterns_analyzed: 6,
+        mutations_prepared: 24,
+        candidate_count: 24,
+        knowledge_items_analyzed: 138,
+        setup_candidates_analyzed: 8,
+        certified_candidates_analyzed: 12,
+        forward_observations_analyzed: 24,
+        review_items_analyzed: 20,
+        research_entries_analyzed: 115941,
+        domains: ['trading'],
+        warnings: [],
+        operator_summary: '6 Muster analysiert. Begründete Parameterbereiche vorbereitet. Frank nötig: nein.',
+        safety_summary: 'no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        patterns: [
+          {
+            pattern_id: 'ema_pullback',
+            pattern_name: 'EMA Pullback',
+            domain: 'trading',
+            pattern_description: 'Pullback into EMA area with continuation confirmation.',
+            asset_contexts: ['EURUSD', 'XAUUSD'],
+            timeframe_contexts: ['M15', 'H1'],
+            session_contexts: ['London', 'London + New York'],
+            suggested_ranges: [
+              { name: 'EMA', values: ['20', '50', '100'], reason: 'EMA Pullback reagiert auf Trend-/Pullback-Bereiche.' },
+              { name: 'ATR', values: ['14', '21', '28'], reason: 'Moderate Volatilitätsanpassung ist robust.' },
+              { name: 'Stop', values: ['1 ATR', '1.5 ATR', '2 ATR'], reason: 'Stops orientieren sich an Trendtiefe.' },
+              { name: 'Take Profit', values: ['1.5R', '2R', '3R'], reason: 'Pullbacks erlauben höhere RR-Bereiche.' },
+            ],
+            mutation_count: 12,
+            evidence_basis: 'Certified candidates, forward observations and research memory indicate liquid trend/pullback contexts.',
+          },
+        ],
+        candidates: [
+          {
+            mutation_id: 'mutation_plan_ema_pullback_ema',
+            source_pattern: 'EMA Pullback',
+            domain: 'trading',
+            pattern_description: 'Pullback into EMA area with continuation confirmation.',
+            parameter_ranges: [
+              { name: 'EMA', values: ['20', '50', '100'], reason: 'EMA Pullback reagiert auf Trend-/Pullback-Bereiche.' },
+              { name: 'ATR', values: ['14', '21', '28'], reason: 'Moderate Volatilitätsanpassung ist robust.' },
+            ],
+            asset_context: 'EURUSD, XAUUSD',
+            timeframe_context: 'M15, H1',
+            expected_benefit: 'EMA-/ATR-Bereiche auf reale Markt- und Setup-Kontexte abstimmen',
+            trust_baseline: 0.62,
+            validation_required: true,
+            oos_required: true,
+            forward_observation_required: true,
+            evidence_basis: 'Certified candidates and research memory prefer ATR14/21 and EMA20/50 clusters.',
+          },
+        ],
+      };
     case 'reviewStatusConsistencyAudit':
       return {
         report_version: 'review_status_consistency_audit_v1',
@@ -3220,6 +3282,7 @@ export function createOperatorDashboardFallback(loadError = '') {
       validationBacklogAnalyzer: reportFixtureRaw('validationBacklogAnalyzer'),
       knowledgeConsolidationExecutor: reportFixtureRaw('knowledgeConsolidationExecutor'),
       validationBacklogExecutor: reportFixtureRaw('validationBacklogExecutor'),
+      strategyParameterResearchPlanner: reportFixtureRaw('strategyParameterResearchPlanner'),
       supervisorState: operatorDashboardMock.supervisorState,
       schedulerState: operatorDashboardMock.schedulerState,
       timeControl: reportFixtureRaw('timeControl'),
@@ -3397,6 +3460,7 @@ export async function loadOperatorDashboard() {
   rawReports.validationBacklogAnalyzer = reportFixtureRaw('validationBacklogAnalyzer');
   rawReports.knowledgeConsolidationExecutor = reportFixtureRaw('knowledgeConsolidationExecutor');
   rawReports.validationBacklogExecutor = reportFixtureRaw('validationBacklogExecutor');
+  rawReports.strategyParameterResearchPlanner = reportFixtureRaw('strategyParameterResearchPlanner');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
   rawReports.evidenceAutoLoop = reportFixtureRaw('evidenceAutoLoop');
