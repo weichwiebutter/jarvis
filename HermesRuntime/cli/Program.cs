@@ -113,6 +113,7 @@ internal sealed class HermesCli
             "strategy-mutation-validation-planner" => ShowStrategyMutationValidationPlanner(),
             "strategy-validation-queue-export" => ShowStrategyValidationQueueExport(),
             "strategy-validation-readiness-analyzer" => ShowStrategyValidationReadinessAnalyzer(),
+            "strategy-backtest-job-planner" => ShowStrategyBacktestJobPlanner(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
             "generate-trusted-review-candidates" => GenerateTrustedReviewCandidates(),
@@ -391,6 +392,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-mutation-validation-planner Strategy Mutation Validierung planen");
         Console.WriteLine("  hermes strategy-validation-queue-export Strategy Validation Queue exportieren");
         Console.WriteLine("  hermes strategy-validation-readiness-analyzer Strategy Validation Readiness analysieren");
+        Console.WriteLine("  hermes strategy-backtest-job-planner Strategy Backtest Job Planner anzeigen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
         Console.WriteLine("  hermes generate-trusted-review-candidates Trusted Review Kandidaten erzeugen");
@@ -6466,6 +6468,36 @@ internal sealed class HermesCli
         foreach (var item in report.TopInformationGainCandidates.Take(5))
         {
             WriteField(item.ValidationPlanId, $"{item.StrategyPattern} · {item.Asset} {item.Timeframe} · readiness={item.ReadinessScore:0} · gain={item.ExpectedInformationGain:0.###}");
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyBacktestJobPlanner()
+    {
+        WriteHeader("Hermes Strategy Backtest Job Planner");
+        var service = new StrategyBacktestJobPlannerService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Queue", DisplayPath(report.QueuePath));
+        WriteField("Prüfungen", report.QueueItemsAnalyzed.ToString());
+        WriteField("Backtest-Jobs bereit", report.ReadyToExecuteCount.ToString());
+        WriteField("Warten auf Daten", report.WaitingForDataCount.ToString());
+        WriteField("Blockiert", report.BlockedCount.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Statusverteilung");
+        WriteMessages("Status", report.StatusDistribution);
+        WriteSubHeader("Top Jobs");
+        foreach (var job in report.Jobs.Take(12))
+        {
+            WriteField(job.BacktestJobId, $"{job.StrategyPattern} · {job.Asset} {job.Timeframe} · status={job.Status} · runs={job.MaxRuns} · timeout={job.TimeoutSeconds}s");
+            WriteField("Dataset", $"{job.DatasetRequired} · available={job.DatasetAvailable}");
+            WriteField("Next Action", job.NextAction);
         }
         Console.WriteLine();
         WriteSafety();

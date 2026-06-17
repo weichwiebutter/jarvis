@@ -1888,6 +1888,28 @@ function reportFixtureRaw(key) {
         top_information_gain_candidates: [],
         top_low_effort_candidates: [],
       };
+    case 'strategyBacktestJobPlanner':
+      return {
+        report_version: 'strategy_backtest_job_planner_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        queue_path: '/mnt/d/HermesData/queues/strategy_backtest_jobs.json',
+        readiness_path: '/mnt/d/HermesData/reports/strategy_validation_readiness/strategy_validation_readiness_analyzer.json',
+        queue_items_analyzed: 12,
+        backtest_jobs_prepared: 12,
+        ready_to_execute_count: 12,
+        waiting_for_data_count: 0,
+        blocked_count: 0,
+        status_distribution: ['ready_to_execute:12'],
+        warnings: ['no_backtests_started', 'no_broker_action', 'no_auto_trading'],
+        operator_summary: '12 Strategie-Aufträge geprüft. 12 Backtest-Jobs bereit. 0 warten auf Daten. 0 blockiert. Keine Backtests gestartet. Frank nötig: nein.',
+        safety_summary: 'no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        jobs: [],
+      };
     case 'validationBacklogExecutor':
       return {
         report_version: 'validation_backlog_executor_v1',
@@ -3573,6 +3595,7 @@ export async function loadOperatorDashboard() {
       strategyMutationValidationPlanner: dashboard.strategyMutationValidationPlanner,
       strategyValidationQueueExport: dashboard.strategyValidationQueueExport,
       strategyValidationReadinessAnalyzer: dashboard.strategyValidationReadinessAnalyzer,
+      strategyBacktestJobPlanner: dashboard.strategyBacktestJobPlanner,
       evidenceAutoLoop: dashboard.evidenceAutoLoop,
         validationQueueRefill: dashboard.validationQueueRefill,
         evidenceValidationRunner: dashboard.evidenceValidationRunner,
@@ -3664,6 +3687,7 @@ export async function loadOperatorDashboard() {
   rawReports.strategyMutationValidationPlanner = reportFixtureRaw('strategyMutationValidationPlanner');
   rawReports.strategyValidationQueueExport = reportFixtureRaw('strategyValidationQueueExport');
   rawReports.strategyValidationReadinessAnalyzer = reportFixtureRaw('strategyValidationReadinessAnalyzer');
+  rawReports.strategyBacktestJobPlanner = reportFixtureRaw('strategyBacktestJobPlanner');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
   rawReports.evidenceAutoLoop = reportFixtureRaw('evidenceAutoLoop');

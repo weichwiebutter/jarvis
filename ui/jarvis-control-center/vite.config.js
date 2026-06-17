@@ -77,6 +77,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/strategy-validation-readiness'),
     path: 'read-only bridge:/reports/strategy-validation-readiness',
   },
+  strategyBacktestJobPlanner: {
+    label: 'Strategy Backtest Job Planner',
+    url: bridgeUrl('/reports/strategy-backtest-job-planner'),
+    path: 'read-only bridge:/reports/strategy-backtest-job-planner',
+  },
   validationBacklogExecutor: {
     label: 'Validation Backlog Executor',
     url: bridgeUrl('/reports/validation-backlog-executor'),

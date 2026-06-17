@@ -36,6 +36,7 @@ public sealed class HermesReadOnlyBridge
         new("strategyMutationValidationPlanner", "Strategy Mutation Validation Planner", "/reports/strategy-mutation-validation-planner", "reports/strategy_mutation_validation/strategy_mutation_validation_planner.json"),
         new("strategyValidationQueueExport", "Strategy Validation Queue Export", "/reports/strategy-validation-queue", "reports/strategy_validation_queue/strategy_validation_queue.json"),
         new("strategyValidationReadinessAnalyzer", "Strategy Validation Readiness Analyzer", "/reports/strategy-validation-readiness", "reports/strategy_validation_readiness/strategy_validation_readiness_analyzer.json"),
+        new("strategyBacktestJobPlanner", "Strategy Backtest Job Planner", "/reports/strategy-backtest-job-planner", "reports/strategy_backtest_jobs/strategy_backtest_job_planner.json"),
         new("validationBacklogExecutor", "Validation Backlog Executor", "/reports/validation-backlog-executor", "reports/validation_backlog/validation_backlog_executor.json"),
         new("reviewStatusConsistencyAudit", "Review Status Consistency Audit", "/reports/review-status-consistency-audit", "reports/review_status_consistency_audit/review_status_consistency_audit.json"),
         new("validationQueueRefill", "Validation Queue Refill", "/reports/validation-queue-refill", "reports/validation_queue_refill/validation_queue_refill.json"),
