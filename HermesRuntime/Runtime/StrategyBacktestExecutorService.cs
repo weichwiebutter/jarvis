@@ -56,6 +56,7 @@ public sealed class StrategyBacktestExecutorService
     private readonly StoragePaths _storagePaths;
     private string? _resolvedReportPath;
     private string? _resolvedMarkdownPath;
+    private string? _resolvedQueuePath;
 
     public StrategyBacktestExecutorService(StoragePaths storagePaths)
     {
@@ -66,6 +67,7 @@ public sealed class StrategyBacktestExecutorService
     public string QueuePath => Path.Combine(_storagePaths.Root, "queues", "strategy_backtest_jobs.json");
     public string ReportPath => _resolvedReportPath ?? Path.Combine(Root, "strategy_backtest_executor.json");
     public string MarkdownPath => _resolvedMarkdownPath ?? Path.Combine(Root, "strategy_backtest_executor.md");
+    public string QueueResolvedPath => _resolvedQueuePath ?? QueuePath;
     public string ContractMarkdownPath => Path.Combine(Root, "strategy_backtest_engine_contract.md");
     public string ContractJsonPath => Path.Combine(Root, "strategy_backtest_engine_contract.json");
 
@@ -75,16 +77,16 @@ public sealed class StrategyBacktestExecutorService
 
         var jobs = LoadJobs(QueuePath);
         var readyJobs = jobs.Where(job => job.Status.Equals("ready_to_execute", StringComparison.OrdinalIgnoreCase) && job.DatasetAvailable).ToList();
-        var selected = readyJobs
-            .OrderByDescending(job => job.SafetyMode.Contains("research_only=true", StringComparison.OrdinalIgnoreCase))
-            .ThenByDescending(job => job.Asset, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
+        var engine = new MinimalHistoricalBacktestEngine(_storagePaths);
+        var selected = readyJobs.FirstOrDefault(job => CanEngineExecute(engine, job));
+        selected ??= readyJobs.FirstOrDefault();
 
         StrategyBacktestResult? execution = null;
         var attempted = selected is null ? 0 : 1;
         var executed = 0;
         var skipped = jobs.Count - attempted;
         var warnings = new List<string>();
+        var updatedJobs = jobs.ToList();
 
         if (selected is null)
         {
@@ -92,41 +94,26 @@ public sealed class StrategyBacktestExecutorService
         }
         else
         {
-            var engine = new StrategyBacktestEngineStub();
-            var request = new StrategyBacktestRequest(
-                BacktestJobId: selected.BacktestJobId,
-                StrategyPattern: selected.StrategyPattern,
-                Asset: selected.Asset,
-                Timeframe: selected.Timeframe,
-                ParametersToTest: selected.ParametersToTest,
-                DatasetPath: selected.DatasetRequired,
-                DatasetId: selected.DatasetRequired,
-                BacktestPeriod: selected.BacktestPeriod,
-                OosPeriod: selected.OosPeriod,
-                CostSpreadModel: selected.CostSpreadModelRequired ? "required" : "not_required",
-                MaxRuns: selected.MaxRuns,
-                TimeoutSeconds: selected.TimeoutSeconds,
-                SafetyMode: selected.SafetyMode);
-            var dataset = new StrategyBacktestDatasetDescriptor(
-                DatasetPath: selected.DatasetRequired,
-                DatasetId: selected.DatasetRequired,
-                Asset: selected.Asset,
-                Timeframe: selected.Timeframe,
-                Period: selected.BacktestPeriod,
-                Available: selected.DatasetAvailable,
-                Warnings: selected.Blockers);
-            var safety = new StrategyBacktestSafetyContext(
-                NoAutoTrading: true,
-                BrokerOrdersEnabled: false,
-                LiveTradingEnabled: false,
-                HumanReviewRequired: true,
-                ResearchOnly: true,
-                SafetyMode: selected.SafetyMode,
-                SafetyFlags: selected.Blockers);
-            execution = engine.CanExecute(request, dataset, safety)
-                ? engine.Execute(request, dataset, safety)
-                : engine.Execute(request, dataset, safety);
+            var (request, dataset, safety) = BuildExecutionContext(selected);
+            execution = engine.Execute(request, dataset, safety);
             warnings.AddRange(execution.Warnings);
+
+            if (execution.ExecutionSupported && IsTerminalSuccess(execution.Status))
+            {
+                executed = 1;
+                updatedJobs = jobs
+                    .Select(job => job.BacktestJobId.Equals(selected.BacktestJobId, StringComparison.OrdinalIgnoreCase)
+                        ? job with
+                        {
+                            Status = "completed",
+                            NextAction = execution.Status == "completed_no_trades"
+                                ? "Backtest abgeschlossen ohne Trades."
+                                : "Backtest erfolgreich abgeschlossen."
+                        }
+                        : job)
+                    .ToList();
+                WriteQueue(updatedJobs);
+            }
         }
 
         var report = new StrategyBacktestExecutorReport(
@@ -147,9 +134,7 @@ public sealed class StrategyBacktestExecutorService
                 $"skipped:{skipped}",
             },
             Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-            OperatorSummary: selected is null
-                ? "1 Backtest-Job geprüft. 0/1 ausgeführt. Backtest-Engine noch nicht vorhanden. Frank nötig: nein. Keine Broker-Aktionen."
-                : "1 Backtest-Job geprüft. 0/1 ausgeführt. Backtest-Engine noch nicht vorhanden. Frank nötig: nein. Keine Broker-Aktionen.",
+            OperatorSummary: BuildOperatorSummary(attempted, executed, execution),
             SafetySummary: "no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true",
             FrankRequired: false,
             NoTradingExecution: true,
@@ -165,6 +150,51 @@ public sealed class StrategyBacktestExecutorService
         WriteContractArtifacts();
         return report;
     }
+
+    private static bool CanEngineExecute(MinimalHistoricalBacktestEngine engine, StrategyBacktestJobPlan job)
+    {
+        var (request, dataset, safety) = BuildExecutionContext(job);
+        return engine.CanExecute(request, dataset, safety);
+    }
+
+    private static (StrategyBacktestRequest Request, StrategyBacktestDatasetDescriptor Dataset, StrategyBacktestSafetyContext Safety) BuildExecutionContext(StrategyBacktestJobPlan selected)
+    {
+        var request = new StrategyBacktestRequest(
+            BacktestJobId: selected.BacktestJobId,
+            StrategyPattern: selected.StrategyPattern,
+            Asset: selected.Asset,
+            Timeframe: selected.Timeframe,
+            ParametersToTest: selected.ParametersToTest,
+            DatasetPath: selected.DatasetRequired,
+            DatasetId: selected.DatasetRequired,
+            BacktestPeriod: selected.BacktestPeriod,
+            OosPeriod: selected.OosPeriod,
+            CostSpreadModel: selected.CostSpreadModelRequired ? "required" : "not_required",
+            MaxRuns: selected.MaxRuns,
+            TimeoutSeconds: selected.TimeoutSeconds,
+            SafetyMode: selected.SafetyMode);
+        var dataset = new StrategyBacktestDatasetDescriptor(
+            DatasetPath: selected.DatasetRequired,
+            DatasetId: selected.DatasetRequired,
+            Asset: selected.Asset,
+            Timeframe: selected.Timeframe,
+            Period: selected.BacktestPeriod,
+            Available: selected.DatasetAvailable,
+            Warnings: selected.Blockers);
+        var safety = new StrategyBacktestSafetyContext(
+            NoAutoTrading: true,
+            BrokerOrdersEnabled: false,
+            LiveTradingEnabled: false,
+            HumanReviewRequired: true,
+            ResearchOnly: true,
+            SafetyMode: selected.SafetyMode,
+            SafetyFlags: selected.Blockers);
+        return (request, dataset, safety);
+    }
+
+    private static bool IsTerminalSuccess(string status)
+        => status.Equals("completed", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("completed_no_trades", StringComparison.OrdinalIgnoreCase);
 
     public StrategyBacktestExecutorReport? Load()
     {
@@ -208,6 +238,12 @@ public sealed class StrategyBacktestExecutorService
         File.WriteAllText(MarkdownPath, markdown);
         _resolvedReportPath = ReportPath;
         _resolvedMarkdownPath = MarkdownPath;
+    }
+
+    private void WriteQueue(IReadOnlyList<StrategyBacktestJobPlan> jobs)
+    {
+        File.WriteAllText(QueuePath, JsonSerializer.Serialize(jobs, JsonDefaults.WriteOptions));
+        _resolvedQueuePath = QueuePath;
     }
 
     private void WriteContractArtifacts()
@@ -285,8 +321,37 @@ public sealed class StrategyBacktestExecutorService
             sb.AppendLine("## Execution");
             sb.AppendLine($"- supported: {report.Execution.ExecutionSupported}");
             sb.AppendLine($"- status: {report.Execution.Status}");
+            if (report.Execution.TradesSimulated is not null)
+            {
+                sb.AppendLine($"- trades_simulated: {report.Execution.TradesSimulated}");
+                sb.AppendLine($"- win_rate: {report.Execution.WinRate}");
+                sb.AppendLine($"- profit_factor: {report.Execution.ProfitFactor}");
+                sb.AppendLine($"- max_drawdown: {report.Execution.MaxDrawdown}");
+                sb.AppendLine($"- expectancy: {report.Execution.Expectancy}");
+                sb.AppendLine($"- r_multiple_avg: {report.Execution.RMultipleAvg}");
+            }
         }
         return sb.ToString();
+    }
+
+    private static string BuildOperatorSummary(int attempted, int executed, StrategyBacktestResult? execution)
+    {
+        if (attempted == 0)
+        {
+            return "0 Backtest-Job geprüft. Kein Job verfügbar. Frank nötig: nein. Keine Broker-Aktionen.";
+        }
+
+        if (execution is null || !execution.ExecutionSupported)
+        {
+            return "1 Backtest-Job geprüft. 0/1 ausgeführt. Backtest-Engine noch nicht vorhanden. Frank nötig: nein. Keine Broker-Aktionen.";
+        }
+
+        if (execution.Status.Equals("completed_no_trades", StringComparison.OrdinalIgnoreCase))
+        {
+            return "1 Backtest-Job geprüft. 1/1 ausgeführt. Backtest abgeschlossen ohne Trades. Frank nötig: nein. Keine Broker-Aktionen.";
+        }
+
+        return "1 Backtest-Job geprüft. 1/1 ausgeführt. Backtest erfolgreich abgeschlossen. Frank nötig: nein. Keine Broker-Aktionen.";
     }
 
     private static string BuildContractMarkdown(StrategyBacktestEngineContractDocument contract)

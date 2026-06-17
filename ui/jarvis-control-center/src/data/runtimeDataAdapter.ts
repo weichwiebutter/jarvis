@@ -1910,6 +1910,52 @@ function reportFixtureRaw(key) {
         selected_job: null,
         execution: null,
       };
+    case 'strategyBacktestQualityAudit':
+      return {
+        report_version: 'strategy_backtest_quality_audit_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        audited_backtests: 1,
+        insufficient_sample_count: 1,
+        low_confidence_count: 0,
+        medium_confidence_count: 0,
+        high_confidence_count: 0,
+        certification_ready_count: 0,
+        thresholds: {
+          insufficient_sample_max_trades: 29,
+          low_confidence_min_trades: 30,
+          low_confidence_max_trades: 100,
+          medium_confidence_min_trades: 101,
+          medium_confidence_max_trades: 300,
+          high_confidence_min_trades: 301,
+        },
+        warnings: [],
+        operator_summary: 'Mean Reversion Rejection · XAUUSD M5\n\nBacktest technisch erfolgreich.\n\nAussagekraft:\nUnzureichend.\n\nGrund:\nNur 3 Trades gefunden.\n\nEmpfehlung:\nMehr historische Daten oder längerer Testzeitraum erforderlich.\n\nFrank nötig:\nnein',
+        frank_required: false,
+        report_path: '/mnt/d/HermesData/reports/strategy_backtest_quality/strategy_backtest_quality_audit.json',
+        markdown_path: '/mnt/d/HermesData/reports/strategy_backtest_quality/strategy_backtest_quality_audit.md',
+        entries: [
+          {
+            backtest_job_id: 'backtest_job_validation_plan_trading_research_mean_reversion_rejection_bollinger_band_width',
+            strategy_pattern: 'Mean Reversion Rejection',
+            asset: 'XAUUSD',
+            timeframe: 'M5',
+            trades_simulated: 3,
+            sample_size_score: 0.01,
+            confidence_level: 0.15,
+            statistical_reliability: 0.21,
+            period_coverage: 0.6,
+            market_regime_coverage: 0.4,
+            result_stability: 0.9993,
+            quality_class: 'insufficient_sample',
+            eligible_for_oos: false,
+            eligible_for_walk_forward: false,
+            eligible_for_forward_test: false,
+            eligible_for_certification: false,
+            root_causes: ['entry_conditions_too_strict', 'strategy_scope_too_narrow'],
+            warnings: ['insufficient_sample'],
+          },
+        ],
+      };
     case 'strategyBacktestJobPlanner':
       return {
         report_version: 'strategy_backtest_job_planner_v1',
@@ -3643,6 +3689,7 @@ export async function loadOperatorDashboard() {
       strategyValidationReadinessAnalyzer: dashboard.strategyValidationReadinessAnalyzer,
       strategyBacktestJobPlanner: dashboard.strategyBacktestJobPlanner,
       strategyBacktestExecutor: dashboard.strategyBacktestExecutor,
+      strategyBacktestQualityAudit: dashboard.strategyBacktestQualityAudit,
       strategyDatasetGateAudit: dashboard.strategyDatasetGateAudit,
       evidenceAutoLoop: dashboard.evidenceAutoLoop,
         validationQueueRefill: dashboard.validationQueueRefill,
@@ -3737,6 +3784,7 @@ export async function loadOperatorDashboard() {
   rawReports.strategyValidationReadinessAnalyzer = reportFixtureRaw('strategyValidationReadinessAnalyzer');
   rawReports.strategyBacktestJobPlanner = reportFixtureRaw('strategyBacktestJobPlanner');
   rawReports.strategyBacktestExecutor = reportFixtureRaw('strategyBacktestExecutor');
+  rawReports.strategyBacktestQualityAudit = reportFixtureRaw('strategyBacktestQualityAudit');
   rawReports.strategyDatasetGateAudit = reportFixtureRaw('strategyDatasetGateAudit');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');

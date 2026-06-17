@@ -115,6 +115,7 @@ internal sealed class HermesCli
             "strategy-validation-readiness-analyzer" => ShowStrategyValidationReadinessAnalyzer(),
             "strategy-backtest-job-planner" => ShowStrategyBacktestJobPlanner(),
             "strategy-backtest-executor" => ShowStrategyBacktestExecutor(),
+            "strategy-backtest-quality-audit" => ShowStrategyBacktestQualityAudit(),
             "strategy-dataset-gate-audit" => ShowStrategyDatasetGateAudit(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
@@ -396,6 +397,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-validation-readiness-analyzer Strategy Validation Readiness analysieren");
         Console.WriteLine("  hermes strategy-backtest-job-planner Strategy Backtest Job Planner anzeigen");
         Console.WriteLine("  hermes strategy-backtest-executor Strategy Backtest Executor anzeigen");
+        Console.WriteLine("  hermes strategy-backtest-quality-audit Strategy Backtest Quality Audit anzeigen");
         Console.WriteLine("  hermes strategy-dataset-gate-audit Strategy Dataset Gate Audit anzeigen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
@@ -6542,6 +6544,15 @@ internal sealed class HermesCli
             WriteField("Execution Supported", report.Execution.ExecutionSupported.ToString().ToLowerInvariant());
             WriteField("Cost Spread Model Used", report.Execution.CostSpreadModelUsed.ToString().ToLowerInvariant());
             WriteField("Status", report.Execution.Status);
+            if (report.Execution.TradesSimulated is not null)
+            {
+                WriteField("Trades Simulated", report.Execution.TradesSimulated.Value.ToString());
+                WriteField("Win Rate", report.Execution.WinRate?.ToString("0.####") ?? "-");
+                WriteField("Profit Factor", report.Execution.ProfitFactor?.ToString("0.####") ?? "-");
+                WriteField("Max Drawdown", report.Execution.MaxDrawdown?.ToString("0.####") ?? "-");
+                WriteField("Expectancy", report.Execution.Expectancy?.ToString("0.####") ?? "-");
+                WriteField("R Multiple Avg", report.Execution.RMultipleAvg?.ToString("0.####") ?? "-");
+            }
             WriteMessages("Warnings", report.Execution.Warnings);
         }
         Console.WriteLine();
@@ -6579,6 +6590,40 @@ internal sealed class HermesCli
             WriteField("Mismatch", item.Mismatch.ToString().ToLowerInvariant());
             WriteMessages("Missing", item.MissingRequirements);
             WriteMessages("Warnings", item.Warnings);
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyBacktestQualityAudit()
+    {
+        WriteHeader("Hermes Strategy Backtest Quality Audit");
+        var service = new StrategyBacktestQualityAuditService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Audited Backtests", report.AuditedBacktests.ToString());
+        WriteField("Insufficient Sample", report.InsufficientSampleCount.ToString());
+        WriteField("Low Confidence", report.LowConfidenceCount.ToString());
+        WriteField("Medium Confidence", report.MediumConfidenceCount.ToString());
+        WriteField("High Confidence", report.HighConfidenceCount.ToString());
+        WriteField("Certification Ready", report.CertificationReadyCount.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Thresholds");
+        foreach (var threshold in report.Thresholds)
+        {
+            WriteField(threshold.Key, threshold.Value.ToString());
+        }
+        WriteSubHeader("Entries");
+        foreach (var entry in report.Entries.Take(10))
+        {
+            WriteField(entry.BacktestJobId, $"{entry.StrategyPattern} · {entry.Asset} {entry.Timeframe} · trades={entry.TradesSimulated} · class={entry.QualityClass}");
+            WriteField("Confidence", $"{entry.ConfidenceLevel:0.###} · reliability={entry.StatisticalReliability:0.###}");
+            WriteField("Gate", $"OOS={entry.EligibleForOos} WF={entry.EligibleForWalkForward} FWD={entry.EligibleForForwardTest} CERT={entry.EligibleForCertification}");
         }
         Console.WriteLine();
         WriteSafety();
