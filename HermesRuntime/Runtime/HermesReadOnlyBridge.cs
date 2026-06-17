@@ -39,6 +39,7 @@ public sealed class HermesReadOnlyBridge
         new("strategyBacktestJobPlanner", "Strategy Backtest Job Planner", "/reports/strategy-backtest-job-planner", "reports/strategy_backtest_jobs/strategy_backtest_job_planner.json"),
         new("strategyBacktestExecutor", "Strategy Backtest Executor", "/reports/strategy-backtest-executor", "reports/strategy_backtest_execution/strategy_backtest_executor.json"),
         new("strategyBacktestQualityAudit", "Strategy Backtest Quality Audit", "/reports/strategy-backtest-quality-audit", "reports/strategy_backtest_quality/strategy_backtest_quality_audit.json"),
+        new("strategyBacktestEvidenceGate", "Strategy Backtest Evidence Gate", "/reports/strategy-backtest-evidence-gate", "reports/strategy_backtest_quality/strategy_backtest_evidence_gate.json"),
         new("strategyDatasetGateAudit", "Strategy Dataset Gate Audit", "/reports/strategy-dataset-gate-audit", "reports/strategy_dataset_gate/strategy_dataset_gate_audit.json"),
         new("validationBacklogExecutor", "Validation Backlog Executor", "/reports/validation-backlog-executor", "reports/validation_backlog/validation_backlog_executor.json"),
         new("reviewStatusConsistencyAudit", "Review Status Consistency Audit", "/reports/review-status-consistency-audit", "reports/review_status_consistency_audit/review_status_consistency_audit.json"),

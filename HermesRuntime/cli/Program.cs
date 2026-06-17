@@ -116,6 +116,7 @@ internal sealed class HermesCli
             "strategy-backtest-job-planner" => ShowStrategyBacktestJobPlanner(),
             "strategy-backtest-executor" => ShowStrategyBacktestExecutor(),
             "strategy-backtest-quality-audit" => ShowStrategyBacktestQualityAudit(),
+            "strategy-backtest-evidence-gate" => ShowStrategyBacktestEvidenceGate(),
             "strategy-dataset-gate-audit" => ShowStrategyDatasetGateAudit(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
@@ -398,6 +399,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-backtest-job-planner Strategy Backtest Job Planner anzeigen");
         Console.WriteLine("  hermes strategy-backtest-executor Strategy Backtest Executor anzeigen");
         Console.WriteLine("  hermes strategy-backtest-quality-audit Strategy Backtest Quality Audit anzeigen");
+        Console.WriteLine("  hermes strategy-backtest-evidence-gate Strategy Backtest Evidence Gate anzeigen");
+        Console.WriteLine("  hermes strategy-backtest-evidence-gate Strategy Backtest Evidence Gate anzeigen");
         Console.WriteLine("  hermes strategy-dataset-gate-audit Strategy Dataset Gate Audit anzeigen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
@@ -6624,6 +6627,40 @@ internal sealed class HermesCli
             WriteField(entry.BacktestJobId, $"{entry.StrategyPattern} · {entry.Asset} {entry.Timeframe} · trades={entry.TradesSimulated} · class={entry.QualityClass}");
             WriteField("Confidence", $"{entry.ConfidenceLevel:0.###} · reliability={entry.StatisticalReliability:0.###}");
             WriteField("Gate", $"OOS={entry.EligibleForOos} WF={entry.EligibleForWalkForward} FWD={entry.EligibleForForwardTest} CERT={entry.EligibleForCertification}");
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyBacktestEvidenceGate()
+    {
+        WriteHeader("Hermes Strategy Backtest Evidence Gate");
+        var service = new StrategyBacktestEvidenceGateService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Audited Backtests", report.AuditedBacktests.ToString());
+        WriteField("Passed Research Gate", report.PassedResearchGateCount.ToString());
+        WriteField("Passed OOS Gate", report.PassedOosGateCount.ToString());
+        WriteField("Passed Certification Gate", report.PassedCertificationGateCount.ToString());
+        WriteField("Insufficient History", report.InsufficientHistoryCount.ToString());
+        WriteField("Insufficient Sample", report.InsufficientSampleCount.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Thresholds");
+        foreach (var threshold in report.Thresholds)
+        {
+            WriteField(threshold.Key, threshold.Value.ToString());
+        }
+        WriteSubHeader("Entries");
+        foreach (var entry in report.Entries.Take(10))
+        {
+            WriteField(entry.BacktestJobId, $"{entry.StrategyPattern} · {entry.Asset} {entry.Timeframe} · history={entry.HistoricalPeriodDays}d · trades={entry.TradesSimulated} · gate={entry.SampleClassification}");
+            WriteField("Root Cause", entry.RootCause);
+            WriteField("Passed", $"research={entry.PassedResearchGate} oos={entry.PassedOosGate} cert={entry.PassedCertificationGate}");
         }
         Console.WriteLine();
         WriteSafety();

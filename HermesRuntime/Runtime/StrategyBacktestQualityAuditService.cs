@@ -20,6 +20,9 @@ public sealed record StrategyBacktestQualityAuditEntry(
     bool EligibleForWalkForward,
     bool EligibleForForwardTest,
     bool EligibleForCertification,
+    bool PassedResearchGate,
+    bool PassedOosGate,
+    bool PassedCertificationGate,
     IReadOnlyList<string> RootCauses,
     IReadOnlyList<string> Warnings);
 
@@ -32,6 +35,9 @@ public sealed record StrategyBacktestQualityAuditReport(
     int MediumConfidenceCount,
     int HighConfidenceCount,
     int CertificationReadyCount,
+    int PassedResearchGateCount,
+    int PassedOosGateCount,
+    int PassedCertificationGateCount,
     IReadOnlyList<StrategyBacktestQualityAuditEntry> Entries,
     IReadOnlyDictionary<string, int> Thresholds,
     IReadOnlyList<string> Warnings,
@@ -123,6 +129,9 @@ public sealed class StrategyBacktestQualityAuditService
             MediumConfidenceCount: medium,
             HighConfidenceCount: high,
             CertificationReadyCount: certificationReady,
+            PassedResearchGateCount: entries.Count(entry => entry.PassedResearchGate),
+            PassedOosGateCount: entries.Count(entry => entry.PassedOosGate),
+            PassedCertificationGateCount: entries.Count(entry => entry.PassedCertificationGate),
             Entries: entries.OrderByDescending(entry => entry.SampleSizeScore).ThenByDescending(entry => entry.ConfidenceLevel).ToList(),
             Thresholds: new Dictionary<string, int>
             {
@@ -174,6 +183,9 @@ public sealed class StrategyBacktestQualityAuditService
         var eligibleForWalkForward = trades >= 30 && periodCoverage >= 0.5;
         var eligibleForForwardTest = trades >= 30 && confidenceLevel >= 0.5;
         var eligibleForCertification = trades > 300 && confidenceLevel >= 0.75 && reliability >= 0.75;
+        var passedResearchGate = trades >= 30;
+        var passedOosGate = trades >= 100;
+        var passedCertificationGate = trades >= 100 && eligibleForCertification;
         var rootCauses = DetermineRootCauses(job, result, trades);
         var warnings = new List<string>();
         if (result.Warnings.Count > 0)
@@ -202,6 +214,9 @@ public sealed class StrategyBacktestQualityAuditService
             EligibleForWalkForward: eligibleForWalkForward,
             EligibleForForwardTest: eligibleForForwardTest,
             EligibleForCertification: eligibleForCertification,
+            PassedResearchGate: passedResearchGate,
+            PassedOosGate: passedOosGate,
+            PassedCertificationGate: passedCertificationGate,
             RootCauses: rootCauses,
             Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList());
     }
