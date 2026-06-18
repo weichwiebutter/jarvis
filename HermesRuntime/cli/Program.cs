@@ -33,6 +33,7 @@ internal sealed class HermesCli
             "" or "help" or "--help" or "-h" => ShowHelp(),
             "write-master-status" => WriteMasterStatus(),
             "master-status" => ShowMasterStatus(),
+            "runtime-health-summary" => ShowRuntimeHealthSummary(),
             "health" => ShowHealth(),
             "setup-watch" => ShowSetupWatch(),
             "events" => ShowEvents(),
@@ -335,6 +336,7 @@ internal sealed class HermesCli
         Console.WriteLine("Kommandos:");
         Console.WriteLine("  hermes write-master-status Master Status Snapshot schreiben");
         Console.WriteLine("  hermes master-status      kompakten Gesamtstatus aus bestehenden Reports anzeigen");
+        Console.WriteLine("  hermes runtime-health-summary kompakten Betreiberstatus anzeigen");
         Console.WriteLine("  hermes health             RuntimeHealth anzeigen");
         Console.WriteLine("  hermes setup-watch        Setup-Watch-Kandidaten anzeigen");
         Console.WriteLine("  hermes events recent      letzte Runtime-Events anzeigen");
@@ -672,6 +674,29 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return snapshot.OverallStatus.Equals("critical", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+    }
+
+    private int ShowRuntimeHealthSummary()
+    {
+        WriteHeader("Hermes Runtime Health Summary");
+        var service = new RuntimeHealthSummaryService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Hauptstatus", report.MainStatus);
+        WriteField("Letzter Schritt", report.LastStep);
+        WriteField("Nächster Schritt", report.NextStep);
+        WriteField("Letztes Ergebnis", report.LastResult);
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Offene Reviews", report.OpenReviews.ToString());
+        WriteField("Offene OOS-Pläne", report.OpenOosPlans.ToString());
+        WriteField("Offene Forward-Pläne", report.OpenForwardPlans.ToString());
+        WriteField("Letzte Warnung", report.LastWarning);
+        WriteField("Safety Status", report.SafetyStatus);
+        WriteField("Operator Summary", report.OperatorSummary);
+        WriteSafety();
+        return report.MainStatus.Equals("fehler", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
     }
 
     private bool IsMasterStatusSnapshotFresh(string snapshotPath)

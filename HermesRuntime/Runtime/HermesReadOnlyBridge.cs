@@ -13,6 +13,7 @@ public sealed class HermesReadOnlyBridge
     [
         new("runtimeHealth", "Runtime Health", "/runtime/health", "reports/runtime_health.json"),
         new("masterStatus", "Hermes Master Status", "/reports/master-status", "reports/master-status/master_status.json"),
+        new("runtimeHealthSummary", "Runtime Health Summary", "/reports/runtime-health-summary", "reports/runtime_health_summary/runtime_health_summary.json"),
         new("setupWatch", "Setup Watch", "/runtime/setup-watch", "setup_watch/setup_watch.json"),
         new("supervisorState", "Supervisor State", "/runtime/supervisor", "reports/supervisor/supervisor_state.json"),
         new("schedulerState", "Scheduler State", "/runtime/scheduler", "reports/supervisor/scheduler_state.json"),
