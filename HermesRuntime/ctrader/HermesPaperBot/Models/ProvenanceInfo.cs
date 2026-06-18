@@ -24,4 +24,24 @@ public sealed class ProvenanceInfo
     /// Safety flag marker.
     /// </summary>
     public bool PaperMode { get; init; } = true;
+
+    /// <summary>
+    /// Bot release identifier.
+    /// </summary>
+    public string BotReleaseId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Bot version.
+    /// </summary>
+    public string BotVersion { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Strategy package version.
+    /// </summary>
+    public string StrategyPackageVersion { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Schema version.
+    /// </summary>
+    public string SchemaVersion { get; init; } = string.Empty;
 }

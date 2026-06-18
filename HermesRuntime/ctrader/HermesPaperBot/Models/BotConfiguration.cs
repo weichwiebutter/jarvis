@@ -43,7 +43,7 @@ public sealed class BotConfiguration
     /// <summary>
     /// Logging verbosity.
     /// </summary>
-    public string LogVerbosity { get; init; } = "normal";
+    public LogVerbosity LogVerbosity { get; init; } = LogVerbosity.Normal;
 
     /// <summary>
     /// Paper-only safety defaults.

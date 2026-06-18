@@ -19,4 +19,9 @@ public sealed class SafetyResult
     /// Placeholder broker action, always none in the skeleton.
     /// </summary>
     public string BrokerAction { get; init; } = "none";
+
+    /// <summary>
+    /// Optional reason text.
+    /// </summary>
+    public string Reason { get; init; } = "blocked_by_skeleton";
 }

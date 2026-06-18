@@ -10,13 +10,23 @@ public sealed class PaperDecisionEngine
     /// <summary>
     /// Evaluates a paper-only decision.
     /// </summary>
-    public PaperDecision Evaluate(BotState state, RuntimeMarketContext context)
+    public DecisionResult Evaluate(BotState state, RuntimeMarketContext context)
     {
-        return new PaperDecision
+        if (state is not null && state.KillSwitchActive)
         {
-            Decision = "not_implemented",
+            return new DecisionResult
+            {
+                Decision = "would_block_by_safety",
+                BrokerAction = "none",
+                Reason = "kill_switch_active",
+            };
+        }
+
+        return new DecisionResult
+        {
+            Decision = "would_wait",
             BrokerAction = "none",
-            Reason = "blocked_by_skeleton",
+            Reason = "ok",
         };
     }
 }

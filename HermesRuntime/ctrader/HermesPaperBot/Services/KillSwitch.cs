@@ -10,12 +10,35 @@ public sealed class KillSwitch
     /// <summary>
     /// Evaluates whether the kill switch should be active.
     /// </summary>
-    public SafetyResult Evaluate(BotConfiguration config, ValidationResult validation)
+    public KillSwitchResult Evaluate(BotConfiguration config, ValidationResult validation)
     {
-        return new SafetyResult
+        if (config is not null && config.ManualKillSwitch)
         {
-            Passed = false,
-            Status = "not_implemented",
+            return new KillSwitchResult
+            {
+                Active = true,
+                Status = "blocked",
+                Reason = "manual_kill_switch_active",
+                BrokerAction = "none",
+            };
+        }
+
+        if (validation is null || !validation.IsValid)
+        {
+            return new KillSwitchResult
+            {
+                Active = true,
+                Status = "blocked",
+                Reason = "validation_failed",
+                BrokerAction = "none",
+            };
+        }
+
+        return new KillSwitchResult
+        {
+            Active = false,
+            Status = "passed",
+            Reason = "ok",
             BrokerAction = "none",
         };
     }
