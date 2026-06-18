@@ -108,6 +108,7 @@ internal sealed class HermesCli
             "knowledge-item" => ShowKnowledgeItem(),
             "knowledge-health" => ShowKnowledgeHealth(),
             "knowledge-health-root-cause" => ShowKnowledgeHealthRootCause(),
+            "knowledge-confidence-engine" => ShowKnowledgeConfidenceEngine(),
             "promotion-status" => ShowPromotionStatus(),
             "knowledge-consolidation-analyzer" => ShowKnowledgeConsolidationAnalyzer(),
             "knowledge-consolidation-executor" => ShowKnowledgeConsolidationExecutor(),
@@ -411,6 +412,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-item --id <ID> einzelnes Knowledge Item anzeigen");
         Console.WriteLine("  hermes knowledge-health   Knowledge Trust/Quality Scores erzeugen und anzeigen");
         Console.WriteLine("  hermes knowledge-health-root-cause Knowledge Trust Root Cause Analyse anzeigen");
+        Console.WriteLine("  hermes knowledge-confidence-engine Knowledge Confidence Score anzeigen");
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-analyzer Knowledge Consolidation Analyzer anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-executor Knowledge Consolidation Kandidaten erzeugen");
@@ -6343,6 +6345,31 @@ internal sealed class HermesCli
         {
             WriteField($"{driver.Rank}. {driver.Title}", $"{driver.Impact} · impact={driver.EstimatedTrustImpact:0.##}");
             WriteField("Kurz", driver.Summary);
+        }
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowKnowledgeConfidenceEngine()
+    {
+        WriteHeader("Hermes Knowledge Confidence Engine");
+        var service = new KnowledgeConfidenceEngineService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Bewertete Hypothesen", report.EvaluatedHypotheses.ToString());
+        WriteField("Top Confidence", report.TopCandidate?.Title ?? "-");
+        WriteField("Stärkste Blocker", report.TopCandidate is null ? "-" : string.Join(" · ", report.TopCandidate.StrongestBlockers));
+        WriteField("Nächster Evidenzschritt", report.TopCandidate?.NextEvidenceStep ?? "-");
+        WriteSubHeader("Operator Summary");
+        Console.WriteLine(report.OperatorSummary);
+        WriteSubHeader("Top 5 Hypothesen");
+        foreach (var item in report.Hypotheses.Take(5))
+        {
+            WriteField(item.Title, $"{item.ConfidenceClass} · {item.Asset} {item.Timeframe} · score={item.ConfidenceScore:0.#}");
+            WriteField("Blocker", string.Join(" · ", item.StrongestBlockers));
+            WriteField("Nächster Schritt", item.NextEvidenceStep);
         }
         WriteSafety();
         return 0;

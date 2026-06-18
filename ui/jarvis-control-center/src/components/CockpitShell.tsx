@@ -1240,6 +1240,7 @@ function KnowledgeHealthCard({ operatorState }) {
   const masterStatus = operatorState.masterStatus;
   const audit = reportByKey(operatorState, 'knowledgeValidationAudit')?.raw || {};
   const rootCause = reportByKey(operatorState, 'knowledgeHealthRootCause')?.raw || {};
+  const confidence = reportByKey(operatorState, 'knowledgeConfidenceEngine')?.raw || {};
   const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
   const criticalGaps = audit.critical_knowledge_gaps ?? audit.criticalKnowledgeGaps ?? masterStatus.knowledge_items_needing_oos;
   const createdLastRun = audit.validation_tasks_created_last_run ?? audit.validationTasksCreatedLastRun ?? 0;
@@ -1262,6 +1263,7 @@ function KnowledgeHealthCard({ operatorState }) {
     || `${validationCompletionPercent}% abgeschlossen`;
   const health = masterStatus.knowledge_health || 'unbekannt';
   const rootCauses = Array.isArray(rootCause.drivers) ? rootCause.drivers.slice(0, 3) : [];
+  const confidenceTop = confidence.top_candidate || confidence.topCandidate || null;
   const tone = health.includes('critical')
     ? 'danger'
     : health.includes('needs') || masterStatus.weak_knowledge
@@ -1306,6 +1308,17 @@ function KnowledgeHealthCard({ operatorState }) {
           </div>
         )) : (
           <p className="control-view-note">Ursachen werden gerade aus den vorhandenen Reports abgeleitet.</p>
+        )}
+      </div>
+      <div className="knowledge-health-root-cause">
+        <p className="control-view-note">Confidence der wichtigsten Hypothesen</p>
+        {confidenceTop ? (
+          <div className="status-line">
+            <span>{confidenceTop.title || confidenceTop.Title || 'Hypothese'}</span>
+            <strong>{confidenceTop.confidence_score ?? confidenceTop.confidenceScore ?? '-'}%</strong>
+          </div>
+        ) : (
+          <p className="control-view-note">Confidence-Report noch nicht verfügbar.</p>
         )}
       </div>
     </details>
