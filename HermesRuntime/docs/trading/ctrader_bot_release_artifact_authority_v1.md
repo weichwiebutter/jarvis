@@ -1,0 +1,181 @@
+# cTrader Bot Release Artifact Authority V1
+
+## Purpose
+
+This document defines the authority boundary for cTrader bot release artifacts.
+
+It is specification only.
+It does not define bot code.
+It does not use the cTrader Order API.
+It does not allow trading operations.
+It does not permit demo or live execution.
+
+## Architectural Decision
+
+HermesRuntime / System A is the single canonical source of truth for bot release artifacts.
+
+cTrader is a consumer only:
+- it executes a released bot version locally
+- it records local runtime and observation logs
+- it uses the release bundle as input
+
+## Authority Rules
+
+### HermesRuntime is authoritative for:
+
+- `strategy_package`
+- `ensemble_signal_agent_package.json`
+- `certified_strategy_package`
+- `bot_release_candidate`
+- `ctrader_bot_release_manifest.json`
+- `release_status`
+- `validation_summary`
+- `confidence_summary`
+- `drift_check_summary`
+- `rollback_version`
+- `safety_flags`
+
+### cTrader is authoritative only for:
+
+- local bot execution state
+- local runtime logs
+- paper/observation logs
+- actual local cTrader market context data
+- broker/symbol mapping at runtime
+
+## Data Flow
+
+### HermesRuntime
+
+Research → Validation → Certified Strategy Package → Bot Release Candidate → Release Manifest → Release Bundle
+
+### cTrader
+
+Release Bundle → Bot Runtime → Paper/Observation Logs → optional import back to HermesRuntime
+
+## Release Bundle
+
+Planned bundle structure:
+
+```text
+ctrader_bot_release_bundle/
+├── ctrader_bot_release_manifest.json
+├── ctrader_bot_release_summary.md
+├── ctrader_bot_drift_checklist.md
+├── ctrader_bot_release_notes.md
+├── ctrader_bot_rollback_plan.md
+├── ensemble_signal_agent_package.json
+├── ensemble_signal_agent_package.schema.json
+└── checksums.json
+```
+
+The release bundle is the portable unit passed from HermesRuntime to cTrader.
+
+## Write Permissions
+
+### HermesRuntime may write:
+
+- release manifest
+- release bundle
+- strategy package
+- rollback plan
+- drift checklist
+
+### cTrader may not write:
+
+- release manifest
+- strategy package
+- safety flags
+- release status
+- confidence summary
+
+### cTrader may write:
+
+- `runtime_observation_log.jsonl`
+- `paper_decision_log.jsonl`
+- `bot_state_transition_log.jsonl`
+- `local_error_log.jsonl`
+
+## Import Back Into HermesRuntime
+
+cTrader logs may later be imported into HermesRuntime as:
+- observation evidence
+- paper execution evidence
+- drift evidence
+- runtime reliability evidence
+
+These imports do not directly change:
+- release status
+- confidence
+- certification
+
+HermesRuntime re-evaluates them as new evidence.
+
+## Safety Rule
+
+If cTrader detects a local mismatch or unsafe condition:
+- manifest checksum mismatch
+- strategy package mismatch
+- unsupported schema
+- safety flag violation
+- unknown `bot_version`
+
+Then the bot must:
+- deactivate itself
+- keep `broker_action=none`
+- set `kill_switch_active=true`
+- write a log entry
+
+## Source-of-Truth Table
+
+| Artefakt/Feld | Authoritative System | Consumer | Änderbar durch cTrader? | Änderbar durch HermesRuntime? | Review erforderlich? |
+| --- | --- | --- | --- | --- | --- |
+| `strategy_package` | HermesRuntime | cTrader | Nein | Ja | Ja |
+| `ensemble_signal_agent_package.json` | HermesRuntime | cTrader | Nein | Ja | Ja |
+| `certified_strategy_package` | HermesRuntime | cTrader | Nein | Ja | Ja |
+| `bot_release_candidate` | HermesRuntime | cTrader | Nein | Ja | Ja |
+| `ctrader_bot_release_manifest.json` | HermesRuntime | cTrader | Nein | Ja | Ja |
+| `release_status` | HermesRuntime | cTrader | Nein | Ja | Ja |
+| `validation_summary` | HermesRuntime | cTrader | Nein | Ja | Ja |
+| `confidence_summary` | HermesRuntime | cTrader | Nein | Ja | Ja |
+| `drift_check_summary` | HermesRuntime | cTrader | Nein | Ja | Ja |
+| `rollback_version` | HermesRuntime | cTrader | Nein | Ja | Ja |
+| `safety_flags` | HermesRuntime | cTrader | Nein | Ja | Ja |
+| `runtime_observation_log.jsonl` | cTrader | HermesRuntime | Ja | Nein | Ja |
+| `paper_decision_log.jsonl` | cTrader | HermesRuntime | Ja | Nein | Ja |
+| `bot_state_transition_log.jsonl` | cTrader | HermesRuntime | Ja | Nein | Ja |
+| `local_error_log.jsonl` | cTrader | HermesRuntime | Ja | Nein | Ja |
+
+## Safety Invariants
+
+These flags remain mandatory:
+- `no_auto_trading=true`
+- `human_review_required=true`
+- `broker_orders_enabled=false`
+- `live_trading_enabled=false`
+- `order_api_enabled=false`
+- `paper_mode=true`
+- `broker_action=none`
+
+## Operating Interpretation
+
+HermesRuntime owns the release truth.
+cTrader owns the local runtime truth.
+
+That means:
+- HermesRuntime decides what may be released
+- cTrader reports what happened locally
+- cTrader does not rewrite the release contract
+
+## Open Questions
+
+- Should the release bundle be zipped or kept as a flat directory for V1 planning?
+- Should checksum verification cover the manifest only or all files in the bundle?
+- Should `checksums.json` be generated by HermesRuntime only?
+- Should imported cTrader logs be normalized before HermesRuntime evidence ingestion?
+- Should release bundle provenance include the exact HermesRuntime run id and validation run id in every artifact?
+
+## Summary
+
+HermesRuntime is the authoritative source for all release artifacts and status.
+cTrader is a local consumer that may emit observation evidence, but it cannot author release truth.
