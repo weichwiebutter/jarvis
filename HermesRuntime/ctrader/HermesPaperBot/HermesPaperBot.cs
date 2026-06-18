@@ -1,4 +1,4 @@
-namespace HermesPaperBot;
+namespace HermesPaperBot.Bot;
 
 /// <summary>
 /// Paper-only cBot skeleton placeholder.
