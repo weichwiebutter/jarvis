@@ -6722,36 +6722,11 @@ internal sealed class HermesCli
         var service = new AutonomousResearchLoopOrchestratorService(BuildStoragePaths(), _runtimeRoot);
         var report = service.Run();
 
-        WriteField("Report", DisplayPath(report.ReportPath));
-        WriteField("Markdown", DisplayPath(report.MarkdownPath));
-        WriteField("Status", report.Status);
-        WriteField("Status Label", report.StatusLabel);
-        WriteField("In Work Window", report.InWorkWindow.ToString().ToLowerInvariant());
-        WriteField("In Learning Window", report.InLearningWindow.ToString().ToLowerInvariant());
-        WriteField("Evidence Auto Loop", report.EvidenceAutoLoopEnabled.ToString().ToLowerInvariant());
-        WriteField("Research Loop", report.ResearchLoopEnabled.ToString().ToLowerInvariant());
-        WriteField("Safety Eligible", report.SafetyEligible.ToString().ToLowerInvariant());
+        WriteField("Status", report.Status == "waiting_for_window" ? "wartet" : "arbeitet");
+        WriteField("Letzter Schritt", report.LastAutonomousAction);
+        WriteField("Nächster Schritt", report.NextScheduledStep);
+        WriteField("Ergebnis", report.StepResult);
         WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
-        WriteField("Step Type", report.StepType);
-        WriteField("Step Status", report.StepStatus);
-        WriteField("Step Result", report.StepResult);
-        WriteField("Selected Job", report.SelectedJobId ?? "-");
-        WriteField("Selected Mutation Type", report.SelectedJobMutationType ?? "-");
-        WriteField("Why Selected", report.WhySelected);
-        WriteField("Next Planned Step", report.NextPlannedStep);
-        WriteField("Operator Summary", report.OperatorSummary);
-        WriteField("Safety", report.SafetyStatus);
-        WriteMessages("Warnings", report.Warnings);
-        if (report.MutationExecution is not null)
-        {
-            WriteSubHeader("Mutation Execution");
-            WriteField("Report Role", report.MutationExecution.ReportRole);
-            WriteField("Selected Job", report.MutationExecution.SelectedJob?.ValidationJobId ?? "-");
-            WriteField("Execution Supported", report.MutationExecution.Execution?.ExecutionSupported.ToString().ToLowerInvariant() ?? "-");
-            WriteField("Status", report.MutationExecution.Execution?.Status ?? "-");
-            WriteField("Quality Class", report.MutationExecution.Execution?.QualityClass ?? "-");
-            WriteField("Certification Ready", report.MutationExecution.Execution?.CertificationReady.ToString().ToLowerInvariant() ?? "-");
-        }
 
         Console.WriteLine();
         WriteSafety();
@@ -6764,43 +6739,25 @@ internal sealed class HermesCli
 
         var service = new AutonomousResearchLoopOrchestratorService(BuildStoragePaths(), _runtimeRoot);
         var report = service.Load();
-        var oosPlanReport = new AutonomousOosPlanningService(BuildStoragePaths()).Load();
-        var openOosPlans = oosPlanReport?.Plans.Count(plan => !plan.Status.StartsWith("completed_", StringComparison.OrdinalIgnoreCase)) ?? 0;
         var forwardSyncReport = new AutonomousForwardObservationCompletionSyncService(BuildStoragePaths(), _runtimeRoot).Load();
         var openForwardPlans = forwardSyncReport?.OpenPlans ?? 0;
-        var lastForwardObservationStatus = forwardSyncReport?.Items.FirstOrDefault()?.ObservationStatus ?? "-";
         if (report is null)
         {
-            WriteField("Status", "keine gespeicherte Ausführung");
-            WriteField("Hinweis", "autonomous-research-loop-step noch nicht ausgeführt.");
-            WriteField("Offene OOS-Pläne", openOosPlans.ToString());
-            WriteField("Offene Forward-Pläne", openForwardPlans.ToString());
-            WriteField("Letzter Forward-Observation-Status", lastForwardObservationStatus);
+            WriteField("Status", "wartet");
+            WriteField("Letzter Schritt", "-");
             WriteField("Nächster Schritt", openForwardPlans > 0 ? forwardSyncReport?.NextSafeStep ?? "Forward-Beobachtung im erlaubten Zeitfenster" : "Research-Loop warten");
+            WriteField("Ergebnis", "-");
+            WriteField("Frank nötig", "nein");
             WriteSafety();
             return 0;
         }
 
-        WriteField("Report", DisplayPath(report.ReportPath));
-        WriteField("Markdown", DisplayPath(report.MarkdownPath));
-        WriteField("Status", report.Status);
-        WriteField("Status Label", report.StatusLabel);
-        WriteField("Step Type", report.StepType);
-        WriteField("Step Status", report.StepStatus);
-        WriteField("Step Result", report.StepResult);
-        WriteField("Selected Job", report.SelectedJobId ?? "-");
-        WriteField("Selected Mutation Type", report.SelectedJobMutationType ?? "-");
-        WriteField("Next Planned Step", report.NextPlannedStep);
+        var dashboardStatus = report.Status == "waiting_for_window" ? "wartet" : report.StepStatus is "idle_no_safe_action" ? "wartet" : "arbeitet";
+        WriteField("Status", dashboardStatus);
+        WriteField("Letzter Schritt", report.LastAutonomousAction);
+        WriteField("Nächster Schritt", report.NextScheduledStep);
+        WriteField("Ergebnis", report.StepResult);
         WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
-        WriteField("Safety Eligible", report.SafetyEligible.ToString().ToLowerInvariant());
-        WriteField("In Work Window", report.InWorkWindow.ToString().ToLowerInvariant());
-        WriteField("In Learning Window", report.InLearningWindow.ToString().ToLowerInvariant());
-        WriteField("Offene OOS-Pläne", openOosPlans.ToString());
-        WriteField("Offene Forward-Pläne", openForwardPlans.ToString());
-        WriteField("Letzter Forward-Observation-Status", lastForwardObservationStatus);
-        WriteField("Nächster Schritt", openForwardPlans > 0 ? forwardSyncReport?.NextSafeStep ?? "Forward-Beobachtung im erlaubten Zeitfenster" : report.NextPlannedStep);
-        WriteField("Operator Summary", report.OperatorSummary);
-        WriteMessages("Warnings", report.Warnings);
         WriteSafety();
         return 0;
     }
