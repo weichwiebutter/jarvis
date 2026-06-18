@@ -42,3 +42,11 @@ Run the forbidden reference guard before reviewing any later implementation work
 ```bash
 bash scripts/check_ctrader_paper_bot_forbidden_refs.sh
 ```
+
+## Preflight
+
+Run the manual preflight before any later cTrader paper bot change:
+
+```bash
+bash scripts/preflight_ctrader_paper_bot.sh
+```
