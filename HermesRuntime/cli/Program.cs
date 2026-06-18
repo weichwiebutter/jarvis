@@ -116,6 +116,9 @@ internal sealed class HermesCli
             "strategy-backtest-job-planner" => ShowStrategyBacktestJobPlanner(),
             "strategy-backtest-executor" => ShowStrategyBacktestExecutor(),
             "mutation-validation-executor" => ShowMutationValidationExecutor(),
+            "autonomous-research-loop-step" => ShowAutonomousResearchLoopStep(),
+            "autonomous-research-loop-status" => ShowAutonomousResearchLoopStatus(),
+            "mutation-attribution-analysis" => ShowMutationAttributionAnalysis(),
             "strategy-backtest-quality-audit" => ShowStrategyBacktestQualityAudit(),
             "strategy-backtest-evidence-gate" => ShowStrategyBacktestEvidenceGate(),
             "strategy-backtest-signal-density-analyzer" => ShowStrategyBacktestSignalDensityAnalyzer(),
@@ -405,6 +408,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-backtest-job-planner Strategy Backtest Job Planner anzeigen");
         Console.WriteLine("  hermes strategy-backtest-executor Strategy Backtest Executor anzeigen");
         Console.WriteLine("  hermes mutation-validation-executor Mutation Validation Executor anzeigen");
+        Console.WriteLine("  hermes autonomous-research-loop-step einen autonomen Research-Schritt ausfuehren");
+        Console.WriteLine("  hermes autonomous-research-loop-status autonomen Research-Loop Status anzeigen");
+        Console.WriteLine("  hermes mutation-attribution-analysis Mutation Attribution Analysis anzeigen");
         Console.WriteLine("  hermes strategy-backtest-quality-audit Strategy Backtest Quality Audit anzeigen");
         Console.WriteLine("  hermes strategy-backtest-evidence-gate Strategy Backtest Evidence Gate anzeigen");
         Console.WriteLine("  hermes strategy-backtest-signal-density-analyzer Strategy Backtest Signal Density Analyzer anzeigen");
@@ -6693,6 +6699,115 @@ internal sealed class HermesCli
             WriteMessages("Warnings", item.Warnings);
         }
         Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutonomousResearchLoopStep()
+    {
+        WriteHeader("Hermes Autonomous Research Loop Step");
+
+        var service = new AutonomousResearchLoopOrchestratorService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Status Label", report.StatusLabel);
+        WriteField("In Work Window", report.InWorkWindow.ToString().ToLowerInvariant());
+        WriteField("In Learning Window", report.InLearningWindow.ToString().ToLowerInvariant());
+        WriteField("Evidence Auto Loop", report.EvidenceAutoLoopEnabled.ToString().ToLowerInvariant());
+        WriteField("Research Loop", report.ResearchLoopEnabled.ToString().ToLowerInvariant());
+        WriteField("Safety Eligible", report.SafetyEligible.ToString().ToLowerInvariant());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Step Type", report.StepType);
+        WriteField("Step Status", report.StepStatus);
+        WriteField("Step Result", report.StepResult);
+        WriteField("Selected Job", report.SelectedJobId ?? "-");
+        WriteField("Selected Mutation Type", report.SelectedJobMutationType ?? "-");
+        WriteField("Why Selected", report.WhySelected);
+        WriteField("Next Planned Step", report.NextPlannedStep);
+        WriteField("Operator Summary", report.OperatorSummary);
+        WriteField("Safety", report.SafetyStatus);
+        WriteMessages("Warnings", report.Warnings);
+        if (report.MutationExecution is not null)
+        {
+            WriteSubHeader("Mutation Execution");
+            WriteField("Report Role", report.MutationExecution.ReportRole);
+            WriteField("Selected Job", report.MutationExecution.SelectedJob?.ValidationJobId ?? "-");
+            WriteField("Execution Supported", report.MutationExecution.Execution?.ExecutionSupported.ToString().ToLowerInvariant() ?? "-");
+            WriteField("Status", report.MutationExecution.Execution?.Status ?? "-");
+            WriteField("Quality Class", report.MutationExecution.Execution?.QualityClass ?? "-");
+            WriteField("Certification Ready", report.MutationExecution.Execution?.CertificationReady.ToString().ToLowerInvariant() ?? "-");
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutonomousResearchLoopStatus()
+    {
+        WriteHeader("Hermes Autonomous Research Loop Status");
+
+        var service = new AutonomousResearchLoopOrchestratorService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Load();
+        if (report is null)
+        {
+            WriteField("Status", "keine gespeicherte Ausführung");
+            WriteField("Hinweis", "autonomous-research-loop-step noch nicht ausgeführt.");
+            WriteSafety();
+            return 0;
+        }
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Status Label", report.StatusLabel);
+        WriteField("Step Type", report.StepType);
+        WriteField("Step Status", report.StepStatus);
+        WriteField("Step Result", report.StepResult);
+        WriteField("Selected Job", report.SelectedJobId ?? "-");
+        WriteField("Selected Mutation Type", report.SelectedJobMutationType ?? "-");
+        WriteField("Next Planned Step", report.NextPlannedStep);
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Safety Eligible", report.SafetyEligible.ToString().ToLowerInvariant());
+        WriteField("In Work Window", report.InWorkWindow.ToString().ToLowerInvariant());
+        WriteField("In Learning Window", report.InLearningWindow.ToString().ToLowerInvariant());
+        WriteField("Operator Summary", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowMutationAttributionAnalysis()
+    {
+        WriteHeader("Hermes Mutation Attribution Analysis");
+
+        var service = new MutationAttributionAnalysisService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Result Class", report.ResultClass);
+        WriteField("Cause", report.Cause);
+        WriteField("Learning Hypothesis", report.LearningHypothesis);
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Baseline Pattern", report.BaselineStrategyPattern);
+        WriteField("Baseline Asset", report.BaselineAsset);
+        WriteField("Baseline Timeframe", report.BaselineTimeframe);
+        WriteField("Baseline Mutation Type", report.BaselineMutationType);
+        WriteField("Baseline PF", report.BaselineProfitFactor.ToString("0.####"));
+        WriteField("Mutation PF", report.MutationProfitFactor.ToString("0.####"));
+        WriteField("Baseline Expectancy", report.BaselineExpectancy.ToString("0.####"));
+        WriteField("Mutation Expectancy", report.MutationExpectancy.ToString("0.####"));
+        WriteField("Baseline Win Rate", report.BaselineWinRate.ToString("0.####"));
+        WriteField("Mutation Win Rate", report.MutationWinRate.ToString("0.####"));
+        WriteField("Baseline DD", report.BaselineMaxDrawdown.ToString("0.####"));
+        WriteField("Mutation DD", report.MutationMaxDrawdown.ToString("0.####"));
+        WriteField("Operator Summary", report.OperatorSummary);
+        WriteMessages("Signals", report.SupportingSignals);
+        WriteMessages("Warnings", report.Warnings);
         WriteSafety();
         return 0;
     }
