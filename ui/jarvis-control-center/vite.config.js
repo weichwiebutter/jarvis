@@ -112,6 +112,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/strategy-backtest-failure-learning'),
     path: 'read-only bridge:/reports/strategy-backtest-failure-learning',
   },
+  mutationValidationExecution: {
+    label: 'Mutation Validation Execution',
+    url: bridgeUrl('/reports/mutation-validation-executor'),
+    path: 'read-only bridge:/reports/mutation-validation-executor',
+  },
   failureGuidedMutationPlanner: {
     label: 'Failure Guided Mutation Planner',
     url: bridgeUrl('/reports/failure-guided-mutation-planner'),

@@ -115,6 +115,7 @@ internal sealed class HermesCli
             "strategy-validation-readiness-analyzer" => ShowStrategyValidationReadinessAnalyzer(),
             "strategy-backtest-job-planner" => ShowStrategyBacktestJobPlanner(),
             "strategy-backtest-executor" => ShowStrategyBacktestExecutor(),
+            "mutation-validation-executor" => ShowMutationValidationExecutor(),
             "strategy-backtest-quality-audit" => ShowStrategyBacktestQualityAudit(),
             "strategy-backtest-evidence-gate" => ShowStrategyBacktestEvidenceGate(),
             "strategy-backtest-signal-density-analyzer" => ShowStrategyBacktestSignalDensityAnalyzer(),
@@ -403,6 +404,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-validation-readiness-analyzer Strategy Validation Readiness analysieren");
         Console.WriteLine("  hermes strategy-backtest-job-planner Strategy Backtest Job Planner anzeigen");
         Console.WriteLine("  hermes strategy-backtest-executor Strategy Backtest Executor anzeigen");
+        Console.WriteLine("  hermes mutation-validation-executor Mutation Validation Executor anzeigen");
         Console.WriteLine("  hermes strategy-backtest-quality-audit Strategy Backtest Quality Audit anzeigen");
         Console.WriteLine("  hermes strategy-backtest-evidence-gate Strategy Backtest Evidence Gate anzeigen");
         Console.WriteLine("  hermes strategy-backtest-signal-density-analyzer Strategy Backtest Signal Density Analyzer anzeigen");
@@ -6576,6 +6578,83 @@ internal sealed class HermesCli
                 WriteField("R Multiple Avg", report.Execution.RMultipleAvg?.ToString("0.####") ?? "-");
             }
             WriteMessages("Warnings", report.Execution.Warnings);
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowMutationValidationExecutor()
+    {
+        WriteHeader("Hermes Mutation Validation Executor");
+        var targetJobId = ReadOption(_args, "--job");
+        var maxRuns = ReadIntOption(_args, "--max-runs", fallback: 0, min: 0, max: 1000);
+        var service = new MutationValidationExecutorService(
+            BuildStoragePaths(),
+            _runtimeRoot,
+            string.IsNullOrWhiteSpace(targetJobId) ? null : targetJobId,
+            maxRuns > 0 ? maxRuns : null);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Report Role", report.ReportRole);
+        WriteField("Selected Job Filter", string.IsNullOrWhiteSpace(targetJobId) ? "-" : targetJobId);
+        WriteField("Max Runs Override", maxRuns > 0 ? maxRuns.ToString() : "-");
+        WriteField("Queue", DisplayPath(report.QueuePath));
+        WriteField("Result Path", report.ResultPath == "-" ? "-" : DisplayPath(report.ResultPath));
+        WriteField("History Path", DisplayPath(report.HistoryPath));
+        WriteField("Queue Items", report.JobsLoaded.ToString());
+        WriteField("Ready Jobs", report.ReadyJobsFound.ToString());
+        WriteField("Attempted", report.JobsAttempted.ToString());
+        WriteField("Executed", report.JobsExecuted.ToString());
+        WriteField("Skipped", report.JobsSkipped.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Latest Success", report.LatestSuccessAvailable ? "ja" : "nein");
+        WriteField("Latest Success Path", DisplayPath(report.LatestSuccessPath));
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Status", report.StatusDistribution);
+        if (report.SelectedJob is not null)
+        {
+            WriteSubHeader("Selected Job");
+            WriteField(report.SelectedJob.ValidationJobId, $"{report.SelectedJob.StrategyPattern} · {report.SelectedJob.Asset} {report.SelectedJob.Timeframe} · mutation={report.SelectedJob.MutationType} · status={report.SelectedJob.ReadinessStatus}");
+            WriteField("Priority", report.SelectedJob.Priority);
+            WriteField("Dataset", $"{report.SelectedJob.RequiredDataset}");
+        }
+        if (report.Execution is not null)
+        {
+            WriteSubHeader("Execution");
+            WriteField("Execution Id", report.Execution.ExecutionId);
+            WriteField("Execution Supported", report.Execution.ExecutionSupported.ToString().ToLowerInvariant());
+            WriteField("Status", report.Execution.Status);
+            WriteField("Quality Class", report.Execution.QualityClass);
+            WriteField("Certification Ready", report.Execution.CertificationReady.ToString().ToLowerInvariant());
+            if (report.Execution.TradesSimulated is not null)
+            {
+                WriteField("Trades Simulated", report.Execution.TradesSimulated.Value.ToString());
+                WriteField("Win Rate", report.Execution.WinRate?.ToString("0.####") ?? "-");
+                WriteField("Profit Factor", report.Execution.ProfitFactor?.ToString("0.####") ?? "-");
+                WriteField("Max Drawdown", report.Execution.MaxDrawdown?.ToString("0.####") ?? "-");
+                WriteField("Expectancy", report.Execution.Expectancy?.ToString("0.####") ?? "-");
+                WriteField("R Multiple Avg", report.Execution.RMultipleAvg?.ToString("0.####") ?? "-");
+            }
+            WriteMessages("Warnings", report.Execution.Warnings);
+            WriteMessages("Errors", report.Execution.Errors);
+        }
+        if (report.Comparison is not null)
+        {
+            WriteSubHeader("Comparison");
+            WriteField("Outcome", report.Comparison.Outcome);
+            WriteField("Baseline Job", report.Comparison.BaselineBacktestJobId);
+            WriteField("Baseline PF", report.Comparison.BaselineProfitFactor.ToString("0.####"));
+            WriteField("Mutation PF", report.Comparison.MutationProfitFactor.ToString("0.####"));
+            WriteField("Baseline Expectancy", report.Comparison.BaselineExpectancy.ToString("0.####"));
+            WriteField("Mutation Expectancy", report.Comparison.MutationExpectancy.ToString("0.####"));
+            WriteField("Baseline Drawdown", report.Comparison.BaselineMaxDrawdown.ToString("0.####"));
+            WriteField("Mutation Drawdown", report.Comparison.MutationMaxDrawdown.ToString("0.####"));
+            WriteField("Baseline Win Rate", report.Comparison.BaselineWinRate.ToString("0.####"));
+            WriteField("Mutation Win Rate", report.Comparison.MutationWinRate.ToString("0.####"));
         }
         Console.WriteLine();
         WriteSafety();

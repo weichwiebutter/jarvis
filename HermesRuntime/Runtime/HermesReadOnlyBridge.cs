@@ -43,6 +43,7 @@ public sealed class HermesReadOnlyBridge
         new("strategyBacktestEvidenceGate", "Strategy Backtest Evidence Gate", "/reports/strategy-backtest-evidence-gate", "reports/strategy_backtest_quality/strategy_backtest_evidence_gate.json"),
         new("strategyBacktestSignalDensityAnalyzer", "Strategy Backtest Signal Density Analyzer", "/reports/strategy-backtest-signal-density-analyzer", "reports/strategy_backtest_density/strategy_backtest_signal_density_analyzer.json"),
         new("strategyBacktestFailureLearning", "Strategy Backtest Failure Learning", "/reports/strategy-backtest-failure-learning", "reports/strategy_backtest_failure_learning/strategy_backtest_failure_learning.json"),
+        new("mutationValidationExecution", "Mutation Validation Execution", "/reports/mutation-validation-executor", "reports/mutation_validation_execution/mutation_validation_execution.json"),
         new("failureGuidedMutationPlanner", "Failure Guided Mutation Planner", "/reports/failure-guided-mutation-planner", "reports/failure_guided_mutation_planner/failure_guided_mutation_planner.json"),
         new("mutationCandidateQueue", "Mutation Candidate Queue", "/reports/mutation-candidate-queue", "reports/mutation_candidate_queue/mutation_candidate_queue.json"),
         new("strategyDatasetGateAudit", "Strategy Dataset Gate Audit", "/reports/strategy-dataset-gate-audit", "reports/strategy_dataset_gate/strategy_dataset_gate_audit.json"),
