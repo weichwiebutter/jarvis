@@ -34,6 +34,8 @@ internal sealed class HermesCli
             "write-master-status" => WriteMasterStatus(),
             "master-status" => ShowMasterStatus(),
             "runtime-health-summary" => ShowRuntimeHealthSummary(),
+            "runtime-health-history" => ShowRuntimeHealthHistory(),
+            "runtime-stability-audit" => ShowRuntimeStabilityAudit(),
             "health" => ShowHealth(),
             "setup-watch" => ShowSetupWatch(),
             "events" => ShowEvents(),
@@ -337,6 +339,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes write-master-status Master Status Snapshot schreiben");
         Console.WriteLine("  hermes master-status      kompakten Gesamtstatus aus bestehenden Reports anzeigen");
         Console.WriteLine("  hermes runtime-health-summary kompakten Betreiberstatus anzeigen");
+        Console.WriteLine("  hermes runtime-health-history Betriebs-Historie schreiben und anzeigen");
+        Console.WriteLine("  hermes runtime-stability-audit Stabilitaets-Audit anzeigen");
         Console.WriteLine("  hermes health             RuntimeHealth anzeigen");
         Console.WriteLine("  hermes setup-watch        Setup-Watch-Kandidaten anzeigen");
         Console.WriteLine("  hermes events recent      letzte Runtime-Events anzeigen");
@@ -697,6 +701,44 @@ internal sealed class HermesCli
         WriteField("Operator Summary", report.OperatorSummary);
         WriteSafety();
         return report.MainStatus.Equals("fehler", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+    }
+
+    private int ShowRuntimeHealthHistory()
+    {
+        WriteHeader("Hermes Runtime Health History");
+        var service = new RuntimeHealthHistoryService(BuildStoragePaths(), _runtimeRoot);
+        var entry = service.AppendFromSummary();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Timestamp", entry.TimestampUtc.ToString("O"));
+        WriteField("Hauptstatus", entry.MainStatus);
+        WriteField("Letzter Schritt", entry.LastStep);
+        WriteField("Nächster Schritt", entry.NextStep);
+        WriteField("Letztes Ergebnis", entry.LastResult);
+        WriteField("Frank nötig", entry.FrankRequired ? "ja" : "nein");
+        WriteField("Offene Reviews", entry.OpenReviews.ToString());
+        WriteField("Offene OOS-Pläne", entry.OpenOosPlans.ToString());
+        WriteField("Offene Forward-Pläne", entry.OpenForwardPlans.ToString());
+        WriteField("Safety Status", entry.SafetyStatus);
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowRuntimeStabilityAudit()
+    {
+        WriteHeader("Hermes Runtime Stability Audit");
+        var service = new RuntimeStabilityAuditService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Operator Summary", report.OperatorSummary);
+        WriteField("24h", $"{report.Last24Hours.ArbeitetPercent:0.##}% / {report.Last24Hours.WartetPercent:0.##}% / {report.Last24Hours.FrankNoetigPercent:0.##}% / {report.Last24Hours.FehlerPercent:0.##}%");
+        WriteField("7d", $"{report.Last7Days.ArbeitetPercent:0.##}% / {report.Last7Days.WartetPercent:0.##}% / {report.Last7Days.FrankNoetigPercent:0.##}% / {report.Last7Days.FehlerPercent:0.##}%");
+        WriteField("Frank-Eskalationen", report.Last7Days.FrankEscalations.ToString());
+        WriteField("Fehler", report.Last7Days.FehlerPercent.ToString("0.##") + "%");
+        WriteSafety();
+        return 0;
     }
 
     private bool IsMasterStatusSnapshotFresh(string snapshotPath)

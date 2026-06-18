@@ -22,6 +22,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/master-status'),
     path: 'read-only bridge:/reports/master-status',
   },
+  runtimeHealthSummary: {
+    label: 'Runtime Health Summary',
+    url: bridgeUrl('/reports/runtime-health-summary'),
+    path: 'read-only bridge:/reports/runtime-health-summary',
+  },
   humanReviewQueue: {
     label: 'Prüfwarteschlange',
     url: bridgeUrl('/reports/human-review-queue'),

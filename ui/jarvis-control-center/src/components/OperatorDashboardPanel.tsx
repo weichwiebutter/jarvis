@@ -118,6 +118,20 @@ function goalLabel(goalId) {
     .replace(/_/g, ' ');
 }
 
+function compactStatusTone(status) {
+  const value = String(status || '').toLowerCase();
+  if (value === 'fehler') {
+    return 'danger';
+  }
+  if (value === 'frank_noetig') {
+    return 'warn';
+  }
+  if (value === 'wartet') {
+    return 'warn';
+  }
+  return 'good';
+}
+
 function goalProgressPercent(progress) {
   return `${Math.round(Number(progress || 0) * 100)}%`;
 }
@@ -569,6 +583,7 @@ export function OperatorDashboardPanel() {
     ...operatorState.storage.errors,
   ].filter(Boolean);
   const bridgeLive = operatorState.dataSource === DATA_SOURCE.LIVE_FILE;
+  const runtimeHealthSummary = reportByKey(operatorState, 'runtimeHealthSummary')?.raw || {};
 
   return (
     <Panel
@@ -590,47 +605,41 @@ export function OperatorDashboardPanel() {
       title="Befehlszentrale"
     >
       <OperatorCard
-        badge={operatorState.masterStatus.overall_status}
-        title="Hermes-Gesamtstatus"
-        tone={statusTone(operatorState.masterStatus.overall_status)}
+        badge={runtimeHealthSummary.main_status || 'wartet'}
+        title="Hermes-Hauptstatus"
+        tone={compactStatusTone(runtimeHealthSummary.main_status)}
       >
         <div className="operator-safety-flags">
+          <StatusPill tone={compactStatusTone(runtimeHealthSummary.main_status)}>
+            {String(runtimeHealthSummary.main_status || 'wartet').replace(/_/g, ' ')}
+          </StatusPill>
           <StatusPill tone={sourceTone(operatorState.masterStatusSource)}>
             {operatorState.masterStatusSource === DATA_SOURCE.LIVE_FILE
               ? 'Live-Snapshot aktiv'
               : sourceModeLabel(operatorState.masterStatusSource)}
           </StatusPill>
-          {operatorState.masterStatusWarning ? (
-            <StatusPill tone="warn">Demo-/Snapshot-Daten aktiv</StatusPill>
-          ) : null}
         </div>
         <div className="operator-master-grid">
-          <MiniMetric label="Fokus" value={operatorState.masterStatus.current_focus} tone="info" />
-          <MiniMetric label="Aktive Domänen" value={operatorState.masterStatus.active_domains.join(', ') || '-'} tone="info" />
-          <MiniMetric label="Geplante Aufgaben" value={formatNumber(operatorState.masterStatus.queued_tasks)} tone={operatorState.masterStatus.queued_tasks ? 'warn' : 'good'} />
-          <MiniMetric label="Letzter Nightly" value={shortDateTime(operatorState.masterStatus.last_nightly_run)} />
-          <MiniMetric label="Autonomer Loop" value={shortDateTime(operatorState.masterStatus.last_autonomous_loop)} />
-          <MiniMetric label="Meta Review" value={shortDateTime(operatorState.masterStatus.last_meta_review)} />
-          <MiniMetric label="Lernphase" value={operatorState.masterStatus.learning_strategy} />
-          <MiniMetric label="Aufsicht" value={operatorState.masterStatus.supervisor_running ? 'läuft' : 'gestoppt'} tone={operatorState.masterStatus.supervisor_running ? 'good' : 'warn'} />
-          <MiniMetric label="Planer-Jobs" value={formatNumber(operatorState.masterStatus.scheduler_enabled)} />
-          <MiniMetric label="Ressourcenaktion" value={operatorState.masterStatus.resource_action} tone={statusTone(operatorState.masterStatus.resource_action)} />
-          <MiniMetric label="Speicherbereinigung" value={formatNumber(operatorState.masterStatus.storage_cleanup)} tone={operatorState.masterStatus.storage_cleanup ? 'warn' : 'good'} />
-          <MiniMetric label="Robuste Strategien" value={formatNumber(operatorState.masterStatus.robust_strategies)} tone={operatorState.masterStatus.robust_strategies ? 'good' : 'warn'} />
-          <MiniMetric label="Demo-Bot-Kandidaten" value={formatNumber(operatorState.masterStatus.demo_bot_candidates)} tone={operatorState.masterStatus.demo_bot_candidates ? 'good' : 'warn'} />
-          <MiniMetric label="no_auto_trading" value={String(operatorState.masterStatus.no_auto_trading)} tone={operatorState.masterStatus.no_auto_trading ? 'good' : 'danger'} />
-          <MiniMetric label="human_review_required" value={String(operatorState.masterStatus.human_review_required)} tone={operatorState.masterStatus.human_review_required ? 'good' : 'danger'} />
-          <MiniMetric label="broker_orders_enabled" value={String(operatorState.masterStatus.broker_orders_enabled)} tone={operatorState.masterStatus.broker_orders_enabled ? 'danger' : 'good'} />
-          <MiniMetric label="live_trading_enabled" value={String(operatorState.masterStatus.live_trading_enabled)} tone={operatorState.masterStatus.live_trading_enabled ? 'danger' : 'good'} />
+          <MiniMetric label="Letzter Schritt" value={runtimeHealthSummary.last_step || '-'} tone="info" />
+          <MiniMetric label="Nächster Schritt" value={runtimeHealthSummary.next_step || '-'} tone="info" />
+          <MiniMetric label="Ergebnis" value={runtimeHealthSummary.last_result || '-'} tone={statusTone(runtimeHealthSummary.last_result)} />
+          <MiniMetric label="Frank nötig" value={runtimeHealthSummary.frank_required ? 'ja' : 'nein'} tone={runtimeHealthSummary.frank_required ? 'warn' : 'good'} />
+          <MiniMetric label="Offene Reviews" value={formatNumber(runtimeHealthSummary.open_reviews)} tone={runtimeHealthSummary.open_reviews ? 'warn' : 'good'} />
+          <MiniMetric label="Offene OOS-Pläne" value={formatNumber(runtimeHealthSummary.open_oos_plans)} tone={runtimeHealthSummary.open_oos_plans ? 'warn' : 'good'} />
+          <MiniMetric label="Offene Forward-Pläne" value={formatNumber(runtimeHealthSummary.open_forward_plans)} tone={runtimeHealthSummary.open_forward_plans ? 'warn' : 'good'} />
+          <MiniMetric label="Letzte Warnung" value={runtimeHealthSummary.last_warning || '-'} tone={runtimeHealthSummary.last_warning ? 'warn' : 'good'} />
         </div>
-        <div className="operator-token-list">
-          {operatorState.masterStatus.top_blockers.slice(0, 6).map((blocker) => (
-            <span key={blocker}>{blocker}</span>
-          ))}
-        </div>
-        <GoalSystemCard masterStatus={operatorState.masterStatus} />
-        <KnowledgeHealthCard masterStatus={operatorState.masterStatus} />
-        <ScalpingProgressCard masterStatus={operatorState.masterStatus} />
+        <details className="operator-details-collapsible">
+          <summary>Technische Details</summary>
+          <div className="operator-token-list">
+            {operatorState.masterStatus.top_blockers.slice(0, 6).map((blocker) => (
+              <span key={blocker}>{blocker}</span>
+            ))}
+          </div>
+          <GoalSystemCard masterStatus={operatorState.masterStatus} />
+          <KnowledgeHealthCard masterStatus={operatorState.masterStatus} />
+          <ScalpingProgressCard masterStatus={operatorState.masterStatus} />
+        </details>
       </OperatorCard>
 
       <TradingIntelligenceCard reports={operatorState.reports} />

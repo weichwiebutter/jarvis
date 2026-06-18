@@ -98,6 +98,7 @@ public sealed class RuntimeHealthSummaryService
             MarkdownPath: MarkdownPath);
 
         WriteArtifacts(report);
+        AppendHistory(report);
         return report;
     }
 
@@ -190,6 +191,25 @@ public sealed class RuntimeHealthSummaryService
         File.WriteAllText(MarkdownPath, BuildMarkdown(report));
         _resolvedReportPath = ReportPath;
         _resolvedMarkdownPath = MarkdownPath;
+    }
+
+    private void AppendHistory(RuntimeHealthSummaryReport report)
+    {
+        var historyRoot = Path.Combine(_storagePaths.Root, "reports", "runtime_health_history");
+        Directory.CreateDirectory(historyRoot);
+        var path = Path.Combine(historyRoot, "runtime_health_history.jsonl");
+        var entry = new RuntimeHealthHistoryEntry(
+            TimestampUtc: report.UpdatedAtUtc,
+            MainStatus: report.MainStatus,
+            LastStep: report.LastStep,
+            NextStep: report.NextStep,
+            LastResult: report.LastResult,
+            FrankRequired: report.FrankRequired,
+            OpenReviews: report.OpenReviews,
+            OpenOosPlans: report.OpenOosPlans,
+            OpenForwardPlans: report.OpenForwardPlans,
+            SafetyStatus: report.SafetyStatus);
+        File.AppendAllText(path, JsonSerializer.Serialize(entry, JsonDefaults.WriteOptions) + Environment.NewLine);
     }
 
     private MasterStatusSnapshot? LoadMasterStatusSnapshot()
