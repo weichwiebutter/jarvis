@@ -116,6 +116,7 @@ internal sealed class HermesCli
             "strategy-backtest-job-planner" => ShowStrategyBacktestJobPlanner(),
             "strategy-backtest-executor" => ShowStrategyBacktestExecutor(),
             "mutation-validation-executor" => ShowMutationValidationExecutor(),
+            "autonomous-oos-planning" => ShowAutonomousOosPlanning(),
             "autonomous-research-loop-step" => ShowAutonomousResearchLoopStep(),
             "autonomous-research-loop-status" => ShowAutonomousResearchLoopStatus(),
             "mutation-attribution-analysis" => ShowMutationAttributionAnalysis(),
@@ -409,6 +410,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-backtest-job-planner Strategy Backtest Job Planner anzeigen");
         Console.WriteLine("  hermes strategy-backtest-executor Strategy Backtest Executor anzeigen");
         Console.WriteLine("  hermes mutation-validation-executor Mutation Validation Executor anzeigen");
+        Console.WriteLine("  hermes autonomous-oos-planning OOS-Validierungsplaene aus Hypothesen erzeugen");
         Console.WriteLine("  hermes autonomous-research-loop-step einen autonomen Research-Schritt ausfuehren");
         Console.WriteLine("  hermes autonomous-research-loop-status autonomen Research-Loop Status anzeigen");
         Console.WriteLine("  hermes mutation-attribution-analysis Mutation Attribution Analysis anzeigen");
@@ -6754,10 +6756,12 @@ internal sealed class HermesCli
 
         var service = new AutonomousResearchLoopOrchestratorService(BuildStoragePaths(), _runtimeRoot);
         var report = service.Load();
+        var oosPlanReport = new AutonomousOosPlanningService(BuildStoragePaths()).Load();
         if (report is null)
         {
             WriteField("Status", "keine gespeicherte Ausführung");
             WriteField("Hinweis", "autonomous-research-loop-step noch nicht ausgeführt.");
+            WriteField("Offene OOS-Pläne", (oosPlanReport?.Plans.Count ?? 0).ToString());
             WriteSafety();
             return 0;
         }
@@ -6776,7 +6780,30 @@ internal sealed class HermesCli
         WriteField("Safety Eligible", report.SafetyEligible.ToString().ToLowerInvariant());
         WriteField("In Work Window", report.InWorkWindow.ToString().ToLowerInvariant());
         WriteField("In Learning Window", report.InLearningWindow.ToString().ToLowerInvariant());
+        WriteField("Offene OOS-Pläne", (oosPlanReport?.Plans.Count ?? 0).ToString());
         WriteField("Operator Summary", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutonomousOosPlanning()
+    {
+        WriteHeader("Hermes Autonomous OOS Planning");
+
+        var service = new AutonomousOosPlanningService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Hypotheses Read", report.HypothesesRead.ToString());
+        WriteField("Plans Generated", report.PlansGenerated.ToString());
+        WriteField("Ready To Execute", report.ReadyToExecuteCount.ToString());
+        WriteField("Waiting For Data", report.WaitingForDataCount.ToString());
+        WriteField("Waiting For Specification", report.WaitingForSpecificationCount.ToString());
+        WriteField("Blocked", report.BlockedCount.ToString());
+        WriteField("Operator Summary", report.OperatorSummary);
+        WriteField("Next Safe Step", report.NextSafeStep);
         WriteMessages("Warnings", report.Warnings);
         WriteSafety();
         return 0;

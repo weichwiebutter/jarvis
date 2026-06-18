@@ -44,6 +44,7 @@ public sealed class HermesReadOnlyBridge
         new("strategyBacktestSignalDensityAnalyzer", "Strategy Backtest Signal Density Analyzer", "/reports/strategy-backtest-signal-density-analyzer", "reports/strategy_backtest_density/strategy_backtest_signal_density_analyzer.json"),
         new("strategyBacktestFailureLearning", "Strategy Backtest Failure Learning", "/reports/strategy-backtest-failure-learning", "reports/strategy_backtest_failure_learning/strategy_backtest_failure_learning.json"),
         new("mutationValidationExecution", "Mutation Validation Execution", "/reports/mutation-validation-executor", "reports/mutation_validation_execution/mutation_validation_execution.json"),
+        new("autonomousOosPlanning", "Autonomous OOS Planning", "/reports/autonomous-oos-planning", "reports/autonomous_oos_planning/autonomous_oos_planning.json"),
         new("mutationAttributionAnalysis", "Mutation Attribution Analysis", "/reports/mutation-attribution-analysis", "reports/mutation_attribution_analysis/mutation_attribution_analysis.json"),
         new("attributionHypothesisFeedback", "Attribution Hypothesis Feedback", "/reports/attribution-hypothesis-feedback", "reports/attribution_hypothesis_feedback/attribution_hypothesis_feedback.json"),
         new("autonomousResearchLoop", "Autonomous Research Loop", "/reports/autonomous-research-loop", "reports/autonomous_research_loop/autonomous_research_loop.json"),
