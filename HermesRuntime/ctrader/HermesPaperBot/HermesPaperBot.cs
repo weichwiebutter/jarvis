@@ -9,7 +9,7 @@ namespace HermesPaperBot;
 /// no order API
 /// no_auto_trading=true
 /// human_review_required=true
-/// broker_orders_enabled=false
+/// broker_trading_enabled=false
 /// live_trading_enabled=false
 /// order_api_enabled=false
 /// paper_mode=true
