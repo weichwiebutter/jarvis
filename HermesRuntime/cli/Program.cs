@@ -117,6 +117,7 @@ internal sealed class HermesCli
             "strategy-backtest-executor" => ShowStrategyBacktestExecutor(),
             "mutation-validation-executor" => ShowMutationValidationExecutor(),
             "autonomous-oos-planning" => ShowAutonomousOosPlanning(),
+            "autonomous-oos-execution-gate" => ShowAutonomousOosExecutionGate(),
             "autonomous-research-loop-step" => ShowAutonomousResearchLoopStep(),
             "autonomous-research-loop-status" => ShowAutonomousResearchLoopStatus(),
             "mutation-attribution-analysis" => ShowMutationAttributionAnalysis(),
@@ -411,6 +412,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-backtest-executor Strategy Backtest Executor anzeigen");
         Console.WriteLine("  hermes mutation-validation-executor Mutation Validation Executor anzeigen");
         Console.WriteLine("  hermes autonomous-oos-planning OOS-Validierungsplaene aus Hypothesen erzeugen");
+        Console.WriteLine("  hermes autonomous-oos-execution-gate genau einen OOS-Plan sicher ausfuehren");
         Console.WriteLine("  hermes autonomous-research-loop-step einen autonomen Research-Schritt ausfuehren");
         Console.WriteLine("  hermes autonomous-research-loop-status autonomen Research-Loop Status anzeigen");
         Console.WriteLine("  hermes mutation-attribution-analysis Mutation Attribution Analysis anzeigen");
@@ -6804,6 +6806,31 @@ internal sealed class HermesCli
         WriteField("Blocked", report.BlockedCount.ToString());
         WriteField("Operator Summary", report.OperatorSummary);
         WriteField("Next Safe Step", report.NextSafeStep);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutonomousOosExecutionGate()
+    {
+        WriteHeader("Hermes Autonomous OOS Execution Gate");
+
+        var service = new AutonomousOosExecutionGateService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Window Status", report.WindowStatus);
+        WriteField("Gate Status", report.GateStatus);
+        WriteField("Plans Seen", report.PlansSeen.ToString());
+        WriteField("Plans Ready", report.PlansReady.ToString());
+        WriteField("Plans Waiting", report.PlansWaiting.ToString());
+        WriteField("Plans Blocked", report.PlansBlocked.ToString());
+        WriteField("Selected OOS Job", report.SelectedPlan?.OosJobId ?? "-");
+        WriteField("Result", report.Result?.Outcome ?? "waiting");
+        WriteField("Next Planned Step", report.NextSafeStep);
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator Summary", report.OperatorSummary);
         WriteMessages("Warnings", report.Warnings);
         WriteSafety();
         return 0;
