@@ -120,6 +120,7 @@ internal sealed class HermesCli
             "autonomous-oos-execution-gate" => ShowAutonomousOosExecutionGate(),
             "autonomous-forward-validation-planning" => ShowAutonomousForwardValidationPlanning(),
             "autonomous-forward-observation-gate" => ShowAutonomousForwardObservationGate(),
+            "autonomous-forward-observation-sync" => ShowAutonomousForwardObservationSync(),
             "autonomous-research-loop-step" => ShowAutonomousResearchLoopStep(),
             "autonomous-research-loop-status" => ShowAutonomousResearchLoopStatus(),
             "mutation-attribution-analysis" => ShowMutationAttributionAnalysis(),
@@ -417,6 +418,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes autonomous-oos-execution-gate genau einen OOS-Plan sicher ausfuehren");
         Console.WriteLine("  hermes autonomous-forward-validation-planning Forward-Validierungsplaene erzeugen");
         Console.WriteLine("  hermes autonomous-forward-observation-gate Forward-Beobachtung read-only ausfuehren");
+        Console.WriteLine("  hermes autonomous-forward-observation-sync Forward-Observation Status synchronisieren");
         Console.WriteLine("  hermes autonomous-research-loop-step einen autonomen Research-Schritt ausfuehren");
         Console.WriteLine("  hermes autonomous-research-loop-status autonomen Research-Loop Status anzeigen");
         Console.WriteLine("  hermes mutation-attribution-analysis Mutation Attribution Analysis anzeigen");
@@ -6764,10 +6766,9 @@ internal sealed class HermesCli
         var report = service.Load();
         var oosPlanReport = new AutonomousOosPlanningService(BuildStoragePaths()).Load();
         var openOosPlans = oosPlanReport?.Plans.Count(plan => !plan.Status.StartsWith("completed_", StringComparison.OrdinalIgnoreCase)) ?? 0;
-        var forwardPlanReport = new AutonomousForwardValidationPlanningService(BuildStoragePaths(), _runtimeRoot).Load();
-        var openForwardPlans = forwardPlanReport?.Plans.Count(plan => !plan.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)) ?? 0;
-        var forwardObservationReport = new AutonomousForwardObservationGateService(BuildStoragePaths(), _runtimeRoot).Load();
-        var lastForwardObservationStatus = forwardObservationReport?.GateStatus ?? "-";
+        var forwardSyncReport = new AutonomousForwardObservationCompletionSyncService(BuildStoragePaths(), _runtimeRoot).Load();
+        var openForwardPlans = forwardSyncReport?.OpenPlans ?? 0;
+        var lastForwardObservationStatus = forwardSyncReport?.Items.FirstOrDefault()?.ObservationStatus ?? "-";
         if (report is null)
         {
             WriteField("Status", "keine gespeicherte Ausführung");
@@ -6775,7 +6776,7 @@ internal sealed class HermesCli
             WriteField("Offene OOS-Pläne", openOosPlans.ToString());
             WriteField("Offene Forward-Pläne", openForwardPlans.ToString());
             WriteField("Letzter Forward-Observation-Status", lastForwardObservationStatus);
-            WriteField("Nächster Schritt", openForwardPlans > 0 ? "Forward-Beobachtung im erlaubten Zeitfenster" : "Research-Loop warten");
+            WriteField("Nächster Schritt", openForwardPlans > 0 ? forwardSyncReport?.NextSafeStep ?? "Forward-Beobachtung im erlaubten Zeitfenster" : "Research-Loop warten");
             WriteSafety();
             return 0;
         }
@@ -6797,7 +6798,7 @@ internal sealed class HermesCli
         WriteField("Offene OOS-Pläne", openOosPlans.ToString());
         WriteField("Offene Forward-Pläne", openForwardPlans.ToString());
         WriteField("Letzter Forward-Observation-Status", lastForwardObservationStatus);
-        WriteField("Nächster Schritt", openForwardPlans > 0 ? "Forward-Beobachtung im erlaubten Zeitfenster" : report.NextPlannedStep);
+        WriteField("Nächster Schritt", openForwardPlans > 0 ? forwardSyncReport?.NextSafeStep ?? "Forward-Beobachtung im erlaubten Zeitfenster" : report.NextPlannedStep);
         WriteField("Operator Summary", report.OperatorSummary);
         WriteMessages("Warnings", report.Warnings);
         WriteSafety();
@@ -6893,6 +6894,26 @@ internal sealed class HermesCli
         WriteField("Next Safe Step", report.NextSafeStep);
         WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
         WriteField("Operator Summary", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutonomousForwardObservationSync()
+    {
+        WriteHeader("Hermes Autonomous Forward Observation Sync");
+
+        var service = new AutonomousForwardObservationCompletionSyncService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Plans Read", report.PlansRead.ToString());
+        WriteField("Open Plans", report.OpenPlans.ToString());
+        WriteField("Completed Plans", report.CompletedPlans.ToString());
+        WriteField("Blocked Plans", report.BlockedPlans.ToString());
+        WriteField("Operator Summary", report.OperatorSummary);
+        WriteField("Next Safe Step", report.NextSafeStep);
         WriteMessages("Warnings", report.Warnings);
         WriteSafety();
         return 0;
