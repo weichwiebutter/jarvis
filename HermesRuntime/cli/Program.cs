@@ -110,6 +110,7 @@ internal sealed class HermesCli
             "knowledge-health-root-cause" => ShowKnowledgeHealthRootCause(),
             "knowledge-confidence-engine" => ShowKnowledgeConfidenceEngine(),
             "confidence-review-prioritization" => ShowConfidenceReviewPrioritization(),
+            "domain-aware-review-prioritization" => ShowDomainAwareReviewPrioritization(),
             "promotion-status" => ShowPromotionStatus(),
             "knowledge-consolidation-analyzer" => ShowKnowledgeConsolidationAnalyzer(),
             "knowledge-consolidation-executor" => ShowKnowledgeConsolidationExecutor(),
@@ -415,6 +416,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-health-root-cause Knowledge Trust Root Cause Analyse anzeigen");
         Console.WriteLine("  hermes knowledge-confidence-engine Knowledge Confidence Score anzeigen");
         Console.WriteLine("  hermes confidence-review-prioritization Confidence-basierte Review Priorisierung anzeigen");
+        Console.WriteLine("  hermes domain-aware-review-prioritization Domain-aware Review Priorisierung anzeigen");
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-analyzer Knowledge Consolidation Analyzer anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-executor Knowledge Consolidation Kandidaten erzeugen");
@@ -7573,6 +7575,44 @@ internal sealed class HermesCli
             WriteField("Warum jetzt", entry.WhyNow);
             WriteField("Fehlt", string.Join(" · ", entry.MissingEvidence));
             WriteField("Nächster Schritt", entry.NextStep);
+        }
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowDomainAwareReviewPrioritization()
+    {
+        WriteHeader("Hermes Domain-Aware Review Prioritization");
+        var service = new DomainAwareReviewPrioritizationService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Reviews gesamt", report.TotalReviews.ToString());
+        WriteField("Trading", report.TradingReviews.ToString());
+        WriteField("Knowledge", report.KnowledgeReviews.ToString());
+        WriteField("Runtime", report.RuntimeReviews.ToString());
+        WriteField("Dokumentation", report.DocumentationReviews.ToString());
+        WriteField("Prozess", report.ProcessReviews.ToString());
+        WriteField("Unbekannt", report.UnknownReviews.ToString());
+        WriteSubHeader("Operator Summary");
+        Console.WriteLine(report.OperatorSummary);
+        WriteSubHeader("Top Trading Decisions");
+        foreach (var group in report.TopTradingDecisions)
+        {
+            foreach (var entry in group.Reviews)
+            {
+                WriteField(entry.Title, $"{entry.ReprioritizationClass} · confidence={entry.ConfidenceScore:0.#}% · gain={entry.ConfidenceGainScore} · score={entry.ReprioritizationScore}");
+                WriteField("Nächster Evidenzschritt", entry.NextEvidenceStep);
+                WriteField("Blocker", entry.StrongestBlockers);
+            }
+        }
+        WriteSubHeader("Runtime / Documentation");
+        foreach (var entry in report.TopRuntimeReviews.SelectMany(group => group.Reviews).Concat(report.DocumentationLater.Take(3)))
+        {
+            WriteField(entry.Title, $"{entry.ClassifiedDomain} · {entry.ConfidenceClass} · note={entry.OperatorNote}");
         }
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();

@@ -2851,6 +2851,7 @@ const REVIEW_ACTIONS = {
 
 function HumanReviewCenter({ operatorState, onRefresh }) {
   const reviewPrioritization = reportByKey(operatorState, 'reviewPrioritizationAudit')?.raw || {};
+  const domainAware = reportByKey(operatorState, 'domainAwareReviewPrioritization')?.raw || {};
   const evidenceAutoLoop = reportByKey(operatorState, 'evidenceAutoLoop')?.raw || {};
   const review = operatorState.humanReview || {
     pending_reviews: 0,
@@ -2876,6 +2877,17 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
   const assistantMoreEvidence = assistantEntries.filter((entry) => entry.recommendationKey === 'more_evidence').length;
   const assistantReject = assistantEntries.filter((entry) => entry.recommendationKey === 'reject').length;
   const topDecisionCards = assistantEntries.slice(0, 3);
+  const topTradingDecisions = Array.isArray(domainAware.top_trading_decisions || domainAware.topTradingDecisions)
+    ? (domainAware.top_trading_decisions || domainAware.topTradingDecisions).flatMap((group) => group.reviews || group.Reviews || [])
+    : [];
+  const runtimeDocumentationReviews = [
+    ...(Array.isArray(domainAware.top_runtime_reviews || domainAware.topRuntimeReviews)
+      ? (domainAware.top_runtime_reviews || domainAware.topRuntimeReviews).flatMap((group) => group.reviews || group.Reviews || [])
+      : []),
+    ...(Array.isArray(domainAware.documentation_later || domainAware.documentationLater)
+      ? (domainAware.documentation_later || domainAware.documentationLater)
+      : []),
+  ];
   const visibleItems = openReviews > 0
     ? items.filter((item) => item.status === 'pending' && !resolvedReviewIds.includes(item.review_id))
       .sort((left, right) => {
@@ -3057,7 +3069,9 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
         <StatusPill tone="good">research_only=true</StatusPill>
       </div>
       <div className="review-grid">
-        {topDecisionCards.map(({ item, ...assistant }) => {
+        {(topTradingDecisions.length ? topTradingDecisions : topDecisionCards).slice(0, 3).map((entry) => {
+          const assistant = entry.item ? { ...entry, ...reviewDecisionAssistant(entry.item) } : entry;
+          const item = entry.item || { title: entry.title || entry.Title, domain: entry.domain || entry.Domain, priority: entry.priority || entry.Priority, trust_before: entry.trust_before || entry.TrustBefore, review_id: entry.review_id || entry.ReviewId };
           const trafficLight = assistant;
           const risk = reviewRisk(item);
           const evidenceQuality = reviewEvidenceQuality(item);
@@ -3070,11 +3084,11 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
               : 'more';
 
           return (
-          <article className={`review-card review-operator-card ${assistant.tone === 'good' ? 'is-green' : assistant.tone === 'danger' ? 'is-red' : 'is-yellow'}`} key={item.review_id}>
+          <article className={`review-card review-operator-card ${assistant.tone === 'good' ? 'is-green' : assistant.tone === 'danger' ? 'is-red' : 'is-yellow'}`} key={item.review_id || entry.reviewId || assistant.reviewId || assistant.ReviewId || assistant.title}>
             <div className="review-card-head">
               <div>
-                <span>{domainLabel(item.domain)}</span>
-                <h3>{item.title}</h3>
+                <span>{assistant.classifiedDomain || domainLabel(item.domain)}</span>
+                <h3>{assistant.title || item.title || assistant.Title}</h3>
               </div>
               <div className="review-traffic-light" aria-label={trafficLight.label}>
                 <i />
@@ -3083,23 +3097,23 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
             </div>
 
             <div className="review-card-metrics">
-              <Metric label="Score" value={String(Math.round(Number(assistant.reviewActionScore || 0)))} tone={assistant.reviewActionBand === 'A' ? 'danger' : assistant.reviewActionBand === 'B' ? 'warn' : 'info'} />
-              <Metric label="Klasse" value={assistant.recommendationClass} tone={assistant.recommendationClass === 'Fast bereit' ? 'good' : assistant.recommendationClass === 'Unsicher' ? 'warn' : 'danger'} />
-              <Metric label="Band" value={assistant.reviewActionBand || 'C'} tone={assistant.reviewActionBand === 'A' ? 'danger' : assistant.reviewActionBand === 'B' ? 'warn' : 'info'} />
+              <Metric label="Score" value={String(Math.round(Number(assistant.reprioritizationScore || assistant.reviewActionScore || 0)))} tone={(assistant.reprioritizationClass || assistant.reviewActionBand) === 'A' ? 'danger' : (assistant.reprioritizationClass || assistant.reviewActionBand) === 'B' ? 'warn' : 'info'} />
+              <Metric label="Klasse" value={assistant.reprioritizationClass || assistant.recommendationClass || assistant.confidenceClass || 'C'} tone={(assistant.reprioritizationClass || assistant.recommendationClass) === 'A' ? 'good' : (assistant.reprioritizationClass || assistant.recommendationClass) === 'B' ? 'warn' : 'info'} />
+              <Metric label="Band" value={assistant.confidenceGainScore || assistant.reviewActionBand || 'C'} tone={(assistant.confidenceGainClass || assistant.reviewActionBand) === 'A' ? 'danger' : (assistant.confidenceGainClass || assistant.reviewActionBand) === 'B' ? 'warn' : 'info'} />
             </div>
 
             <div className="review-card-metrics">
-              <Metric label="Vertrauen" value={scorePercent(item.trust_before)} tone={item.trust_before >= 0.65 ? 'good' : 'warn'} />
-              <Metric label="Evidenzqualität" value={scorePercent(evidenceQuality)} tone={evidenceQuality >= 0.66 ? 'good' : evidenceQuality >= 0.45 ? 'warn' : 'danger'} />
-              <Metric label="Risiko" value={risk.label} tone={risk.tone} />
-              <Metric label="Priorität" value={statusDeutsch(item.priority)} tone={priorityTone(item.priority)} />
+              <Metric label="Vertrauen" value={scorePercent(item.trust_before || item.TrustBefore)} tone={(item.trust_before || item.TrustBefore) >= 0.65 ? 'good' : 'warn'} />
+              <Metric label="Confidence" value={`${assistant.confidenceScore ?? assistant.ConfidenceScore ?? '-'}%`} tone="info" />
+              <Metric label="Nächster Schritt" value={assistant.nextEvidenceStep || assistant.next_step || assistant.NextStep || '-'} tone="info" />
+              <Metric label="Domäne" value={assistant.classifiedDomain || assistant.ClassifiedDomain || domainLabel(item.domain || item.Domain)} tone={assistant.classifiedDomain === 'trading' ? 'warn' : 'info'} />
             </div>
 
             <div className="review-cleartext">
-              <p><strong>Empfehlung:</strong> {assistant.recommendation}</p>
-              <p><strong>Warum jetzt?</strong> {assistant.whyNow}</p>
-              <p><strong>Fehlt:</strong> {assistant.missingEvidence.join(' · ')}</p>
-              <p><strong>Nächster Schritt:</strong> {assistant.nextStep}</p>
+              <p><strong>Empfehlung:</strong> {assistant.recommendation || assistant.operatorNote || 'Separat eingeordnet'}</p>
+              <p><strong>Warum jetzt?</strong> {assistant.whyNow || assistant.operatorNote || 'Trading-Entscheidung bleibt getrennt.'}</p>
+              <p><strong>Fehlt:</strong> {Array.isArray(assistant.missingEvidence) ? assistant.missingEvidence.join(' · ') : assistant.strongestBlockers || '—'}</p>
+              <p><strong>Nächster Schritt:</strong> {assistant.nextStep || assistant.nextEvidenceStep || 'Separat prüfen'}</p>
             </div>
 
             {feedback ? (
@@ -3149,6 +3163,19 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
           </article>
           );
         })}
+
+        {runtimeDocumentationReviews.length ? (
+          <article className="review-card">
+            <h3>Runtime / Dokumentation</h3>
+            <p>Separat eingeordnet, verdrängt keine Trading-Entscheidung.</p>
+            {runtimeDocumentationReviews.slice(0, 3).map((entry) => (
+              <div key={entry.review_id || entry.reviewId || entry.title} className="review-card-metrics">
+                <Metric label={entry.title || entry.Title} value={entry.classifiedDomain || entry.ClassifiedDomain || 'separat'} tone="info" />
+                <Metric label="Confidence" value={`${entry.confidenceScore ?? entry.ConfidenceScore ?? '-'}%`} tone="info" />
+              </div>
+            ))}
+          </article>
+        ) : null}
 
         {visibleItems.length === 0 ? (
           <article className="review-card">
