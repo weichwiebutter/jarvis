@@ -80,3 +80,13 @@ The paper runtime can be checked with an in-memory harness in `ctrader/HermesPap
 - no orders
 - only orchestrator safety and validation
 - intended for temporary scratch compilation and JSON/text output
+
+## Runtime Logging V1
+
+Local runtime logs are written as JSONL/JSON only.
+
+- append-only JSONL for step logs and kill-switch events
+- JSON summary for the current runtime state
+- local filesystem only
+- no broker action
+- no cTrader API

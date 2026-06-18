@@ -22,7 +22,7 @@ public sealed class PaperRuntimeOrchestrator
             var killSwitch = new KillSwitch().Evaluate(config, configValidation);
             reasons.Add(killSwitch.Reason);
 
-            return new RuntimeStepResult
+            var earlyResult = new RuntimeStepResult
             {
                 Success = false,
                 State = killSwitch.Active ? "blocked_by_config" : "config_invalid",
@@ -40,6 +40,8 @@ public sealed class PaperRuntimeOrchestrator
                 BrokerAction = "none",
                 Reasons = reasons.ToArray(),
             };
+
+            return FinalizeResult(config, earlyResult);
         }
 
         var importResult = new ReleaseBundleImporter().Import(config.ReleaseBundleInboxPath);
@@ -92,7 +94,7 @@ public sealed class PaperRuntimeOrchestrator
 
         reasons.Add(paperDecision.Reason);
 
-        return new RuntimeStepResult
+        var runtimeResult = new RuntimeStepResult
         {
             Success = !killSwitchActive && importResult.Success && checksumValid && bundleValid && safetyAllowed && driftAllowed,
             State = state,
@@ -109,6 +111,65 @@ public sealed class PaperRuntimeOrchestrator
             PaperDecision = paperDecision.Decision,
             BrokerAction = "none",
             Reasons = reasons.ToArray(),
+        };
+
+        return FinalizeResult(config, runtimeResult);
+    }
+
+    private static RuntimeStepResult FinalizeResult(BotConfiguration config, RuntimeStepResult runtimeResult)
+    {
+        var logsPath = config.LocalRuntimeLogsPathOverride ?? config.LocalRuntimeLogsPath;
+        var logger = new PaperLogger();
+        var summaryWriter = new RuntimeSummaryWriter();
+        var loggingOk = logger.Write(logsPath, runtimeResult);
+        var summaryOk = summaryWriter.Write(logsPath, runtimeResult, config);
+
+        if (!loggingOk || !summaryOk)
+        {
+            var loggingReasons = new List<string>(runtimeResult.Reasons)
+            {
+                "logging_failed",
+            };
+
+            return new RuntimeStepResult
+            {
+                Success = runtimeResult.Success,
+                State = runtimeResult.State,
+                ConfigValid = runtimeResult.ConfigValid,
+                ImportAttempted = runtimeResult.ImportAttempted,
+                ImportValid = runtimeResult.ImportValid,
+                BundleValid = runtimeResult.BundleValid,
+                ChecksumValid = runtimeResult.ChecksumValid,
+                SafetyAllowed = runtimeResult.SafetyAllowed,
+                DriftAllowed = runtimeResult.DriftAllowed,
+                KillSwitchActive = runtimeResult.KillSwitchActive,
+                FallbackPossible = runtimeResult.FallbackPossible,
+                DisabledUntilValidBundle = runtimeResult.DisabledUntilValidBundle,
+                PaperDecision = runtimeResult.PaperDecision,
+                BrokerAction = "none",
+                Reasons = loggingReasons.ToArray(),
+                LoggingStatus = "logging_failed",
+            };
+        }
+
+        return new RuntimeStepResult
+        {
+            Success = runtimeResult.Success,
+            State = runtimeResult.State,
+            ConfigValid = runtimeResult.ConfigValid,
+            ImportAttempted = runtimeResult.ImportAttempted,
+            ImportValid = runtimeResult.ImportValid,
+            BundleValid = runtimeResult.BundleValid,
+            ChecksumValid = runtimeResult.ChecksumValid,
+            SafetyAllowed = runtimeResult.SafetyAllowed,
+            DriftAllowed = runtimeResult.DriftAllowed,
+            KillSwitchActive = runtimeResult.KillSwitchActive,
+            FallbackPossible = runtimeResult.FallbackPossible,
+            DisabledUntilValidBundle = runtimeResult.DisabledUntilValidBundle,
+            PaperDecision = runtimeResult.PaperDecision,
+            BrokerAction = "none",
+            Reasons = runtimeResult.Reasons,
+            LoggingStatus = "ok",
         };
     }
 }

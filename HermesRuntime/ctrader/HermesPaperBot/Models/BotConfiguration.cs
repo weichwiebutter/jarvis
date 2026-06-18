@@ -74,4 +74,9 @@ public sealed class BotConfiguration
     /// Paper mode is enabled.
     /// </summary>
     public bool PaperMode { get; init; } = true;
+
+    /// <summary>
+    /// Local runtime logs path for JSONL/JSON output.
+    /// </summary>
+    public string? LocalRuntimeLogsPathOverride { get; init; }
 }

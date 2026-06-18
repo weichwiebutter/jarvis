@@ -36,6 +36,8 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunSafetyViolationCase(tempRoot));
             results.Add(RunMissingBundleFileCase(tempRoot));
             results.Add(RunChecksumMismatchCase(tempRoot));
+            results.Add(RunValidWithLoggingCase(tempRoot));
+            results.Add(RunInvalidConfigWithKillSwitchLoggingCase(tempRoot));
 
             return JsonSerializer.Serialize(results, JsonOptions);
         }
@@ -127,6 +129,118 @@ public static class PaperRuntimeOrchestratorHarness
 
         var result = new PaperRuntimeOrchestrator().RunStep(BuildValidConfig(bundleDir));
         return BuildReport("checksum_mismatch", result, !result.ChecksumValid && !result.BundleValid && result.BrokerAction == "none");
+    }
+
+    private static object RunValidWithLoggingCase(string tempRoot)
+    {
+        var bundleDir = Path.Combine(tempRoot, "valid_logging");
+        var logsDir = Path.Combine(tempRoot, "logs_valid");
+        BuildFakeBundle(bundleDir, tamperChecksum: false, removeSchema: false);
+
+        var config = BuildValidConfig(bundleDir);
+        config = new BotConfiguration
+        {
+            ReleaseBundleInboxPath = config.ReleaseBundleInboxPath,
+            ActiveReleaseBundlePath = config.ActiveReleaseBundlePath,
+            LastValidReleaseBundlePath = config.LastValidReleaseBundlePath,
+            LocalRuntimeLogsPath = logsDir,
+            ReloadIntervalSeconds = config.ReloadIntervalSeconds,
+            ImportEnabled = config.ImportEnabled,
+            ManualKillSwitch = config.ManualKillSwitch,
+            LogVerbosity = config.LogVerbosity,
+            NoAutoTrading = config.NoAutoTrading,
+            HumanReviewRequired = config.HumanReviewRequired,
+            BrokerTradingEnabled = config.BrokerTradingEnabled,
+            LiveTradingEnabled = config.LiveTradingEnabled,
+            OrderApiEnabled = config.OrderApiEnabled,
+            PaperMode = config.PaperMode,
+        };
+
+        var result = new PaperRuntimeOrchestrator().RunStep(config);
+        var stepLogExists = File.Exists(Path.Combine(logsDir, "paper_runtime_step_log.jsonl"));
+        var summaryExists = File.Exists(Path.Combine(logsDir, "bot_runtime_summary.json"));
+        var killLogExists = File.Exists(Path.Combine(logsDir, "kill_switch_events.jsonl"));
+
+        return new
+        {
+            test_name = "valid_config_valid_bundle_with_logging",
+            passed = result.Success && result.PaperDecision == "would_wait" && !result.KillSwitchActive && stepLogExists && summaryExists && !killLogExists,
+            key_fields = new
+            {
+                result.Success,
+                result.State,
+                result.ConfigValid,
+                result.ImportAttempted,
+                result.ImportValid,
+                result.BundleValid,
+                result.ChecksumValid,
+                result.SafetyAllowed,
+                result.DriftAllowed,
+                result.KillSwitchActive,
+                result.FallbackPossible,
+                result.DisabledUntilValidBundle,
+                result.PaperDecision,
+                result.BrokerAction,
+                result.LoggingStatus,
+                step_log_exists = stepLogExists,
+                summary_exists = summaryExists,
+                kill_log_exists = killLogExists,
+            },
+        };
+    }
+
+    private static object RunInvalidConfigWithKillSwitchLoggingCase(string tempRoot)
+    {
+        var bundleDir = Path.Combine(tempRoot, "invalid_config_logging");
+        var logsDir = Path.Combine(tempRoot, "logs_invalid");
+        BuildFakeBundle(bundleDir, tamperChecksum: false, removeSchema: false);
+
+        var config = BuildValidConfig(bundleDir);
+        config = new BotConfiguration
+        {
+            ReleaseBundleInboxPath = config.ReleaseBundleInboxPath,
+            ActiveReleaseBundlePath = config.ActiveReleaseBundlePath,
+            LastValidReleaseBundlePath = config.LastValidReleaseBundlePath,
+            LocalRuntimeLogsPath = logsDir,
+            ReloadIntervalSeconds = 1,
+            ImportEnabled = config.ImportEnabled,
+            ManualKillSwitch = config.ManualKillSwitch,
+            LogVerbosity = config.LogVerbosity,
+            NoAutoTrading = config.NoAutoTrading,
+            HumanReviewRequired = config.HumanReviewRequired,
+            BrokerTradingEnabled = config.BrokerTradingEnabled,
+            LiveTradingEnabled = config.LiveTradingEnabled,
+            OrderApiEnabled = config.OrderApiEnabled,
+            PaperMode = config.PaperMode,
+        };
+
+        var result = new PaperRuntimeOrchestrator().RunStep(config);
+        var killLogExists = File.Exists(Path.Combine(logsDir, "kill_switch_events.jsonl"));
+
+        return new
+        {
+            test_name = "invalid_config_writes_kill_switch_event",
+            passed = !result.ConfigValid && result.KillSwitchActive && result.PaperDecision == "would_block_by_safety" && killLogExists,
+            key_fields = new
+            {
+                result.Success,
+                result.State,
+                result.ConfigValid,
+                result.ImportAttempted,
+                result.ImportValid,
+                result.BundleValid,
+                result.ChecksumValid,
+                result.SafetyAllowed,
+                result.DriftAllowed,
+                result.KillSwitchActive,
+                result.FallbackPossible,
+                result.DisabledUntilValidBundle,
+                result.PaperDecision,
+                result.BrokerAction,
+                result.LoggingStatus,
+                kill_log_exists = killLogExists,
+            },
+        };
     }
 
     private static object BuildReport(string testName, RuntimeStepResult result, bool passed) =>

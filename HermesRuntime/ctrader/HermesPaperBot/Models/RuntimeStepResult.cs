@@ -20,4 +20,5 @@ public sealed class RuntimeStepResult
     public string PaperDecision { get; init; } = "would_wait";
     public string BrokerAction { get; init; } = "none";
     public string[] Reasons { get; init; } = [];
+    public string? LoggingStatus { get; init; } = null;
 }
