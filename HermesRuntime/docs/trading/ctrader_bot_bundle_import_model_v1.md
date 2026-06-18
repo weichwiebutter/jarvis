@@ -188,6 +188,55 @@ Not allowed:
 - `OnTick()`-driven import
 - duplicate concurrent import attempts while validation is running
 
+## Import Flow Overview
+
+### Text Graph
+
+```text
+release_bundle_inbox/
+↓
+bundle_detected
+↓
+validating_bundle
+↓
+gültig?
+├─ ja → activating_bundle → active_bundle_ready → last_valid_release_bundle aktualisieren
+└─ nein
+   ├─ last_valid_release_bundle vorhanden? → fallback_to_last_valid
+   └─ nein → disabled_until_valid_bundle
+```
+
+### Safety Override
+
+If a safety violation is detected at any point:
+
+```text
+beliebiger Zustand → kill_switch_active
+```
+
+Safety always takes precedence over fallback behavior.
+
+## Decision Table
+
+| Situation | Ergebnis | last_valid_release_bundle | kill_switch | broker_action |
+|---|---|---|---|---|
+| gültiges neues Bundle | `active_bundle_ready` | aktualisieren | false | `none` |
+| ungültiges neues Bundle mit last_valid | `fallback_to_last_valid` | weiterverwenden | false | `none` |
+| ungültiges neues Bundle ohne last_valid | `disabled_until_valid_bundle` | nicht vorhanden | false | `none` |
+| Safety-Flag verletzt | `kill_switch_active` | unverändert | true | `none` |
+| Checksum mismatch | `bundle_invalid` / `fallback_to_last_valid` oder `disabled_until_valid_bundle` | unverändert | false | `none` |
+| Rollback gültig | `active_bundle_ready` | auf Rollback-Version setzen | false | `none` |
+| Rollback ungültig | `bundle_invalid` / `fallback_to_last_valid` oder `disabled_until_valid_bundle` | unverändert | false | `none` |
+| Bundle-Version älter ohne Rollback-Erlaubnis | `bundle_invalid` | unverändert | false | `none` |
+
+## Clarification
+
+- cTrader never activates a partially valid bundle.
+- Invalid bundles never overwrite `last_valid_release_bundle`.
+- Safety violations override fallback behavior.
+- `broker_action` always remains `none`.
+- V1 remains `paper_only`.
+
 ## Safety Invariants
 
 These values remain mandatory:
