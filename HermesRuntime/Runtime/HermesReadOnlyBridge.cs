@@ -46,6 +46,7 @@ public sealed class HermesReadOnlyBridge
         new("mutationValidationExecution", "Mutation Validation Execution", "/reports/mutation-validation-executor", "reports/mutation_validation_execution/mutation_validation_execution.json"),
         new("autonomousOosPlanning", "Autonomous OOS Planning", "/reports/autonomous-oos-planning", "reports/autonomous_oos_planning/autonomous_oos_planning.json"),
         new("autonomousOosExecutionGate", "Autonomous OOS Execution Gate", "/reports/autonomous-oos-execution-gate", "reports/autonomous_oos_execution_gate/autonomous_oos_execution_gate.json"),
+        new("autonomousForwardValidationPlanning", "Autonomous Forward Validation Planning", "/reports/autonomous-forward-validation-planning", "reports/autonomous_forward_validation_planning/autonomous_forward_validation_planning.json"),
         new("mutationAttributionAnalysis", "Mutation Attribution Analysis", "/reports/mutation-attribution-analysis", "reports/mutation_attribution_analysis/mutation_attribution_analysis.json"),
         new("attributionHypothesisFeedback", "Attribution Hypothesis Feedback", "/reports/attribution-hypothesis-feedback", "reports/attribution_hypothesis_feedback/attribution_hypothesis_feedback.json"),
         new("autonomousResearchLoop", "Autonomous Research Loop", "/reports/autonomous-research-loop", "reports/autonomous_research_loop/autonomous_research_loop.json"),
