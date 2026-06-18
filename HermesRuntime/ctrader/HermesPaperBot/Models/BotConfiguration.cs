@@ -6,6 +6,11 @@ namespace HermesPaperBot.Models;
 public sealed class BotConfiguration
 {
     /// <summary>
+    /// Runtime mode for the paper bot.
+    /// </summary>
+    public RuntimeMode RuntimeMode { get; init; } = RuntimeMode.LocalFileBundle;
+
+    /// <summary>
     /// Release bundle inbox path.
     /// </summary>
     public string ReleaseBundleInboxPath { get; init; } = string.Empty;
@@ -79,4 +84,9 @@ public sealed class BotConfiguration
     /// Local runtime logs path for JSONL/JSON output.
     /// </summary>
     public string? LocalRuntimeLogsPathOverride { get; init; }
+
+    /// <summary>
+    /// Embedded release package for cloud runtime.
+    /// </summary>
+    public CloudEmbeddedReleasePackage? CloudEmbeddedReleasePackage { get; init; }
 }

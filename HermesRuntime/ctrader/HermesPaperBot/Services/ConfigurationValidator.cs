@@ -23,25 +23,49 @@ public sealed class ConfigurationValidator
             };
         }
 
-        if (string.IsNullOrWhiteSpace(config.ReleaseBundleInboxPath) ||
-            string.IsNullOrWhiteSpace(config.ActiveReleaseBundlePath) ||
-            string.IsNullOrWhiteSpace(config.LocalRuntimeLogsPath))
+        if (config.RuntimeMode == RuntimeMode.LocalFileBundle)
+        {
+            if (string.IsNullOrWhiteSpace(config.ReleaseBundleInboxPath) ||
+                string.IsNullOrWhiteSpace(config.ActiveReleaseBundlePath) ||
+                string.IsNullOrWhiteSpace(config.LocalRuntimeLogsPath))
+            {
+                return new ValidationResult
+                {
+                    IsValid = false,
+                    Status = "invalid",
+                    Reason = "required_path_missing",
+                };
+            }
+
+            if (!config.ImportEnabled && string.IsNullOrWhiteSpace(config.LastValidReleaseBundlePath))
+            {
+                return new ValidationResult
+                {
+                    IsValid = false,
+                    Status = "blocked",
+                    Reason = "import_disabled_without_last_valid_bundle",
+                };
+            }
+        }
+        else if (config.RuntimeMode == RuntimeMode.CloudEmbeddedBundle)
+        {
+            if (config.CloudEmbeddedReleasePackage is null)
+            {
+                return new ValidationResult
+                {
+                    IsValid = false,
+                    Status = "blocked",
+                    Reason = "embedded_package_missing",
+                };
+            }
+        }
+        else
         {
             return new ValidationResult
             {
                 IsValid = false,
                 Status = "invalid",
-                Reason = "required_path_missing",
-            };
-        }
-
-        if (!config.ImportEnabled && string.IsNullOrWhiteSpace(config.LastValidReleaseBundlePath))
-        {
-            return new ValidationResult
-            {
-                IsValid = false,
-                Status = "blocked",
-                Reason = "import_disabled_without_last_valid_bundle",
+                Reason = "unknown_runtime_mode",
             };
         }
 

@@ -44,21 +44,77 @@ public sealed class PaperRuntimeOrchestrator
             return FinalizeResult(config, earlyResult);
         }
 
-        var importResult = new ReleaseBundleImporter().Import(config.ReleaseBundleInboxPath);
-        reasons.Add(importResult.Reason);
+        var importResult = default(ImportResult);
+        var embeddedValidation = default(ValidationResult);
+        var importAttempted = false;
+        var importValid = false;
 
         var checksumValid = false;
         var bundleValid = false;
         var safetyAllowed = false;
         var driftAllowed = false;
         var killSwitchActive = false;
-        var candidateManifest = importResult.Manifest;
-        var candidateProvenance = importResult.Provenance;
 
-        if (importResult.Success && candidateManifest is not null && candidateProvenance is not null)
+        ReleaseBundleManifest? candidateManifest = null;
+        ProvenanceInfo? candidateProvenance = null;
+        CloudEmbeddedReleasePackage? embeddedPackage = null;
+
+        if (config.RuntimeMode == RuntimeMode.CloudEmbeddedBundle)
         {
-            checksumValid = new ChecksumValidator().Validate(importResult.BundleFiles.BundleRootPath, importResult.ChecksumEntries).IsValid;
-            bundleValid = new ReleaseBundleValidator().Validate(candidateManifest, candidateProvenance, importResult.ChecksumEntries).IsValid;
+            embeddedPackage = config.CloudEmbeddedReleasePackage;
+            embeddedValidation = new ReleaseBundleValidator().Validate(embeddedPackage);
+            importValid = embeddedValidation.IsValid;
+            reasons.Add(embeddedValidation.Reason);
+            candidateManifest = embeddedPackage is null
+                ? null
+                : new ReleaseBundleManifest
+                {
+                    BotReleaseId = embeddedPackage.BotReleaseId,
+                    BotVersion = embeddedPackage.BotVersion,
+                    StrategyPackageVersion = embeddedPackage.StrategyPackageVersion,
+                    SchemaVersion = embeddedPackage.SchemaVersion,
+                    ReleaseMode = embeddedPackage.ReleaseMode,
+                    SafetyFlags = embeddedPackage.SafetyFlags,
+                    ForbiddenCapabilities = embeddedPackage.ForbiddenCapabilities,
+                };
+            candidateProvenance = embeddedPackage is null
+                ? null
+                : new ProvenanceInfo
+                {
+                    ProvenanceId = "embedded",
+                    GeneratedAt = "embedded",
+                    SourceSystem = "HermesRuntime",
+                    PaperMode = true,
+                    BotReleaseId = embeddedPackage.BotReleaseId,
+                    BotVersion = embeddedPackage.BotVersion,
+                    StrategyPackageVersion = embeddedPackage.StrategyPackageVersion,
+                    SchemaVersion = embeddedPackage.SchemaVersion,
+                };
+        }
+        else
+        {
+            importAttempted = true;
+            importResult = new ReleaseBundleImporter().Import(config.ReleaseBundleInboxPath);
+            reasons.Add(importResult.Reason);
+            importValid = importResult.Success;
+            candidateManifest = importResult.Manifest;
+            candidateProvenance = importResult.Provenance;
+        }
+
+        if ((config.RuntimeMode == RuntimeMode.CloudEmbeddedBundle && importValid && candidateManifest is not null) ||
+            (config.RuntimeMode == RuntimeMode.LocalFileBundle && importResult is not null && importResult.Success && candidateManifest is not null && candidateProvenance is not null))
+        {
+            if (config.RuntimeMode == RuntimeMode.LocalFileBundle && importResult is not null)
+            {
+                checksumValid = new ChecksumValidator().Validate(importResult.BundleFiles.BundleRootPath, importResult.ChecksumEntries).IsValid;
+                bundleValid = new ReleaseBundleValidator().Validate(candidateManifest, candidateProvenance, importResult.ChecksumEntries).IsValid;
+            }
+            else if (config.RuntimeMode == RuntimeMode.CloudEmbeddedBundle && embeddedPackage is not null)
+            {
+                checksumValid = string.IsNullOrWhiteSpace(embeddedPackage.EmbeddedChecksum) || embeddedPackage.EmbeddedChecksum.Length == 64;
+                bundleValid = embeddedValidation?.IsValid == true;
+            }
+
             safetyAllowed = new SafetyGate().Verify(config, candidateManifest).Passed;
             driftAllowed = new DriftGuard().Check(candidateManifest).Passed;
 
@@ -76,19 +132,26 @@ public sealed class PaperRuntimeOrchestrator
         else
         {
             killSwitchActive = true;
-            reasons.Add(importResult.DisabledUntilValidBundle ? "disabled_until_valid_bundle" : "fallback_possible");
+            if (config.RuntimeMode == RuntimeMode.LocalFileBundle && importResult is not null)
+            {
+                reasons.Add(importResult.DisabledUntilValidBundle ? "disabled_until_valid_bundle" : "fallback_possible");
+            }
+            else
+            {
+                reasons.Add("embedded_package_invalid");
+            }
         }
 
         var state = killSwitchActive
             ? "blocked_by_safety"
-            : (importResult.Success ? "bundle_valid" : "bundle_invalid");
+            : (config.RuntimeMode == RuntimeMode.CloudEmbeddedBundle ? (importValid ? "bundle_valid" : "bundle_invalid") : (importResult is not null && importResult.Success ? "bundle_valid" : "bundle_invalid"));
 
         var paperDecision = new PaperDecisionEngine().Evaluate(
             new BotState
             {
                 Status = state,
                 KillSwitchActive = killSwitchActive,
-                LastBundleValid = importResult.Success,
+                LastBundleValid = config.RuntimeMode == RuntimeMode.CloudEmbeddedBundle ? importValid : (importResult is not null && importResult.Success),
             },
             new RuntimeMarketContext());
 
@@ -96,18 +159,18 @@ public sealed class PaperRuntimeOrchestrator
 
         var runtimeResult = new RuntimeStepResult
         {
-            Success = !killSwitchActive && importResult.Success && checksumValid && bundleValid && safetyAllowed && driftAllowed,
+            Success = !killSwitchActive && importValid && checksumValid && bundleValid && safetyAllowed && driftAllowed,
             State = state,
             ConfigValid = true,
-            ImportAttempted = true,
-            ImportValid = importResult.Success,
+            ImportAttempted = importAttempted,
+            ImportValid = importValid,
             BundleValid = bundleValid,
             ChecksumValid = checksumValid,
             SafetyAllowed = safetyAllowed,
             DriftAllowed = driftAllowed,
             KillSwitchActive = killSwitchActive,
-            FallbackPossible = importResult.FallbackPossible,
-            DisabledUntilValidBundle = importResult.DisabledUntilValidBundle,
+            FallbackPossible = config.RuntimeMode == RuntimeMode.LocalFileBundle && importResult is not null && importResult.FallbackPossible,
+            DisabledUntilValidBundle = config.RuntimeMode == RuntimeMode.LocalFileBundle && importResult is not null && importResult.DisabledUntilValidBundle,
             PaperDecision = paperDecision.Decision,
             BrokerAction = "none",
             Reasons = reasons.ToArray(),

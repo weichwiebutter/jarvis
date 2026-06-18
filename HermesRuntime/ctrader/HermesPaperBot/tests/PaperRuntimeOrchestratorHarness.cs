@@ -38,6 +38,9 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunChecksumMismatchCase(tempRoot));
             results.Add(RunValidWithLoggingCase(tempRoot));
             results.Add(RunInvalidConfigWithKillSwitchLoggingCase(tempRoot));
+            results.Add(RunCloudEmbeddedValidPackageCase(tempRoot));
+            results.Add(RunCloudEmbeddedMissingPackageCase(tempRoot));
+            results.Add(RunCloudEmbeddedSafetyViolationCase(tempRoot));
 
             return JsonSerializer.Serialize(results, JsonOptions);
         }
@@ -243,6 +246,116 @@ public static class PaperRuntimeOrchestratorHarness
         };
     }
 
+    private static object RunCloudEmbeddedValidPackageCase(string tempRoot)
+    {
+        var logsDir = Path.Combine(tempRoot, "cloud_logs_valid");
+        var config = BuildCloudConfig(logsDir, BuildCloudPackage(valid: true));
+        var result = new PaperRuntimeOrchestrator().RunStep(config);
+        return new
+        {
+            test_name = "cloud_embedded_valid_package",
+            passed = result.Success && result.PaperDecision == "would_wait" && result.BrokerAction == "none" && !result.KillSwitchActive,
+            key_fields = new
+            {
+                result.Success,
+                result.State,
+                result.ConfigValid,
+                result.ImportAttempted,
+                result.ImportValid,
+                result.BundleValid,
+                result.ChecksumValid,
+                result.SafetyAllowed,
+                result.DriftAllowed,
+                result.KillSwitchActive,
+                result.FallbackPossible,
+                result.DisabledUntilValidBundle,
+                result.PaperDecision,
+                result.BrokerAction,
+                result.LoggingStatus,
+            },
+        };
+    }
+
+    private static object RunCloudEmbeddedMissingPackageCase(string tempRoot)
+    {
+        var logsDir = Path.Combine(tempRoot, "cloud_logs_missing");
+        var config = BuildCloudConfig(logsDir, null);
+        var result = new PaperRuntimeOrchestrator().RunStep(config);
+        return new
+        {
+            test_name = "cloud_embedded_missing_package",
+            passed = !result.ConfigValid && result.KillSwitchActive && result.BrokerAction == "none",
+            key_fields = new
+            {
+                result.Success,
+                result.State,
+                result.ConfigValid,
+                result.ImportAttempted,
+                result.ImportValid,
+                result.BundleValid,
+                result.ChecksumValid,
+                result.SafetyAllowed,
+                result.DriftAllowed,
+                result.KillSwitchActive,
+                result.FallbackPossible,
+                result.DisabledUntilValidBundle,
+                result.PaperDecision,
+                result.BrokerAction,
+                result.LoggingStatus,
+            },
+        };
+    }
+
+    private static object RunCloudEmbeddedSafetyViolationCase(string tempRoot)
+    {
+        var logsDir = Path.Combine(tempRoot, "cloud_logs_safety");
+        var config = BuildCloudConfig(logsDir, BuildCloudPackage(valid: true));
+        config = new BotConfiguration
+        {
+            RuntimeMode = RuntimeMode.CloudEmbeddedBundle,
+            ReleaseBundleInboxPath = config.ReleaseBundleInboxPath,
+            ActiveReleaseBundlePath = config.ActiveReleaseBundlePath,
+            LastValidReleaseBundlePath = config.LastValidReleaseBundlePath,
+            LocalRuntimeLogsPath = config.LocalRuntimeLogsPath,
+            ReloadIntervalSeconds = config.ReloadIntervalSeconds,
+            ImportEnabled = config.ImportEnabled,
+            ManualKillSwitch = config.ManualKillSwitch,
+            LogVerbosity = config.LogVerbosity,
+            NoAutoTrading = config.NoAutoTrading,
+            HumanReviewRequired = config.HumanReviewRequired,
+            BrokerTradingEnabled = config.BrokerTradingEnabled,
+            LiveTradingEnabled = config.LiveTradingEnabled,
+            OrderApiEnabled = config.OrderApiEnabled,
+            PaperMode = false,
+            CloudEmbeddedReleasePackage = config.CloudEmbeddedReleasePackage,
+        };
+
+        var result = new PaperRuntimeOrchestrator().RunStep(config);
+        return new
+        {
+            test_name = "cloud_embedded_safety_violation",
+            passed = !result.SafetyAllowed && result.KillSwitchActive && result.BrokerAction == "none",
+            key_fields = new
+            {
+                result.Success,
+                result.State,
+                result.ConfigValid,
+                result.ImportAttempted,
+                result.ImportValid,
+                result.BundleValid,
+                result.ChecksumValid,
+                result.SafetyAllowed,
+                result.DriftAllowed,
+                result.KillSwitchActive,
+                result.FallbackPossible,
+                result.DisabledUntilValidBundle,
+                result.PaperDecision,
+                result.BrokerAction,
+                result.LoggingStatus,
+            },
+        };
+    }
+
     private static object BuildReport(string testName, RuntimeStepResult result, bool passed) =>
         new
         {
@@ -270,6 +383,7 @@ public static class PaperRuntimeOrchestratorHarness
     private static BotConfiguration BuildValidConfig(string bundleDir) =>
         new()
         {
+            RuntimeMode = RuntimeMode.LocalFileBundle,
             ReleaseBundleInboxPath = bundleDir,
             ActiveReleaseBundlePath = Path.Combine(bundleDir, "active"),
             LastValidReleaseBundlePath = Path.Combine(bundleDir, "last_valid"),
@@ -285,6 +399,64 @@ public static class PaperRuntimeOrchestratorHarness
             OrderApiEnabled = false,
             PaperMode = true,
         };
+
+    private static BotConfiguration BuildCloudConfig(string logsDir, CloudEmbeddedReleasePackage? package) =>
+        new()
+        {
+            RuntimeMode = RuntimeMode.CloudEmbeddedBundle,
+            ReleaseBundleInboxPath = string.Empty,
+            ActiveReleaseBundlePath = string.Empty,
+            LastValidReleaseBundlePath = string.Empty,
+            LocalRuntimeLogsPath = logsDir,
+            ReloadIntervalSeconds = 30,
+            ImportEnabled = false,
+            ManualKillSwitch = false,
+            LogVerbosity = LogVerbosity.Normal,
+            NoAutoTrading = true,
+            HumanReviewRequired = true,
+            BrokerTradingEnabled = false,
+            LiveTradingEnabled = false,
+            OrderApiEnabled = false,
+            PaperMode = true,
+            CloudEmbeddedReleasePackage = package,
+        };
+
+    private static CloudEmbeddedReleasePackage BuildCloudPackage(bool valid)
+    {
+        var package = new CloudEmbeddedReleasePackage
+        {
+            BotReleaseId = "cloud-release-001",
+            BotVersion = "0.1.0-paper",
+            StrategyPackageVersion = "1.0.0",
+            SchemaVersion = "1.0.0",
+            ReleaseMode = ReleaseMode.PaperOnly,
+            SafetyFlags = new SafetyFlags
+            {
+                NoAutoTrading = true,
+                HumanReviewRequired = true,
+                BrokerTradingEnabled = false,
+                LiveTradingEnabled = false,
+                OrderApiEnabled = false,
+                PaperMode = true,
+                BrokerAction = "none",
+            },
+            ForbiddenCapabilities = new ForbiddenCapabilities
+            {
+                MarketOrderExecutionForbidden = true,
+                LimitOrderPlacementForbidden = true,
+                StopOrderPlacementForbidden = true,
+                PositionModificationForbidden = true,
+                PositionClosingForbidden = true,
+                PendingOrderCancellationForbidden = true,
+                ExternalNetworkAccessForbidden = true,
+            },
+            EmbeddedManifestJson = "{\"paper_mode\":true}",
+            EmbeddedStrategyJson = "{\"strategy\":\"paper\"}",
+            EmbeddedChecksum = new string('a', 64),
+        };
+
+        return valid ? package : null;
+    }
 
     private static void BuildFakeBundle(string bundleDir, bool tamperChecksum, bool removeSchema)
     {

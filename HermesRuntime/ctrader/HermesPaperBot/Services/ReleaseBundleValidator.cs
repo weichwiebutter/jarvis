@@ -149,4 +149,92 @@ public sealed class ReleaseBundleValidator
             Reason = "ok",
         };
     }
+
+    /// <summary>
+    /// Validates an embedded cloud package.
+    /// </summary>
+    public ValidationResult Validate(CloudEmbeddedReleasePackage package)
+    {
+        if (package is null)
+        {
+            return new ValidationResult
+            {
+                IsValid = false,
+                Status = "invalid",
+                Reason = "embedded_package_missing",
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(package.BotReleaseId) ||
+            string.IsNullOrWhiteSpace(package.BotVersion) ||
+            string.IsNullOrWhiteSpace(package.StrategyPackageVersion) ||
+            string.IsNullOrWhiteSpace(package.SchemaVersion))
+        {
+            return new ValidationResult
+            {
+                IsValid = false,
+                Status = "invalid",
+                Reason = "embedded_identity_missing",
+            };
+        }
+
+        if (package.ReleaseMode != ReleaseMode.PaperOnly)
+        {
+            return new ValidationResult
+            {
+                IsValid = false,
+                Status = "blocked",
+                Reason = "rejected_release_mode",
+            };
+        }
+
+        if (package.SafetyFlags is null || package.ForbiddenCapabilities is null)
+        {
+            return new ValidationResult
+            {
+                IsValid = false,
+                Status = "invalid",
+                Reason = "embedded_policy_sections_missing",
+            };
+        }
+
+        if (!package.SafetyFlags.NoAutoTrading ||
+            !package.SafetyFlags.HumanReviewRequired ||
+            package.SafetyFlags.BrokerTradingEnabled ||
+            package.SafetyFlags.LiveTradingEnabled ||
+            package.SafetyFlags.OrderApiEnabled ||
+            !package.SafetyFlags.PaperMode ||
+            !string.Equals(package.SafetyFlags.BrokerAction, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ValidationResult
+            {
+                IsValid = false,
+                Status = "blocked",
+                Reason = "embedded_safety_flags_invalid",
+            };
+        }
+
+        if (!package.ForbiddenCapabilities.MarketOrderExecutionForbidden ||
+            !package.ForbiddenCapabilities.LimitOrderPlacementForbidden ||
+            !package.ForbiddenCapabilities.StopOrderPlacementForbidden ||
+            !package.ForbiddenCapabilities.PositionModificationForbidden ||
+            !package.ForbiddenCapabilities.PositionClosingForbidden ||
+            !package.ForbiddenCapabilities.PendingOrderCancellationForbidden ||
+            !package.ForbiddenCapabilities.ExternalNetworkAccessForbidden)
+        {
+            return new ValidationResult
+            {
+                IsValid = false,
+                Status = "blocked",
+                Reason = "embedded_forbidden_capabilities_incomplete",
+            };
+        }
+
+        return new ValidationResult
+        {
+            IsValid = true,
+            Status = "valid",
+            Reason = "ok",
+        };
+    }
 }

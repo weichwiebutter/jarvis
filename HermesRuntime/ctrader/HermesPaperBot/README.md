@@ -90,3 +90,17 @@ Local runtime logs are written as JSONL/JSON only.
 - local filesystem only
 - no broker action
 - no cTrader API
+
+## Cloud Runtime V1
+
+The preferred long-term execution model is cTrader Cloud with an embedded release package.
+
+- cloud runtime can run independently of the developer PC
+- embedded package avoids dependence on local bundle files
+- local file bundles remain useful for development and VPS-style runs
+- HermesRuntime stays the release authority
+- no orders
+- no cTrader Order API
+- `broker_action=none` remains mandatory
+
+Cloud mode uses `RuntimeMode=cloud_embedded_bundle` and an embedded release package snapshot instead of a local bundle inbox.
