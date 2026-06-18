@@ -111,6 +111,7 @@ internal sealed class HermesCli
             "knowledge-confidence-engine" => ShowKnowledgeConfidenceEngine(),
             "confidence-review-prioritization" => ShowConfidenceReviewPrioritization(),
             "domain-aware-review-prioritization" => ShowDomainAwareReviewPrioritization(),
+            "review-action-plan" => ShowReviewActionPlan(),
             "promotion-status" => ShowPromotionStatus(),
             "knowledge-consolidation-analyzer" => ShowKnowledgeConsolidationAnalyzer(),
             "knowledge-consolidation-executor" => ShowKnowledgeConsolidationExecutor(),
@@ -417,6 +418,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-confidence-engine Knowledge Confidence Score anzeigen");
         Console.WriteLine("  hermes confidence-review-prioritization Confidence-basierte Review Priorisierung anzeigen");
         Console.WriteLine("  hermes domain-aware-review-prioritization Domain-aware Review Priorisierung anzeigen");
+        Console.WriteLine("  hermes review-action-plan Review Action Plan anzeigen");
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-analyzer Knowledge Consolidation Analyzer anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-executor Knowledge Consolidation Kandidaten erzeugen");
@@ -7613,6 +7615,35 @@ internal sealed class HermesCli
         foreach (var entry in report.TopRuntimeReviews.SelectMany(group => group.Reviews).Concat(report.DocumentationLater.Take(3)))
         {
             WriteField(entry.Title, $"{entry.ClassifiedDomain} · {entry.ConfidenceClass} · note={entry.OperatorNote}");
+        }
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowReviewActionPlan()
+    {
+        WriteHeader("Hermes Review Action Plan");
+        var service = new ReviewActionPlanService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Action Plans", report.ActionPlans.ToString());
+        WriteField("Hermes kann weiterarbeiten", report.HermesCanContinue.ToString());
+        WriteField("Frank nötig", report.FrankDecisionRequired > 0 ? "ja" : "nein");
+        WriteSubHeader("Operator Summary");
+        Console.WriteLine(report.OperatorSummary);
+        WriteSubHeader("Top Trading Action Plans");
+        foreach (var entry in report.Entries)
+        {
+            WriteField(entry.Title, $"{entry.ActionStatus} · {entry.CurrentRecommendation} · confidence={entry.ConfidenceScore:0.#}%");
+            WriteField("Fehlt", string.Join(" · ", entry.MissingEvidence));
+            WriteField("Nächster Schritt", entry.NextEvidenceStep);
+            WriteField("Hermes kann selbst weiterarbeiten", entry.CanHermesActAutonomously ? "ja" : "nein");
+            WriteField("Frank nötig", entry.FrankRequired ? "ja" : "nein");
+            WriteField("Autonomer Command", entry.AutonomousCommand);
         }
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();

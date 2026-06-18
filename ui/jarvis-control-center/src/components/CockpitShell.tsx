@@ -2852,6 +2852,7 @@ const REVIEW_ACTIONS = {
 function HumanReviewCenter({ operatorState, onRefresh }) {
   const reviewPrioritization = reportByKey(operatorState, 'reviewPrioritizationAudit')?.raw || {};
   const domainAware = reportByKey(operatorState, 'domainAwareReviewPrioritization')?.raw || {};
+  const actionPlan = reportByKey(operatorState, 'reviewActionPlan')?.raw || {};
   const evidenceAutoLoop = reportByKey(operatorState, 'evidenceAutoLoop')?.raw || {};
   const review = operatorState.humanReview || {
     pending_reviews: 0,
@@ -2880,6 +2881,7 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
   const topTradingDecisions = Array.isArray(domainAware.top_trading_decisions || domainAware.topTradingDecisions)
     ? (domainAware.top_trading_decisions || domainAware.topTradingDecisions).flatMap((group) => group.reviews || group.Reviews || [])
     : [];
+  const actionPlans = Array.isArray(actionPlan.entries || actionPlan.Entries) ? (actionPlan.entries || actionPlan.Entries) : [];
   const runtimeDocumentationReviews = [
     ...(Array.isArray(domainAware.top_runtime_reviews || domainAware.topRuntimeReviews)
       ? (domainAware.top_runtime_reviews || domainAware.topRuntimeReviews).flatMap((group) => group.reviews || group.Reviews || [])
@@ -3115,6 +3117,21 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
               <p><strong>Fehlt:</strong> {Array.isArray(assistant.missingEvidence) ? assistant.missingEvidence.join(' · ') : assistant.strongestBlockers || '—'}</p>
               <p><strong>Nächster Schritt:</strong> {assistant.nextStep || assistant.nextEvidenceStep || 'Separat prüfen'}</p>
             </div>
+            {actionPlans.find((plan) => (plan.review_id || plan.reviewId) === (item.review_id || item.ReviewId)) ? (
+              <div className="review-inline-feedback">
+                {(() => {
+                  const plan = actionPlans.find((candidate) => (candidate.review_id || candidate.reviewId) === (item.review_id || item.ReviewId));
+                  return (
+                    <>
+                      <strong>Action Plan</strong>
+                      <p>Hermes kann selbst weiterarbeiten: {(plan.can_hermes_act_autonomously ?? plan.canHermesActAutonomously) ? 'ja' : 'nein'}</p>
+                      <p>Frank nötig: {(plan.frank_required ?? plan.frankRequired) ? 'ja' : 'nein'}</p>
+                      <p>Autonomer Command: {plan.autonomous_command || plan.autonomousCommand || '-'}</p>
+                    </>
+                  );
+                })()}
+              </div>
+            ) : null}
 
             {feedback ? (
               <div className={`review-inline-feedback ${toneClass(feedback.tone)}`}>

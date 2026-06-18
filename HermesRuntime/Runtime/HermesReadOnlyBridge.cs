@@ -56,6 +56,7 @@ public sealed class HermesReadOnlyBridge
         new("knowledgeConfidenceEngine", "Knowledge Confidence Engine", "/reports/knowledge-confidence-engine", "reports/knowledge_confidence_engine/knowledge_confidence_engine.json"),
         new("confidenceReviewPrioritization", "Confidence Driven Review Prioritization", "/reports/confidence-review-prioritization", "reports/confidence_review_prioritization/confidence_review_prioritization.json"),
         new("domainAwareReviewPrioritization", "Domain Aware Review Prioritization", "/reports/domain-aware-review-prioritization", "reports/domain_aware_review_prioritization/domain_aware_review_prioritization.json"),
+        new("reviewActionPlan", "Review Action Plan", "/reports/review-action-plan", "reports/review_action_plan/review_action_plan.json"),
         new("mutationAttributionAnalysis", "Mutation Attribution Analysis", "/reports/mutation-attribution-analysis", "reports/mutation_attribution_analysis/mutation_attribution_analysis.json"),
         new("attributionHypothesisFeedback", "Attribution Hypothesis Feedback", "/reports/attribution-hypothesis-feedback", "reports/attribution_hypothesis_feedback/attribution_hypothesis_feedback.json"),
         new("autonomousResearchLoop", "Autonomous Research Loop", "/reports/autonomous-research-loop", "reports/autonomous_research_loop/autonomous_research_loop.json"),
