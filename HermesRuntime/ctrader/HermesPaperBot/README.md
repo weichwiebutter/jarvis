@@ -34,3 +34,11 @@ Paper-only skeleton for the first Hermes cTrader bot implementation.
 
 This directory is a guarded skeleton only.
 It intentionally contains no project file, no implementation logic, and no trading capabilities.
+
+## Safety Guard
+
+Run the forbidden reference guard before reviewing any later implementation work:
+
+```bash
+bash scripts/check_ctrader_paper_bot_forbidden_refs.sh
+```
