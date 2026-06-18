@@ -9,10 +9,15 @@ public sealed record ReviewPrioritizationEntry(
     string Title,
     string Domain,
     double TrustBefore,
+    double ReviewActionScore,
+    string RecommendationClass,
     string Recommendation,
     string Reason,
     string Priority,
-    string PriorityReason);
+    string PriorityReason,
+    IReadOnlyList<string> MissingEvidence,
+    string WhyNow,
+    string NextStep);
 
 public sealed record ReviewPrioritizationDomainGroup(
     string Domain,
@@ -70,7 +75,8 @@ public sealed class ReviewPrioritizationAuditService
 
         var entries = pendingReviews
             .Select(BuildEntry)
-            .OrderByDescending(entry => PriorityRank(entry.Priority))
+            .OrderByDescending(entry => entry.ReviewActionScore)
+            .ThenByDescending(entry => PriorityRank(entry.Priority))
             .ThenByDescending(entry => entry.TrustBefore)
             .ThenBy(entry => entry.Domain, StringComparer.Ordinal)
             .ThenBy(entry => entry.Title, StringComparer.Ordinal)
@@ -145,10 +151,15 @@ public sealed class ReviewPrioritizationAuditService
             Title: item.Title,
             Domain: item.Domain,
             TrustBefore: item.TrustBefore,
+            ReviewActionScore: ReviewDecisionAssistantService.BuildEntry(item).ReviewActionScore,
+            RecommendationClass: ReviewDecisionAssistantService.BuildEntry(item).RecommendationClass,
             Recommendation: item.Recommendation,
             Reason: item.Reason,
             Priority: priority,
-            PriorityReason: GetPriorityReason(item.Domain, item.Recommendation, item.Priority));
+            PriorityReason: GetPriorityReason(item.Domain, item.Recommendation, item.Priority),
+            MissingEvidence: ReviewDecisionAssistantService.BuildEntry(item).MissingEvidence,
+            WhyNow: ReviewDecisionAssistantService.BuildEntry(item).WhyNow,
+            NextStep: ReviewDecisionAssistantService.BuildEntry(item).NextStep);
     }
 
     private static string GetPriority(HumanReviewItem item) =>

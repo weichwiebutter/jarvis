@@ -107,6 +107,7 @@ internal sealed class HermesCli
             "knowledge-catalog" => ShowKnowledgeCatalog(),
             "knowledge-item" => ShowKnowledgeItem(),
             "knowledge-health" => ShowKnowledgeHealth(),
+            "knowledge-health-root-cause" => ShowKnowledgeHealthRootCause(),
             "promotion-status" => ShowPromotionStatus(),
             "knowledge-consolidation-analyzer" => ShowKnowledgeConsolidationAnalyzer(),
             "knowledge-consolidation-executor" => ShowKnowledgeConsolidationExecutor(),
@@ -149,6 +150,7 @@ internal sealed class HermesCli
             "review-status" => ShowReviewStatus(),
             "review-queue" => ShowReviewQueue(),
             "review-prioritization-audit" => ShowReviewPrioritizationAudit(),
+            "review-queue-hygiene-audit" => ShowReviewQueueHygieneAudit(),
             "review-decision-assistant" => ShowReviewDecisionAssistant(),
             "review-status-consistency-audit" => ShowReviewStatusConsistencyAudit(),
             "evidence-auto-loop" => RunEvidenceAutoLoop(),
@@ -408,6 +410,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-catalog  allgemeinen Cognitive Knowledge Catalog anzeigen");
         Console.WriteLine("  hermes knowledge-item --id <ID> einzelnes Knowledge Item anzeigen");
         Console.WriteLine("  hermes knowledge-health   Knowledge Trust/Quality Scores erzeugen und anzeigen");
+        Console.WriteLine("  hermes knowledge-health-root-cause Knowledge Trust Root Cause Analyse anzeigen");
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-analyzer Knowledge Consolidation Analyzer anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-executor Knowledge Consolidation Kandidaten erzeugen");
@@ -450,6 +453,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes review-status      Human Review Evidence Status anzeigen");
         Console.WriteLine("  hermes review-queue       offene Human Review Queue anzeigen");
         Console.WriteLine("  hermes review-prioritization-audit Reviews priorisieren und gruppieren");
+        Console.WriteLine("  hermes review-queue-hygiene-audit Review Queue Hygiene auditieren");
         Console.WriteLine("  hermes review-decision-assistant Review-Entscheidungshilfe anzeigen");
         Console.WriteLine("  hermes review-status-consistency-audit Review-/Master-Status Konsistenz anzeigen");
         Console.WriteLine("  hermes evidence-auto-loop Sicheren Evidenz-Auto-Loop planen");
@@ -6317,6 +6321,33 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowKnowledgeHealthRootCause()
+    {
+        WriteHeader("Hermes Knowledge Health Root Cause");
+        var service = new KnowledgeHealthRootCauseAnalysisService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Trust", report.CurrentTrustLabel);
+        WriteField("Knowledge Health", report.CurrentKnowledgeHealth);
+        WriteField("Offene Reviews", report.OpenReviews.ToString());
+        WriteField("Offene Forward-Pläne", report.OpenForwardPlans.ToString());
+        WriteField("OOS-Lücke", report.HypothesesWithoutOos.ToString());
+        WriteField("Validierungslücke", report.OpenValidationTasks.ToString());
+        WriteField("Widerspruchsanteil", report.OpenContradictions.ToString());
+        WriteSubHeader("Operator Summary");
+        Console.WriteLine(report.OperatorSummary);
+        WriteSubHeader("Top 3 Ursachen");
+        foreach (var driver in report.Drivers.Take(3))
+        {
+            WriteField($"{driver.Rank}. {driver.Title}", $"{driver.Impact} · impact={driver.EstimatedTrustImpact:0.##}");
+            WriteField("Kurz", driver.Summary);
+        }
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowKnowledgeConsolidationAnalyzer()
     {
         WriteHeader("Hermes Knowledge Consolidation Analyzer");
@@ -7431,6 +7462,38 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowReviewQueueHygieneAudit()
+    {
+        WriteHeader("Hermes Review Queue Hygiene Audit");
+        var service = new ReviewQueueHygieneAuditService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Reviews gesamt", report.TotalReviews.ToString());
+        WriteField("Auto-Close Kandidaten", report.AutoCloseCandidates.ToString());
+        WriteField("Merge Kandidaten", report.MergeCandidates.ToString());
+        WriteField("Veraltete Reviews", report.StaleReviews.ToString());
+        WriteField("Low Value Reviews", report.LowValueReviews.ToString());
+        WriteField("Duplikate", report.DuplicateReviews.ToString());
+        WriteField("Potenzielle Reduktion", report.PotentialReduction.ToString());
+        WriteField("Potenzielle Queue-Größe", report.PotentialQueueSizeAfterCleanup.ToString());
+        WriteSubHeader("Operator Summary");
+        Console.WriteLine(report.OperatorSummary);
+        WriteSubHeader("Kandidaten");
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            WriteField(candidate.Title, $"{candidate.Category} · {candidate.Domain} · {candidate.SafeAutoCloseStatus}");
+            WriteField("Knowledge Item", candidate.KnowledgeItemId);
+            WriteField("Begründung", string.Join(" · ", candidate.Reasons));
+            WriteField("Empfehlung", candidate.SuggestedAction);
+        }
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowReviewDecisionAssistant()
     {
         WriteHeader("Hermes Review Decision Assistant");
@@ -7446,16 +7509,16 @@ internal sealed class HermesCli
         WriteField("Ablehnung empfohlen", report.RecommendedReject.ToString());
         WriteSubHeader("Operator Summary");
         Console.WriteLine(report.OperatorSummary);
-        WriteSubHeader("Top Candidates");
-        foreach (var entry in report.Entries.Take(10))
+        WriteSubHeader("Top 3 Entscheidungen für Frank");
+        foreach (var entry in report.Entries.Take(3))
         {
-            WriteField(entry.Title, $"{entry.RecommendationLabel} · {entry.Domain} · trust={entry.TrustBefore:0.####}");
+            WriteField(entry.Title, $"{entry.RecommendationLabel} · {entry.Domain} · score={entry.ReviewActionScore:0.#} · klasse={entry.RecommendationClass}");
             WriteField("Domäne", entry.Domain);
             WriteField("Priorität", entry.Priority);
-            WriteField("Ampel", entry.RecommendationLabel);
-            WriteField("Hermes Empfehlung", entry.RecommendationLabel);
-            WriteField("Warum", entry.RecommendationReason);
-            WriteField("Aktion für Frank", entry.FrankAction);
+            WriteField("Empfehlung", entry.RecommendationLabel);
+            WriteField("Warum jetzt", entry.WhyNow);
+            WriteField("Fehlt", string.Join(" · ", entry.MissingEvidence));
+            WriteField("Nächster Schritt", entry.NextStep);
         }
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();

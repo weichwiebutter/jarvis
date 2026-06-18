@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Hermes.Runtime;
 
@@ -9,13 +10,20 @@ public sealed record ReviewDecisionAssistantEntry(
     string Title,
     string Domain,
     string Priority,
+    double ReviewActionScore,
+    string ReviewActionBand,
     double TrustBefore,
     double EvidenceQuality,
     double ValidationScore,
+    double RiskScore,
     string TradingRisk,
     string RecommendationKey,
     string RecommendationLabel,
+    string RecommendationClass,
     string RecommendationReason,
+    string WhyNow,
+    string NextStep,
+    IReadOnlyList<string> MissingEvidence,
     string FrankAction,
     bool RequiresHumanReview);
 
@@ -75,7 +83,8 @@ public sealed class ReviewDecisionAssistantService
             RecommendedMoreEvidence: pending.Count(entry => entry.RecommendationKey == "more_evidence"),
             RecommendedReject: pending.Count(entry => entry.RecommendationKey == "reject"),
             Entries: pending
-                .OrderByDescending(entry => PriorityRank(entry.Priority))
+                .OrderByDescending(entry => entry.ReviewActionScore)
+                .ThenByDescending(entry => PriorityRank(entry.Priority))
                 .ThenByDescending(entry => entry.TrustBefore)
                 .ThenBy(entry => entry.Domain, StringComparer.Ordinal)
                 .ThenBy(entry => entry.Title, StringComparer.Ordinal)
@@ -117,12 +126,19 @@ public sealed class ReviewDecisionAssistantService
         var validationScore = ReviewMetric(item.EvidenceSummary, "validation");
         var tradingRisk = ReviewRisk(trust, evidenceQuality, validationScore);
         var recommendation = DetermineRecommendation(item, trust, evidenceQuality, validationScore);
+        var riskScore = ComputeRiskScore(trust, evidenceQuality, validationScore, item.Reason, item.EvidenceSummary);
+        var actionScore = ComputeReviewActionScore(item, trust, evidenceQuality, validationScore, riskScore);
+        var actionBand = actionScore >= 75 ? "A" : actionScore >= 45 ? "B" : "C";
+        var recommendationClass = ClassifyRecommendation(trust, evidenceQuality, validationScore, item.Reason, item.EvidenceSummary, recommendation);
+        var missingEvidence = BuildMissingEvidence(item);
         var recommendationLabel = recommendation switch
         {
             "approve" => "Freigabe empfohlen",
             "more_evidence" => "Mehr Evidenz empfohlen",
             _ => "Ablehnung empfohlen"
         };
+        var whyNow = BuildWhyNow(item, trust, evidenceQuality, validationScore, recommendationClass, missingEvidence);
+        var nextStep = BuildNextStep(recommendation, recommendationClass);
 
         return new ReviewDecisionAssistantEntry(
             ReviewId: item.ReviewId,
@@ -130,13 +146,20 @@ public sealed class ReviewDecisionAssistantService
             Title: item.Title,
             Domain: item.Domain,
             Priority: NormalizePriority(item.Domain, item.Priority),
+            ReviewActionScore: actionScore,
+            ReviewActionBand: actionBand,
             TrustBefore: trust,
             EvidenceQuality: evidenceQuality,
             ValidationScore: validationScore,
+            RiskScore: riskScore,
             TradingRisk: tradingRisk,
             RecommendationKey: recommendation,
             RecommendationLabel: recommendationLabel,
+            RecommendationClass: recommendationClass,
             RecommendationReason: BuildReason(item, trust, evidenceQuality, validationScore, recommendation),
+            WhyNow: whyNow,
+            NextStep: nextStep,
+            MissingEvidence: missingEvidence,
             FrankAction: recommendation == "approve" ? "Prüfzentrum: Freigabe prüfen" : recommendation == "more_evidence" ? "Prüfzentrum: mehr Evidenz prüfen" : "Prüfzentrum: Ablehnung prüfen",
             RequiresHumanReview: true);
     }
@@ -150,10 +173,8 @@ public sealed class ReviewDecisionAssistantService
 
         return string.Join(Environment.NewLine, new[]
         {
-            $"🔴 {highPriority} wichtige Entscheidungen",
-            $"🟡 {evidence} Reviews brauchen mehr Evidenz",
-            $"🟢 {approve} Freigaben plausibel",
-            $"⚫ {reject} Ablehnungen empfohlen",
+            $"Top 3 Entscheidungen für Frank: {highPriority}",
+            $"Mehr Evidenz: {evidence}, Freigaben: {approve}, Ablehnungen: {reject}",
             "",
             "Frank muss weiterhin selbst entscheiden. Hermes liefert nur die Empfehlung."
         });
@@ -208,6 +229,84 @@ public sealed class ReviewDecisionAssistantService
         };
 
         return $"{baseText} {trustText}. {evidenceText}. {validationText}. {riskText}.";
+    }
+
+    private static double ComputeReviewActionScore(HumanReviewItem item, double trust, double evidenceQuality, double validationScore, double riskScore)
+    {
+        var priorityScore = NormalizePriority(item.Domain, item.Priority) == "hoch" ? 1 : NormalizePriority(item.Domain, item.Priority) == "mittel" ? 0.7 : 0.4;
+        var ageHours = Math.Max(0, (DateTimeOffset.UtcNow - item.CreatedAtUtc).TotalHours);
+        var ageScore = Math.Min(1, ageHours / 72.0);
+        var contradictionPenalty = HasContradiction(item) ? 1 : 0;
+        var validationGapPenalty = validationScore < 0.6 ? 1 : 0;
+        var baseScore = (priorityScore * 25) + (trust * 25) + (evidenceQuality * 20) + (validationScore * 20) + (ageScore * 10);
+        var penalty = (riskScore * 15) + (contradictionPenalty * 15) + (validationGapPenalty * 10);
+        return Math.Round(Math.Clamp(baseScore - penalty, 0, 100), 1);
+    }
+
+    private static double ComputeRiskScore(double trust, double evidenceQuality, double validationScore, string reason, string evidenceSummary)
+    {
+        var contradiction = HasContradiction(reason, evidenceSummary) ? 1 : 0;
+        var lowTrust = trust < 0.65 ? 1 : 0;
+        var lowEvidence = evidenceQuality < 0.6 ? 1 : 0;
+        var lowValidation = validationScore < 0.6 ? 1 : 0;
+        return Math.Min(1, (contradiction + lowTrust + lowEvidence + lowValidation) / 4.0);
+    }
+
+    private static string ClassifyRecommendation(double trust, double evidenceQuality, double validationScore, string reason, string evidenceSummary, string recommendation)
+    {
+        if (recommendation == "reject" || HasContradiction(reason, evidenceSummary) || trust < 0.5 || validationScore < 0.45)
+        {
+            return "Schwach";
+        }
+
+        var blockerCount = CountBlockers(trust, evidenceQuality, validationScore, reason, evidenceSummary);
+        if (trust > 0.65 && evidenceQuality > 0.6 && blockerCount <= 1)
+        {
+            return "Fast bereit";
+        }
+
+        if (blockerCount >= 2)
+        {
+            return "Unsicher";
+        }
+
+        return recommendation == "approve" ? "Fast bereit" : "Unsicher";
+    }
+
+    private static IReadOnlyList<string> BuildMissingEvidence(HumanReviewItem item)
+    {
+        var summary = item.EvidenceSummary.ToLowerInvariant();
+        var missing = new List<string>();
+        missing.Add(summary.Contains("oos") || summary.Contains("out-of-sample") ? "☑ OOS Validation" : "☐ OOS Validation");
+        missing.Add(summary.Contains("forward") ? "☑ Forward Observation" : "☐ Forward Observation");
+        missing.Add(HasContradiction(item.Reason, item.EvidenceSummary) ? "☑ Contradiction Check" : "☐ Contradiction Check");
+        return missing;
+    }
+
+    private static string BuildWhyNow(HumanReviewItem item, double trust, double evidenceQuality, double validationScore, string recommendationClass, IReadOnlyList<string> missingEvidence)
+        => $"{recommendationClass} für {item.Domain}. Trust {trust:0.##}, Evidence {evidenceQuality:0.##}, Validation {validationScore:0.##}. Fehlt: {string.Join(", ", missingEvidence)}.";
+
+    private static string BuildNextStep(string recommendation, string recommendationClass)
+        => recommendation switch
+        {
+            "approve" => recommendationClass == "Fast bereit" ? "Freigabe prüfen" : "Review freigeben",
+            "reject" => "Review ablehnen",
+            _ => recommendationClass == "Fast bereit" ? "Nur kleine Evidenzlücke schließen" : "Forward Validation",
+        };
+
+    private static bool HasContradiction(HumanReviewItem item) => HasContradiction(item.Reason, item.EvidenceSummary);
+
+    private static bool HasContradiction(string reason, string evidenceSummary)
+        => Regex.IsMatch($"{reason} {evidenceSummary}", "contradict|widerspruch", RegexOptions.IgnoreCase);
+
+    private static int CountBlockers(double trust, double evidenceQuality, double validationScore, string reason, string evidenceSummary)
+    {
+        var count = 0;
+        if (trust < 0.65) count++;
+        if (evidenceQuality < 0.6) count++;
+        if (validationScore < 0.6) count++;
+        if (HasContradiction(reason, evidenceSummary)) count++;
+        return count;
     }
 
     private static string NormalizePriority(HumanReviewPriority priority) =>

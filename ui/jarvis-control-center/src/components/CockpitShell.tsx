@@ -770,6 +770,24 @@ function reviewDecisionAssistant(item) {
     : recommendationKey === 'reject'
       ? 'Ablehnung im Prüfzentrum prüfen'
       : 'Mehr Evidenz im Prüfzentrum prüfen';
+  const reviewActionScore = Number(item.review_action_score || item.reviewActionScore || 0);
+  const reviewActionBand = String(item.review_action_band || item.reviewActionBand || (reviewActionScore >= 75 ? 'A' : reviewActionScore >= 45 ? 'B' : 'C'));
+  const recommendationClass = String(item.recommendation_class || item.recommendationClass || (
+    trust >= 0.65 && evidenceQuality >= 0.60 && validationScore >= 0.60 && !criticalWarning
+      ? 'Fast bereit'
+      : criticalWarning || trust < 0.50 || validationScore < 0.45
+        ? 'Schwach'
+        : 'Unsicher'
+  ));
+  const missingEvidence = Array.isArray(item.missing_evidence || item.missingEvidence)
+    ? (item.missing_evidence || item.missingEvidence).map(String)
+    : [
+        /oos/i.test(item.evidence_summary || '') ? '☑ OOS Validation' : '☐ OOS Validation',
+        /forward/i.test(item.evidence_summary || '') ? '☑ Forward Observation' : '☐ Forward Observation',
+        criticalWarning ? '☑ Contradiction Check' : '☐ Contradiction Check',
+      ];
+  const whyNow = String(item.why_now || item.whyNow || `${recommendationClass}: Trust ${trust.toFixed(2)}, Evidence ${evidenceQuality.toFixed(2)}, Validation ${validationScore.toFixed(2)}.`);
+  const nextStep = String(item.next_step || item.nextStep || (recommendationKey === 'approve' ? 'Freigabe prüfen' : recommendationKey === 'reject' ? 'Review ablehnen' : 'Forward Validation'));
 
   return {
     recommendationKey,
@@ -777,11 +795,25 @@ function reviewDecisionAssistant(item) {
     tone,
     reason: `${trustText}. ${evidenceText}. ${validationText}. ${riskText}.`,
     frankAction,
+    reviewActionScore,
+    reviewActionBand,
+    recommendationClass,
+    missingEvidence,
+    whyNow,
+    nextStep,
     trustText,
     evidenceText,
     validationText,
     riskText,
   };
+}
+
+function reviewActionPriority(entry) {
+  const band = String(entry.reviewActionBand || '').toUpperCase();
+  if (band === 'A') return 3;
+  if (band === 'B') return 2;
+  if (band === 'C') return 1;
+  return Number(entry.reviewActionScore || 0) / 100;
 }
 
 function reviewClearReason(item) {
@@ -1207,6 +1239,7 @@ function GoalSystemCard({ masterStatus }) {
 function KnowledgeHealthCard({ operatorState }) {
   const masterStatus = operatorState.masterStatus;
   const audit = reportByKey(operatorState, 'knowledgeValidationAudit')?.raw || {};
+  const rootCause = reportByKey(operatorState, 'knowledgeHealthRootCause')?.raw || {};
   const openValidations = audit.open_validations ?? audit.openValidations ?? masterStatus.validation_plans_open;
   const criticalGaps = audit.critical_knowledge_gaps ?? audit.criticalKnowledgeGaps ?? masterStatus.knowledge_items_needing_oos;
   const createdLastRun = audit.validation_tasks_created_last_run ?? audit.validationTasksCreatedLastRun ?? 0;
@@ -1228,6 +1261,7 @@ function KnowledgeHealthCard({ operatorState }) {
     || audit.validationCompletionLabel
     || `${validationCompletionPercent}% abgeschlossen`;
   const health = masterStatus.knowledge_health || 'unbekannt';
+  const rootCauses = Array.isArray(rootCause.drivers) ? rootCause.drivers.slice(0, 3) : [];
   const tone = health.includes('critical')
     ? 'danger'
     : health.includes('needs') || masterStatus.weak_knowledge
@@ -1262,6 +1296,17 @@ function KnowledgeHealthCard({ operatorState }) {
         <Metric label="OOS nötig" value={formatNumber(masterStatus.knowledge_items_needing_oos)} tone={masterStatus.knowledge_items_needing_oos ? 'warn' : 'good'} />
         <Metric label="Vertrauenskandidaten" value={formatNumber(masterStatus.trusted_candidate_count)} tone={masterStatus.trusted_candidate_count ? 'good' : 'info'} />
       <Metric label="Offene Prüfungen" value={formatNumber(operatorState.humanReview?.pending_reviews || 0)} tone={operatorState.humanReview?.pending_reviews ? 'warn' : 'good'} />
+      </div>
+      <div className="knowledge-health-root-cause">
+        <p className="control-view-note">Warum Vertrauen niedrig?</p>
+        {rootCauses.length ? rootCauses.map((driver) => (
+          <div key={driver.title} className="status-line">
+            <span>{driver.title}</span>
+            <strong>{driver.impact}</strong>
+          </div>
+        )) : (
+          <p className="control-view-note">Ursachen werden gerade aus den vorhandenen Reports abgeleitet.</p>
+        )}
       </div>
     </details>
   );
@@ -2798,13 +2843,20 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
   const [resolvedReviewIds, setResolvedReviewIds] = useState([]);
   const assistantEntries = items
     .filter((item) => item.status === 'pending' && !resolvedReviewIds.includes(item.review_id))
-    .map((item) => reviewDecisionAssistant(item));
+    .map((item) => ({ ...reviewDecisionAssistant(item), reviewId: item.review_id, item }))
+    .sort((left, right) => reviewActionPriority(right) - reviewActionPriority(left));
   const assistantApprove = assistantEntries.filter((entry) => entry.recommendationKey === 'approve').length;
   const assistantMoreEvidence = assistantEntries.filter((entry) => entry.recommendationKey === 'more_evidence').length;
   const assistantReject = assistantEntries.filter((entry) => entry.recommendationKey === 'reject').length;
+  const topDecisionCards = assistantEntries.slice(0, 3);
   const visibleItems = openReviews > 0
     ? items.filter((item) => item.status === 'pending' && !resolvedReviewIds.includes(item.review_id))
       .sort((left, right) => {
+        const leftScore = Number(left.review_action_score || left.reviewActionScore || 0);
+        const rightScore = Number(right.review_action_score || right.reviewActionScore || 0);
+        if (rightScore !== leftScore) {
+          return rightScore - leftScore;
+        }
         const priorityDelta = reviewPriorityRank(right.priority) - reviewPriorityRank(left.priority);
         if (priorityDelta !== 0) {
           return priorityDelta;
@@ -2905,7 +2957,11 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
       if (timeoutId) {
         window.clearTimeout(timeoutId);
       }
-      const message = `Prüfentscheidung konnte nicht gespeichert werden. Bridge prüfen oder später erneut versuchen. ${error instanceof Error ? error.message : String(error)}`;
+      const reason = error instanceof Error ? error.message : String(error);
+      const userMessage = reason.toLowerCase().includes('aborted')
+        ? 'Anfrage wurde abgebrochen. Bitte erneut versuchen.'
+        : 'Prüfentscheidung konnte nicht gespeichert werden. Bitte erneut versuchen.';
+      const message = `${userMessage} Ursache: ${reason}`;
       setReviewFeedbackById((current) => ({
         ...current,
         [item.review_id]: {
@@ -2957,13 +3013,9 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
             : 'Keine offenen Reviews mit hoher Priorität.'}
       </p>
       <p className="control-view-note">
-        {assistantApprove
-          ? `${formatNumber(assistantApprove)} Freigaben plausibel.`
-          : assistantMoreEvidence
-            ? `${formatNumber(assistantMoreEvidence)} Reviews brauchen mehr Evidenz.`
-            : assistantReject
-              ? `${formatNumber(assistantReject)} Ablehnungen empfohlen.`
-              : 'Keine Entscheidungshilfe verfügbar.'}
+        {assistantEntries.length
+          ? 'Frank sieht jetzt die drei wichtigsten Entscheidungen zuerst.'
+          : 'Keine Entscheidungshilfe verfügbar.'}
       </p>
       <p className="control-view-note">
         {evidenceAutoLoop.review_count
@@ -2978,8 +3030,7 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
         <StatusPill tone="good">research_only=true</StatusPill>
       </div>
       <div className="review-grid">
-        {visibleItems.slice(0, 8).map((item) => {
-          const assistant = reviewDecisionAssistant(item);
+        {topDecisionCards.map(({ item, ...assistant }) => {
           const trafficLight = assistant;
           const risk = reviewRisk(item);
           const evidenceQuality = reviewEvidenceQuality(item);
@@ -3005,6 +3056,12 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
             </div>
 
             <div className="review-card-metrics">
+              <Metric label="Score" value={String(Math.round(Number(assistant.reviewActionScore || 0)))} tone={assistant.reviewActionBand === 'A' ? 'danger' : assistant.reviewActionBand === 'B' ? 'warn' : 'info'} />
+              <Metric label="Klasse" value={assistant.recommendationClass} tone={assistant.recommendationClass === 'Fast bereit' ? 'good' : assistant.recommendationClass === 'Unsicher' ? 'warn' : 'danger'} />
+              <Metric label="Band" value={assistant.reviewActionBand || 'C'} tone={assistant.reviewActionBand === 'A' ? 'danger' : assistant.reviewActionBand === 'B' ? 'warn' : 'info'} />
+            </div>
+
+            <div className="review-card-metrics">
               <Metric label="Vertrauen" value={scorePercent(item.trust_before)} tone={item.trust_before >= 0.65 ? 'good' : 'warn'} />
               <Metric label="Evidenzqualität" value={scorePercent(evidenceQuality)} tone={evidenceQuality >= 0.66 ? 'good' : evidenceQuality >= 0.45 ? 'warn' : 'danger'} />
               <Metric label="Risiko" value={risk.label} tone={risk.tone} />
@@ -3012,9 +3069,10 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
             </div>
 
             <div className="review-cleartext">
-              <p><strong>Hermes Empfehlung:</strong> {assistant.recommendation}</p>
-              <p><strong>Warum Hermes das empfiehlt:</strong> {assistant.reason}</p>
-              <p><strong>Aktion für Frank:</strong> {assistant.frankAction}</p>
+              <p><strong>Empfehlung:</strong> {assistant.recommendation}</p>
+              <p><strong>Warum jetzt?</strong> {assistant.whyNow}</p>
+              <p><strong>Fehlt:</strong> {assistant.missingEvidence.join(' · ')}</p>
+              <p><strong>Nächster Schritt:</strong> {assistant.nextStep}</p>
             </div>
 
             {feedback ? (
@@ -3056,8 +3114,8 @@ function HumanReviewCenter({ operatorState, onRefresh }) {
             ) : (
               <div className="review-action-row" aria-label="Vorbereitete Prüfaktionen">
                 <button className={recommendedActionKey === 'approve' ? 'is-recommended' : ''} disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('approve', item)} type="button">Freigeben</button>
-                <button className={recommendedActionKey === 'reject' ? 'is-recommended' : ''} disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('reject', item)} type="button">Ablehnen</button>
                 <button className={recommendedActionKey === 'more' ? 'is-recommended' : ''} disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('more', item)} type="button">Mehr Evidenz</button>
+                <button className={recommendedActionKey === 'reject' ? 'is-recommended' : ''} disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('reject', item)} type="button">Ablehnen</button>
                 <button disabled={actionBusyId === item.review_id} onClick={() => openReviewAction('defer', item)} type="button">Zurückstellen</button>
               </div>
             )}

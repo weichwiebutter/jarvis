@@ -27,6 +27,11 @@ const operatorReports = {
     url: bridgeUrl('/reports/runtime-health-summary'),
     path: 'read-only bridge:/reports/runtime-health-summary',
   },
+  knowledgeHealthRootCause: {
+    label: 'Knowledge Health Root Cause',
+    url: bridgeUrl('/reports/knowledge-health-root-cause'),
+    path: 'read-only bridge:/reports/knowledge-health-root-cause',
+  },
   humanReviewQueue: {
     label: 'Prüfwarteschlange',
     url: bridgeUrl('/reports/human-review-queue'),
