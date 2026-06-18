@@ -2050,6 +2050,38 @@ function reportFixtureRaw(key) {
         operator_summary: 'Der Sessionfilter reduzierte vermutlich verlustreiche Handelsphasen. Die Verbesserung stammt wahrscheinlich aus dem Ausschluss schwacher Sessions. Frank muss nichts tun.',
         items: [],
       };
+    case 'attributionHypothesisFeedback':
+      return {
+        report_version: 'attribution_hypothesis_feedback_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        mutation_attribution_path: '/mnt/d/HermesData/reports/mutation_attribution_analysis/mutation_attribution_analysis.json',
+        mutation_execution_path: '/mnt/d/HermesData/reports/mutation_validation_execution/mutation_validation_execution.json',
+        strategy_research_hypotheses_path: '/mnt/d/HermesData/cognitive_core/insights/hypotheses.json',
+        cognitive_hypotheses_path: '/mnt/d/HermesData/cognitive_core/insights/hypotheses.json',
+        hypotheses_added: 1,
+        hypothesis_appended: true,
+        frank_required: false,
+        operator_summary: 'Hermes hat aus der verbesserten Mutation eine neue Research-Hypothese gebildet. Die Hypothese ist noch nicht bestätigt. Nächster Schritt ist OOS-Validierung. Frank muss aktuell nichts tun.',
+        next_planned_step: 'oos_validation_required',
+        warnings: [],
+        hypothesis: {
+          hypothesis_id: 'hypothesis_mutation_validation_fgmp_backtest_job_validation_plan_trading_research_mean_reversion_rejection_bollinger_band_width_session_filter_sharpen',
+          source: 'mutation_attribution_analysis',
+          asset: 'XAUUSD',
+          timeframe: 'M5',
+          strategy_pattern: 'Mean Reversion Rejection',
+          causal_factor: 'session_filter',
+          finding: 'session filter likely improved result',
+          evidence_summary: 'Attribution=improvement_likely_caused_by_session_filter; baseline_pf=0.7186; mutation_pf=1.4734; delta_pf=0.7548; learning_decision=Hypothese zurückstufen',
+          baseline_metrics: 'pf=0.7186; expectancy=-0.1278; win_rate=0.36; max_drawdown=-11.158',
+          mutation_metrics: 'pf=1.4734; expectancy=0.1702; win_rate=0.66; max_drawdown=-4.8743',
+          confidence: 'preliminary',
+          status: 'research_hypothesis',
+          next_step: 'oos_validation_required',
+          frank_required: false,
+          created_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        },
+      };
     case 'strategyBacktestLatestSuccess':
       return {
         report_version: 'strategy_backtest_latest_success_v1',
@@ -4155,6 +4187,7 @@ export async function loadOperatorDashboard() {
       strategyBacktestExecutor: dashboard.strategyBacktestExecutor,
       mutationValidationExecution: dashboard.mutationValidationExecution,
       mutationAttributionAnalysis: dashboard.mutationAttributionAnalysis,
+      attributionHypothesisFeedback: dashboard.attributionHypothesisFeedback,
       autonomousResearchLoop: dashboard.autonomousResearchLoop,
       strategyBacktestLatestSuccess: dashboard.strategyBacktestLatestSuccess,
       strategyBacktestQualityAudit: dashboard.strategyBacktestQualityAudit,
@@ -4259,6 +4292,7 @@ export async function loadOperatorDashboard() {
   rawReports.strategyBacktestExecutor = reportFixtureRaw('strategyBacktestExecutor');
   rawReports.mutationValidationExecution = reportFixtureRaw('mutationValidationExecution');
   rawReports.mutationAttributionAnalysis = reportFixtureRaw('mutationAttributionAnalysis');
+  rawReports.attributionHypothesisFeedback = reportFixtureRaw('attributionHypothesisFeedback');
   rawReports.strategyBacktestLatestSuccess = reportFixtureRaw('strategyBacktestLatestSuccess');
   rawReports.strategyBacktestQualityAudit = reportFixtureRaw('strategyBacktestQualityAudit');
   rawReports.strategyBacktestEvidenceGate = reportFixtureRaw('strategyBacktestEvidenceGate');

@@ -119,6 +119,7 @@ internal sealed class HermesCli
             "autonomous-research-loop-step" => ShowAutonomousResearchLoopStep(),
             "autonomous-research-loop-status" => ShowAutonomousResearchLoopStatus(),
             "mutation-attribution-analysis" => ShowMutationAttributionAnalysis(),
+            "attribution-hypothesis-feedback" => ShowAttributionHypothesisFeedback(),
             "strategy-backtest-quality-audit" => ShowStrategyBacktestQualityAudit(),
             "strategy-backtest-evidence-gate" => ShowStrategyBacktestEvidenceGate(),
             "strategy-backtest-signal-density-analyzer" => ShowStrategyBacktestSignalDensityAnalyzer(),
@@ -411,6 +412,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes autonomous-research-loop-step einen autonomen Research-Schritt ausfuehren");
         Console.WriteLine("  hermes autonomous-research-loop-status autonomen Research-Loop Status anzeigen");
         Console.WriteLine("  hermes mutation-attribution-analysis Mutation Attribution Analysis anzeigen");
+        Console.WriteLine("  hermes attribution-hypothesis-feedback Attribution in Research Hypothesis ueberfuehren");
         Console.WriteLine("  hermes strategy-backtest-quality-audit Strategy Backtest Quality Audit anzeigen");
         Console.WriteLine("  hermes strategy-backtest-evidence-gate Strategy Backtest Evidence Gate anzeigen");
         Console.WriteLine("  hermes strategy-backtest-signal-density-analyzer Strategy Backtest Signal Density Analyzer anzeigen");
@@ -6808,6 +6810,38 @@ internal sealed class HermesCli
         WriteField("Operator Summary", report.OperatorSummary);
         WriteMessages("Signals", report.SupportingSignals);
         WriteMessages("Warnings", report.Warnings);
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAttributionHypothesisFeedback()
+    {
+        WriteHeader("Hermes Attribution Hypothesis Feedback");
+
+        var service = new AttributionHypothesisFeedbackService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Hypothesis ID", report.Hypothesis.HypothesisId);
+        WriteField("Source", report.Hypothesis.Source);
+        WriteField("Asset", report.Hypothesis.Asset);
+        WriteField("Timeframe", report.Hypothesis.Timeframe);
+        WriteField("Strategy Pattern", report.Hypothesis.StrategyPattern);
+        WriteField("Causal Factor", report.Hypothesis.CausalFactor);
+        WriteField("Finding", report.Hypothesis.Finding);
+        WriteField("Confidence", report.Hypothesis.Confidence);
+        WriteField("Status", report.Hypothesis.Status);
+        WriteField("Next Step", report.Hypothesis.NextStep);
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Stored in Store", report.HypothesesAdded > 0 ? "ja" : "bereits vorhanden");
+        WriteField("Operator Summary", report.OperatorSummary);
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        Console.WriteLine("Metrics");
+        WriteField("Baseline", report.Hypothesis.BaselineMetrics);
+        WriteField("Mutation", report.Hypothesis.MutationMetrics);
+        Console.WriteLine();
         WriteSafety();
         return 0;
     }

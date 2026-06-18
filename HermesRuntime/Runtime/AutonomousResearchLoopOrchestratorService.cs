@@ -37,6 +37,7 @@ public sealed record AutonomousResearchLoopOrchestratorReport(
     string WhySelected,
     string NextPlannedStep,
     MutationValidationExecutorReport? MutationExecution,
+    AttributionHypothesisFeedbackReport? AttributionHypothesisFeedback,
     MutationValidationJobPlannerReport? MutationPlanner,
     MutationCandidateQueueReport? MutationQueue,
     StrategyBacktestFailureLearningReport? FailureLearning,
@@ -80,6 +81,7 @@ public sealed class AutonomousResearchLoopOrchestratorService
         var failureLearning = new StrategyBacktestFailureLearningService(_storagePaths).Load();
         var qualityAudit = new StrategyBacktestQualityAuditService(_storagePaths).Load();
         var mutationExecution = new MutationValidationExecutorService(_storagePaths, _runtimeRoot).Load();
+        var attributionFeedback = new AttributionHypothesisFeedbackService(_storagePaths).Load();
         var mutationQueue = new MutationCandidateQueueService(_storagePaths).Load() ?? new MutationCandidateQueueService(_storagePaths).Run();
         var mutationPlanner = new MutationValidationJobPlannerService(_storagePaths, _runtimeRoot).Load() ?? new MutationValidationJobPlannerService(_storagePaths, _runtimeRoot).Run();
 
@@ -88,7 +90,7 @@ public sealed class AutonomousResearchLoopOrchestratorService
         var inLearningWindow = timeControl.LearningWindow.ActiveNow || timeControl.NightlyWindow.ActiveNow;
         var safetyEligible = enabled && (inWorkWindow || inLearningWindow);
 
-        var step = ExecuteStep(safetyEligible, _storagePaths, _runtimeRoot, mutationQueue, mutationPlanner, failureLearning, qualityAudit, evidenceLoop);
+        var step = ExecuteStep(safetyEligible, _storagePaths, _runtimeRoot, mutationQueue, mutationPlanner, failureLearning, qualityAudit, evidenceLoop, attributionFeedback);
         var report = new AutonomousResearchLoopOrchestratorReport(
             ReportVersion: "autonomous_research_loop_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -110,6 +112,7 @@ public sealed class AutonomousResearchLoopOrchestratorService
             WhySelected: step.WhySelected,
             NextPlannedStep: step.NextPlannedStep,
             MutationExecution: step.MutationExecution ?? mutationExecution,
+            AttributionHypothesisFeedback: attributionFeedback,
             MutationPlanner: mutationPlanner,
             MutationQueue: mutationQueue,
             FailureLearning: failureLearning,
@@ -159,7 +162,8 @@ public sealed class AutonomousResearchLoopOrchestratorService
         MutationValidationJobPlannerReport mutationPlanner,
         StrategyBacktestFailureLearningReport? failureLearning,
         StrategyBacktestQualityAuditReport? qualityAudit,
-        EvidenceAutoLoopState evidenceLoop)
+        EvidenceAutoLoopState evidenceLoop,
+        AttributionHypothesisFeedbackReport? attributionFeedback)
     {
         if (!safetyEligible)
         {
