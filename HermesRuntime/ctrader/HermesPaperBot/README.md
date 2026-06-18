@@ -11,6 +11,10 @@ Paper-only skeleton for the first Hermes cTrader bot implementation.
 - No demo orders
 - cTrader is only a consumer of a release bundle
 - HermesRuntime is the release authority
+- Bundle IO is local only
+- No network access
+- No broker access
+- Only `paper_only` bundles are accepted
 
 ## Safety Invariants
 
@@ -34,6 +38,7 @@ Paper-only skeleton for the first Hermes cTrader bot implementation.
 
 This directory is a guarded skeleton only.
 It intentionally contains no project file, no implementation logic, and no trading capabilities.
+Bundle import is local filesystem IO only and never reaches the cTrader or broker APIs.
 
 ## Safety Guard
 

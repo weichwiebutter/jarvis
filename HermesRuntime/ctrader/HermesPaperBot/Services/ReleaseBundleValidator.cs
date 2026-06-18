@@ -13,6 +13,14 @@ public sealed class ReleaseBundleValidator
     /// </summary>
     public ValidationResult Validate(ReleaseBundleManifest manifest, ProvenanceInfo provenance)
     {
+        return Validate(manifest, provenance, []);
+    }
+
+    /// <summary>
+    /// Validates the manifest, provenance, and checksums.
+    /// </summary>
+    public ValidationResult Validate(ReleaseBundleManifest manifest, ProvenanceInfo provenance, ChecksumEntry[] checksumEntries)
+    {
         if (manifest is null || provenance is null)
         {
             return new ValidationResult
@@ -85,6 +93,16 @@ public sealed class ReleaseBundleValidator
                 IsValid = false,
                 Status = "blocked",
                 Reason = "forbidden_capabilities_incomplete",
+            };
+        }
+
+        if (checksumEntries is null || checksumEntries.Length == 0)
+        {
+            return new ValidationResult
+            {
+                IsValid = false,
+                Status = "invalid",
+                Reason = "missing_checksum_entries",
             };
         }
 
