@@ -70,3 +70,13 @@ This remains paper-only.
 No broker access.
 No cTrader Order API.
 No live or demo execution.
+
+## In-Memory Harness
+
+The paper runtime can be checked with an in-memory harness in `ctrader/HermesPaperBot/tests/PaperRuntimeOrchestratorHarness.cs`.
+
+- no cTrader runtime
+- no broker
+- no orders
+- only orchestrator safety and validation
+- intended for temporary scratch compilation and JSON/text output
