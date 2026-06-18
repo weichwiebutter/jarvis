@@ -119,6 +119,7 @@ internal sealed class HermesCli
             "autonomous-oos-planning" => ShowAutonomousOosPlanning(),
             "autonomous-oos-execution-gate" => ShowAutonomousOosExecutionGate(),
             "autonomous-forward-validation-planning" => ShowAutonomousForwardValidationPlanning(),
+            "autonomous-forward-observation-gate" => ShowAutonomousForwardObservationGate(),
             "autonomous-research-loop-step" => ShowAutonomousResearchLoopStep(),
             "autonomous-research-loop-status" => ShowAutonomousResearchLoopStatus(),
             "mutation-attribution-analysis" => ShowMutationAttributionAnalysis(),
@@ -415,6 +416,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes autonomous-oos-planning OOS-Validierungsplaene aus Hypothesen erzeugen");
         Console.WriteLine("  hermes autonomous-oos-execution-gate genau einen OOS-Plan sicher ausfuehren");
         Console.WriteLine("  hermes autonomous-forward-validation-planning Forward-Validierungsplaene erzeugen");
+        Console.WriteLine("  hermes autonomous-forward-observation-gate Forward-Beobachtung read-only ausfuehren");
         Console.WriteLine("  hermes autonomous-research-loop-step einen autonomen Research-Schritt ausfuehren");
         Console.WriteLine("  hermes autonomous-research-loop-status autonomen Research-Loop Status anzeigen");
         Console.WriteLine("  hermes mutation-attribution-analysis Mutation Attribution Analysis anzeigen");
@@ -6764,12 +6766,15 @@ internal sealed class HermesCli
         var openOosPlans = oosPlanReport?.Plans.Count(plan => !plan.Status.StartsWith("completed_", StringComparison.OrdinalIgnoreCase)) ?? 0;
         var forwardPlanReport = new AutonomousForwardValidationPlanningService(BuildStoragePaths(), _runtimeRoot).Load();
         var openForwardPlans = forwardPlanReport?.Plans.Count(plan => !plan.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)) ?? 0;
+        var forwardObservationReport = new AutonomousForwardObservationGateService(BuildStoragePaths(), _runtimeRoot).Load();
+        var lastForwardObservationStatus = forwardObservationReport?.GateStatus ?? "-";
         if (report is null)
         {
             WriteField("Status", "keine gespeicherte Ausführung");
             WriteField("Hinweis", "autonomous-research-loop-step noch nicht ausgeführt.");
             WriteField("Offene OOS-Pläne", openOosPlans.ToString());
             WriteField("Offene Forward-Pläne", openForwardPlans.ToString());
+            WriteField("Letzter Forward-Observation-Status", lastForwardObservationStatus);
             WriteField("Nächster Schritt", openForwardPlans > 0 ? "Forward-Beobachtung im erlaubten Zeitfenster" : "Research-Loop warten");
             WriteSafety();
             return 0;
@@ -6791,6 +6796,7 @@ internal sealed class HermesCli
         WriteField("In Learning Window", report.InLearningWindow.ToString().ToLowerInvariant());
         WriteField("Offene OOS-Pläne", openOosPlans.ToString());
         WriteField("Offene Forward-Pläne", openForwardPlans.ToString());
+        WriteField("Letzter Forward-Observation-Status", lastForwardObservationStatus);
         WriteField("Nächster Schritt", openForwardPlans > 0 ? "Forward-Beobachtung im erlaubten Zeitfenster" : report.NextPlannedStep);
         WriteField("Operator Summary", report.OperatorSummary);
         WriteMessages("Warnings", report.Warnings);
@@ -6862,6 +6868,31 @@ internal sealed class HermesCli
         WriteField("Blocked", report.BlockedCount.ToString());
         WriteField("Operator Summary", report.OperatorSummary);
         WriteField("Next Safe Step", report.NextSafeStep);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutonomousForwardObservationGate()
+    {
+        WriteHeader("Hermes Autonomous Forward Observation Gate");
+
+        var service = new AutonomousForwardObservationGateService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Gate Status", report.GateStatus);
+        WriteField("Window Status", report.WindowStatus);
+        WriteField("Plans Seen", report.PlansSeen.ToString());
+        WriteField("Plans Ready To Observe", report.PlansReadyToObserve.ToString());
+        WriteField("Plans Waiting", report.PlansWaiting.ToString());
+        WriteField("Plans Blocked", report.PlansBlocked.ToString());
+        WriteField("Selected Plan", report.SelectedPlan?.ForwardValidationJobId ?? "-");
+        WriteField("Observation Result", report.Observation?.Result ?? report.GateStatus);
+        WriteField("Next Safe Step", report.NextSafeStep);
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator Summary", report.OperatorSummary);
         WriteMessages("Warnings", report.Warnings);
         WriteSafety();
         return 0;
