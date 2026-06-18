@@ -84,8 +84,9 @@ public sealed class AutonomousOosPlanningService
         var mutationExecution = LoadJson<MutationValidationExecutorReport>(Path.Combine(_storagePaths.Root, "reports", "mutation_validation_execution", "mutation_validation_execution.json"));
         var mutationAttribution = LoadJson<MutationAttributionAnalysisReport>(Path.Combine(_storagePaths.Root, "reports", "mutation_attribution_analysis", "mutation_attribution_analysis.json"));
         var latestSuccess = StrategyBacktestResultArchiveService.LoadLatestSuccess(_storagePaths);
+        var executionGate = LoadJson<AutonomousOosExecutionGateReport>(Path.Combine(_storagePaths.Root, "reports", "autonomous_oos_execution_gate", "autonomous_oos_execution_gate.json"));
 
-        var plans = BuildPlans(hypotheses, attributionFeedback, mutationExecution, mutationAttribution, latestSuccess);
+        var plans = BuildPlans(hypotheses, attributionFeedback, mutationExecution, mutationAttribution, latestSuccess, executionGate);
         var report = new AutonomousOosPlanningReport(
             ReportVersion: "autonomous_oos_planning_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -99,9 +100,7 @@ public sealed class AutonomousOosPlanningService
             SourceReports: BuildSourceReports(attributionFeedback, mutationExecution, mutationAttribution, latestSuccess),
             Warnings: plans.Count == 0 ? ["no_oos_candidate_hypotheses_found"] : [],
             OperatorSummary: BuildOperatorSummary(plans),
-            NextSafeStep: plans.Any(plan => plan.ReadinessStatus.Equals("ready_to_execute", StringComparison.OrdinalIgnoreCase))
-                ? "OOS-Plan ist vorbereitet; keine Ausfuehrung."
-                : "Daten oder Spezifikation vervollstaendigen; keine Ausfuehrung.",
+            NextSafeStep: BuildNextSafeStep(plans),
             SafetySummary: "no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true",
             FrankRequired: false,
             NoTradingExecution: true,
@@ -120,7 +119,8 @@ public sealed class AutonomousOosPlanningService
         AttributionHypothesisFeedbackReport? attributionFeedback,
         MutationValidationExecutorReport? mutationExecution,
         MutationAttributionAnalysisReport? mutationAttribution,
-        StrategyBacktestExecutorResultArtifact? latestSuccess)
+        StrategyBacktestExecutorResultArtifact? latestSuccess,
+        AutonomousOosExecutionGateReport? executionGate)
     {
         var candidates = hypotheses.ToList();
         if (attributionFeedback is not null)
@@ -143,7 +143,7 @@ public sealed class AutonomousOosPlanningService
                 HumanReviewRequired: attributionFeedback.Hypothesis.FrankRequired));
         }
 
-        return candidates
+        var plans = candidates
             .Where(item => item.Status.Equals("research_hypothesis", StringComparison.OrdinalIgnoreCase))
             .Where(item => item.Trust.Classification.Equals("preliminary", StringComparison.OrdinalIgnoreCase) || item.Trust.Value < 0.7)
             .Where(item => HasOosNextStep(item))
@@ -174,6 +174,64 @@ public sealed class AutonomousOosPlanningService
                     Status: "prepared");
             })
             .ToList();
+
+        return ApplyExecutionStatus(plans, executionGate);
+    }
+
+    private static IReadOnlyList<AutonomousOosPlan> ApplyExecutionStatus(
+        IReadOnlyList<AutonomousOosPlan> plans,
+        AutonomousOosExecutionGateReport? executionGate)
+    {
+        if (executionGate?.Result is null)
+        {
+            return plans;
+        }
+
+        var completedStatus = executionGate.Result.Outcome switch
+        {
+            "improved" => "completed_improved",
+            "worse" => "completed_worse",
+            _ => "completed_inconclusive",
+        };
+
+        return plans
+            .Select(plan => plan.OosJobId.Equals(executionGate.Result.OosJobId, StringComparison.OrdinalIgnoreCase)
+                ? new AutonomousOosPlan(
+                    OosJobId: plan.OosJobId,
+                    HypothesisId: plan.HypothesisId,
+                    Asset: plan.Asset,
+                    Timeframe: plan.Timeframe,
+                    StrategyPattern: plan.StrategyPattern,
+                    CausalFactor: plan.CausalFactor,
+                    RequiredDataset: plan.RequiredDataset,
+                    OosPeriod: plan.OosPeriod,
+                    InSampleReference: plan.InSampleReference,
+                    MutationReference: plan.MutationReference,
+                    ReadinessStatus: completedStatus,
+                    Blockers: plan.Blockers,
+                    MaxRuns: plan.MaxRuns,
+                    SafetyFlags: plan.SafetyFlags,
+                    Status: completedStatus)
+                : plan)
+            .ToList();
+    }
+
+    private static string BuildNextSafeStep(IReadOnlyList<AutonomousOosPlan> plans)
+    {
+        var completed = plans.FirstOrDefault(plan => plan.Status.StartsWith("completed_", StringComparison.OrdinalIgnoreCase));
+        if (completed is not null)
+        {
+            return completed.Status switch
+            {
+                "completed_improved" => "Forward Validation planen.",
+                "completed_worse" => "Hypothese zurückstufen.",
+                _ => "Weitere OOS-Daten nötig.",
+            };
+        }
+
+        return plans.Any(plan => plan.ReadinessStatus.Equals("ready_to_execute", StringComparison.OrdinalIgnoreCase))
+            ? "OOS-Plan ist vorbereitet; keine Ausfuehrung."
+            : "Daten oder Spezifikation vervollstaendigen; keine Ausfuehrung.";
     }
 
     private static bool HasOosNextStep(CognitiveHypothesis hypothesis) =>

@@ -6759,11 +6759,12 @@ internal sealed class HermesCli
         var service = new AutonomousResearchLoopOrchestratorService(BuildStoragePaths(), _runtimeRoot);
         var report = service.Load();
         var oosPlanReport = new AutonomousOosPlanningService(BuildStoragePaths()).Load();
+        var openOosPlans = oosPlanReport?.Plans.Count(plan => !plan.Status.StartsWith("completed_", StringComparison.OrdinalIgnoreCase)) ?? 0;
         if (report is null)
         {
             WriteField("Status", "keine gespeicherte Ausführung");
             WriteField("Hinweis", "autonomous-research-loop-step noch nicht ausgeführt.");
-            WriteField("Offene OOS-Pläne", (oosPlanReport?.Plans.Count ?? 0).ToString());
+            WriteField("Offene OOS-Pläne", openOosPlans.ToString());
             WriteSafety();
             return 0;
         }
@@ -6782,7 +6783,7 @@ internal sealed class HermesCli
         WriteField("Safety Eligible", report.SafetyEligible.ToString().ToLowerInvariant());
         WriteField("In Work Window", report.InWorkWindow.ToString().ToLowerInvariant());
         WriteField("In Learning Window", report.InLearningWindow.ToString().ToLowerInvariant());
-        WriteField("Offene OOS-Pläne", (oosPlanReport?.Plans.Count ?? 0).ToString());
+        WriteField("Offene OOS-Pläne", openOosPlans.ToString());
         WriteField("Operator Summary", report.OperatorSummary);
         WriteMessages("Warnings", report.Warnings);
         WriteSafety();
