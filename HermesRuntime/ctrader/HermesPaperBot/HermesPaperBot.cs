@@ -17,6 +17,11 @@ namespace HermesPaperBot.Bot;
 public sealed class HermesPaperBot
 {
     /// <summary>
+    /// Defensive paper runtime orchestrator placeholder.
+    /// </summary>
+    private readonly global::HermesPaperBot.Services.PaperRuntimeOrchestrator _paperRuntimeOrchestrator = new();
+
+    /// <summary>
     /// TODO: validate config and prepare paper-only runtime.
     /// </summary>
     public void OnStart()
@@ -24,7 +29,10 @@ public sealed class HermesPaperBot
     }
 
     /// <summary>
-    /// TODO: handle timer-driven bundle import and paper runtime steps.
+    /// TODO: call RunStep on the paper runtime orchestrator.
+    /// paper_only
+    /// broker_action=none
+    /// no order API
     /// </summary>
     public void OnTimer()
     {

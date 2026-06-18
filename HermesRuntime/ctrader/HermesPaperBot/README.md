@@ -55,3 +55,18 @@ Run the manual preflight before any later cTrader paper bot change:
 ```bash
 bash scripts/preflight_ctrader_paper_bot.sh
 ```
+
+## Runtime Orchestrator V1
+
+The paper runtime now uses a defensive orchestrator step:
+
+- validate configuration
+- import a local bundle
+- validate manifest, provenance, checksums, safety, and drift
+- evaluate the kill switch
+- produce a paper-only decision placeholder
+
+This remains paper-only.
+No broker access.
+No cTrader Order API.
+No live or demo execution.
