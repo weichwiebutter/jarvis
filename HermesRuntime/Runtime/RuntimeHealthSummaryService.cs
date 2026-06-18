@@ -62,11 +62,13 @@ public sealed class RuntimeHealthSummaryService
 
         var masterStatus = LoadMasterStatusSnapshot() ?? BuildFallbackMasterStatus();
         var loopReport = new AutonomousResearchLoopOrchestratorService(_storagePaths, _runtimeRoot).Load();
+        var actionPlan = LoadJson(Path.Combine(_storagePaths.Root, "reports", "review_action_plan", "review_action_plan.json"));
+        var domainAware = LoadJson(Path.Combine(_storagePaths.Root, "reports", "domain_aware_review_prioritization", "domain_aware_review_prioritization.json"));
         var oosPlanning = new AutonomousOosPlanningService(_storagePaths).Load();
         var forwardSync = new AutonomousForwardObservationCompletionSyncService(_storagePaths, _runtimeRoot).Load();
         var warnings = new List<string>();
 
-        var mainStatus = DetermineMainStatus(masterStatus, loopReport);
+        var mainStatus = DetermineMainStatus(masterStatus, loopReport, actionPlan, domainAware);
         var frankRequired = mainStatus == "frank_noetig";
         var lastStep = loopReport?.LastAutonomousAction ?? loopReport?.StepType ?? "-";
         var nextStep = loopReport?.NextScheduledStep ?? loopReport?.NextPlannedStep ?? "Research-Loop warten";
@@ -76,7 +78,7 @@ public sealed class RuntimeHealthSummaryService
         var openForwardPlans = forwardSync?.OpenPlans ?? 0;
         var lastWarning = TranslateLastWarning(masterStatus, loopReport, warnings);
         var safetyStatus = BuildSafetyStatus(masterStatus, loopReport);
-        var operatorSummary = BuildOperatorSummary(mainStatus, lastStep, nextStep, lastResult, frankRequired);
+        var operatorSummary = BuildOperatorSummary(mainStatus, lastStep, nextStep, lastResult, frankRequired, openReviews);
 
         var report = new RuntimeHealthSummaryReport(
             ReportVersion: "runtime_health_summary_v1",
@@ -102,7 +104,7 @@ public sealed class RuntimeHealthSummaryService
         return report;
     }
 
-    private static string DetermineMainStatus(MasterStatusSnapshot masterStatus, AutonomousResearchLoopOrchestratorReport? loopReport)
+    private static string DetermineMainStatus(MasterStatusSnapshot masterStatus, AutonomousResearchLoopOrchestratorReport? loopReport, JsonElement? actionPlan, JsonElement? domainAware)
     {
         var hasRuntimeError = masterStatus.OverallStatus.Equals("critical", StringComparison.OrdinalIgnoreCase)
             || !masterStatus.SupervisorRunning
@@ -113,14 +115,36 @@ public sealed class RuntimeHealthSummaryService
             return "fehler";
         }
 
-        var hasHighPriorityReviews = masterStatus.PendingReviews > 0
-            && masterStatus.TopReviewPriorities.Any(item => item.StartsWith("high:", StringComparison.OrdinalIgnoreCase));
-        if (hasHighPriorityReviews)
+        var frankDecisionRequired = ReadInt(actionPlan, "frank_decision_required", "FrankDecisionRequired") > 0
+            || ReadBool(domainAware, "frank_red_required", "FrankRedRequired");
+        var unresolvedHighPriority = masterStatus.PendingReviews > 0
+            && masterStatus.TopReviewPriorities.Any(item => item.StartsWith("high:", StringComparison.OrdinalIgnoreCase))
+            && ReadInt(actionPlan, "hermes_can_continue", "HermesCanContinue") <= 0;
+        if (frankDecisionRequired || unresolvedHighPriority)
         {
             return "frank_noetig";
         }
 
-        var waitingStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        if (masterStatus.PendingReviews > 0)
+        {
+            var loopStatus = loopReport?.Status ?? string.Empty;
+            var waitingStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "waiting_for_window",
+                "waiting_for_allowed_time_window",
+                "no_signal",
+                "waiting_for_signal",
+                "waiting_for_market_data",
+                "waiting_for_allowed_window",
+                "idle_no_safe_action"
+            };
+
+            return waitingStatuses.Contains(loopStatus) || waitingStatuses.Contains(loopReport?.StepStatus ?? string.Empty)
+                ? "wartet"
+                : "arbeitet";
+        }
+
+        var waitingStatusesFallback = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "waiting_for_window",
             "waiting_for_allowed_time_window",
@@ -131,8 +155,8 @@ public sealed class RuntimeHealthSummaryService
             "idle_no_safe_action"
         };
 
-        if (waitingStatuses.Contains(loopReport?.Status ?? string.Empty)
-            || waitingStatuses.Contains(loopReport?.StepStatus ?? string.Empty))
+        if (waitingStatusesFallback.Contains(loopReport?.Status ?? string.Empty)
+            || waitingStatusesFallback.Contains(loopReport?.StepStatus ?? string.Empty))
         {
             return "wartet";
         }
@@ -174,8 +198,10 @@ public sealed class RuntimeHealthSummaryService
     private static string BuildSafetyStatus(MasterStatusSnapshot masterStatus, AutonomousResearchLoopOrchestratorReport? loopReport)
         => $"no_auto_trading={masterStatus.NoAutoTrading.ToString().ToLowerInvariant()}, human_review_required={masterStatus.HumanReviewRequired.ToString().ToLowerInvariant()}, broker_orders_enabled={masterStatus.BrokerOrdersEnabled.ToString().ToLowerInvariant()}, live_trading_enabled={masterStatus.LiveTradingEnabled.ToString().ToLowerInvariant()}, research_only=true, in_work_window={(loopReport?.InWorkWindow ?? false).ToString().ToLowerInvariant()}, in_learning_window={(loopReport?.InLearningWindow ?? false).ToString().ToLowerInvariant()}";
 
-    private static string BuildOperatorSummary(string mainStatus, string lastStep, string nextStep, string lastResult, bool frankRequired)
-        => $"Hauptstatus={mainStatus}. Letzter Schritt={lastStep}. Nächster Schritt={nextStep}. Ergebnis={lastResult}. Frank nötig={(frankRequired ? "ja" : "nein")}.";
+    private static string BuildOperatorSummary(string mainStatus, string lastStep, string nextStep, string lastResult, bool frankRequired, int openReviews)
+        => openReviews > 0 && !frankRequired
+            ? $"{openReviews} Reviews offen, aber Hermes kann die Top-Trading-Reviews autonom weiterbearbeiten. Frank muss aktuell nicht entscheiden."
+            : $"Hauptstatus={mainStatus}. Letzter Schritt={lastStep}. Nächster Schritt={nextStep}. Ergebnis={lastResult}. Frank nötig={(frankRequired ? "ja" : "nein")}.";
 
     private static IReadOnlyList<string> BuildSourceReports() =>
     [
@@ -228,6 +254,74 @@ public sealed class RuntimeHealthSummaryService
         {
             return null;
         }
+    }
+
+    private static JsonElement? LoadJson(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path), new JsonDocumentOptions { AllowTrailingCommas = true });
+            return doc.RootElement.Clone();
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static int ReadInt(JsonElement? element, params string[] names)
+    {
+        if (element is null || element.Value.ValueKind != JsonValueKind.Object)
+        {
+            return 0;
+        }
+
+        foreach (var name in names)
+        {
+            if (element.Value.TryGetProperty(name, out var value))
+            {
+                if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
+                {
+                    return number;
+                }
+                if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out var parsed))
+                {
+                    return parsed;
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    private static bool ReadBool(JsonElement? element, params string[] names)
+    {
+        if (element is null || element.Value.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        foreach (var name in names)
+        {
+            if (element.Value.TryGetProperty(name, out var value))
+            {
+                if (value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    return value.GetBoolean();
+                }
+                if (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var parsed))
+                {
+                    return parsed;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static MasterStatusSnapshot BuildFallbackMasterStatus()
