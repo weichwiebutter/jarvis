@@ -1264,6 +1264,9 @@ function KnowledgeHealthCard({ operatorState }) {
   const health = masterStatus.knowledge_health || 'unbekannt';
   const rootCauses = Array.isArray(rootCause.drivers) ? rootCause.drivers.slice(0, 3) : [];
   const confidenceTop = confidence.top_candidate || confidence.topCandidate || null;
+  const confidenceLever = reportByKey(operatorState, 'confidenceReviewPrioritization')?.raw?.top_lever
+    || reportByKey(operatorState, 'confidenceReviewPrioritization')?.raw?.topLever
+    || null;
   const tone = health.includes('critical')
     ? 'danger'
     : health.includes('needs') || masterStatus.weak_knowledge
@@ -1319,6 +1322,17 @@ function KnowledgeHealthCard({ operatorState }) {
           </div>
         ) : (
           <p className="control-view-note">Confidence-Report noch nicht verfügbar.</p>
+        )}
+      </div>
+      <div className="knowledge-health-root-cause">
+        <p className="control-view-note">Top Wissenshebel</p>
+        {confidenceLever ? (
+          <div className="status-line">
+            <span>{confidenceLever.hypothesis_title || confidenceLever.HypothesisTitle || 'Hebel'}</span>
+            <strong>{confidenceLever.confidence_gain_score ?? confidenceLever.ConfidenceGainScore ?? '-'}%</strong>
+          </div>
+        ) : (
+          <p className="control-view-note">Wissenshebel werden aus der Confidence-Priorisierung abgeleitet.</p>
         )}
       </div>
     </details>

@@ -109,6 +109,7 @@ internal sealed class HermesCli
             "knowledge-health" => ShowKnowledgeHealth(),
             "knowledge-health-root-cause" => ShowKnowledgeHealthRootCause(),
             "knowledge-confidence-engine" => ShowKnowledgeConfidenceEngine(),
+            "confidence-review-prioritization" => ShowConfidenceReviewPrioritization(),
             "promotion-status" => ShowPromotionStatus(),
             "knowledge-consolidation-analyzer" => ShowKnowledgeConsolidationAnalyzer(),
             "knowledge-consolidation-executor" => ShowKnowledgeConsolidationExecutor(),
@@ -413,6 +414,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-health   Knowledge Trust/Quality Scores erzeugen und anzeigen");
         Console.WriteLine("  hermes knowledge-health-root-cause Knowledge Trust Root Cause Analyse anzeigen");
         Console.WriteLine("  hermes knowledge-confidence-engine Knowledge Confidence Score anzeigen");
+        Console.WriteLine("  hermes confidence-review-prioritization Confidence-basierte Review Priorisierung anzeigen");
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-analyzer Knowledge Consolidation Analyzer anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-executor Knowledge Consolidation Kandidaten erzeugen");
@@ -6369,6 +6371,31 @@ internal sealed class HermesCli
         {
             WriteField(item.Title, $"{item.ConfidenceClass} · {item.Asset} {item.Timeframe} · score={item.ConfidenceScore:0.#}");
             WriteField("Blocker", string.Join(" · ", item.StrongestBlockers));
+            WriteField("Nächster Schritt", item.NextEvidenceStep);
+        }
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowConfidenceReviewPrioritization()
+    {
+        WriteHeader("Hermes Confidence Driven Review Prioritization");
+        var service = new ConfidenceDrivenReviewPrioritizationService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Bewertete Reviews", report.ReviewsEvaluated.ToString());
+        WriteField("Hypothesen gematcht", report.HypothesesMatched.ToString());
+        WriteField("Groesster Wissenshebel", report.TopLever?.HypothesisTitle ?? "-");
+        WriteField("Hoechste erwartete Confidence-Steigerung", report.TopLever is null ? "-" : $"+{report.TopLever.ConfidenceGainScore:0.#}%");
+        WriteSubHeader("Operator Summary");
+        Console.WriteLine(report.OperatorSummary);
+        WriteSubHeader("Top Wissenshebel");
+        foreach (var item in report.Entries.Take(5))
+        {
+            WriteField(item.Title, $"{item.ReprioritizationClass} · gain={item.ConfidenceGainScore:0.#}% · confidence={item.ConfidenceScore:0.#}%");
+            WriteField("Hypothese", item.HypothesisTitle);
             WriteField("Nächster Schritt", item.NextEvidenceStep);
         }
         WriteSafety();
