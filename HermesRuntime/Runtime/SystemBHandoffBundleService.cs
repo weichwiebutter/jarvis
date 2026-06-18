@@ -1,21 +1,22 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Hermes.Runtime;
 
 public sealed record SystemBHandoffBundleManifest(
-    DateTimeOffset GeneratedAtUtc,
-    string BundleVersion,
-    string SourceSystem,
-    int FileCount,
-    IReadOnlyList<string> IncludedFiles,
-    IReadOnlyDictionary<string, string> Hashes,
-    bool NoAutoTrading,
-    bool HumanReviewRequired,
-    bool BrokerOrdersEnabled,
-    bool LiveTradingEnabled,
-    bool ResearchOnly);
+    [property: JsonPropertyName("generated_at_utc")] DateTimeOffset GeneratedAtUtc,
+    [property: JsonPropertyName("bundle_version")] string BundleVersion,
+    [property: JsonPropertyName("source_system")] string SourceSystem,
+    [property: JsonPropertyName("file_count")] int FileCount,
+    [property: JsonPropertyName("included_files")] IReadOnlyList<string> IncludedFiles,
+    [property: JsonPropertyName("hashes")] IReadOnlyDictionary<string, string> Hashes,
+    [property: JsonPropertyName("no_auto_trading")] bool NoAutoTrading,
+    [property: JsonPropertyName("human_review_required")] bool HumanReviewRequired,
+    [property: JsonPropertyName("broker_orders_enabled")] bool BrokerOrdersEnabled,
+    [property: JsonPropertyName("live_trading_enabled")] bool LiveTradingEnabled,
+    [property: JsonPropertyName("research_only")] bool ResearchOnly);
 
 public sealed class SystemBHandoffBundleService
 {

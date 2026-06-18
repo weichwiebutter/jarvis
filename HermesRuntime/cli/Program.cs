@@ -281,6 +281,7 @@ internal sealed class HermesCli
             "scalping-ensemble-package" => ShowScalpingEnsemblePackage(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
+            "cloud-embedded-release-package" => ShowCloudEmbeddedReleasePackage(),
             "scalping-ensemble-human-review-package" => ShowScalpingEnsembleHumanReviewPackage(),
             "scalping-ensemble-review-status" => ShowScalpingEnsembleReviewStatus(),
             "approve-scalping-ensemble" => ApproveScalpingEnsemble(),
@@ -584,6 +585,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes scalping-ensemble-package Ensemble Export Package anzeigen");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
+        Console.WriteLine("  hermes cloud-embedded-release-package Cloud-kompatibles Embedded Release Package erzeugen");
         Console.WriteLine("  hermes scalping-ensemble-human-review-package Ensemble Human Review Package anzeigen");
         Console.WriteLine("  hermes scalping-ensemble-review-status Ensemble Review Status anzeigen");
         Console.WriteLine("  hermes approve-scalping-ensemble --mode demo_signal_use|forward_test_preparation Ensemble freigeben");
@@ -5358,6 +5360,27 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private int ShowCloudEmbeddedReleasePackage()
+    {
+        WriteHeader("Hermes Cloud Embedded Release Package");
+        var service = new CloudEmbeddedReleasePackageGeneratorService(BuildStoragePaths(), _runtimeRoot);
+        var result = service.Generate();
+
+        WriteField("Status", result.Status);
+        WriteField("Reason", result.Reason);
+        WriteField("Source Bundle", DisplayPath(result.SourceBundleDirectory));
+        WriteField("Output JSON", DisplayPath(result.OutputJsonPath));
+        WriteField("Output Markdown", DisplayPath(result.OutputMarkdownPath));
+        WriteField("Bot Release ID", result.BotReleaseId);
+        WriteField("Bot Version", result.BotVersion);
+        WriteField("Strategy Package Version", result.StrategyPackageVersion);
+        WriteField("Schema Version", result.SchemaVersion);
+        WriteField("Release Mode", result.ReleaseMode);
+        WriteField("Embedded Checksum", result.EmbeddedChecksum);
+        WriteSafety();
+        return result.Success ? 0 : 1;
     }
 
     private int ShowScalpingEnsembleHumanReviewPackage()

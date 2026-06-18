@@ -1,0 +1,305 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+namespace Hermes.Runtime;
+
+public sealed record CloudEmbeddedReleasePackageGenerationResult(
+    string SourceBundleDirectory,
+    string OutputDirectory,
+    string OutputJsonPath,
+    string OutputMarkdownPath,
+    string Status,
+    string Reason,
+    string BotReleaseId,
+    string BotVersion,
+    string StrategyPackageVersion,
+    string SchemaVersion,
+    string ReleaseMode,
+    string EmbeddedChecksum,
+    bool Success);
+
+public sealed class CloudEmbeddedReleasePackageGeneratorService
+{
+    private static readonly JsonSerializerOptions ReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private static readonly string[] ForbiddenCapabilities =
+    [
+        "execute_market_order",
+        "place_limit_order",
+        "place_stop_order",
+        "modify_position",
+        "close_position",
+        "cancel_pending_order",
+        "position_management",
+        "pending_order_management",
+        "account_risk_mutation",
+        "strategy_mutation",
+        "backtesting",
+        "oos_execution",
+        "forward_learning",
+        "release_manifest_mutation",
+        "safety_flag_mutation",
+        "external_network_calls",
+        "secrets_access",
+    ];
+
+    private readonly StoragePaths _storagePaths;
+    private readonly string _runtimeRoot;
+    private string? _resolvedOutputDirectory;
+
+    public CloudEmbeddedReleasePackageGeneratorService(StoragePaths storagePaths, string runtimeRoot)
+    {
+        _storagePaths = storagePaths;
+        _runtimeRoot = runtimeRoot;
+    }
+
+    public string OutputDirectory => _resolvedOutputDirectory ??= ResolveOutputDirectory();
+    public string OutputJsonPath => Path.Combine(OutputDirectory, "cloud_embedded_release_package.json");
+    public string OutputMarkdownPath => Path.Combine(OutputDirectory, "cloud_embedded_release_package.md");
+
+    public CloudEmbeddedReleasePackageGenerationResult Generate(string? sourceBundleDirectory = null)
+    {
+        var sourceDirectory = ResolveSourceBundleDirectory(sourceBundleDirectory);
+        if (sourceDirectory is null)
+        {
+            return BuildFailure("source_bundle_missing", "missing_source_bundle", string.Empty);
+        }
+
+        var manifestPath = Path.Combine(sourceDirectory, "bundle-manifest.json");
+        var packagePath = Path.Combine(sourceDirectory, "ensemble_signal_agent_package.json");
+        var schemaPath = Path.Combine(sourceDirectory, "ensemble_signal_agent_package.schema.json");
+        var contractPath = Path.Combine(sourceDirectory, "system_b_signal_agent_export_contract.md");
+
+        if (!File.Exists(manifestPath) || !File.Exists(packagePath) || !File.Exists(schemaPath))
+        {
+            return BuildFailure("source_bundle_incomplete", "required_source_files_missing", sourceDirectory);
+        }
+
+        var bundleManifest = JsonSerializer.Deserialize<SystemBHandoffBundleManifest>(File.ReadAllText(manifestPath), ReadOptions);
+        var sourcePackage = JsonSerializer.Deserialize<EnsembleSignalAgentPortfolioPackage>(File.ReadAllText(packagePath), ReadOptions);
+        if (bundleManifest is null || sourcePackage is null)
+        {
+            return BuildFailure("source_bundle_invalid", "json_parse_failed", sourceDirectory);
+        }
+
+        if (!bundleManifest.NoAutoTrading || !bundleManifest.HumanReviewRequired || bundleManifest.BrokerOrdersEnabled || bundleManifest.LiveTradingEnabled || !bundleManifest.ResearchOnly)
+        {
+            return BuildFailure("source_bundle_safety_invalid", "source_safety_flags_invalid", sourceDirectory);
+        }
+
+        if (!sourcePackage.NoAutoTrading || !sourcePackage.HumanReviewRequired || sourcePackage.BrokerOrdersEnabled || sourcePackage.LiveTradingEnabled || !sourcePackage.ResearchOnly)
+        {
+            return BuildFailure("source_package_safety_invalid", "package_safety_flags_invalid", sourceDirectory);
+        }
+
+        var embeddedManifestJson = BuildEmbeddedManifestJson(bundleManifest, sourcePackage, File.Exists(contractPath) ? File.ReadAllText(contractPath) : string.Empty);
+        var embeddedStrategyJson = BuildEmbeddedStrategySnapshotJson(bundleManifest, sourcePackage);
+        var embeddedSchemaJson = File.ReadAllText(schemaPath);
+        var embeddedChecksum = ComputeChecksum(embeddedManifestJson, embeddedStrategyJson, embeddedSchemaJson);
+
+        var payload = new
+        {
+            bot_release_id = sourcePackage.PackageId,
+            bot_version = sourcePackage.PackageVersion,
+            strategy_package_version = sourcePackage.PackageVersion,
+            schema_version = "ensemble_signal_agent_package.schema_v1",
+            release_mode = "paper_only",
+            safety_flags = StrictSafetyFlags(),
+            forbidden_capabilities = ForbiddenCapabilities,
+            embedded_manifest_json = embeddedManifestJson,
+            embedded_strategy_json = embeddedStrategyJson,
+            embedded_schema_json = embeddedSchemaJson,
+            embedded_checksum = embeddedChecksum,
+            generated_at_utc = DateTimeOffset.UtcNow,
+            generated_by = "HermesRuntime",
+            source_bundle_directory = sourceDirectory,
+            source_bundle_manifest = manifestPath,
+            source_bundle_package = packagePath,
+            source_bundle_schema = schemaPath,
+        };
+
+        Directory.CreateDirectory(OutputDirectory);
+        File.WriteAllText(OutputJsonPath, JsonSerializer.Serialize(payload, JsonDefaults.WriteOptions));
+        File.WriteAllText(OutputMarkdownPath, BuildMarkdown(sourceDirectory, bundleManifest, sourcePackage, embeddedChecksum, embeddedManifestJson, embeddedStrategyJson, embeddedSchemaJson));
+
+        return new CloudEmbeddedReleasePackageGenerationResult(
+            SourceBundleDirectory: sourceDirectory,
+            OutputDirectory: OutputDirectory,
+            OutputJsonPath: OutputJsonPath,
+            OutputMarkdownPath: OutputMarkdownPath,
+            Status: "generated",
+            Reason: "ok",
+            BotReleaseId: sourcePackage.PackageId,
+            BotVersion: sourcePackage.PackageVersion,
+            StrategyPackageVersion: sourcePackage.PackageVersion,
+            SchemaVersion: "ensemble_signal_agent_package.schema_v1",
+            ReleaseMode: "paper_only",
+            EmbeddedChecksum: embeddedChecksum,
+            Success: true);
+    }
+
+    private CloudEmbeddedReleasePackageGenerationResult BuildFailure(string status, string reason, string sourceDirectory)
+        => new(
+            SourceBundleDirectory: sourceDirectory,
+            OutputDirectory: OutputDirectory,
+            OutputJsonPath: OutputJsonPath,
+            OutputMarkdownPath: OutputMarkdownPath,
+            Status: status,
+            Reason: reason,
+            BotReleaseId: string.Empty,
+            BotVersion: string.Empty,
+            StrategyPackageVersion: string.Empty,
+            SchemaVersion: string.Empty,
+            ReleaseMode: "paper_only",
+            EmbeddedChecksum: string.Empty,
+            Success: false);
+
+    private static object StrictSafetyFlags() => new
+    {
+        no_auto_trading = true,
+        human_review_required = true,
+        broker_orders_enabled = false,
+        live_trading_enabled = false,
+        order_api_enabled = false,
+        paper_mode = true,
+        broker_action = "none",
+    };
+
+    private static string BuildEmbeddedManifestJson(SystemBHandoffBundleManifest bundleManifest, EnsembleSignalAgentPortfolioPackage sourcePackage, string contractMarkdown)
+    {
+        var manifest = new
+        {
+            generated_at_utc = DateTimeOffset.UtcNow,
+            generated_by = "HermesRuntime",
+            bot_release_id = sourcePackage.PackageId,
+            bot_version = sourcePackage.PackageVersion,
+            strategy_package_version = sourcePackage.PackageVersion,
+            schema_version = "ensemble_signal_agent_package.schema_v1",
+            release_mode = "paper_only",
+            safety_flags = StrictSafetyFlags(),
+            forbidden_capabilities = ForbiddenCapabilities,
+            source_system = bundleManifest.SourceSystem,
+            source_bundle_version = bundleManifest.BundleVersion,
+            source_file_count = bundleManifest.FileCount,
+            source_contract_present = !string.IsNullOrWhiteSpace(contractMarkdown),
+            source_status = sourcePackage.Status,
+            source_package_id = sourcePackage.PackageId,
+            source_package_assets = sourcePackage.Assets.Select(asset => asset.Asset).ToList(),
+        };
+
+        return JsonSerializer.Serialize(manifest, JsonDefaults.WriteOptions);
+    }
+
+    private static string BuildEmbeddedStrategySnapshotJson(SystemBHandoffBundleManifest bundleManifest, EnsembleSignalAgentPortfolioPackage sourcePackage)
+    {
+        var snapshot = new
+        {
+            package_id = sourcePackage.PackageId,
+            package_version = sourcePackage.PackageVersion,
+            source_system = sourcePackage.SourceSystem,
+            status = sourcePackage.Status,
+            assets = sourcePackage.Assets,
+            safety_flags = sourcePackage.SafetyFlags,
+            no_auto_trading = sourcePackage.NoAutoTrading,
+            human_review_required = sourcePackage.HumanReviewRequired,
+            broker_orders_enabled = sourcePackage.BrokerOrdersEnabled,
+            live_trading_enabled = sourcePackage.LiveTradingEnabled,
+            research_only = sourcePackage.ResearchOnly,
+            source_bundle_version = bundleManifest.BundleVersion,
+        };
+
+        return JsonSerializer.Serialize(snapshot, JsonDefaults.WriteOptions);
+    }
+
+    private static string ComputeChecksum(string embeddedManifestJson, string embeddedStrategyJson, string embeddedSchemaJson)
+    {
+        var combined = string.Join("\n", [embeddedManifestJson, embeddedStrategyJson, embeddedSchemaJson]);
+        using var sha = SHA256.Create();
+        var bytes = Encoding.UTF8.GetBytes(combined);
+        return Convert.ToHexString(sha.ComputeHash(bytes)).ToLowerInvariant();
+    }
+
+    private string? ResolveSourceBundleDirectory(string? explicitSourceDirectory)
+    {
+        var candidates = new List<string>();
+        if (!string.IsNullOrWhiteSpace(explicitSourceDirectory))
+        {
+            candidates.Add(explicitSourceDirectory);
+        }
+
+        candidates.Add(Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "system_b_handoff", "system_b_handoff_bundle"));
+        candidates.Add(Path.Combine(_storagePaths.Root, "reports", "system_b_handoff", "system_b_handoff_bundle"));
+        candidates.Add(Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "ctrader_bot_release_bundle"));
+        candidates.Add(Path.Combine(_storagePaths.Root, "reports", "ctrader_bot_release_bundle"));
+
+        return candidates.FirstOrDefault(Directory.Exists);
+    }
+
+    private string ResolveOutputDirectory()
+    {
+        var preferred = Path.Combine(_storagePaths.Root, "reports", "cloud_embedded_release_package");
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            return preferred;
+        }
+        catch
+        {
+            var fallback = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "cloud_embedded_release_package");
+            Directory.CreateDirectory(fallback);
+            return fallback;
+        }
+    }
+
+    private static string BuildMarkdown(
+        string sourceDirectory,
+        SystemBHandoffBundleManifest bundleManifest,
+        EnsembleSignalAgentPortfolioPackage sourcePackage,
+        string embeddedChecksum,
+        string embeddedManifestJson,
+        string embeddedStrategyJson,
+        string embeddedSchemaJson) => $"""
+# Cloud Embedded Release Package
+
+## Status
+- source_bundle_directory: {sourceDirectory}
+- bot_release_id: {sourcePackage.PackageId}
+- bot_version: {sourcePackage.PackageVersion}
+- strategy_package_version: {sourcePackage.PackageVersion}
+- schema_version: ensemble_signal_agent_package.schema_v1
+- release_mode: paper_only
+- generated_by: HermesRuntime
+- embedded_checksum: {embeddedChecksum}
+
+## Safety
+- no_auto_trading=true
+- human_review_required=true
+- broker_orders_enabled=false
+- live_trading_enabled=false
+- order_api_enabled=false
+- paper_mode=true
+- broker_action=none
+
+## Source Bundle
+- bundle_version: {bundleManifest.BundleVersion}
+- source_system: {bundleManifest.SourceSystem}
+- file_count: {bundleManifest.FileCount}
+
+## Embedded Manifest JSON
+{embeddedManifestJson}
+
+## Embedded Strategy JSON
+{embeddedStrategyJson}
+
+## Embedded Schema JSON
+{embeddedSchemaJson}
+
+## Notes
+- cloud_embedded_bundle does not depend on a local release inbox
+- HermesRuntime remains the release authority
+""";
+}

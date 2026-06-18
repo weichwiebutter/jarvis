@@ -81,6 +81,7 @@ public sealed class HermesReadOnlyBridge
         new("knowledgeTrustImprovementPlan", "Knowledge Trust Improvement Plan", "/reports/knowledge-trust-improvement-plan", "reports/knowledge_trust_improvement_plan/knowledge_trust_improvement_plan.json"),
         new("ensemblePortfolioStatus", "Ensemble Portfolio Status", "/reports/ensemble-portfolio-status", "reports/scalping_portfolio/ensemble_portfolio/ensemble_portfolio_status.json"),
         new("systemBHandoffBundle", "System B Handoff Bundle", "/reports/system-b-handoff-bundle", "reports/system_b_handoff/system_b_handoff_bundle/portfolio_summary.json"),
+        new("cloudEmbeddedReleasePackage", "Cloud Embedded Release Package", "/reports/cloud-embedded-release-package", "reports/cloud_embedded_release_package/cloud_embedded_release_package.json"),
         new("validateEnsembleSignalPackage", "Validate Ensemble Signal Package", "/reports/validate-ensemble-signal-package", "reports/scalping_portfolio/ensemble_portfolio/ensemble_signal_agent_package.json"),
         new("setupRegistry", "Setup Registry", "/reports/setup-registry", "reports/setup_registry/setup_registry.json"),
         new("signalAgentSpecs", "Signal Agent Specs", "/reports/signal-agent-specs", "reports/signal_agent_specs/signal_agent_specs.json"),
