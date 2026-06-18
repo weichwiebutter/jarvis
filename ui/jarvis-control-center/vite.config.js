@@ -107,6 +107,21 @@ const operatorReports = {
     url: bridgeUrl('/reports/strategy-backtest-signal-density-analyzer'),
     path: 'read-only bridge:/reports/strategy-backtest-signal-density-analyzer',
   },
+  strategyBacktestFailureLearning: {
+    label: 'Strategy Backtest Failure Learning',
+    url: bridgeUrl('/reports/strategy-backtest-failure-learning'),
+    path: 'read-only bridge:/reports/strategy-backtest-failure-learning',
+  },
+  failureGuidedMutationPlanner: {
+    label: 'Failure Guided Mutation Planner',
+    url: bridgeUrl('/reports/failure-guided-mutation-planner'),
+    path: 'read-only bridge:/reports/failure-guided-mutation-planner',
+  },
+  mutationCandidateQueue: {
+    label: 'Mutation Candidate Queue',
+    url: bridgeUrl('/reports/mutation-candidate-queue'),
+    path: 'read-only bridge:/reports/mutation-candidate-queue',
+  },
   strategyDatasetGateAudit: {
     label: 'Strategy Dataset Gate Audit',
     url: bridgeUrl('/reports/strategy-dataset-gate-audit'),

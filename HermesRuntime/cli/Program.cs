@@ -118,6 +118,10 @@ internal sealed class HermesCli
             "strategy-backtest-quality-audit" => ShowStrategyBacktestQualityAudit(),
             "strategy-backtest-evidence-gate" => ShowStrategyBacktestEvidenceGate(),
             "strategy-backtest-signal-density-analyzer" => ShowStrategyBacktestSignalDensityAnalyzer(),
+            "strategy-backtest-failure-learning" => ShowStrategyBacktestFailureLearning(),
+            "failure-guided-mutation-planner" => ShowFailureGuidedMutationPlanner(),
+            "mutation-candidate-export" => ShowMutationCandidateExport(),
+            "mutation-validation-job-planner" => ShowMutationValidationJobPlanner(),
             "strategy-dataset-gate-audit" => ShowStrategyDatasetGateAudit(),
             "trusted-candidates" => ShowTrustedCandidates(),
             "trusted-review-gate" => ShowTrustedReviewGate(),
@@ -402,6 +406,10 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-backtest-quality-audit Strategy Backtest Quality Audit anzeigen");
         Console.WriteLine("  hermes strategy-backtest-evidence-gate Strategy Backtest Evidence Gate anzeigen");
         Console.WriteLine("  hermes strategy-backtest-signal-density-analyzer Strategy Backtest Signal Density Analyzer anzeigen");
+        Console.WriteLine("  hermes strategy-backtest-failure-learning Strategy Backtest Failure Learning anzeigen");
+        Console.WriteLine("  hermes failure-guided-mutation-planner Failure Guided Mutation Planner anzeigen");
+        Console.WriteLine("  hermes mutation-candidate-export Mutation Candidate Queue exportieren");
+        Console.WriteLine("  hermes mutation-validation-job-planner Mutation Validation Job Planner anzeigen");
         Console.WriteLine("  hermes strategy-dataset-gate-audit Strategy Dataset Gate Audit anzeigen");
         Console.WriteLine("  hermes trusted-candidates Trusted Knowledge Kandidaten anzeigen");
         Console.WriteLine("  hermes trusted-review-gate Trusted Knowledge Review Gate anzeigen");
@@ -6709,6 +6717,127 @@ internal sealed class HermesCli
             WriteMessages("Recommendations", entry.Recommendations);
             WriteMessages("Warnings", entry.Warnings);
         }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowStrategyBacktestFailureLearning()
+    {
+        WriteHeader("Hermes Strategy Backtest Failure Learning");
+        var service = new StrategyBacktestFailureLearningService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Backtest Job", report.BacktestJobId);
+        WriteField("Strategy", $"{report.StrategyPattern} · {report.Asset} {report.Timeframe}");
+        WriteField("Trades Simulated", report.TradesSimulated.ToString());
+        WriteField("Win Rate", report.WinRate.ToString("0.####"));
+        WriteField("Profit Factor", report.ProfitFactor.ToString("0.####"));
+        WriteField("Max Drawdown", report.MaxDrawdown.ToString("0.####"));
+        WriteField("Expectancy", report.Expectancy.ToString("0.####"));
+        WriteField("Quality Class", report.QualityClass);
+        WriteField("Certification Ready", report.CertificationReady.ToString().ToLowerInvariant());
+        WriteField("Failed Backtest Evidence", report.FailedBacktestEvidence.ToString().ToLowerInvariant());
+        WriteField("Learning Decision", report.LearningDecision);
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Blocking Factors", report.BlockingFactors);
+        WriteMessages("Root Causes", report.RootCauses);
+        WriteMessages("Recommendations", report.Recommendations);
+        WriteMessages("Mutation Suggestions", report.MutationSuggestions.Select(suggestion => $"{suggestion.Title}: {suggestion.Reason} -> {suggestion.ExpectedBenefit}").ToList());
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowFailureGuidedMutationPlanner()
+    {
+        WriteHeader("Hermes Failure Guided Mutation Planner");
+        var storagePaths = BuildStoragePaths();
+        var service = new FailureGuidedMutationPlannerService(storagePaths, _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Source Job", report.SourceBacktestJobId);
+        WriteField("Strategy", $"{report.StrategyPattern} · {report.Asset} {report.Timeframe}");
+        WriteField("Trades Simulated", report.TradesSimulated.ToString());
+        WriteField("Win Rate", report.WinRate.ToString("0.####"));
+        WriteField("Profit Factor", report.ProfitFactor.ToString("0.####"));
+        WriteField("Max Drawdown", report.MaxDrawdown.ToString("0.####"));
+        WriteField("Expectancy", report.Expectancy.ToString("0.####"));
+        WriteField("Quality Class", report.QualityClass);
+        WriteField("Certification Ready", report.CertificationReady.ToString().ToLowerInvariant());
+        WriteField("Learning Decision", report.LearningDecision);
+        WriteField("Knowledge Update Tag", report.KnowledgeUpdateTag);
+        WriteField("Mutation Candidates", report.MutationCandidatesCount.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Source Reports", report.SourceReports);
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Top Mutations", report.MutationCandidates
+            .Take(8)
+            .Select(candidate => $"{candidate.Title} [{candidate.Priority}] -> {candidate.ExpectedBenefit}")
+            .ToList());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowMutationCandidateExport()
+    {
+        WriteHeader("Hermes Mutation Candidate Queue Export");
+        var storagePaths = BuildStoragePaths();
+        var service = new MutationCandidateQueueService(storagePaths);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Queue Size", report.QueueSize.ToString());
+        WriteField("High Priority", report.HighPriorityCount.ToString());
+        WriteField("Medium Priority", report.MediumPriorityCount.ToString());
+        WriteField("Low Priority", report.LowPriorityCount.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteMessages("Source Reports", report.SourceReports);
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Queue Items", report.QueueItems
+            .Take(12)
+            .Select(item => $"{item.MutationId} [{item.Priority}] -> {item.Reason}")
+            .ToList());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowMutationValidationJobPlanner()
+    {
+        WriteHeader("Hermes Mutation Validation Job Planner");
+        var storagePaths = BuildStoragePaths();
+        var service = new MutationValidationJobPlannerService(storagePaths, _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Mutations Analyzed", report.MutationsAnalyzed.ToString());
+        WriteField("Jobs Prepared", report.JobsPrepared.ToString());
+        WriteField("Ready To Execute", report.ReadyToExecuteCount.ToString());
+        WriteField("Waiting For Data", report.WaitingForDataCount.ToString());
+        WriteField("Waiting For Engine Support", report.WaitingForEngineSupportCount.ToString());
+        WriteField("Waiting For Specification", report.WaitingForSpecificationCount.ToString());
+        WriteField("Blocked", report.BlockedCount.ToString());
+        WriteField("Frank nötig", report.FrankRequired ? "ja" : "nein");
+        WriteField("Operator", report.OperatorSummary);
+        WriteField("Next Safe Step", report.NextSafeStep);
+        WriteMessages("Source Reports", report.SourceReports);
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Jobs", report.Jobs
+            .Take(12)
+            .Select(job => $"{job.ValidationJobId} [{job.ReadinessStatus}] -> {job.Priority}")
+            .ToList());
         Console.WriteLine();
         WriteSafety();
         return 0;

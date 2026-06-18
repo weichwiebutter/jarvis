@@ -2087,6 +2087,166 @@ function reportFixtureRaw(key) {
           },
         ],
       };
+    case 'strategyBacktestFailureLearning':
+      return {
+        report_version: 'strategy_backtest_failure_learning_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        backtest_job_id:
+          'backtest_job_validation_plan_trading_research_mean_reversion_rejection_bollinger_band_width',
+        strategy_pattern: 'Mean Reversion Rejection',
+        asset: 'XAUUSD',
+        timeframe: 'M5',
+        trades_simulated: 50,
+        win_rate: 0.36,
+        profit_factor: 0.7186,
+        max_drawdown: -11.158,
+        expectancy: -0.1278,
+        r_multiple_avg: -0.1278,
+        quality_class: 'low_confidence',
+        certification_ready: false,
+        frank_required: false,
+        failed_backtest_evidence: true,
+        knowledge_update_tag: 'failed_backtest_evidence',
+        learning_decision: 'hypothesis_should_be_reduced_to_mutation_only',
+        blocking_factors: [
+          'schlechter_profit_factor',
+          'negativer_erwartungswert',
+          'niedrige_winrate',
+          'zu_hoher_drawdown',
+        ],
+        root_causes: [
+          'schlechter_profit_factor',
+          'negativer_erwartungswert',
+          'niedrige_winrate',
+          'zu_hoher_drawdown',
+          'low_confidence_sample',
+        ],
+        mutation_suggestions: [
+          {
+            title: 'Sessionfilter schärfen',
+            reason: 'Mean-Reversion reagiert oft nur in liquiden Sessions robust.',
+            expected_benefit:
+              'Weniger fehleranfällige Einstiegssituationen und bessere Ausführungsqualität.',
+          },
+          {
+            title: 'Volatilitätsfilter ergänzen',
+            reason: 'Negative Erwartung und hoher Drawdown sprechen für ein ungünstiges Regime.',
+            expected_benefit: 'Nur ruhige oder passende Volatilitätsphasen testen.',
+          },
+          {
+            title: 'Trendfilter ergänzen',
+            reason: 'Mean-Reversion kann in Trendphasen strukturell verlieren.',
+            expected_benefit: 'Verluste in Trendregimen reduzieren.',
+          },
+          {
+            title: 'Entry-Zone enger machen',
+            reason: 'Der Entry scheint aktuell zu breit oder zu spät zu sein.',
+            expected_benefit: 'Treffgenauere Reversion-Einstiege und bessere Winrate.',
+          },
+          {
+            title: 'Mean-Reversion nur im Range-Regime testen',
+            reason: 'Der historische Test wirkt regime-abhängig und nicht robust genug.',
+            expected_benefit: 'Bessere Regime-Fokussierung statt allgemeiner Ausweitung.',
+          },
+          {
+            title: 'Anderes Timeframe prüfen',
+            reason: 'Die Reaktionsgeschwindigkeit kann auf M5 zu aggressiv oder zu langsam sein.',
+            expected_benefit: 'Stabilere Reversionsstruktur auf anderem Zeitfenster suchen.',
+          },
+        ],
+        recommendations: [
+          'Hypothese zurückstufen',
+          'Zusätzliche Filter testen',
+          'Anderes Marktregime prüfen',
+          'Nur mit Mutation weiterführen',
+          'Knowledge-Update als failed_backtest_evidence vorbereiten',
+        ],
+        warnings: ['failed_backtest_evidence'],
+        operator_summary:
+          'Mean Reversion Rejection · XAUUSD M5\n\nDer historische Test zeigt keine zertifizierbare Qualität.\n\nBlocker:\n- Trades: 50\n- Winrate: 0.36\n- Profit Factor: 0.7186\n- Max Drawdown: -11.158\n- Expectancy: -0.1278\n- Quality: low confidence\n- Certification Ready: false\n\nLernentscheidung:\nhypothesis_should_be_reduced_to_mutation_only\n\nEmpfehlung:\nDie Strategie verliert im historischen Test mehr, als sie gewinnt.\nPro Trade entsteht im Durchschnitt ein negativer Erwartungswert.\n\nFrank nötig:\nnein',
+        report_path: '/mnt/d/HermesData/reports/strategy_backtest_failure_learning/strategy_backtest_failure_learning.json',
+        markdown_path: '/mnt/d/HermesData/reports/strategy_backtest_failure_learning/strategy_backtest_failure_learning.md',
+      };
+    case 'failureGuidedMutationPlanner':
+      return {
+        report_version: 'failure_guided_mutation_planner_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        source_backtest_job_id: 'backtest_job_validation_plan_trading_research_mean_reversion_rejection_bollinger_band_width',
+        strategy_pattern: 'Mean Reversion Rejection',
+        asset: 'XAUUSD',
+        timeframe: 'M5',
+        trades_simulated: 50,
+        win_rate: 0.36,
+        profit_factor: 0.7186,
+        max_drawdown: -11.158,
+        expectancy: -0.1278,
+        r_multiple_avg: -0.1278,
+        quality_class: 'low_confidence',
+        certification_ready: false,
+        learning_decision: 'hypothesis_backtest_failed_backstops_should_be_tightened',
+        knowledge_update_tag: 'failed_backtest_evidence',
+        mutation_candidates_count: 8,
+        mutation_candidates: [],
+        source_reports: [
+          'strategy_backtest_latest_success',
+          'strategy_backtest_failure_learning',
+          'strategy_backtest_quality_audit',
+          'strategy_parameter_research_planner',
+          'trading_research_synthesizer',
+        ],
+        warnings: [],
+        operator_summary: 'Hermes hat aus dem negativen Test gelernt. Die alte Variante wird nicht weiter als robust behandelt. 8 neue Mutationskandidaten wurden vorbereitet. Frank muss nichts entscheiden.',
+        safety_summary: 'no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        report_path: '/mnt/d/HermesData/reports/failure_guided_mutation_planner/failure_guided_mutation_planner.json',
+        markdown_path: '/mnt/d/HermesData/reports/failure_guided_mutation_planner/failure_guided_mutation_planner.md',
+      };
+    case 'mutationCandidateQueue':
+      return {
+        report_version: 'mutation_candidate_queue_v1',
+        updated_at_utc: runtimeMasterStatusMock.updated_at_utc,
+        queue_size: 8,
+        high_priority_count: 6,
+        medium_priority_count: 2,
+        low_priority_count: 0,
+        queue_items: [
+          {
+            mutation_id: 'fgmp_backtest_job_validation_plan_trading_research_mean_reversion_rejection_bollinger_band_width_session_filter_sharpen',
+            parent_hypothesis: 'backtest_job_validation_plan_trading_research_mean_reversion_rejection_bollinger_band_width',
+            strategy_pattern: 'Mean Reversion Rejection',
+            asset: 'XAUUSD',
+            timeframe: 'M5',
+            mutation_type: 'session_filter_sharpen',
+            priority: 'high',
+            reason: 'Der Verlusttest zeigt niedrige Winrate und negativen Erwartungswert; sessionarme Phasen verschlechtern Mean Reversion oft.',
+            expected_benefit: 'Weniger schlechte Einstiege und bessere Trefferquote in liquiden Handelsfenstern.',
+            estimated_risk: 'medium',
+            status: 'planned',
+          },
+        ],
+        source_reports: [
+          'failure_guided_mutation_planner',
+          'strategy_backtest_failure_learning',
+          'strategy_backtest_quality_audit',
+          'strategy_backtest_latest_success',
+          'strategy_parameter_research_planner',
+          'trading_research_synthesizer',
+        ],
+        warnings: [],
+        operator_summary: 'Hermes hat 8 neue Forschungskandidaten vorbereitet. 6 Kandidaten besitzen hohe Priorität. Frank muss nichts entscheiden.',
+        safety_summary: 'no_auto_trading=true, human_review_required=true, broker_orders_enabled=false, live_trading_enabled=false, research_only=true',
+        frank_required: false,
+        no_trading_execution: true,
+        no_broker_action: true,
+        no_auto_trading: true,
+        human_review_required: true,
+        report_path: '/mnt/d/HermesData/reports/mutation_candidate_queue/mutation_candidate_queue.json',
+        markdown_path: '/mnt/d/HermesData/reports/mutation_candidate_queue/mutation_candidate_queue.md',
+      };
     case 'strategyBacktestJobPlanner':
       return {
         report_version: 'strategy_backtest_job_planner_v1',
@@ -3824,9 +3984,12 @@ export async function loadOperatorDashboard() {
       strategyBacktestExecutor: dashboard.strategyBacktestExecutor,
       strategyBacktestLatestSuccess: dashboard.strategyBacktestLatestSuccess,
       strategyBacktestQualityAudit: dashboard.strategyBacktestQualityAudit,
-        strategyBacktestEvidenceGate: dashboard.strategyBacktestEvidenceGate,
-        strategyBacktestSignalDensityAnalyzer: dashboard.strategyBacktestSignalDensityAnalyzer,
-        strategyDatasetGateAudit: dashboard.strategyDatasetGateAudit,
+      strategyBacktestEvidenceGate: dashboard.strategyBacktestEvidenceGate,
+      strategyBacktestSignalDensityAnalyzer: dashboard.strategyBacktestSignalDensityAnalyzer,
+      strategyBacktestFailureLearning: dashboard.strategyBacktestFailureLearning,
+      failureGuidedMutationPlanner: dashboard.failureGuidedMutationPlanner,
+      mutationCandidateQueue: dashboard.mutationCandidateQueue,
+      strategyDatasetGateAudit: dashboard.strategyDatasetGateAudit,
         evidenceAutoLoop: dashboard.evidenceAutoLoop,
         validationQueueRefill: dashboard.validationQueueRefill,
         evidenceValidationRunner: dashboard.evidenceValidationRunner,
@@ -3924,6 +4087,9 @@ export async function loadOperatorDashboard() {
   rawReports.strategyBacktestQualityAudit = reportFixtureRaw('strategyBacktestQualityAudit');
   rawReports.strategyBacktestEvidenceGate = reportFixtureRaw('strategyBacktestEvidenceGate');
   rawReports.strategyBacktestSignalDensityAnalyzer = reportFixtureRaw('strategyBacktestSignalDensityAnalyzer');
+  rawReports.strategyBacktestFailureLearning = reportFixtureRaw('strategyBacktestFailureLearning');
+  rawReports.failureGuidedMutationPlanner = reportFixtureRaw('failureGuidedMutationPlanner');
+  rawReports.mutationCandidateQueue = reportFixtureRaw('mutationCandidateQueue');
   rawReports.strategyDatasetGateAudit = reportFixtureRaw('strategyDatasetGateAudit');
   rawReports.reviewPrioritizationAudit = reportFixtureRaw('reviewPrioritizationAudit');
   rawReports.reviewDecisionAssistant = reportFixtureRaw('reviewDecisionAssistant');
