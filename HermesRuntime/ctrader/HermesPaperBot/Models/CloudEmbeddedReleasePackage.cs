@@ -12,6 +12,7 @@ public sealed class CloudEmbeddedReleasePackage
     public ReleaseMode ReleaseMode { get; init; } = ReleaseMode.PaperOnly;
     public SafetyFlags SafetyFlags { get; init; } = new SafetyFlags();
     public ForbiddenCapabilities ForbiddenCapabilities { get; init; } = new ForbiddenCapabilities();
+    public string? PackageJson { get; init; }
     public string? EmbeddedManifestJson { get; init; }
     public string? EmbeddedStrategyJson { get; init; }
     public string? EmbeddedChecksum { get; init; }
