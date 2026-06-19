@@ -114,3 +114,15 @@ Cloud mode uses `RuntimeMode=cloud_embedded_bundle` and an embedded release pack
 - no local bundle paths are required in cloud mode
 - the bot remains paper-only
 - no orders and no cTrader Order API are used
+
+## Cloud Entry Skeleton V1
+
+`HermesPaperBot.cs` is structured as a safe cloud entry skeleton.
+
+- `StartPaperRuntime()` prepares cloud configuration in memory
+- `RunPaperRuntimeStep()` delegates to the defensive orchestrator
+- `StopPaperRuntime()` remains summary-ready and defensive
+- `GetLastRuntimeStepResult()` returns the last in-memory step result
+
+This is not a live cTrader host integration yet.
+It is only a guarded entry structure for the future cloud runtime path.

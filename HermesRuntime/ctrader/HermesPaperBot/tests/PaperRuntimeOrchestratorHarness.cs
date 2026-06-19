@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using HermesPaperBot.Models;
 using HermesPaperBot.Services;
+using HermesPaperBot.Bot;
 
 /// <summary>
 /// In-memory harness for paper runtime orchestrator checks.
@@ -43,6 +44,8 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunCloudEmbeddedSafetyViolationCase(tempRoot));
             results.Add(RunCloudBootstrapFromGeneratedPackageCase());
             results.Add(RunCloudBootstrapInvalidJsonCase());
+            results.Add(RunCloudEntryStartAndRunStepCase());
+            results.Add(RunCloudEntryInvalidBootstrapCase());
 
             return JsonSerializer.Serialize(results, JsonOptions);
         }
@@ -424,6 +427,60 @@ public static class PaperRuntimeOrchestratorHarness
                 result_paper_decision = result.PaperDecision,
                 result_broker_action = result.BrokerAction,
                 result_logging_status = result.LoggingStatus,
+            },
+        };
+    }
+
+    private static object RunCloudEntryStartAndRunStepCase()
+    {
+        var bot = new HermesPaperBot();
+        bot.OnStart();
+        var step = bot.RunPaperRuntimeStep();
+        var last = bot.GetLastRuntimeStepResult();
+
+        return new
+        {
+            test_name = "cloud_entry_start_and_run_step",
+            passed = step.Success && step.PaperDecision == "would_wait" && step.BrokerAction == "none" && last is not null && last.BrokerAction == "none",
+            key_fields = new
+            {
+                step.Success,
+                step.State,
+                step.ConfigValid,
+                step.ImportAttempted,
+                step.ImportValid,
+                step.BundleValid,
+                step.ChecksumValid,
+                step.SafetyAllowed,
+                step.DriftAllowed,
+                step.KillSwitchActive,
+                step.FallbackPossible,
+                step.DisabledUntilValidBundle,
+                step.PaperDecision,
+                step.BrokerAction,
+                last_step_available = last is not null,
+                last_step_broker_action = last?.BrokerAction ?? string.Empty,
+            },
+        };
+    }
+
+    private static object RunCloudEntryInvalidBootstrapCase()
+    {
+        var bot = new HermesPaperBot();
+        bot.OnException();
+        var last = bot.GetLastRuntimeStepResult();
+
+        return new
+        {
+            test_name = "cloud_entry_invalid_bootstrap_blocks",
+            passed = last is not null && last.KillSwitchActive && last.BrokerAction == "none",
+            key_fields = new
+            {
+                last_step_available = last is not null,
+                last_step_state = last?.State ?? string.Empty,
+                last_step_kill_switch_active = last?.KillSwitchActive ?? false,
+                last_step_paper_decision = last?.PaperDecision ?? string.Empty,
+                last_step_broker_action = last?.BrokerAction ?? string.Empty,
             },
         };
     }
