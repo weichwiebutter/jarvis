@@ -41,6 +41,8 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunCloudEmbeddedValidPackageCase(tempRoot));
             results.Add(RunCloudEmbeddedMissingPackageCase(tempRoot));
             results.Add(RunCloudEmbeddedSafetyViolationCase(tempRoot));
+            results.Add(RunCloudBootstrapFromGeneratedPackageCase());
+            results.Add(RunCloudBootstrapInvalidJsonCase());
 
             return JsonSerializer.Serialize(results, JsonOptions);
         }
@@ -352,6 +354,76 @@ public static class PaperRuntimeOrchestratorHarness
                 result.PaperDecision,
                 result.BrokerAction,
                 result.LoggingStatus,
+            },
+        };
+    }
+
+    private static object RunCloudBootstrapFromGeneratedPackageCase()
+    {
+        var bootstrapper = new CloudEmbeddedPackageBootstrapper();
+        var bootstrap = bootstrapper.CreateCloudConfiguration();
+        var result = bootstrap.Configuration is null
+            ? new PaperRuntimeOrchestrator().RunStep(new BotConfiguration())
+            : new PaperRuntimeOrchestrator().RunStep(bootstrap.Configuration);
+
+        return new
+        {
+            test_name = "cloud_bootstrap_from_generated_package",
+            passed = bootstrap.Success && result.Success && result.PaperDecision == "would_wait" && result.BrokerAction == "none",
+            key_fields = new
+            {
+                bootstrap.Success,
+                bootstrap.Status,
+                bootstrap.Reason,
+                result_success = result.Success,
+                result_state = result.State,
+                result_config_valid = result.ConfigValid,
+                result_import_attempted = result.ImportAttempted,
+                result_import_valid = result.ImportValid,
+                result_bundle_valid = result.BundleValid,
+                result_checksum_valid = result.ChecksumValid,
+                result_safety_allowed = result.SafetyAllowed,
+                result_drift_allowed = result.DriftAllowed,
+                result_kill_switch_active = result.KillSwitchActive,
+                result_fallback_possible = result.FallbackPossible,
+                result_disabled_until_valid_bundle = result.DisabledUntilValidBundle,
+                result_paper_decision = result.PaperDecision,
+                result_broker_action = result.BrokerAction,
+                result_logging_status = result.LoggingStatus,
+            },
+        };
+    }
+
+    private static object RunCloudBootstrapInvalidJsonCase()
+    {
+        var bootstrapper = new CloudEmbeddedPackageBootstrapper();
+        var bootstrap = bootstrapper.CreateCloudConfiguration("{not valid json");
+        var result = new PaperRuntimeOrchestrator().RunStep(bootstrap.Configuration ?? new BotConfiguration());
+
+        return new
+        {
+            test_name = "cloud_bootstrap_invalid_json_blocks",
+            passed = !bootstrap.Success && result.KillSwitchActive && result.BrokerAction == "none",
+            key_fields = new
+            {
+                bootstrap.Success,
+                bootstrap.Status,
+                bootstrap.Reason,
+                result_success = result.Success,
+                result_state = result.State,
+                result_config_valid = result.ConfigValid,
+                result_import_attempted = result.ImportAttempted,
+                result_import_valid = result.ImportValid,
+                result_bundle_valid = result.BundleValid,
+                result_checksum_valid = result.ChecksumValid,
+                result_safety_allowed = result.SafetyAllowed,
+                result_drift_allowed = result.DriftAllowed,
+                result_kill_switch_active = result.KillSwitchActive,
+                result_fallback_possible = result.FallbackPossible,
+                result_disabled_until_valid_bundle = result.DisabledUntilValidBundle,
+                result_paper_decision = result.PaperDecision,
+                result_broker_action = result.BrokerAction,
+                result_logging_status = result.LoggingStatus,
             },
         };
     }

@@ -104,3 +104,13 @@ The preferred long-term execution model is cTrader Cloud with an embedded releas
 - `broker_action=none` remains mandatory
 
 Cloud mode uses `RuntimeMode=cloud_embedded_bundle` and an embedded release package snapshot instead of a local bundle inbox.
+
+## Cloud Embedded Bootstrap V1
+
+`Generated/EmbeddedReleasePackage.g.cs` is the cloud input source for the bot bootstrap.
+
+- the generated file carries `EmbeddedReleasePackage.PackageJson`
+- the bootstrapper deserializes the package into `CloudEmbeddedReleasePackage`
+- no local bundle paths are required in cloud mode
+- the bot remains paper-only
+- no orders and no cTrader Order API are used

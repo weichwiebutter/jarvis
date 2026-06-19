@@ -111,7 +111,7 @@ public sealed class PaperRuntimeOrchestrator
             }
             else if (config.RuntimeMode == RuntimeMode.CloudEmbeddedBundle && embeddedPackage is not null)
             {
-                checksumValid = string.IsNullOrWhiteSpace(embeddedPackage.EmbeddedChecksum) || embeddedPackage.EmbeddedChecksum.Length == 64;
+                checksumValid = !string.IsNullOrWhiteSpace(embeddedPackage.EmbeddedChecksum) && embeddedPackage.EmbeddedChecksum.Length == 64;
                 bundleValid = embeddedValidation?.IsValid == true;
             }
 
