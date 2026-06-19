@@ -10,6 +10,7 @@ using HermesPaperBot.Models;
 public sealed class MarketReplayEngine
 {
     private readonly PaperDecisionEngine _paperDecisionEngine = new();
+    private readonly ReplayReportExporter _replayReportExporter = new();
 
     /// <summary>
     /// Runs a safe replay against historical bars.
@@ -151,6 +152,12 @@ public sealed class MarketReplayEngine
             BrokerAction = "none",
         };
     }
+
+    /// <summary>
+    /// Exports a replay report to JSON and Markdown files.
+    /// </summary>
+    public ReplayReportExportResult ExportReport(CloudEmbeddedReleasePackage? package, ReplayRunResult result, string outputDirectory)
+        => _replayReportExporter.Export(package, result, outputDirectory);
 
     private static string GetSampleSizeClass(int tradesTotal)
     {

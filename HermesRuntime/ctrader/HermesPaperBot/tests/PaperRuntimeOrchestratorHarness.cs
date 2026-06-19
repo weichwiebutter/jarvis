@@ -66,6 +66,10 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunNoLossProfitFactorWarningCase());
             results.Add(RunThirtyTradeQualityMediumCase());
             results.Add(RunAllOutputsBrokerActionNoneCase());
+            results.Add(RunReplayReportExportJsonCase());
+            results.Add(RunReplayReportExportMarkdownCase());
+            results.Add(RunReportContainsQualityWarningsCase());
+            results.Add(RunReportBrokerActionNoneCase());
             results.Add(RunLongTradeHitsTpCase());
             results.Add(RunLongTradeHitsSlCase());
             results.Add(RunShortTradeHitsTpCase());
@@ -1040,6 +1044,146 @@ public static class PaperRuntimeOrchestratorHarness
                 result.Statistics.QualityClass,
             },
         };
+    }
+
+    private static object RunReplayReportExportJsonCase()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ctrader-replay-report-json", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var package = BuildReplayPackage("replay-export-json", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+            var replay = new MarketReplayEngine().Run(package, BuildWinningReplayBars("long", 1));
+            var export = new MarketReplayEngine().ExportReport(package, replay, tempDir);
+            var jsonPath = Path.Combine(tempDir, "replay_report.json");
+            var jsonExists = File.Exists(jsonPath);
+            var json = jsonExists ? File.ReadAllText(jsonPath) : string.Empty;
+
+            return new
+            {
+                test_name = "replay_report_export_json",
+                passed = export.Success && jsonExists && (json.Contains("\"broker_action\": \"none\"", StringComparison.OrdinalIgnoreCase) || json.Contains("\"broker_action\":\"none\"", StringComparison.OrdinalIgnoreCase)),
+                key_fields = new
+                {
+                    export.Success,
+                    export.ReportDirectory,
+                    export.JsonPath,
+                    export.MarkdownPath,
+                    export.BrokerAction,
+                    json_exists = jsonExists,
+                },
+            };
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    private static object RunReplayReportExportMarkdownCase()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ctrader-replay-report-md", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var package = BuildReplayPackage("replay-export-md", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+            var replay = new MarketReplayEngine().Run(package, BuildWinningReplayBars("long", 1));
+            var export = new MarketReplayEngine().ExportReport(package, replay, tempDir);
+            var markdownPath = Path.Combine(tempDir, "replay_report.md");
+            var markdownExists = File.Exists(markdownPath);
+            var markdown = markdownExists ? File.ReadAllText(markdownPath) : string.Empty;
+
+            return new
+            {
+                test_name = "replay_report_export_markdown",
+                passed = export.Success && markdownExists && markdown.Contains("HermesPaperBot Replay Report V1", StringComparison.OrdinalIgnoreCase),
+                key_fields = new
+                {
+                    export.Success,
+                    export.ReportDirectory,
+                    export.JsonPath,
+                    export.MarkdownPath,
+                    export.BrokerAction,
+                    markdown_exists = markdownExists,
+                },
+            };
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    private static object RunReportContainsQualityWarningsCase()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ctrader-replay-report-warnings", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var package = BuildReplayPackage("replay-export-warnings", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+            var replay = new MarketReplayEngine().Run(package, BuildWinningReplayBars("long", 1));
+            var export = new MarketReplayEngine().ExportReport(package, replay, tempDir);
+            var json = File.ReadAllText(export.JsonPath);
+
+            return new
+            {
+                test_name = "report_contains_quality_warnings",
+                passed = json.Contains("profit_factor_unbounded_no_losses", StringComparison.OrdinalIgnoreCase),
+                key_fields = new
+                {
+                    export.Success,
+                    warnings = replay.Statistics.Warnings,
+                },
+            };
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    private static object RunReportBrokerActionNoneCase()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ctrader-replay-report-broker", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var package = BuildReplayPackage("replay-export-broker", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+            var replay = new MarketReplayEngine().Run(package, BuildWinningReplayBars("long", 1));
+            var export = new MarketReplayEngine().ExportReport(package, replay, tempDir);
+
+            return new
+            {
+                test_name = "report_broker_action_none",
+                passed = export.Success && replay.BrokerAction == "none",
+                key_fields = new
+                {
+                    export.Success,
+                    replay.BrokerAction,
+                    replay.Statistics.TradesTotal,
+                },
+            };
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
     }
 
     private static object RunLongTradeHitsTpCase()
