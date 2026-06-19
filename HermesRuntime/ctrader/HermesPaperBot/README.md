@@ -132,7 +132,7 @@ It is only a guarded entry structure for the future cloud runtime path.
 `HermesPaperBotCloudHost.cs` is a separate host adapter skeleton that only delegates to the safe paper bot skeleton.
 
 - no cTrader runtime attribute is added yet
-- no cAlgo.API reference is required in this skeleton step
+- no platform SDK reference is required in this skeleton step (the real wrapper can be conditionally compiled later)
 - `OnStart()`, `OnTimer()`, `OnStop()`, and `OnException(Exception)` only delegate
 - order APIs remain forbidden
 - a future cTrader Cloud integration may need platform-specific entry wiring, but not here

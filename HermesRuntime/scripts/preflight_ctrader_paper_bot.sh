@@ -20,6 +20,7 @@ required_paths=(
   "$TARGET_DIR/Models"
   "$TARGET_DIR/Services"
   "$TARGET_DIR/tests/forbidden_references_check.md"
+  "$TARGET_DIR/HermesPaperBotCTraderWrapper.cs"
 )
 
 for path in "${required_paths[@]}"; do
