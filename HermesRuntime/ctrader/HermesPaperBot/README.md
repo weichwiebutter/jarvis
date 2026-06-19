@@ -91,6 +91,17 @@ Local runtime logs are written as JSONL/JSON only.
 - no broker action
 - no cTrader API
 
+## Paper State Persistence V1
+
+The virtual paper portfolio is saved as a local snapshot and restored defensively on startup.
+
+- snapshot file: `paper_state_snapshot.json`
+- `PaperStateStore` saves and loads the snapshot locally or in cloud-compatible storage
+- corrupt snapshots are handled defensively
+- recovery can either fall back to a fresh state or activate the kill switch depending on configuration
+- restored state still keeps `broker_action=none`
+- no broker orders, no demo orders, and no live orders are ever created
+
 ## Paper Trading Engine V1
 
 The paper runtime now derives virtual paper-trade steps from the embedded strategy package.

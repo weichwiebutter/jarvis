@@ -57,6 +57,9 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunStopLossClosesPaperTradeCase());
             results.Add(RunExpiredSignalBlocksCase());
             results.Add(RunAllOutputsHaveBrokerActionNoneCase());
+            results.Add(RunSaveAndRestoreOpenPositionCase());
+            results.Add(RunCorruptSnapshotBlocksOrResetsDefensivelyCase());
+            results.Add(RunRestoredStateStillBrokerActionNoneCase());
 
             return JsonSerializer.Serialize(results, JsonOptions);
         }
@@ -90,6 +93,7 @@ public static class PaperRuntimeOrchestratorHarness
             ActiveReleaseBundlePath = config.ActiveReleaseBundlePath,
             LastValidReleaseBundlePath = config.LastValidReleaseBundlePath,
             LocalRuntimeLogsPath = config.LocalRuntimeLogsPath,
+            PaperStateSnapshotPath = config.PaperStateSnapshotPath,
             ReloadIntervalSeconds = 1,
             ImportEnabled = config.ImportEnabled,
             ManualKillSwitch = config.ManualKillSwitch,
@@ -117,6 +121,7 @@ public static class PaperRuntimeOrchestratorHarness
             ActiveReleaseBundlePath = config.ActiveReleaseBundlePath,
             LastValidReleaseBundlePath = config.LastValidReleaseBundlePath,
             LocalRuntimeLogsPath = config.LocalRuntimeLogsPath,
+            PaperStateSnapshotPath = config.PaperStateSnapshotPath,
             ReloadIntervalSeconds = config.ReloadIntervalSeconds,
             ImportEnabled = config.ImportEnabled,
             ManualKillSwitch = config.ManualKillSwitch,
@@ -163,6 +168,7 @@ public static class PaperRuntimeOrchestratorHarness
             ActiveReleaseBundlePath = config.ActiveReleaseBundlePath,
             LastValidReleaseBundlePath = config.LastValidReleaseBundlePath,
             LocalRuntimeLogsPath = logsDir,
+            PaperStateSnapshotPath = config.PaperStateSnapshotPath,
             ReloadIntervalSeconds = config.ReloadIntervalSeconds,
             ImportEnabled = config.ImportEnabled,
             ManualKillSwitch = config.ManualKillSwitch,
@@ -221,6 +227,7 @@ public static class PaperRuntimeOrchestratorHarness
             ActiveReleaseBundlePath = config.ActiveReleaseBundlePath,
             LastValidReleaseBundlePath = config.LastValidReleaseBundlePath,
             LocalRuntimeLogsPath = logsDir,
+            PaperStateSnapshotPath = config.PaperStateSnapshotPath,
             ReloadIntervalSeconds = 1,
             ImportEnabled = config.ImportEnabled,
             ManualKillSwitch = config.ManualKillSwitch,
@@ -333,6 +340,7 @@ public static class PaperRuntimeOrchestratorHarness
             ActiveReleaseBundlePath = config.ActiveReleaseBundlePath,
             LastValidReleaseBundlePath = config.LastValidReleaseBundlePath,
             LocalRuntimeLogsPath = config.LocalRuntimeLogsPath,
+            PaperStateSnapshotPath = config.PaperStateSnapshotPath,
             ReloadIntervalSeconds = config.ReloadIntervalSeconds,
             ImportEnabled = config.ImportEnabled,
             ManualKillSwitch = config.ManualKillSwitch,
@@ -736,6 +744,160 @@ public static class PaperRuntimeOrchestratorHarness
         };
     }
 
+    private static object RunSaveAndRestoreOpenPositionCase()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-state-save-restore", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var snapshotPath = Path.Combine(tempDir, "paper_state_snapshot.json");
+            var store = new PaperStateStore(snapshotPath);
+            var candidate = BuildSignalCandidate("long");
+            var openPosition = BuildOpenPaperPosition(candidate, 100.1m);
+            var saveState = new PaperPortfolioState
+            {
+                ActiveTrades = [openPosition],
+                OpenTradeCountToday = 1,
+                OpenTradeCountThisHour = 1,
+                ConsecutiveLosses = 0,
+                DailyPaperLossR = 0m,
+            };
+
+            var saveOk = store.Save(saveState);
+            var restore = store.Load();
+            var config = BuildPaperTradeConfig(snapshotPath);
+            var bot = new HermesPaperBot();
+            var started = bot.StartPaperRuntime(config, BuildMarketContext("EURUSD", "M5", 100m, 100.1m));
+            var result = bot.GetLastRuntimeStepResult() ?? new RuntimeStepResult();
+
+            return new
+            {
+                test_name = "save_and_restore_open_position",
+                passed = saveOk && restore.Success && restore.SnapshotValid && started && result.BrokerAction == "none" && result.PaperPortfolioState?.ActiveTrades.Length == 1,
+                key_fields = new
+                {
+                    save_ok = saveOk,
+                    restore_success = restore.Success,
+                    restore_snapshot_valid = restore.SnapshotValid,
+                    restore_fresh_state_used = restore.FreshStateUsed,
+                    restore_kill_switch_active = restore.KillSwitchActive,
+                    start_success = started,
+                    result_success = result.Success,
+                    result_state = result.State,
+                    result_paper_decision = result.PaperDecision,
+                    result_broker_action = result.BrokerAction,
+                    active_trade_count = result.PaperPortfolioState?.ActiveTrades.Length ?? 0,
+                },
+            };
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    private static object RunCorruptSnapshotBlocksOrResetsDefensivelyCase()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-state-corrupt", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var snapshotPath = Path.Combine(tempDir, "paper_state_snapshot.json");
+            File.WriteAllText(snapshotPath, "{not valid json");
+            var store = new PaperStateStore(snapshotPath, PaperSnapshotRecoveryMode.FreshState);
+            var restore = store.Load();
+            var bot = new HermesPaperBot();
+            var started = bot.StartPaperRuntime(BuildPaperTradeConfig(snapshotPath), BuildMarketContext("EURUSD", "M5", 100m, 100.1m));
+            var result = bot.GetLastRuntimeStepResult() ?? new RuntimeStepResult();
+
+            return new
+            {
+                test_name = "corrupt_snapshot_blocks_or_resets_defensively",
+                passed = restore.CorruptSnapshotDetected && restore.FreshStateUsed && started && result.BrokerAction == "none",
+                key_fields = new
+                {
+                    restore_success = restore.Success,
+                    restore_snapshot_valid = restore.SnapshotValid,
+                    restore_corrupt_snapshot_detected = restore.CorruptSnapshotDetected,
+                    restore_fresh_state_used = restore.FreshStateUsed,
+                    restore_kill_switch_active = restore.KillSwitchActive,
+                    restore_state = restore.State,
+                    restore_reason = restore.Reason,
+                    start_success = started,
+                    result_success = result.Success,
+                    result_state = result.State,
+                    result_paper_decision = result.PaperDecision,
+                    result_broker_action = result.BrokerAction,
+                },
+            };
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    private static object RunRestoredStateStillBrokerActionNoneCase()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-state-restored", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var snapshotPath = Path.Combine(tempDir, "paper_state_snapshot.json");
+            var store = new PaperStateStore(snapshotPath);
+            var candidate = BuildSignalCandidate("short");
+            var openPosition = BuildOpenPaperPosition(candidate, 100m);
+            var saveState = new PaperPortfolioState
+            {
+                ActiveTrades = [openPosition],
+                OpenTradeCountToday = 1,
+                OpenTradeCountThisHour = 1,
+                ConsecutiveLosses = 0,
+                DailyPaperLossR = 0m,
+            };
+
+            store.Save(saveState);
+            var restore = store.Load();
+            var bot = new HermesPaperBot();
+            var started = bot.StartPaperRuntime(BuildPaperTradeConfig(snapshotPath), BuildMarketContext("EURUSD", "M5", 100m, 100.1m));
+            var result = bot.GetLastRuntimeStepResult() ?? new RuntimeStepResult();
+
+            return new
+            {
+                test_name = "restored_state_still_broker_action_none",
+                passed = restore.Success && started && result.BrokerAction == "none" && result.PaperPortfolioState?.ActiveTrades.Length == 1,
+                key_fields = new
+                {
+                    restore_success = restore.Success,
+                    restore_snapshot_valid = restore.SnapshotValid,
+                    restore_fresh_state_used = restore.FreshStateUsed,
+                    start_success = started,
+                    result_success = result.Success,
+                    result_state = result.State,
+                    result_paper_decision = result.PaperDecision,
+                    result_broker_action = result.BrokerAction,
+                    active_trade_count = result.PaperPortfolioState?.ActiveTrades.Length ?? 0,
+                },
+            };
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
     private static object BuildPaperTradeFields(PaperTr\u0061deResult result, PaperPortfolioState nextPortfolio, string[] warnings) =>
         new
         {
@@ -759,10 +921,14 @@ public static class PaperRuntimeOrchestratorHarness
         };
 
     private static BotConfiguration BuildPaperTradeConfig() =>
+        BuildPaperTradeConfig(Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-paper-trades", "paper_state_snapshot.json"));
+
+    private static BotConfiguration BuildPaperTradeConfig(string snapshotPath) =>
         new()
         {
             RuntimeMode = RuntimeMode.CloudEmbeddedBundle,
             LocalRuntimeLogsPath = Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-paper-trades"),
+            PaperStateSnapshotPath = snapshotPath,
             ImportEnabled = false,
             ManualKillSwitch = false,
             LogVerbosity = LogVerbosity.Normal,
@@ -886,8 +1052,8 @@ public static class PaperRuntimeOrchestratorHarness
             Timeframe = candidate.Timeframe,
             Direction = candidate.Direction,
             EntryPrice = entryPrice,
-            StopLossPrice = entryPrice - 1m,
-            TakeProfitPrice = entryPrice + 1m,
+            StopLossPrice = string.Equals(candidate.Direction, "short", StringComparison.OrdinalIgnoreCase) ? entryPrice + 1m : entryPrice - 1m,
+            TakeProfitPrice = string.Equals(candidate.Direction, "short", StringComparison.OrdinalIgnoreCase) ? entryPrice - 1m : entryPrice + 1m,
             ProfitR = 0m,
             Lifecycle = PaperTradeLifecycle.Active,
             ExpiresAtUtc = candidate.ExpiresAtUtc,
@@ -927,6 +1093,7 @@ public static class PaperRuntimeOrchestratorHarness
             ActiveReleaseBundlePath = Path.Combine(bundleDir, "active"),
             LastValidReleaseBundlePath = Path.Combine(bundleDir, "last_valid"),
             LocalRuntimeLogsPath = Path.Combine(bundleDir, "logs"),
+            PaperStateSnapshotPath = Path.Combine(bundleDir, "paper_state_snapshot.json"),
             ReloadIntervalSeconds = 30,
             ImportEnabled = true,
             ManualKillSwitch = false,
@@ -947,6 +1114,7 @@ public static class PaperRuntimeOrchestratorHarness
             ActiveReleaseBundlePath = string.Empty,
             LastValidReleaseBundlePath = string.Empty,
             LocalRuntimeLogsPath = logsDir,
+            PaperStateSnapshotPath = Path.Combine(logsDir, "paper_state_snapshot.json"),
             ReloadIntervalSeconds = 30,
             ImportEnabled = false,
             ManualKillSwitch = false,

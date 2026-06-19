@@ -74,6 +74,7 @@ public sealed class CloudEmbeddedPackageBootstrapper
             {
                 RuntimeMode = RuntimeMode.CloudEmbeddedBundle,
                 LocalRuntimeLogsPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ctrader-paper-bot-cloud-logs"),
+                PaperStateSnapshotPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ctrader-paper-bot-cloud-logs", "paper_state_snapshot.json"),
                 ReloadIntervalSeconds = 30,
                 ImportEnabled = false,
                 ManualKillSwitch = false,
@@ -115,6 +116,7 @@ public sealed class CloudEmbeddedPackageBootstrapper
         {
             RuntimeMode = RuntimeMode.CloudEmbeddedBundle,
             LocalRuntimeLogsPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ctrader-paper-bot-cloud-logs"),
+            PaperStateSnapshotPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ctrader-paper-bot-cloud-logs", "paper_state_snapshot.json"),
             ReloadIntervalSeconds = 30,
             ImportEnabled = false,
             ManualKillSwitch = false,

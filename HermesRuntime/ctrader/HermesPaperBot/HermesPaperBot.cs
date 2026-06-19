@@ -1,3 +1,4 @@
+using System.IO;
 using HermesPaperBot.Models;
 using HermesPaperBot.Services;
 
@@ -58,6 +59,16 @@ public sealed class HermesPaperBot
     /// Virtual paper portfolio kept in memory only.
     /// </summary>
     private PaperPortfolioState _paperPortfolioState = new();
+
+    /// <summary>
+    /// Paper state store kept in memory only.
+    /// </summary>
+    private PaperStateStore? _paperStateStore;
+
+    /// <summary>
+    /// Last paper state restore result kept in memory only.
+    /// </summary>
+    private PaperStateRestoreResult? _lastStateRestoreResult;
 
     /// <summary>
     /// paper_only
@@ -124,8 +135,19 @@ public sealed class HermesPaperBot
             }
 
             var currentConfiguration = _lastConfiguration ?? new BotConfiguration();
+            var snapshotPath = ResolvePaperStateSnapshotPath(currentConfiguration);
+            _paperStateStore = new PaperStateStore(snapshotPath, currentConfiguration.PaperSnapshotRecoveryMode);
+            var stateRestore = _paperStateStore.Load();
+            _lastStateRestoreResult = stateRestore;
+
+            if (!stateRestore.Success && stateRestore.KillSwitchActive)
+            {
+                _lastRuntimeStepResult = CreateBlockedResult(stateRestore.Reason);
+                return false;
+            }
+
+            _paperPortfolioState = stateRestore.PaperPortfolioState ?? new PaperPortfolioState();
             _signalCandidates = _paperDecisionEngine.ParseSignalCandidates(currentConfiguration.CloudEmbeddedReleasePackage, out var signalWarnings);
-            _paperPortfolioState = new PaperPortfolioState();
             _lastRuntimeStepResult = ExecutePaperRuntimeStep(context ?? new RuntimeMarketContext(), signalWarnings);
             return _lastRuntimeStepResult.Success;
         }
@@ -300,7 +322,10 @@ public sealed class HermesPaperBot
             PaperTr\u0061deResult = tradeResult,
         };
 
-        return PersistRuntimeResult(combinedResult);
+        _paperPortfolioState = combinedResult.PaperPortfolioState ?? _paperPortfolioState;
+        var persisted = PersistRuntimeResult(combinedResult);
+        PersistPaperStateSnapshot(_paperPortfolioState, persisted);
+        return persisted;
     }
 
     private static string BuildCombinedState(string validationState, PaperTradeLifecycle lifecycle)
@@ -383,6 +408,40 @@ public sealed class HermesPaperBot
         };
     }
 
+    private void PersistPaperStateSnapshot(PaperPortfolioState state, RuntimeStepResult runtimeResult)
+    {
+        try
+        {
+            _paperStateStore?.Save(state);
+        }
+        catch
+        {
+            _lastRuntimeStepResult = new RuntimeStepResult
+            {
+                Success = runtimeResult.Success,
+                State = runtimeResult.State,
+                ConfigValid = runtimeResult.ConfigValid,
+                ImportAttempted = runtimeResult.ImportAttempted,
+                ImportValid = runtimeResult.ImportValid,
+                BundleValid = runtimeResult.BundleValid,
+                ChecksumValid = runtimeResult.ChecksumValid,
+                SafetyAllowed = runtimeResult.SafetyAllowed,
+                DriftAllowed = runtimeResult.DriftAllowed,
+                KillSwitchActive = runtimeResult.KillSwitchActive,
+                FallbackPossible = runtimeResult.FallbackPossible,
+                DisabledUntilValidBundle = runtimeResult.DisabledUntilValidBundle,
+                PaperDecision = runtimeResult.PaperDecision,
+                BrokerAction = "none",
+                Reasons = MergeReasons(runtimeResult.Reasons, ["snapshot_save_failed"]),
+                LoggingStatus = runtimeResult.LoggingStatus,
+                PaperWarnings = MergeWarnings(runtimeResult.PaperWarnings, ["snapshot_save_failed"]),
+                SignalCandidates = runtimeResult.SignalCandidates,
+                PaperPortfolioState = runtimeResult.PaperPortfolioState,
+                PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
+            };
+        }
+    }
+
     private static string[] MergeReasons(params string[][] reasonGroups)
     {
         var reasons = new List<string>();
@@ -448,4 +507,20 @@ public sealed class HermesPaperBot
         SignalCandidates = [],
         PaperPortfolioState = new PaperPortfolioState(),
     };
+
+    private static string ResolvePaperStateSnapshotPath(BotConfiguration configuration)
+    {
+        if (!string.IsNullOrWhiteSpace(configuration.PaperStateSnapshotPath))
+        {
+            return configuration.PaperStateSnapshotPath;
+        }
+
+        var logsPath = configuration.LocalRuntimeLogsPathOverride ?? configuration.LocalRuntimeLogsPath;
+        if (string.IsNullOrWhiteSpace(logsPath))
+        {
+            return string.Empty;
+        }
+
+        return Path.Combine(logsPath, "paper_state_snapshot.json");
+    }
 }

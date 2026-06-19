@@ -111,6 +111,16 @@ public sealed class BotConfiguration
     public string? LocalRuntimeLogsPathOverride { get; init; }
 
     /// <summary>
+    /// Paper state snapshot path.
+    /// </summary>
+    public string PaperStateSnapshotPath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Recovery mode for corrupt paper snapshots.
+    /// </summary>
+    public PaperSnapshotRecoveryMode PaperSnapshotRecoveryMode { get; init; } = PaperSnapshotRecoveryMode.FreshState;
+
+    /// <summary>
     /// Embedded release package for cloud runtime.
     /// </summary>
     public CloudEmbeddedReleasePackage? CloudEmbeddedReleasePackage { get; init; }
