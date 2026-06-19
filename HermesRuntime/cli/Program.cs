@@ -587,7 +587,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
         Console.WriteLine("  hermes cloud-embedded-release-package Cloud-kompatibles Embedded Release Package erzeugen");
-        Console.WriteLine("  hermes hermes-paperbot-replay lokales HermesPaperBot Replay-Report-Paket erzeugen");
+        Console.WriteLine("  hermes hermes-paperbot-replay [--asset XAUUSD --timeframe M5] lokales HermesPaperBot Replay-Report-Paket erzeugen");
         Console.WriteLine("  hermes scalping-ensemble-human-review-package Ensemble Human Review Package anzeigen");
         Console.WriteLine("  hermes scalping-ensemble-review-status Ensemble Review Status anzeigen");
         Console.WriteLine("  hermes approve-scalping-ensemble --mode demo_signal_use|forward_test_preparation Ensemble freigeben");
@@ -5390,13 +5390,23 @@ internal sealed class HermesCli
         WriteHeader("HermesPaperBot Replay Runner");
         var runner = new HermesPaperBotReplayRunner();
         var outputDirectory = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "hermes_paper_bot_replay");
-        var result = runner.Run(outputDirectory);
+        var datasetPath = ReadOption(_args, "--dataset");
+        var asset = ReadOption(_args, "--asset");
+        var timeframe = ReadOption(_args, "--timeframe");
+        var result = runner.Run(outputDirectory, datasetPath, asset, timeframe);
 
         WriteField("Status", result.Status);
         WriteField("Reason", result.Reason);
         WriteField("Output Directory", DisplayPath(result.OutputDirectory));
         WriteField("JSON Report", DisplayPath(result.JsonPath));
         WriteField("Markdown Report", DisplayPath(result.MarkdownPath));
+        WriteField("Dataset Path", DisplayOptionalPath(result.DatasetPath));
+        WriteField("Dataset Discovery Used", result.DatasetDiscoveryUsed.ToString().ToLowerInvariant());
+        WriteField("Dataset Discovery Candidates", result.DatasetDiscoveryCandidates.ToString(CultureInfo.InvariantCulture));
+        WriteField("Selected Dataset Path", DisplayOptionalPath(result.SelectedDatasetPath));
+        WriteField("Bars Total", result.BarsTotal.ToString(CultureInfo.InvariantCulture));
+        WriteField("Bars Valid", result.BarsValid.ToString(CultureInfo.InvariantCulture));
+        WriteField("Bars Skipped", result.BarsSkipped.ToString(CultureInfo.InvariantCulture));
         WriteField("Trades Total", result.TradesTotal.ToString(CultureInfo.InvariantCulture));
         WriteField("Sample Size Class", result.SampleSizeClass);
         WriteField("Quality Class", result.QualityClass);
@@ -13447,7 +13457,7 @@ internal sealed class HermesCli
         for (var index = 0; index < args.Length; index++)
         {
             var arg = args[index];
-            if (arg is "--root" or "--limit" or "--hours" or "--max-runtime-hours" or "--max-requests" or "--max-downloads" or "--sleep-seconds" or "--max-idle-iterations" or "--from" or "--to" or "--url")
+            if (arg is "--root" or "--limit" or "--hours" or "--max-runtime-hours" or "--max-requests" or "--max-downloads" or "--sleep-seconds" or "--max-idle-iterations" or "--from" or "--to" or "--url" or "--dataset" or "--asset" or "--timeframe")
             {
                 index++;
                 continue;
