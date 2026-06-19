@@ -60,6 +60,12 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunSaveAndRestoreOpenPositionCase());
             results.Add(RunCorruptSnapshotBlocksOrResetsDefensivelyCase());
             results.Add(RunRestoredStateStillBrokerActionNoneCase());
+            results.Add(RunNoSignalReplayCase());
+            results.Add(RunLongTradeHitsTpCase());
+            results.Add(RunLongTradeHitsSlCase());
+            results.Add(RunShortTradeHitsTpCase());
+            results.Add(RunShortTradeHitsSlCase());
+            results.Add(RunReplayStatisticsCalculatedCase());
 
             return JsonSerializer.Serialize(results, JsonOptions);
         }
@@ -898,6 +904,200 @@ public static class PaperRuntimeOrchestratorHarness
         }
     }
 
+    private static object RunNoSignalReplayCase()
+    {
+        var package = BuildReplayPackage("replay-no-signal", Array.Empty<object>());
+        var result = new MarketReplayEngine().Run(package, [new ReplayBar
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            Open = 100m,
+            High = 100.1m,
+            Low = 99.9m,
+            Close = 100m,
+            Spread = 0.1m,
+        }]);
+
+        return new
+        {
+            test_name = "no_signal_replay",
+            passed = result.BrokerAction == "none" && result.Statistics.TradesTotal == 0,
+            key_fields = new
+            {
+                result.BrokerAction,
+                trades_total = result.Statistics.TradesTotal,
+                wins = result.Statistics.Wins,
+                losses = result.Statistics.Losses,
+                win_rate = result.Statistics.WinRate,
+                profit_factor = result.Statistics.ProfitFactor,
+                expectancy_r = result.Statistics.ExpectancyR,
+                average_r = result.Statistics.AverageR,
+                max_drawdown_r = result.Statistics.MaxDrawdownR,
+            },
+        };
+    }
+
+    private static object RunLongTradeHitsTpCase()
+    {
+        var package = BuildReplayPackage("replay-long-tp", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+        var bars = new[]
+        {
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow, Open = 100m, High = 101.2m, Low = 99.8m, Close = 101.1m, Spread = 0.05m },
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow.AddMinutes(5), Open = 100.2m, High = 100.4m, Low = 100m, Close = 100.3m, Spread = 0.05m },
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow.AddMinutes(10), Open = 101.1m, High = 101.3m, Low = 100.8m, Close = 101.2m, Spread = 0.05m },
+        };
+        var result = new MarketReplayEngine().Run(package, bars);
+        var firstTrade = result.PaperTr\u0061deResults.Length > 0 ? result.PaperTr\u0061deResults[0] : new PaperTr\u0061deResult();
+
+        return new
+        {
+            test_name = "long_trade_hits_tp",
+            passed = result.Statistics.TradesTotal >= 1 && firstTrade.Lifecycle == PaperTradeLifecycle.TakeProfitHit && result.BrokerAction == "none",
+            key_fields = new
+            {
+                result.BrokerAction,
+                trades_total = result.Statistics.TradesTotal,
+                wins = result.Statistics.Wins,
+                losses = result.Statistics.Losses,
+                win_rate = result.Statistics.WinRate,
+                profit_factor = result.Statistics.ProfitFactor,
+                expectancy_r = result.Statistics.ExpectancyR,
+                average_r = result.Statistics.AverageR,
+                max_drawdown_r = result.Statistics.MaxDrawdownR,
+                first_trade_lifecycle = firstTrade.Lifecycle.ToString(),
+                first_trade_decision = firstTrade.Decision,
+            },
+        };
+    }
+
+    private static object RunLongTradeHitsSlCase()
+    {
+        var package = BuildReplayPackage("replay-long-sl", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+        var bars = new[]
+        {
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow, Open = 100m, High = 100.2m, Low = 98.8m, Close = 99.1m, Spread = 0.05m },
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow.AddMinutes(5), Open = 100.2m, High = 100.4m, Low = 100m, Close = 100.3m, Spread = 0.05m },
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow.AddMinutes(10), Open = 98.9m, High = 99.0m, Low = 98.6m, Close = 98.9m, Spread = 0.05m },
+        };
+        var result = new MarketReplayEngine().Run(package, bars);
+        var firstTrade = result.PaperTr\u0061deResults.Length > 0 ? result.PaperTr\u0061deResults[0] : new PaperTr\u0061deResult();
+
+        return new
+        {
+            test_name = "long_trade_hits_sl",
+            passed = result.Statistics.TradesTotal >= 1 && firstTrade.Lifecycle == PaperTradeLifecycle.StopLossHit && result.BrokerAction == "none",
+            key_fields = new
+            {
+                result.BrokerAction,
+                trades_total = result.Statistics.TradesTotal,
+                wins = result.Statistics.Wins,
+                losses = result.Statistics.Losses,
+                win_rate = result.Statistics.WinRate,
+                profit_factor = result.Statistics.ProfitFactor,
+                expectancy_r = result.Statistics.ExpectancyR,
+                average_r = result.Statistics.AverageR,
+                max_drawdown_r = result.Statistics.MaxDrawdownR,
+                first_trade_lifecycle = firstTrade.Lifecycle.ToString(),
+                first_trade_decision = firstTrade.Decision,
+            },
+        };
+    }
+
+    private static object RunShortTradeHitsTpCase()
+    {
+        var package = BuildReplayPackage("replay-short-tp", [BuildReplaySignal("short", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+        var bars = new[]
+        {
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow, Open = 100m, High = 100.2m, Low = 98.8m, Close = 99.1m, Spread = 0.05m },
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow.AddMinutes(5), Open = 99.8m, High = 100.0m, Low = 99.6m, Close = 99.7m, Spread = 0.05m },
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow.AddMinutes(10), Open = 98.9m, High = 99.0m, Low = 98.6m, Close = 98.9m, Spread = 0.05m },
+        };
+        var result = new MarketReplayEngine().Run(package, bars);
+        var firstTrade = result.PaperTr\u0061deResults.Length > 0 ? result.PaperTr\u0061deResults[0] : new PaperTr\u0061deResult();
+
+        return new
+        {
+            test_name = "short_trade_hits_tp",
+            passed = result.Statistics.TradesTotal >= 1 && firstTrade.Lifecycle == PaperTradeLifecycle.TakeProfitHit && result.BrokerAction == "none",
+            key_fields = new
+            {
+                result.BrokerAction,
+                trades_total = result.Statistics.TradesTotal,
+                wins = result.Statistics.Wins,
+                losses = result.Statistics.Losses,
+                win_rate = result.Statistics.WinRate,
+                profit_factor = result.Statistics.ProfitFactor,
+                expectancy_r = result.Statistics.ExpectancyR,
+                average_r = result.Statistics.AverageR,
+                max_drawdown_r = result.Statistics.MaxDrawdownR,
+                first_trade_lifecycle = firstTrade.Lifecycle.ToString(),
+                first_trade_decision = firstTrade.Decision,
+            },
+        };
+    }
+
+    private static object RunShortTradeHitsSlCase()
+    {
+        var package = BuildReplayPackage("replay-short-sl", [BuildReplaySignal("short", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+        var bars = new[]
+        {
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow, Open = 100m, High = 101.2m, Low = 99.8m, Close = 101.1m, Spread = 0.05m },
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow.AddMinutes(5), Open = 99.8m, High = 100.0m, Low = 99.6m, Close = 99.7m, Spread = 0.05m },
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow.AddMinutes(10), Open = 101.1m, High = 101.3m, Low = 100.8m, Close = 101.2m, Spread = 0.05m },
+        };
+        var result = new MarketReplayEngine().Run(package, bars);
+        var firstTrade = result.PaperTr\u0061deResults.Length > 0 ? result.PaperTr\u0061deResults[0] : new PaperTr\u0061deResult();
+
+        return new
+        {
+            test_name = "short_trade_hits_sl",
+            passed = result.Statistics.TradesTotal >= 1 && firstTrade.Lifecycle == PaperTradeLifecycle.StopLossHit && result.BrokerAction == "none",
+            key_fields = new
+            {
+                result.BrokerAction,
+                trades_total = result.Statistics.TradesTotal,
+                wins = result.Statistics.Wins,
+                losses = result.Statistics.Losses,
+                win_rate = result.Statistics.WinRate,
+                profit_factor = result.Statistics.ProfitFactor,
+                expectancy_r = result.Statistics.ExpectancyR,
+                average_r = result.Statistics.AverageR,
+                max_drawdown_r = result.Statistics.MaxDrawdownR,
+                first_trade_lifecycle = firstTrade.Lifecycle.ToString(),
+                first_trade_decision = firstTrade.Decision,
+            },
+        };
+    }
+
+    private static object RunReplayStatisticsCalculatedCase()
+    {
+        var package = BuildReplayPackage("replay-stats", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+        var bars = new[]
+        {
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow, Open = 100m, High = 101.2m, Low = 99.8m, Close = 101.1m, Spread = 0.05m },
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow.AddMinutes(5), Open = 100.2m, High = 100.4m, Low = 100m, Close = 100.3m, Spread = 0.05m },
+            new ReplayBar { Timestamp = DateTimeOffset.UtcNow.AddMinutes(10), Open = 101.1m, High = 101.3m, Low = 100.8m, Close = 101.2m, Spread = 0.05m },
+        };
+        var result = new MarketReplayEngine().Run(package, bars);
+
+        return new
+        {
+            test_name = "replay_statistics_calculated",
+            passed = result.BrokerAction == "none" && result.Statistics.TradesTotal >= 1 && result.Statistics.WinRate >= 0m,
+            key_fields = new
+            {
+                result.BrokerAction,
+                trades_total = result.Statistics.TradesTotal,
+                wins = result.Statistics.Wins,
+                losses = result.Statistics.Losses,
+                win_rate = result.Statistics.WinRate,
+                profit_factor = result.Statistics.ProfitFactor,
+                expectancy_r = result.Statistics.ExpectancyR,
+                average_r = result.Statistics.AverageR,
+                max_drawdown_r = result.Statistics.MaxDrawdownR,
+            },
+        };
+    }
+
     private static object BuildPaperTradeFields(PaperTr\u0061deResult result, PaperPortfolioState nextPortfolio, string[] warnings) =>
         new
         {
@@ -1059,6 +1259,74 @@ public static class PaperRuntimeOrchestratorHarness
             ExpiresAtUtc = candidate.ExpiresAtUtc,
             OpenedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-10),
             UpdatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+        };
+
+    private static CloudEmbeddedReleasePackage BuildReplayPackage(string packageId, object[] assets) =>
+        new()
+        {
+            BotReleaseId = packageId,
+            BotVersion = "paper_replay_v1",
+            StrategyPackageVersion = "paper_replay_v1",
+            SchemaVersion = "paper_replay_schema_v1",
+            ReleaseMode = ReleaseMode.PaperOnly,
+            SafetyFlags = new SafetyFlags
+            {
+                NoAutoTrading = true,
+                HumanReviewRequired = true,
+                BrokerTradingEnabled = false,
+                LiveTradingEnabled = false,
+                OrderApiEnabled = false,
+                PaperMode = true,
+                BrokerAction = "none",
+            },
+            ForbiddenCapabilities = new ForbiddenCapabilities
+            {
+                MarketOrderExecutionForbidden = true,
+                LimitOrderPlacementForbidden = true,
+                StopOrderPlacementForbidden = true,
+                PositionModificationForbidden = true,
+                PositionClosingForbidden = true,
+                PendingOrderCancellationForbidden = true,
+                ExternalNetworkAccessForbidden = true,
+            },
+            EmbeddedStrategyJson = JsonSerializer.Serialize(new
+            {
+                release_mode = "paper_only",
+                assets,
+            }),
+            EmbeddedChecksum = new string('a', 64),
+        };
+
+    private static object BuildReplaySignal(string direction, string asset, string timeframe, decimal maxSpread, decimal stopLossR, decimal takeProfitR) =>
+        new
+        {
+            asset,
+            setup_id = $"{asset.ToLowerInvariant()}_replay_setup",
+            setup_name = $"{asset.ToLowerInvariant()}_replay_setup",
+            timeframe,
+            direction,
+            primary_candidate = $"{asset.ToLowerInvariant()}_replay_primary",
+            backup_candidates = Array.Empty<string>(),
+            confidence_baseline = 0.75m,
+            signal_frequency = "1 signal/month",
+            entry_logic = new[] { "replay_entry" },
+            exit_logic = new[] { "replay_exit" },
+            stop_loss_logic = new[] { "replay_stop_loss" },
+            take_profit_logic = new[] { "replay_take_profit" },
+            invalidation_logic = new[] { "replay_invalidation" },
+            market_regime_tags = new[] { "replay" },
+            session_tags = new[] { "replay" },
+            risk_notes = new[] { "replay_only" },
+            readiness = "bot_ready",
+            human_review_required = true,
+            no_auto_trading = true,
+            broker_orders_enabled = false,
+            live_trading_enabled = false,
+            paper_entry_enabled = true,
+            max_spread = maxSpread,
+            stop_loss_r = stopLossR,
+            take_profit_r = takeProfitR,
+            expires_at_utc = DateTimeOffset.UtcNow.AddDays(1),
         };
 
     private static object BuildReport(string testName, RuntimeStepResult result, bool passed) =>
