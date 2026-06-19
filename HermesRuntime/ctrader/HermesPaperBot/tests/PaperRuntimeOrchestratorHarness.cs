@@ -46,6 +46,9 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunCloudBootstrapInvalidJsonCase());
             results.Add(RunCloudEntryStartAndRunStepCase());
             results.Add(RunCloudEntryInvalidBootstrapCase());
+            results.Add(RunCloudHostOnStartRunsCase());
+            results.Add(RunCloudHostOnTimerRunsCase());
+            results.Add(RunCloudHostOnExceptionBlocksCase());
 
             return JsonSerializer.Serialize(results, JsonOptions);
         }
@@ -473,6 +476,70 @@ public static class PaperRuntimeOrchestratorHarness
         return new
         {
             test_name = "cloud_entry_invalid_bootstrap_blocks",
+            passed = last is not null && last.KillSwitchActive && last.BrokerAction == "none",
+            key_fields = new
+            {
+                last_step_available = last is not null,
+                last_step_state = last?.State ?? string.Empty,
+                last_step_kill_switch_active = last?.KillSwitchActive ?? false,
+                last_step_paper_decision = last?.PaperDecision ?? string.Empty,
+                last_step_broker_action = last?.BrokerAction ?? string.Empty,
+            },
+        };
+    }
+
+    private static object RunCloudHostOnStartRunsCase()
+    {
+        var host = new HermesPaperBotCloudHost();
+        host.OnStart();
+        var last = host.GetLastRuntimeStepResult();
+
+        return new
+        {
+            test_name = "cloud_host_on_start_runs",
+            passed = last is not null && last.BrokerAction == "none",
+            key_fields = new
+            {
+                last_step_available = last is not null,
+                last_step_state = last?.State ?? string.Empty,
+                last_step_kill_switch_active = last?.KillSwitchActive ?? false,
+                last_step_paper_decision = last?.PaperDecision ?? string.Empty,
+                last_step_broker_action = last?.BrokerAction ?? string.Empty,
+            },
+        };
+    }
+
+    private static object RunCloudHostOnTimerRunsCase()
+    {
+        var host = new HermesPaperBotCloudHost();
+        host.OnStart();
+        host.OnTimer();
+        var last = host.GetLastRuntimeStepResult();
+
+        return new
+        {
+            test_name = "cloud_host_on_timer_runs",
+            passed = last is not null && last.BrokerAction == "none",
+            key_fields = new
+            {
+                last_step_available = last is not null,
+                last_step_state = last?.State ?? string.Empty,
+                last_step_kill_switch_active = last?.KillSwitchActive ?? false,
+                last_step_paper_decision = last?.PaperDecision ?? string.Empty,
+                last_step_broker_action = last?.BrokerAction ?? string.Empty,
+            },
+        };
+    }
+
+    private static object RunCloudHostOnExceptionBlocksCase()
+    {
+        var host = new HermesPaperBotCloudHost();
+        host.OnException(new InvalidOperationException("host failure"));
+        var last = host.GetLastRuntimeStepResult();
+
+        return new
+        {
+            test_name = "cloud_host_on_exception_blocks",
             passed = last is not null && last.KillSwitchActive && last.BrokerAction == "none",
             key_fields = new
             {

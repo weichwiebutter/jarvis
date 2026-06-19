@@ -126,3 +126,13 @@ Cloud mode uses `RuntimeMode=cloud_embedded_bundle` and an embedded release pack
 
 This is not a live cTrader host integration yet.
 It is only a guarded entry structure for the future cloud runtime path.
+
+## Cloud Host Adapter Skeleton
+
+`HermesPaperBotCloudHost.cs` is a separate host adapter skeleton that only delegates to the safe paper bot skeleton.
+
+- no cTrader runtime attribute is added yet
+- no cAlgo.API reference is required in this skeleton step
+- `OnStart()`, `OnTimer()`, `OnStop()`, and `OnException(Exception)` only delegate
+- order APIs remain forbidden
+- a future cTrader Cloud integration may need platform-specific entry wiring, but not here

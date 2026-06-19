@@ -200,6 +200,18 @@ public sealed class HermesPaperBot
         _lastRuntimeStepResult ??= CreateBlockedResult("unexpected_exception");
     }
 
+    /// <summary>
+    /// paper_only
+    /// broker_action=none
+    /// no order API
+    ///
+    /// Handles an exception defensively and records a blocked in-memory result.
+    /// </summary>
+    public void HandleRuntimeException(Exception ex)
+    {
+        _lastRuntimeStepResult = CreateBlockedResult(string.IsNullOrWhiteSpace(ex.Message) ? "exception_handled" : $"exception_handled:{ex.Message}");
+    }
+
     private static RuntimeStepResult CreateBlockedResult(string reason) => new()
     {
         Success = false,
