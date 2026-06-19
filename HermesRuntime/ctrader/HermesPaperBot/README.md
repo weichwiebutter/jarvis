@@ -146,3 +146,11 @@ The real cTrader API is not wired in yet.
 - no order API is allowed
 - no demo or live execution is allowed
 - any future cAlgo.API import must be reviewed against the boundary doc
+
+## Future AccessRights Decision
+
+The Cloud Paper Bot targets `AccessRights.None`.
+
+- Cloud mode should not depend on FileSystem access
+- FileSystem is only for local or VPS-style development modes
+- Internet and FullAccess are not part of the Cloud target
