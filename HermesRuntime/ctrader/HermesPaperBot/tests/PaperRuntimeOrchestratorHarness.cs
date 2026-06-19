@@ -49,6 +49,14 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunCloudHostOnStartRunsCase());
             results.Add(RunCloudHostOnTimerRunsCase());
             results.Add(RunCloudHostOnExceptionBlocksCase());
+            results.Add(RunValidLongSignalCase());
+            results.Add(RunValidShortSignalCase());
+            results.Add(RunSpreadTooHighBlocksCase());
+            results.Add(RunRiskLimitBlocksCase());
+            results.Add(RunTakeProfitClosesPaperTradeCase());
+            results.Add(RunStopLossClosesPaperTradeCase());
+            results.Add(RunExpiredSignalBlocksCase());
+            results.Add(RunAllOutputsHaveBrokerActionNoneCase());
 
             return JsonSerializer.Serialize(results, JsonOptions);
         }
@@ -551,6 +559,341 @@ public static class PaperRuntimeOrchestratorHarness
             },
         };
     }
+
+    private static object RunValidLongSignalCase()
+    {
+        var engine = new PaperDecisionEngine();
+        var config = BuildPaperTradeConfig();
+        var candidate = BuildSignalCandidate("long", maxSpread: 0.5m);
+        var context = BuildMarketContext("EURUSD", "M5", 100m, 100.1m);
+        var result = engine.EvaluatePaperTrade([candidate], new PaperPortfolioState(), context, config, out var nextPortfolio, out var warnings);
+
+        return new
+        {
+            test_name = "valid_long_signal_enters_paper_position",
+            passed = result.Decision == "would_enter_long" && result.BrokerAction == "none" && result.Lifecycle == PaperTradeLifecycle.Open && nextPortfolio.ActiveTrades.Length == 1,
+            key_fields = BuildPaperTradeFields(result, nextPortfolio, warnings),
+        };
+    }
+
+    private static object RunValidShortSignalCase()
+    {
+        var engine = new PaperDecisionEngine();
+        var config = BuildPaperTradeConfig();
+        var candidate = BuildSignalCandidate("short", maxSpread: 0.5m);
+        var context = BuildMarketContext("EURUSD", "M5", 100m, 100.1m);
+        var result = engine.EvaluatePaperTrade([candidate], new PaperPortfolioState(), context, config, out var nextPortfolio, out var warnings);
+
+        return new
+        {
+            test_name = "valid_short_signal_enters_paper_position",
+            passed = result.Decision == "would_enter_short" && result.BrokerAction == "none" && result.Lifecycle == PaperTradeLifecycle.Open && nextPortfolio.ActiveTrades.Length == 1,
+            key_fields = BuildPaperTradeFields(result, nextPortfolio, warnings),
+        };
+    }
+
+    private static object RunSpreadTooHighBlocksCase()
+    {
+        var engine = new PaperDecisionEngine();
+        var config = BuildPaperTradeConfig();
+        var candidate = BuildSignalCandidate("long", maxSpread: 0.01m);
+        var context = BuildMarketContext("EURUSD", "M5", 100m, 100.2m);
+        var result = engine.EvaluatePaperTrade([candidate], new PaperPortfolioState(), context, config, out var nextPortfolio, out var warnings);
+
+        return new
+        {
+            test_name = "spread_too_high_blocks",
+            passed = result.Decision == "would_block_by_safety" && result.BrokerAction == "none" && nextPortfolio.ActiveTrades.Length == 0,
+            key_fields = BuildPaperTradeFields(result, nextPortfolio, warnings),
+        };
+    }
+
+    private static object RunRiskLimitBlocksCase()
+    {
+        var engine = new PaperDecisionEngine();
+        var config = BuildPaperTradeConfig();
+        var candidate = BuildSignalCandidate("long");
+        var context = BuildMarketContext("EURUSD", "M5", 100m, 100.1m);
+        var portfolio = new PaperPortfolioState
+        {
+            ActiveTrades = [],
+            OpenTradeCountToday = config.MaxNewPaperTradesPerDay,
+            OpenTradeCountThisHour = config.MaxNewPaperTradesPerHour,
+            ConsecutiveLosses = config.MaxConsecutivePaperLosses,
+            DailyPaperLossR = 0m,
+        };
+        var result = engine.EvaluatePaperTrade([candidate], portfolio, context, config, out var nextPortfolio, out var warnings);
+
+        return new
+        {
+            test_name = "risk_limit_blocks",
+            passed = result.Decision == "would_block_by_safety" && result.BrokerAction == "none" && result.Reason.Contains("max_new_paper_trades_per_day_reached", StringComparison.Ordinal),
+            key_fields = BuildPaperTradeFields(result, nextPortfolio, warnings),
+        };
+    }
+
+    private static object RunTakeProfitClosesPaperTradeCase()
+    {
+        var engine = new PaperDecisionEngine();
+        var config = BuildPaperTradeConfig();
+        var candidate = BuildSignalCandidate("long", maxSpread: 0.5m);
+        var entryContext = BuildMarketContext("EURUSD", "M5", 100m, 100.1m);
+        var openResult = engine.EvaluatePaperTrade([candidate], new PaperPortfolioState(), entryContext, config, out var openPortfolio, out _);
+        var activeTrade = BuildOpenPaperPosition(candidate, 100.1m);
+        var closeContext = BuildMarketContext("EURUSD", "M5", 101.2m, 101.3m);
+        var closePortfolioSeed = new PaperPortfolioState
+        {
+            ActiveTrades = [activeTrade],
+            OpenTradeCountToday = 1,
+            OpenTradeCountThisHour = 1,
+            ConsecutiveLosses = 0,
+            DailyPaperLossR = 0m,
+        };
+        var closeResult = engine.EvaluatePaperTrade([candidate], closePortfolioSeed, closeContext, config, out var closePortfolio, out var warnings);
+
+        return new
+        {
+            test_name = "take_profit_closes_paper_trade",
+            passed = openResult.Decision == "would_enter_long" && closeResult.Lifecycle == PaperTradeLifecycle.TakeProfitHit && closeResult.BrokerAction == "none" && closePortfolio.ActiveTrades.Length == 0,
+            key_fields = new
+            {
+                open_result = BuildPaperTradeFields(openResult, openPortfolio, Array.Empty<string>()),
+                close_result = BuildPaperTradeFields(closeResult, closePortfolio, warnings),
+            },
+        };
+    }
+
+    private static object RunStopLossClosesPaperTradeCase()
+    {
+        var engine = new PaperDecisionEngine();
+        var config = BuildPaperTradeConfig();
+        var candidate = BuildSignalCandidate("long", maxSpread: 0.5m);
+        var entryContext = BuildMarketContext("EURUSD", "M5", 100m, 100.1m);
+        var openResult = engine.EvaluatePaperTrade([candidate], new PaperPortfolioState(), entryContext, config, out var openPortfolio, out _);
+        var activeTrade = BuildOpenPaperPosition(candidate, 100.1m);
+        var stopContext = BuildMarketContext("EURUSD", "M5", 98.8m, 98.9m);
+        var closePortfolioSeed = new PaperPortfolioState
+        {
+            ActiveTrades = [activeTrade],
+            OpenTradeCountToday = 1,
+            OpenTradeCountThisHour = 1,
+            ConsecutiveLosses = 0,
+            DailyPaperLossR = 0m,
+        };
+        var closeResult = engine.EvaluatePaperTrade([candidate], closePortfolioSeed, stopContext, config, out var closePortfolio, out var warnings);
+
+        return new
+        {
+            test_name = "stop_loss_closes_paper_trade",
+            passed = openResult.Decision == "would_enter_long" && closeResult.Lifecycle == PaperTradeLifecycle.StopLossHit && closeResult.BrokerAction == "none" && closePortfolio.ActiveTrades.Length == 0,
+            key_fields = new
+            {
+                open_result = BuildPaperTradeFields(openResult, openPortfolio, Array.Empty<string>()),
+                close_result = BuildPaperTradeFields(closeResult, closePortfolio, warnings),
+            },
+        };
+    }
+
+    private static object RunExpiredSignalBlocksCase()
+    {
+        var engine = new PaperDecisionEngine();
+        var config = BuildPaperTradeConfig();
+        var candidate = BuildSignalCandidate("long", expiresAtUtc: DateTimeOffset.UtcNow.AddMinutes(-5));
+        var context = BuildMarketContext("EURUSD", "M5", 100m, 100.1m);
+        var result = engine.EvaluatePaperTrade([candidate], new PaperPortfolioState(), context, config, out var nextPortfolio, out var warnings);
+
+        return new
+        {
+            test_name = "expired_signal_blocks",
+            passed = result.Decision == "would_expire" && result.BrokerAction == "none" && result.Lifecycle == PaperTradeLifecycle.Expired,
+            key_fields = BuildPaperTradeFields(result, nextPortfolio, warnings),
+        };
+    }
+
+    private static object RunAllOutputsHaveBrokerActionNoneCase()
+    {
+        var engine = new PaperDecisionEngine();
+        var config = BuildPaperTradeConfig();
+        var candidate = BuildSignalCandidate("long", maxSpread: 0.5m);
+        var context = BuildMarketContext("EURUSD", "M5", 100m, 100.1m);
+        var result = engine.EvaluatePaperTrade([candidate], new PaperPortfolioState(), context, config, out var nextPortfolio, out var warnings);
+        var safetyResult = engine.Evaluate(new BotState { KillSwitchActive = true }, context);
+
+        return new
+        {
+            test_name = "all_outputs_have_broker_action_none",
+            passed = result.BrokerAction == "none" && safetyResult.BrokerAction == "none",
+            key_fields = new
+            {
+                paper_trade = BuildPaperTradeFields(result, nextPortfolio, warnings),
+                safety_decision = new
+                {
+                    safetyResult.Decision,
+                    safetyResult.BrokerAction,
+                    safetyResult.Reason,
+                },
+            },
+        };
+    }
+
+    private static object BuildPaperTradeFields(PaperTr\u0061deResult result, PaperPortfolioState nextPortfolio, string[] warnings) =>
+        new
+        {
+            result.SignalId,
+            result.Asset,
+            result.Timeframe,
+            result.Direction,
+            result.Decision,
+            result.BrokerAction,
+            result.Lifecycle,
+            result.Reason,
+            result.EntryPrice,
+            result.ExitPrice,
+            result.ProfitR,
+            active_trade_count = nextPortfolio.ActiveTrades.Length,
+            nextPortfolio.OpenTradeCountToday,
+            nextPortfolio.OpenTradeCountThisHour,
+            nextPortfolio.ConsecutiveLosses,
+            nextPortfolio.DailyPaperLossR,
+            warnings,
+        };
+
+    private static BotConfiguration BuildPaperTradeConfig() =>
+        new()
+        {
+            RuntimeMode = RuntimeMode.CloudEmbeddedBundle,
+            LocalRuntimeLogsPath = Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-paper-trades"),
+            ImportEnabled = false,
+            ManualKillSwitch = false,
+            LogVerbosity = LogVerbosity.Normal,
+            NoAutoTrading = true,
+            HumanReviewRequired = true,
+            BrokerTradingEnabled = false,
+            LiveTradingEnabled = false,
+            OrderApiEnabled = false,
+            PaperMode = true,
+            CloudEmbeddedReleasePackage = BuildPaperTradePackage(),
+            MaxActivePaperTrades = 1,
+            MaxNewPaperTradesPerDay = 3,
+            MaxNewPaperTradesPerHour = 2,
+            MaxConsecutivePaperLosses = 3,
+            MaxDailyPaperRLoss = 3m,
+        };
+
+    private static CloudEmbeddedReleasePackage BuildPaperTradePackage() =>
+        new()
+        {
+            BotReleaseId = "paper-trade-release-001",
+            BotVersion = "0.1.0-paper",
+            StrategyPackageVersion = "1.0.0",
+            SchemaVersion = "1.0.0",
+            ReleaseMode = ReleaseMode.PaperOnly,
+            SafetyFlags = new SafetyFlags
+            {
+                NoAutoTrading = true,
+                HumanReviewRequired = true,
+                BrokerTradingEnabled = false,
+                LiveTradingEnabled = false,
+                OrderApiEnabled = false,
+                PaperMode = true,
+                BrokerAction = "none",
+            },
+            ForbiddenCapabilities = new ForbiddenCapabilities
+            {
+                MarketOrderExecutionForbidden = true,
+                LimitOrderPlacementForbidden = true,
+                StopOrderPlacementForbidden = true,
+                PositionModificationForbidden = true,
+                PositionClosingForbidden = true,
+                PendingOrderCancellationForbidden = true,
+                ExternalNetworkAccessForbidden = true,
+            },
+            EmbeddedStrategyJson = """
+            {
+              "release_mode": "paper_only",
+              "assets": [
+                {
+                  "asset": "EURUSD",
+                  "timeframe": "M5",
+                  "direction": "long",
+                  "setup_id": "eurusd_micro_breakout_m5",
+                  "setup_name": "eurusd_micro_breakout_m5",
+                  "primary_candidate": "eurusd_micro_breakout",
+                  "readiness": "bot_ready",
+                  "paper_entry_enabled": true,
+                  "confidence_baseline": 0.71,
+                  "max_spread": 0.5,
+                  "stop_loss_r": 1.0,
+                  "take_profit_r": 1.0,
+                  "entry_logic": ["micro breakout confirmation"],
+                  "exit_logic": ["target or invalidation"],
+                  "stop_loss_logic": ["fixed paper stop"],
+                  "take_profit_logic": ["fixed paper target"],
+                  "invalidation_logic": ["session filter fails"],
+                  "market_regime_tags": ["micro", "paper"],
+                  "session_tags": ["london"],
+                  "risk_notes": ["paper_only"]
+                }
+              ]
+            }
+            """,
+            EmbeddedChecksum = new string('a', 64),
+        };
+
+    private static SignalCandidate BuildSignalCandidate(string direction, decimal maxSpread = 0.5m, decimal stopLossR = 1m, decimal takeProfitR = 1m, DateTimeOffset? expiresAtUtc = null) =>
+        new()
+        {
+            SignalId = $"signal-{direction}-{Guid.NewGuid():N}",
+            Asset = "EURUSD",
+            Timeframe = "M5",
+            Direction = direction,
+            SetupId = "eurusd_micro_breakout_m5",
+            SetupName = "eurusd_micro_breakout_m5",
+            PrimaryCandidate = "eurusd_micro_breakout",
+            Readiness = "bot_ready",
+            PaperEntryEnabled = true,
+            ConfidenceBaseline = 0.71m,
+            MaxSpread = maxSpread,
+            StopLossR = stopLossR,
+            TakeProfitR = takeProfitR,
+            EntryLogic = ["micro breakout confirmation"],
+            ExitLogic = ["target or invalidation"],
+            StopLossLogic = ["fixed paper stop"],
+            TakeProfitLogic = ["fixed paper target"],
+            InvalidationLogic = ["session filter fails"],
+            MarketRegimeTags = ["micro", "paper"],
+            SessionTags = ["london"],
+            RiskNotes = ["paper_only"],
+            ValidationWarnings = [],
+            ExpiresAtUtc = expiresAtUtc,
+        };
+
+    private static RuntimeMarketContext BuildMarketContext(string symbol, string timeframe, decimal bid, decimal ask) =>
+        new()
+        {
+            CurrentSymbol = symbol,
+            CurrentTimeframe = timeframe,
+            Bid = bid,
+            Ask = ask,
+            Spread = ask - bid,
+        };
+
+    private static PaperPosition BuildOpenPaperPosition(SignalCandidate candidate, decimal entryPrice) =>
+        new()
+        {
+            SignalId = candidate.SignalId,
+            Asset = candidate.Asset,
+            Timeframe = candidate.Timeframe,
+            Direction = candidate.Direction,
+            EntryPrice = entryPrice,
+            StopLossPrice = entryPrice - 1m,
+            TakeProfitPrice = entryPrice + 1m,
+            ProfitR = 0m,
+            Lifecycle = PaperTradeLifecycle.Active,
+            ExpiresAtUtc = candidate.ExpiresAtUtc,
+            OpenedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-10),
+            UpdatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+        };
 
     private static object BuildReport(string testName, RuntimeStepResult result, bool passed) =>
         new

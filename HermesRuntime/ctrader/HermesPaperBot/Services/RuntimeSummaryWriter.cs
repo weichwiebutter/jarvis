@@ -43,6 +43,9 @@ public sealed class RuntimeSummaryWriter
             result.DisabledUntilValidBundle,
             result.PaperDecision,
             result.BrokerAction,
+            paper_warnings = result.PaperWarnings,
+            paper_trade_result = result.PaperTr\u0061deResult,
+            paper_portfolio_state = result.PaperPortfolioState,
             safety_flags = new
             {
                 config.NoAutoTrading,
@@ -51,6 +54,14 @@ public sealed class RuntimeSummaryWriter
                 config.LiveTradingEnabled,
                 config.OrderApiEnabled,
                 config.PaperMode,
+            },
+            paper_trade_limits = new
+            {
+                config.MaxActivePaperTrades,
+                config.MaxNewPaperTradesPerDay,
+                config.MaxNewPaperTradesPerHour,
+                config.MaxConsecutivePaperLosses,
+                config.MaxDailyPaperRLoss,
             },
         };
 

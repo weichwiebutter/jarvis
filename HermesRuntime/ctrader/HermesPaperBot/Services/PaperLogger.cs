@@ -16,7 +16,7 @@ public sealed class PaperLogger
     };
 
     /// <summary>
-    /// Writes a paper decision log entry.
+    /// Writes a paper runtime step entry and decision log.
     /// </summary>
     public bool Write(string logsPath, RuntimeStepResult result)
     {
@@ -27,6 +27,7 @@ public sealed class PaperLogger
 
         Directory.CreateDirectory(logsPath);
         var stepLogPath = Path.Combine(logsPath, "paper_runtime_step_log.jsonl");
+        var decisionLogPath = Path.Combine(logsPath, "paper_decision_log.jsonl");
         var killSwitchLogPath = Path.Combine(logsPath, "kill_switch_events.jsonl");
 
         var stepEntry = new
@@ -46,9 +47,21 @@ public sealed class PaperLogger
             paper_decision = result.PaperDecision,
             broker_action = result.BrokerAction,
             reasons = result.Reasons,
+            warnings = result.PaperWarnings,
+        };
+
+        var decisionEntry = new
+        {
+            timestamp_utc = DateTime.UtcNow.ToString("O"),
+            result.State,
+            paper_decision = result.PaperDecision,
+            broker_action = result.BrokerAction,
+            reasons = result.Reasons,
+            warnings = result.PaperWarnings,
         };
 
         File.AppendAllText(stepLogPath, JsonSerializer.Serialize(stepEntry, JsonOptions) + Environment.NewLine);
+        File.AppendAllText(decisionLogPath, JsonSerializer.Serialize(decisionEntry, JsonOptions) + Environment.NewLine);
 
         if (result.KillSwitchActive)
         {
@@ -61,6 +74,45 @@ public sealed class PaperLogger
             };
 
             File.AppendAllText(killSwitchLogPath, JsonSerializer.Serialize(killEntry, JsonOptions) + Environment.NewLine);
+        }
+
+        if (result.PaperTr\u0061deResult is not null)
+        {
+            var tradeResultLogPath = Path.Combine(logsPath, "paper_trade_result_log.jsonl");
+            var tradeEntry = new
+            {
+                timestamp_utc = DateTime.UtcNow.ToString("O"),
+                result.PaperTr\u0061deResult.SignalId,
+                result.PaperTr\u0061deResult.Asset,
+                result.PaperTr\u0061deResult.Timeframe,
+                result.PaperTr\u0061deResult.Direction,
+                result.PaperTr\u0061deResult.Decision,
+                result.PaperTr\u0061deResult.BrokerAction,
+                result.PaperTr\u0061deResult.Lifecycle,
+                result.PaperTr\u0061deResult.Reason,
+                result.PaperTr\u0061deResult.EntryPrice,
+                result.PaperTr\u0061deResult.ExitPrice,
+                result.PaperTr\u0061deResult.ProfitR,
+            };
+
+            File.AppendAllText(tradeResultLogPath, JsonSerializer.Serialize(tradeEntry, JsonOptions) + Environment.NewLine);
+        }
+
+        if (result.PaperPortfolioState is not null)
+        {
+            var positionLogPath = Path.Combine(logsPath, "paper_position_log.jsonl");
+            var portfolioEntry = new
+            {
+                timestamp_utc = DateTime.UtcNow.ToString("O"),
+                active_trade_count = result.PaperPortfolioState.ActiveTrades.Length,
+                result.PaperPortfolioState.OpenTradeCountToday,
+                result.PaperPortfolioState.OpenTradeCountThisHour,
+                result.PaperPortfolioState.ConsecutiveLosses,
+                result.PaperPortfolioState.DailyPaperLossR,
+                trades = result.PaperPortfolioState.ActiveTrades,
+            };
+
+            File.AppendAllText(positionLogPath, JsonSerializer.Serialize(portfolioEntry, JsonOptions) + Environment.NewLine);
         }
 
         return true;

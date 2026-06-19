@@ -81,6 +81,31 @@ public sealed class BotConfiguration
     public bool PaperMode { get; init; } = true;
 
     /// <summary>
+    /// Maximum active paper trades.
+    /// </summary>
+    public int MaxActivePaperTrades { get; init; } = 1;
+
+    /// <summary>
+    /// Maximum new paper trades per day.
+    /// </summary>
+    public int MaxNewPaperTradesPerDay { get; init; } = 3;
+
+    /// <summary>
+    /// Maximum new paper trades per hour.
+    /// </summary>
+    public int MaxNewPaperTradesPerHour { get; init; } = 2;
+
+    /// <summary>
+    /// Maximum consecutive paper losses.
+    /// </summary>
+    public int MaxConsecutivePaperLosses { get; init; } = 3;
+
+    /// <summary>
+    /// Maximum daily paper R loss.
+    /// </summary>
+    public decimal MaxDailyPaperRLoss { get; init; } = 3m;
+
+    /// <summary>
     /// Local runtime logs path for JSONL/JSON output.
     /// </summary>
     public string? LocalRuntimeLogsPathOverride { get; init; }

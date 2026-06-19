@@ -89,6 +89,20 @@ public sealed class ConfigurationValidator
             };
         }
 
+        if (config.MaxActivePaperTrades < 1 ||
+            config.MaxNewPaperTradesPerDay < 1 ||
+            config.MaxNewPaperTradesPerHour < 1 ||
+            config.MaxConsecutivePaperLosses < 0 ||
+            config.MaxDailyPaperRLoss < 0m)
+        {
+            return new ValidationResult
+            {
+                IsValid = false,
+                Status = "invalid",
+                Reason = "paper_trade_limits_invalid",
+            };
+        }
+
         if (!Enum.IsDefined(typeof(LogVerbosity), config.LogVerbosity))
         {
             return new ValidationResult

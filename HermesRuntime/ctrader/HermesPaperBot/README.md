@@ -91,6 +91,19 @@ Local runtime logs are written as JSONL/JSON only.
 - no broker action
 - no cTrader API
 
+## Paper Trading Engine V1
+
+The paper runtime now derives virtual paper-trade steps from the embedded strategy package.
+
+- signal candidates are parsed defensively from the embedded package
+- paper-only decisions may include `would_enter_long`, `would_enter_short`, `would_skip`, `would_invalidate`, and `would_expire`
+- virtual paper positions are tracked in memory only
+- paper-only limits protect the runtime from excessive virtual exposure
+- all outputs keep `broker_action=none`
+- no broker orders, no demo orders, and no live orders are ever produced
+
+Paper trade state is written to local JSONL/JSON logs only.
+
 ## Cloud Runtime V1
 
 The preferred long-term execution model is cTrader Cloud with an embedded release package.

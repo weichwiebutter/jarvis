@@ -21,4 +21,8 @@ public sealed class RuntimeStepResult
     public string BrokerAction { get; init; } = "none";
     public string[] Reasons { get; init; } = [];
     public string? LoggingStatus { get; init; } = null;
+    public SignalCandidate[] SignalCandidates { get; init; } = [];
+    public PaperPortfolioState? PaperPortfolioState { get; init; }
+    public PaperTr\u0061deResult? PaperTr\u0061deResult { get; init; }
+    public string[] PaperWarnings { get; init; } = [];
 }

@@ -30,6 +30,11 @@ public sealed class HermesPaperBot
     private readonly PaperRuntimeOrchestrator _paperRuntimeOrchestrator = new();
 
     /// <summary>
+    /// Paper decision engine for virtual trade steps.
+    /// </summary>
+    private readonly PaperDecisionEngine _paperDecisionEngine = new();
+
+    /// <summary>
     /// Last runtime configuration kept in memory only.
     /// </summary>
     private BotConfiguration? _lastConfiguration;
@@ -43,6 +48,16 @@ public sealed class HermesPaperBot
     /// Last paper runtime step result kept in memory only.
     /// </summary>
     private RuntimeStepResult? _lastRuntimeStepResult;
+
+    /// <summary>
+    /// Parsed signal candidates kept in memory only.
+    /// </summary>
+    private SignalCandidate[] _signalCandidates = [];
+
+    /// <summary>
+    /// Virtual paper portfolio kept in memory only.
+    /// </summary>
+    private PaperPortfolioState _paperPortfolioState = new();
 
     /// <summary>
     /// paper_only
@@ -70,20 +85,48 @@ public sealed class HermesPaperBot
     /// Bootstraps cloud configuration and stores the last result defensively.
     /// </summary>
     public bool StartPaperRuntime()
+        => StartPaperRuntime(null, null);
+
+    /// <summary>
+    /// paper_only
+    /// broker_action=none
+    /// no order API
+    ///
+    /// Starts the paper runtime from a supplied configuration or the cloud bootstrap.
+    /// </summary>
+    public bool StartPaperRuntime(BotConfiguration? configuration, RuntimeMarketContext? context = null)
     {
         try
         {
-            var bootstrapResult = _cloudEmbeddedPackageBootstrapper.CreateCloudConfiguration();
-            _lastCloudBootstrapResult = bootstrapResult;
-            _lastConfiguration = bootstrapResult.Configuration;
-
-            if (!bootstrapResult.Success || bootstrapResult.Configuration is null)
+            CloudBootstrapResult bootstrapResult;
+            if (configuration is null)
             {
-                _lastRuntimeStepResult = CreateBlockedResult(bootstrapResult.Reason ?? "cloud_bootstrap_failed");
-                return false;
+                bootstrapResult = _cloudEmbeddedPackageBootstrapper.CreateCloudConfiguration();
+                _lastCloudBootstrapResult = bootstrapResult;
+                _lastConfiguration = bootstrapResult.Configuration;
+
+                if (!bootstrapResult.Success || bootstrapResult.Configuration is null)
+                {
+                    _lastRuntimeStepResult = CreateBlockedResult(bootstrapResult.Reason ?? "cloud_bootstrap_failed");
+                    return false;
+                }
+            }
+            else
+            {
+                _lastConfiguration = configuration;
+                _lastCloudBootstrapResult = new CloudBootstrapResult
+                {
+                    Success = true,
+                    Status = "custom_configuration",
+                    Reason = "ok",
+                    Configuration = configuration,
+                };
             }
 
-            _lastRuntimeStepResult = _paperRuntimeOrchestrator.RunStep(bootstrapResult.Configuration);
+            var currentConfiguration = _lastConfiguration ?? new BotConfiguration();
+            _signalCandidates = _paperDecisionEngine.ParseSignalCandidates(currentConfiguration.CloudEmbeddedReleasePackage, out var signalWarnings);
+            _paperPortfolioState = new PaperPortfolioState();
+            _lastRuntimeStepResult = ExecutePaperRuntimeStep(context ?? new RuntimeMarketContext(), signalWarnings);
             return _lastRuntimeStepResult.Success;
         }
         catch
@@ -101,22 +144,20 @@ public sealed class HermesPaperBot
     /// Runs one defensive runtime step using the last prepared cloud configuration.
     /// </summary>
     public RuntimeStepResult RunPaperRuntimeStep()
+        => RunPaperRuntimeStep(new RuntimeMarketContext());
+
+    /// <summary>
+    /// paper_only
+    /// broker_action=none
+    /// no order API
+    ///
+    /// Runs one defensive runtime step using the supplied runtime market context.
+    /// </summary>
+    public RuntimeStepResult RunPaperRuntimeStep(RuntimeMarketContext? context)
     {
         try
         {
-            if (_lastConfiguration is null)
-            {
-                StartPaperRuntime();
-            }
-
-            if (_lastConfiguration is null)
-            {
-                _lastRuntimeStepResult = CreateBlockedResult("cloud_configuration_missing");
-                return _lastRuntimeStepResult;
-            }
-
-            _lastRuntimeStepResult = _paperRuntimeOrchestrator.RunStep(_lastConfiguration);
-            return _lastRuntimeStepResult;
+            return _lastRuntimeStepResult = ExecutePaperRuntimeStep(context ?? new RuntimeMarketContext(), []);
         }
         catch
         {
@@ -212,6 +253,180 @@ public sealed class HermesPaperBot
         _lastRuntimeStepResult = CreateBlockedResult(string.IsNullOrWhiteSpace(ex.Message) ? "exception_handled" : $"exception_handled:{ex.Message}");
     }
 
+    private RuntimeStepResult ExecutePaperRuntimeStep(RuntimeMarketContext context, string[] signalWarnings)
+    {
+        if (_lastConfiguration is null)
+        {
+            return CreateBlockedResult("cloud_configuration_missing");
+        }
+
+        var validationResult = _paperRuntimeOrchestrator.RunStep(_lastConfiguration);
+        if (!validationResult.Success)
+        {
+            return PersistRuntimeResult(validationResult);
+        }
+
+        var tradeResult = _paperDecisionEngine.EvaluatePaperTrade(
+            _signalCandidates,
+            _paperPortfolioState,
+            context,
+            _lastConfiguration,
+            out var nextPortfolioState,
+            out var tradeWarnings);
+
+        _paperPortfolioState = nextPortfolioState;
+
+        var combinedReasons = MergeReasons(validationResult.Reasons, signalWarnings, tradeWarnings, [tradeResult.Reason]);
+        var combinedResult = new RuntimeStepResult
+        {
+            Success = validationResult.Success && !string.Equals(tradeResult.Decision, "would_block_by_safety", StringComparison.OrdinalIgnoreCase),
+            State = BuildCombinedState(validationResult.State, tradeResult.Lifecycle),
+            ConfigValid = validationResult.ConfigValid,
+            ImportAttempted = validationResult.ImportAttempted,
+            ImportValid = validationResult.ImportValid,
+            BundleValid = validationResult.BundleValid,
+            ChecksumValid = validationResult.ChecksumValid,
+            SafetyAllowed = validationResult.SafetyAllowed,
+            DriftAllowed = validationResult.DriftAllowed,
+            KillSwitchActive = validationResult.KillSwitchActive,
+            FallbackPossible = validationResult.FallbackPossible,
+            DisabledUntilValidBundle = validationResult.DisabledUntilValidBundle,
+            PaperDecision = tradeResult.Decision,
+            BrokerAction = "none",
+            Reasons = combinedReasons,
+            PaperWarnings = MergeWarnings(signalWarnings, tradeWarnings, [tradeResult.Reason]),
+            SignalCandidates = _signalCandidates,
+            PaperPortfolioState = _paperPortfolioState,
+            PaperTr\u0061deResult = tradeResult,
+        };
+
+        return PersistRuntimeResult(combinedResult);
+    }
+
+    private static string BuildCombinedState(string validationState, PaperTradeLifecycle lifecycle)
+    {
+        return lifecycle switch
+        {
+            PaperTradeLifecycle.Open => "paper_trade_open",
+            PaperTradeLifecycle.Active => "paper_trade_active",
+            PaperTradeLifecycle.TakeProfitHit => "paper_trade_tp_hit",
+            PaperTradeLifecycle.StopLossHit => "paper_trade_sl_hit",
+            PaperTradeLifecycle.Invalidated => "paper_trade_invalidated",
+            PaperTradeLifecycle.Expired => "paper_trade_expired",
+            PaperTradeLifecycle.Closed => validationState,
+            _ => validationState,
+        };
+    }
+
+    private RuntimeStepResult PersistRuntimeResult(RuntimeStepResult runtimeResult)
+    {
+        var logsPath = _lastConfiguration?.LocalRuntimeLogsPathOverride ?? _lastConfiguration?.LocalRuntimeLogsPath ?? string.Empty;
+        var logger = new PaperLogger();
+        var summaryWriter = new RuntimeSummaryWriter();
+        var loggingOk = logger.Write(logsPath, runtimeResult);
+        var summaryOk = summaryWriter.Write(logsPath, runtimeResult, _lastConfiguration ?? new BotConfiguration());
+
+        if (!loggingOk || !summaryOk)
+        {
+            var loggingReasons = new List<string>(runtimeResult.Reasons)
+            {
+                "logging_failed",
+            };
+
+            return new RuntimeStepResult
+            {
+                Success = runtimeResult.Success,
+                State = runtimeResult.State,
+                ConfigValid = runtimeResult.ConfigValid,
+                ImportAttempted = runtimeResult.ImportAttempted,
+                ImportValid = runtimeResult.ImportValid,
+                BundleValid = runtimeResult.BundleValid,
+                ChecksumValid = runtimeResult.ChecksumValid,
+                SafetyAllowed = runtimeResult.SafetyAllowed,
+                DriftAllowed = runtimeResult.DriftAllowed,
+                KillSwitchActive = runtimeResult.KillSwitchActive,
+                FallbackPossible = runtimeResult.FallbackPossible,
+                DisabledUntilValidBundle = runtimeResult.DisabledUntilValidBundle,
+                PaperDecision = runtimeResult.PaperDecision,
+                BrokerAction = "none",
+                Reasons = loggingReasons.ToArray(),
+                LoggingStatus = "logging_failed",
+                PaperWarnings = runtimeResult.PaperWarnings,
+                SignalCandidates = runtimeResult.SignalCandidates,
+                PaperPortfolioState = runtimeResult.PaperPortfolioState,
+                PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
+            };
+        }
+
+        return new RuntimeStepResult
+        {
+            Success = runtimeResult.Success,
+            State = runtimeResult.State,
+            ConfigValid = runtimeResult.ConfigValid,
+            ImportAttempted = runtimeResult.ImportAttempted,
+            ImportValid = runtimeResult.ImportValid,
+            BundleValid = runtimeResult.BundleValid,
+            ChecksumValid = runtimeResult.ChecksumValid,
+            SafetyAllowed = runtimeResult.SafetyAllowed,
+            DriftAllowed = runtimeResult.DriftAllowed,
+            KillSwitchActive = runtimeResult.KillSwitchActive,
+            FallbackPossible = runtimeResult.FallbackPossible,
+            DisabledUntilValidBundle = runtimeResult.DisabledUntilValidBundle,
+            PaperDecision = runtimeResult.PaperDecision,
+            BrokerAction = "none",
+            Reasons = runtimeResult.Reasons,
+            LoggingStatus = "ok",
+            PaperWarnings = runtimeResult.PaperWarnings,
+            SignalCandidates = runtimeResult.SignalCandidates,
+            PaperPortfolioState = runtimeResult.PaperPortfolioState,
+            PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
+        };
+    }
+
+    private static string[] MergeReasons(params string[][] reasonGroups)
+    {
+        var reasons = new List<string>();
+        foreach (var group in reasonGroups)
+        {
+            if (group is null)
+            {
+                continue;
+            }
+
+            foreach (var reason in group)
+            {
+                if (!string.IsNullOrWhiteSpace(reason))
+                {
+                    reasons.Add(reason);
+                }
+            }
+        }
+
+        return reasons.ToArray();
+    }
+
+    private static string[] MergeWarnings(params string[][] warningGroups)
+    {
+        var warnings = new List<string>();
+        foreach (var group in warningGroups)
+        {
+            if (group is null)
+            {
+                continue;
+            }
+
+            foreach (var warning in group)
+            {
+                if (!string.IsNullOrWhiteSpace(warning))
+                {
+                    warnings.Add(warning);
+                }
+            }
+        }
+
+        return warnings.ToArray();
+    }
+
     private static RuntimeStepResult CreateBlockedResult(string reason) => new()
     {
         Success = false,
@@ -229,5 +444,8 @@ public sealed class HermesPaperBot
         PaperDecision = "would_block_by_safety",
         BrokerAction = "none",
         Reasons = [reason],
+        PaperWarnings = [reason],
+        SignalCandidates = [],
+        PaperPortfolioState = new PaperPortfolioState(),
     };
 }
