@@ -44,6 +44,7 @@ public class HermesPaperBotCTraderWrapper : Robot
     protected override void OnStart()
     {
         _host = new HermesPaperBotCloudHost(_marketContextProvider);
+        _marketContextProvider.Update(CaptureMarketContext());
         _host.OnStart();
         Timer.Start(30);
         Print("paper-only start: host delegated, broker_action=none");
@@ -56,9 +57,10 @@ public class HermesPaperBotCTraderWrapper : Robot
     /// </summary>
     protected override void OnTimer()
     {
+        _marketContextProvider.Update(CaptureMarketContext());
         _host?.OnTimer();
         var result = _host?.GetLastRuntimeStepResult();
-        Print($"state={result?.State ?? "unknown"}; paper_decision={result?.PaperDecision ?? "unknown"}; broker_action={result?.BrokerAction ?? "none"}; kill_switch_active={result?.KillSwitchActive ?? true}");
+        Print($"state={result?.State ?? "unknown"}; paper_decision={result?.PaperDecision ?? "unknown"}; broker_action={result?.BrokerAction ?? "none"}; kill_switch_active={result?.KillSwitchActive ?? true}; symbol={result?.MarketContext?.CurrentSymbol ?? "unknown"}; spread={result?.MarketContext?.Spread ?? 0m}");
     }
 
     /// <summary>
@@ -88,6 +90,24 @@ public class HermesPaperBotCTraderWrapper : Robot
     {
         _host?.OnException(ex);
         Print("defensive exception handled");
+    }
+
+    /// <summary>
+    /// Captures the current read-only market context from cTrader runtime values.
+    /// </summary>
+    private RuntimeMarketContext CaptureMarketContext()
+    {
+        var bid = Symbol.Bid;
+        var ask = Symbol.Ask;
+        return new RuntimeMarketContext
+        {
+            CurrentSymbol = SymbolName ?? string.Empty,
+            CurrentTimeframe = Bars?.TimeFrame?.ToString() ?? string.Empty,
+            Bid = bid,
+            Ask = ask,
+            Spread = ask > bid ? ask - bid : 0m,
+            ServerTime = Server.Time,
+        };
     }
 }
 

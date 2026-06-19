@@ -171,6 +171,17 @@ The runtime now accepts a read-only market context object through the safe host/
 - order APIs remain forbidden
 - a future cTrader Cloud integration may need platform-specific entry wiring, but not here
 
+## Read-Only cTrader Market Context Provider V1
+
+The conditional cTrader wrapper can later read market context without trading actions.
+
+- symbol name, bid, ask, spread, and server time are read-only inputs
+- time frame may be read when available
+- the provider fills `RuntimeMarketContext`
+- the context is passed to the cloud host and paper runtime
+- no account, position, pending order, or trade operation APIs are used
+- no orders, no demo orders, and no live orders are ever produced
+
 ## Future cTrader API Boundary
 
 The real cTrader API is not wired in yet.
