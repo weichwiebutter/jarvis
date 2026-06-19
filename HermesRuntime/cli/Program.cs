@@ -282,6 +282,7 @@ internal sealed class HermesCli
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
             "cloud-embedded-release-package" => ShowCloudEmbeddedReleasePackage(),
+            "hermes-paperbot-replay" => ShowHermesPaperBotReplay(),
             "scalping-ensemble-human-review-package" => ShowScalpingEnsembleHumanReviewPackage(),
             "scalping-ensemble-review-status" => ShowScalpingEnsembleReviewStatus(),
             "approve-scalping-ensemble" => ApproveScalpingEnsemble(),
@@ -586,6 +587,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
         Console.WriteLine("  hermes cloud-embedded-release-package Cloud-kompatibles Embedded Release Package erzeugen");
+        Console.WriteLine("  hermes hermes-paperbot-replay lokales HermesPaperBot Replay-Report-Paket erzeugen");
         Console.WriteLine("  hermes scalping-ensemble-human-review-package Ensemble Human Review Package anzeigen");
         Console.WriteLine("  hermes scalping-ensemble-review-status Ensemble Review Status anzeigen");
         Console.WriteLine("  hermes approve-scalping-ensemble --mode demo_signal_use|forward_test_preparation Ensemble freigeben");
@@ -5379,6 +5381,29 @@ internal sealed class HermesCli
         WriteField("Schema Version", result.SchemaVersion);
         WriteField("Release Mode", result.ReleaseMode);
         WriteField("Embedded Checksum", result.EmbeddedChecksum);
+        WriteSafety();
+        return result.Success ? 0 : 1;
+    }
+
+    private int ShowHermesPaperBotReplay()
+    {
+        WriteHeader("HermesPaperBot Replay Runner");
+        var runner = new HermesPaperBotReplayRunner();
+        var outputDirectory = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "hermes_paper_bot_replay");
+        var result = runner.Run(outputDirectory);
+
+        WriteField("Status", result.Status);
+        WriteField("Reason", result.Reason);
+        WriteField("Output Directory", DisplayPath(result.OutputDirectory));
+        WriteField("JSON Report", DisplayPath(result.JsonPath));
+        WriteField("Markdown Report", DisplayPath(result.MarkdownPath));
+        WriteField("Trades Total", result.TradesTotal.ToString(CultureInfo.InvariantCulture));
+        WriteField("Sample Size Class", result.SampleSizeClass);
+        WriteField("Quality Class", result.QualityClass);
+        WriteField("Broker Action", result.BrokerAction);
+        WriteField("Paper Mode Allowed", result.PaperModeAllowed.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", result.Warnings);
+        Console.WriteLine();
         WriteSafety();
         return result.Success ? 0 : 1;
     }

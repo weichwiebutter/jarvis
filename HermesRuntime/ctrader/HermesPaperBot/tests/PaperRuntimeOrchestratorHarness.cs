@@ -6,6 +6,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Hermes.Runtime;
 using HermesPaperBot.Models;
 using HermesPaperBot.Services;
 using HermesPaperBot.Bot;
@@ -70,6 +71,7 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunReplayReportExportMarkdownCase());
             results.Add(RunReportContainsQualityWarningsCase());
             results.Add(RunReportBrokerActionNoneCase());
+            results.Add(RunHermesPaperBotReplayCliRunnerCase());
             results.Add(RunLongTradeHitsTpCase());
             results.Add(RunLongTradeHitsSlCase());
             results.Add(RunShortTradeHitsTpCase());
@@ -1184,6 +1186,35 @@ public static class PaperRuntimeOrchestratorHarness
                 Directory.Delete(tempDir, recursive: true);
             }
         }
+    }
+
+    private static object RunHermesPaperBotReplayCliRunnerCase()
+    {
+        var runner = new HermesPaperBotReplayRunner();
+        var outputDir = Path.Combine(Path.GetTempPath(), "ctrader-paperbot-replay-cli-runner", Guid.NewGuid().ToString("N"));
+        var result = runner.Run(outputDir);
+
+        return new
+        {
+            test_name = "hermes_paperbot_replay_cli_runner",
+            passed = result.Success && File.Exists(result.JsonPath) && File.Exists(result.MarkdownPath) && string.Equals(result.BrokerAction, "none", StringComparison.OrdinalIgnoreCase),
+            key_fields = new
+            {
+                result.Success,
+                result.Status,
+                result.Reason,
+                result.OutputDirectory,
+                result.JsonPath,
+                result.MarkdownPath,
+                result.TradesTotal,
+                result.SampleSizeClass,
+                result.QualityClass,
+                result.BrokerAction,
+                result.PaperModeAllowed,
+                json_exists = File.Exists(result.JsonPath),
+                markdown_exists = File.Exists(result.MarkdownPath),
+            },
+        };
     }
 
     private static object RunLongTradeHitsTpCase()
