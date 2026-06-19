@@ -61,6 +61,11 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunCorruptSnapshotBlocksOrResetsDefensivelyCase());
             results.Add(RunRestoredStateStillBrokerActionNoneCase());
             results.Add(RunNoSignalReplayCase());
+            results.Add(RunZeroTradeQualityInvalidCase());
+            results.Add(RunOneTradeQualityLowCase());
+            results.Add(RunNoLossProfitFactorWarningCase());
+            results.Add(RunThirtyTradeQualityMediumCase());
+            results.Add(RunAllOutputsBrokerActionNoneCase());
             results.Add(RunLongTradeHitsTpCase());
             results.Add(RunLongTradeHitsSlCase());
             results.Add(RunShortTradeHitsTpCase());
@@ -936,6 +941,107 @@ public static class PaperRuntimeOrchestratorHarness
         };
     }
 
+    private static object RunZeroTradeQualityInvalidCase()
+    {
+        var package = BuildReplayPackage("replay-zero-quality", Array.Empty<object>());
+        var result = new MarketReplayEngine().Run(package, [BuildReplayBar(100m, 100.1m, 99.9m, 100m, 0.1m)]);
+
+        return new
+        {
+            test_name = "zero_trade_quality_invalid",
+            passed = result.Statistics.TradesTotal == 0 && result.Statistics.QualityClass == "invalid" && result.Statistics.SampleSizeClass == "none" && !result.Statistics.IsStatisticallyMeaningful,
+            key_fields = new
+            {
+                result.BrokerAction,
+                result.Statistics.TradesTotal,
+                result.Statistics.SampleSizeClass,
+                result.Statistics.QualityClass,
+                result.Statistics.IsStatisticallyMeaningful,
+                result.Statistics.Warnings,
+            },
+        };
+    }
+
+    private static object RunOneTradeQualityLowCase()
+    {
+        var package = BuildReplayPackage("replay-one-quality", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+        var result = new MarketReplayEngine().Run(package, BuildWinningReplayBars("long", 1));
+
+        return new
+        {
+            test_name = "one_trade_quality_low",
+            passed = result.Statistics.TradesTotal == 1 && result.Statistics.QualityClass == "low" && result.Statistics.SampleSizeClass == "tiny",
+            key_fields = new
+            {
+                result.BrokerAction,
+                result.Statistics.TradesTotal,
+                result.Statistics.SampleSizeClass,
+                result.Statistics.QualityClass,
+                result.Statistics.IsStatisticallyMeaningful,
+                result.Statistics.Warnings,
+            },
+        };
+    }
+
+    private static object RunNoLossProfitFactorWarningCase()
+    {
+        var package = BuildReplayPackage("replay-profit-factor-warning", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+        var result = new MarketReplayEngine().Run(package, BuildWinningReplayBars("long", 1));
+
+        return new
+        {
+            test_name = "no_loss_profit_factor_warning",
+            passed = result.Statistics.Warnings.Contains("profit_factor_unbounded_no_losses"),
+            key_fields = new
+            {
+                result.BrokerAction,
+                result.Statistics.TradesTotal,
+                result.Statistics.ProfitFactor,
+                result.Statistics.Warnings,
+            },
+        };
+    }
+
+    private static object RunThirtyTradeQualityMediumCase()
+    {
+        var package = BuildReplayPackage("replay-thirty-quality", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+        var result = new MarketReplayEngine().Run(package, BuildWinningReplayBars("long", 30));
+
+        return new
+        {
+            test_name = "thirty_trade_quality_medium",
+            passed = result.Statistics.TradesTotal >= 30 && result.Statistics.SampleSizeClass == "medium" && result.Statistics.QualityClass == "medium" && result.Statistics.IsStatisticallyMeaningful,
+            key_fields = new
+            {
+                result.BrokerAction,
+                result.Statistics.TradesTotal,
+                result.Statistics.SampleSizeClass,
+                result.Statistics.QualityClass,
+                result.Statistics.IsStatisticallyMeaningful,
+                result.Statistics.Warnings,
+            },
+        };
+    }
+
+    private static object RunAllOutputsBrokerActionNoneCase()
+    {
+        var package = BuildReplayPackage("replay-broker-none", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
+        var result = new MarketReplayEngine().Run(package, BuildWinningReplayBars("long", 1));
+
+        return new
+        {
+            test_name = "all_outputs_broker_action_none",
+            passed = result.BrokerAction == "none",
+            key_fields = new
+            {
+                result.BrokerAction,
+                result.Statistics.TradesTotal,
+                result.Statistics.SampleSizeClass,
+                result.Statistics.QualityClass,
+            },
+        };
+    }
+
     private static object RunLongTradeHitsTpCase()
     {
         var package = BuildReplayPackage("replay-long-tp", [BuildReplaySignal("long", "EURUSD", "M5", 0.5m, 1m, 1m)]);
@@ -1327,6 +1433,33 @@ public static class PaperRuntimeOrchestratorHarness
             stop_loss_r = stopLossR,
             take_profit_r = takeProfitR,
             expires_at_utc = DateTimeOffset.UtcNow.AddDays(1),
+        };
+
+    private static ReplayBar[] BuildWinningReplayBars(string direction, int tradeCount)
+    {
+        var bars = new List<ReplayBar>();
+        for (var i = 0; i < tradeCount; i++)
+        {
+            var basePrice = 100m + i;
+            bars.Add(BuildReplayBar(basePrice, basePrice + 0.1m, basePrice - 0.1m, basePrice + 0.05m, 0.05m));
+            bars.Add(BuildReplayBar(basePrice + 0.02m, basePrice + 0.04m, basePrice - 0.02m, basePrice + 0.03m, 0.05m));
+            bars.Add(direction.Equals("short", StringComparison.OrdinalIgnoreCase)
+                ? BuildReplayBar(basePrice - 1.1m, basePrice - 1.0m, basePrice - 1.2m, basePrice - 1.05m, 0.05m)
+                : BuildReplayBar(basePrice + 1.1m, basePrice + 1.2m, basePrice + 0.8m, basePrice + 1.1m, 0.05m));
+        }
+
+        return bars.ToArray();
+    }
+
+    private static ReplayBar BuildReplayBar(decimal open, decimal high, decimal low, decimal close, decimal spread) =>
+        new()
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            Open = open,
+            High = high,
+            Low = low,
+            Close = close,
+            Spread = spread,
         };
 
     private static object BuildReport(string testName, RuntimeStepResult result, bool passed) =>

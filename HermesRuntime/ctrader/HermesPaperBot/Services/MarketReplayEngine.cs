@@ -103,6 +103,31 @@ public sealed class MarketReplayEngine
         var profitFactor = grossLoss <= 0m ? (grossProfit > 0m ? decimal.MaxValue : 0m) : grossProfit / grossLoss;
         var averageR = tradesTotal == 0 ? 0m : totalR / tradesTotal;
         var expectancyR = averageR;
+        var qualityWarnings = new List<string>();
+        var sampleSizeClass = GetSampleSizeClass(tradesTotal);
+        var qualityClass = GetQualityClass(tradesTotal);
+        var isStatisticallyMeaningful = tradesTotal >= 30;
+
+        if (tradesTotal == 0)
+        {
+            qualityWarnings.Add("no_trades_replayed");
+        }
+
+        if (tradesTotal > 0 && tradesTotal < 30)
+        {
+            qualityWarnings.Add("win_rate_low_sample_size");
+            qualityWarnings.Add("win_rate_warning_small_sample");
+        }
+
+        if (tradesTotal > 0 && maxDrawdown == 0m && tradesTotal < 10)
+        {
+            qualityWarnings.Add("max_drawdown_zero_low_sample_size");
+        }
+
+        if (grossLoss <= 0m && grossProfit > 0m)
+        {
+            qualityWarnings.Add("profit_factor_unbounded_no_losses");
+        }
 
         return new ReplayRunResult
         {
@@ -116,11 +141,60 @@ public sealed class MarketReplayEngine
                 ExpectancyR = expectancyR,
                 AverageR = averageR,
                 MaxDrawdownR = decimal.Abs(maxDrawdown),
+                SampleSizeClass = sampleSizeClass,
+                QualityClass = qualityClass,
+                IsStatisticallyMeaningful = isStatisticallyMeaningful,
+                Warnings = qualityWarnings.ToArray(),
             },
             PaperTr\u0061deResults = tradeResults.ToArray(),
             RuntimeSummaries = runtimeSummaries.ToArray(),
             BrokerAction = "none",
         };
+    }
+
+    private static string GetSampleSizeClass(int tradesTotal)
+    {
+        if (tradesTotal <= 0)
+        {
+            return "none";
+        }
+
+        if (tradesTotal < 10)
+        {
+            return "tiny";
+        }
+
+        if (tradesTotal < 30)
+        {
+            return "small";
+        }
+
+        if (tradesTotal < 100)
+        {
+            return "medium";
+        }
+
+        return "large";
+    }
+
+    private static string GetQualityClass(int tradesTotal)
+    {
+        if (tradesTotal <= 0)
+        {
+            return "invalid";
+        }
+
+        if (tradesTotal < 30)
+        {
+            return "low";
+        }
+
+        if (tradesTotal < 100)
+        {
+            return "medium";
+        }
+
+        return "high";
     }
 
     private static BotConfiguration BuildReplayConfiguration(CloudEmbeddedReleasePackage? package) =>
@@ -139,11 +213,11 @@ public sealed class MarketReplayEngine
             LiveTradingEnabled = false,
             OrderApiEnabled = false,
             PaperMode = true,
-            MaxActivePaperTrades = 1,
-            MaxNewPaperTradesPerDay = 3,
-            MaxNewPaperTradesPerHour = 2,
-            MaxConsecutivePaperLosses = 3,
-            MaxDailyPaperRLoss = 3m,
+            MaxActivePaperTrades = 10,
+            MaxNewPaperTradesPerDay = 100,
+            MaxNewPaperTradesPerHour = 100,
+            MaxConsecutivePaperLosses = 100,
+            MaxDailyPaperRLoss = 100m,
             CloudEmbeddedReleasePackage = package,
         };
 }

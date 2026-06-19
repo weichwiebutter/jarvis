@@ -13,4 +13,8 @@ public sealed class ReplayStatistics
     public decimal ExpectancyR { get; init; }
     public decimal AverageR { get; init; }
     public decimal MaxDrawdownR { get; init; }
+    public string SampleSizeClass { get; init; } = "none";
+    public string QualityClass { get; init; } = "invalid";
+    public bool IsStatisticallyMeaningful { get; init; }
+    public string[] Warnings { get; init; } = [];
 }
