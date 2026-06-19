@@ -136,3 +136,13 @@ It is only a guarded entry structure for the future cloud runtime path.
 - `OnStart()`, `OnTimer()`, `OnStop()`, and `OnException(Exception)` only delegate
 - order APIs remain forbidden
 - a future cTrader Cloud integration may need platform-specific entry wiring, but not here
+
+## Future cTrader API Boundary
+
+The real cTrader API is not wired in yet.
+
+- later only lifecycle, timer, and `Print` style diagnostics are expected
+- trading operations remain forbidden
+- no order API is allowed
+- no demo or live execution is allowed
+- any future cAlgo.API import must be reviewed against the boundary doc
