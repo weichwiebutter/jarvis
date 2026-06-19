@@ -1,3 +1,5 @@
+using System;
+
 namespace HermesPaperBot.Models;
 
 /// <summary>
@@ -29,4 +31,9 @@ public sealed class RuntimeMarketContext
     /// Spread value.
     /// </summary>
     public decimal Spread { get; init; } = 0m;
+
+    /// <summary>
+    /// Server time associated with the runtime market context.
+    /// </summary>
+    public DateTimeOffset ServerTime { get; init; } = DateTimeOffset.UtcNow;
 }

@@ -34,10 +34,14 @@ public static class PaperRuntimeOrchestratorHarness
             var results = new List<object>();
 
             results.Add(RunValidCase(tempRoot));
+            results.Add(RunMarketContextPassedToPaperEngineCase(tempRoot));
+            results.Add(RunSpreadFromMarketContextBlocksCase(tempRoot));
             results.Add(RunInvalidConfigCase(tempRoot));
             results.Add(RunSafetyViolationCase(tempRoot));
             results.Add(RunMissingBundleFileCase(tempRoot));
             results.Add(RunChecksumMismatchCase(tempRoot));
+            results.Add(RunCloudWrapperDoesNotRequireSystemADatasetCase(tempRoot));
+            results.Add(RunBrokerActionNoneCase(tempRoot));
             results.Add(RunValidWithLoggingCase(tempRoot));
             results.Add(RunInvalidConfigWithKillSwitchLoggingCase(tempRoot));
             results.Add(RunCloudEmbeddedValidPackageCase(tempRoot));
@@ -72,6 +76,14 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunReportContainsQualityWarningsCase());
             results.Add(RunReportBrokerActionNoneCase());
             results.Add(RunHermesPaperBotReplayCliRunnerCase());
+            results.Add(RunDatasetCsvValidCase());
+            results.Add(RunDatasetCsvWithBadRowsCase());
+            results.Add(RunDatasetMissingFileBlocksCase());
+            results.Add(RunReplayWithDatasetGeneratesReportCase());
+            results.Add(RunDiscoverySelectsDatasetCase());
+            results.Add(RunDatasetArgumentOverridesDiscoveryCase());
+            results.Add(RunDiscoveryNoMatchBlocksCase());
+            results.Add(RunReportContainsSelectedDatasetCase());
             results.Add(RunLongTradeHitsTpCase());
             results.Add(RunLongTradeHitsSlCase());
             results.Add(RunShortTradeHitsTpCase());
@@ -96,6 +108,77 @@ public static class PaperRuntimeOrchestratorHarness
 
         var result = new PaperRuntimeOrchestrator().RunStep(BuildValidConfig(bundleDir));
         return BuildReport("valid_config_valid_bundle", result, result.Success && result.PaperDecision == "would_wait" && !result.KillSwitchActive);
+    }
+
+    private static object RunMarketContextPassedToPaperEngineCase(string tempRoot)
+    {
+        var bundleDir = Path.Combine(tempRoot, "market_context");
+        BuildFakeBundle(bundleDir, tamperChecksum: false, removeSchema: false);
+
+        var context = BuildMarketContext("EURUSD", "M5", 100.25m, 100.55m, DateTimeOffset.UtcNow.AddMinutes(5));
+        var result = new PaperRuntimeOrchestrator().RunStep(BuildValidConfig(bundleDir), context);
+
+        return new
+        {
+            test_name = "market_context_passed_to_paper_engine",
+            passed = result.Success && result.BrokerAction == "none" && result.MarketContext is not null && result.MarketContext.Spread == context.Spread && result.MarketContext.ServerTime == context.ServerTime,
+            key_fields = new
+            {
+                result.Success,
+                result.State,
+                result.ConfigValid,
+                result.ImportAttempted,
+                result.ImportValid,
+                result.BundleValid,
+                result.ChecksumValid,
+                result.SafetyAllowed,
+                result.DriftAllowed,
+                result.KillSwitchActive,
+                result.FallbackPossible,
+                result.DisabledUntilValidBundle,
+                result.PaperDecision,
+                result.BrokerAction,
+                market_context_present = result.MarketContext is not null,
+                market_context_symbol = result.MarketContext?.CurrentSymbol ?? string.Empty,
+                market_context_timeframe = result.MarketContext?.CurrentTimeframe ?? string.Empty,
+                market_context_spread = result.MarketContext?.Spread ?? 0m,
+                market_context_server_time = result.MarketContext?.ServerTime,
+            },
+        };
+    }
+
+    private static object RunSpreadFromMarketContextBlocksCase(string tempRoot)
+    {
+        var context = BuildMarketContext("EURUSD", "M5", 100m, 101m);
+        var bot = new HermesPaperBot();
+        var started = bot.StartPaperRuntime(BuildPaperTradeConfig(Path.Combine(tempRoot, "spread_block_snapshot.json")), context);
+        var result = bot.GetLastRuntimeStepResult() ?? new RuntimeStepResult();
+
+        return new
+        {
+            test_name = "spread_from_market_context_blocks",
+            passed = !started && result.BrokerAction == "none" && result.PaperDecision == "would_block_by_safety" && result.PaperWarnings.Contains("spread_too_high", StringComparer.OrdinalIgnoreCase),
+            key_fields = new
+            {
+                started,
+                result.Success,
+                result.State,
+                result.ConfigValid,
+                result.ImportAttempted,
+                result.ImportValid,
+                result.BundleValid,
+                result.ChecksumValid,
+                result.SafetyAllowed,
+                result.DriftAllowed,
+                result.KillSwitchActive,
+                result.FallbackPossible,
+                result.DisabledUntilValidBundle,
+                result.PaperDecision,
+                result.BrokerAction,
+                warnings = result.PaperWarnings,
+                market_context_spread = result.MarketContext?.Spread ?? 0m,
+            },
+        };
     }
 
     private static object RunInvalidConfigCase(string tempRoot)
@@ -581,6 +664,53 @@ public static class PaperRuntimeOrchestratorHarness
                 last_step_kill_switch_active = last?.KillSwitchActive ?? false,
                 last_step_paper_decision = last?.PaperDecision ?? string.Empty,
                 last_step_broker_action = last?.BrokerAction ?? string.Empty,
+            },
+        };
+    }
+
+    private static object RunCloudWrapperDoesNotRequireSystemADatasetCase(string tempRoot)
+    {
+        var logsDir = Path.Combine(tempRoot, "cloud_wrapper_no_dataset");
+        var host = new HermesPaperBotCloudHost(new StaticMarketContextProvider(BuildMarketContext("EURUSD", "M5", 100m, 100.1m, DateTimeOffset.UtcNow)));
+        host.OnStart();
+        host.OnTimer();
+        var last = host.GetLastRuntimeStepResult();
+
+        return new
+        {
+            test_name = "cloud_wrapper_does_not_require_system_a_dataset",
+            passed = last is not null && last.BrokerAction == "none" && last.ImportAttempted == false,
+            key_fields = new
+            {
+                logs_dir = logsDir,
+                last_step_available = last is not null,
+                last_step_state = last?.State ?? string.Empty,
+                last_step_import_attempted = last?.ImportAttempted ?? true,
+                last_step_import_valid = last?.ImportValid ?? false,
+                last_step_broker_action = last?.BrokerAction ?? string.Empty,
+                last_step_paper_decision = last?.PaperDecision ?? string.Empty,
+                last_step_kill_switch_active = last?.KillSwitchActive ?? false,
+            },
+        };
+    }
+
+    private static object RunBrokerActionNoneCase(string tempRoot)
+    {
+        var bundleDir = Path.Combine(tempRoot, "broker_action_none");
+        BuildFakeBundle(bundleDir, tamperChecksum: false, removeSchema: false);
+        var context = BuildMarketContext("EURUSD", "M5", 100m, 100.1m, DateTimeOffset.UtcNow);
+        var result = new PaperRuntimeOrchestrator().RunStep(BuildValidConfig(bundleDir), context);
+
+        return new
+        {
+            test_name = "broker_action_none",
+            passed = string.Equals(result.BrokerAction, "none", StringComparison.OrdinalIgnoreCase),
+            key_fields = new
+            {
+                result.Success,
+                result.State,
+                result.BrokerAction,
+                result.PaperDecision,
             },
         };
     }
@@ -1206,6 +1336,10 @@ public static class PaperRuntimeOrchestratorHarness
                 result.OutputDirectory,
                 result.JsonPath,
                 result.MarkdownPath,
+                result.DatasetPath,
+                result.DatasetDiscoveryUsed,
+                result.DatasetDiscoveryCandidates,
+                result.SelectedDatasetPath,
                 result.TradesTotal,
                 result.SampleSizeClass,
                 result.QualityClass,
@@ -1213,6 +1347,300 @@ public static class PaperRuntimeOrchestratorHarness
                 result.PaperModeAllowed,
                 json_exists = File.Exists(result.JsonPath),
                 markdown_exists = File.Exists(result.MarkdownPath),
+            },
+        };
+    }
+
+    private static object RunDatasetCsvValidCase()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ctrader-paperbot-dataset-valid", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var datasetPath = Path.Combine(tempDir, "dataset.csv");
+        File.WriteAllText(datasetPath, """
+timestamp,open,high,low,close,spread
+2026-06-19T00:00:00Z,100,100.4,99.8,100.1,0.1
+2026-06-19T00:05:00Z,101,101.4,100.9,101.2,0.1
+""");
+
+        var load = new HermesPaperBotReplayDatasetLoader().Load(datasetPath);
+
+        return new
+        {
+            test_name = "dataset_csv_valid",
+            passed = load.Success && load.BarsValid == 2 && load.BarsSkipped == 1,
+            key_fields = new
+            {
+                load.Success,
+                load.Status,
+                load.Reason,
+                load.DatasetPath,
+                load.BarsTotal,
+                load.BarsValid,
+                load.BarsSkipped,
+                load.Warnings,
+                bars_loaded = load.Bars.Count,
+            },
+        };
+    }
+
+    private static object RunDiscoverySelectsDatasetCase()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ctrader-paperbot-discovery", Guid.NewGuid().ToString("N"));
+        var datasetDir = Path.Combine(tempRoot, "data", "replay_datasets", "XAUUSD", "M5");
+        Directory.CreateDirectory(datasetDir);
+        var datasetPath = Path.Combine(datasetDir, "XAUUSD_M5_20260619.csv");
+        File.WriteAllText(datasetPath, """
+timestamp,open,high,low,close,spread
+2026-06-19T00:00:00Z,100,100.4,99.8,100.1,0.1
+2026-06-19T00:05:00Z,101,101.4,100.9,101.2,0.1
+2026-06-19T00:10:00Z,101.2,101.6,101.0,101.5,0.1
+""");
+
+        var original = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(tempRoot);
+            var runner = new HermesPaperBotReplayRunner();
+            var result = runner.Run(Path.Combine(tempRoot, "out"), null, "XAUUSD", "M5");
+            var json = File.Exists(result.JsonPath) ? File.ReadAllText(result.JsonPath) : string.Empty;
+
+            return new
+            {
+                test_name = "discovery_selects_dataset",
+                passed = result.Success && result.DatasetDiscoveryUsed && result.DatasetDiscoveryCandidates > 0 && result.SelectedDatasetPath == datasetPath && json.Contains("selected_dataset_path", StringComparison.OrdinalIgnoreCase),
+                key_fields = new
+                {
+                    result.Success,
+                    result.DatasetDiscoveryUsed,
+                    result.DatasetDiscoveryCandidates,
+                    result.SelectedDatasetPath,
+                    result.DatasetPath,
+                    result.JsonPath,
+                    result.MarkdownPath,
+                    result.BrokerAction,
+                    json_exists = File.Exists(result.JsonPath),
+                },
+            };
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(original);
+        }
+    }
+
+    private static object RunDatasetArgumentOverridesDiscoveryCase()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ctrader-paperbot-dataset-overrides", Guid.NewGuid().ToString("N"));
+        var datasetDir = Path.Combine(tempRoot, "data", "replay_datasets", "GER40", "M5");
+        Directory.CreateDirectory(datasetDir);
+        var discoveryDatasetPath = Path.Combine(datasetDir, "GER40_M5_discovery.csv");
+        File.WriteAllText(discoveryDatasetPath, """
+timestamp,open,high,low,close,spread
+2026-06-19T00:00:00Z,200,200.4,199.8,200.1,0.2
+2026-06-19T00:05:00Z,201,201.4,200.9,201.2,0.2
+2026-06-19T00:10:00Z,201.2,201.6,201.0,201.5,0.2
+""");
+
+        var explicitDatasetPath = Path.Combine(tempRoot, "explicit.csv");
+        File.WriteAllText(explicitDatasetPath, """
+timestamp,open,high,low,close,spread
+2026-06-19T00:00:00Z,100,100.4,99.8,100.1,0.1
+2026-06-19T00:05:00Z,101,101.4,100.9,101.2,0.1
+2026-06-19T00:10:00Z,101.2,101.6,101.0,101.5,0.1
+""");
+
+        var original = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(tempRoot);
+            var runner = new HermesPaperBotReplayRunner();
+            var result = runner.Run(Path.Combine(tempRoot, "out"), explicitDatasetPath, "GER40", "M5");
+
+            return new
+            {
+                test_name = "dataset_argument_overrides_discovery",
+                passed = result.Success && !result.DatasetDiscoveryUsed && result.DatasetPath == explicitDatasetPath && result.SelectedDatasetPath == explicitDatasetPath,
+                key_fields = new
+                {
+                    result.Success,
+                    result.DatasetDiscoveryUsed,
+                    result.DatasetDiscoveryCandidates,
+                    result.DatasetPath,
+                    result.SelectedDatasetPath,
+                    result.BarsValid,
+                    result.BrokerAction,
+                },
+            };
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(original);
+        }
+    }
+
+    private static object RunDiscoveryNoMatchBlocksCase()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ctrader-paperbot-discovery-none", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        var original = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(tempRoot);
+            var runner = new HermesPaperBotReplayRunner();
+            var result = runner.Run(Path.Combine(tempRoot, "out"), null, "XAUUSD", "M5");
+
+            return new
+            {
+                test_name = "discovery_no_match_blocks",
+                passed = !result.Success && result.Reason == "dataset_discovery_no_match" && result.BrokerAction == "none",
+                key_fields = new
+                {
+                    result.Success,
+                    result.Status,
+                    result.Reason,
+                    result.DatasetDiscoveryUsed,
+                    result.DatasetDiscoveryCandidates,
+                    result.SelectedDatasetPath,
+                    result.BrokerAction,
+                },
+            };
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(original);
+        }
+    }
+
+    private static object RunReportContainsSelectedDatasetCase()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ctrader-paperbot-report-selected", Guid.NewGuid().ToString("N"));
+        var datasetDir = Path.Combine(tempRoot, "data", "replay_datasets", "XAUUSD", "M5");
+        Directory.CreateDirectory(datasetDir);
+        var datasetPath = Path.Combine(datasetDir, "XAUUSD_M5_report.csv");
+        File.WriteAllText(datasetPath, """
+timestamp,open,high,low,close,spread
+2026-06-19T00:00:00Z,100,100.4,99.8,100.1,0.1
+2026-06-19T00:05:00Z,101,101.4,100.9,101.2,0.1
+2026-06-19T00:10:00Z,101.2,101.6,101.0,101.5,0.1
+""");
+
+        var original = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(tempRoot);
+            var runner = new HermesPaperBotReplayRunner();
+            var result = runner.Run(Path.Combine(tempRoot, "out"), null, "XAUUSD", "M5");
+            var json = File.Exists(result.JsonPath) ? File.ReadAllText(result.JsonPath) : string.Empty;
+
+            return new
+            {
+                test_name = "report_contains_selected_dataset",
+                passed = result.Success && json.Contains("selected_dataset_path", StringComparison.OrdinalIgnoreCase) && json.Contains(datasetPath, StringComparison.OrdinalIgnoreCase),
+                key_fields = new
+                {
+                    result.Success,
+                    result.JsonPath,
+                    result.DatasetDiscoveryUsed,
+                    result.SelectedDatasetPath,
+                    json_exists = File.Exists(result.JsonPath),
+                },
+            };
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(original);
+        }
+    }
+
+    private static object RunDatasetCsvWithBadRowsCase()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ctrader-paperbot-dataset-bad", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var datasetPath = Path.Combine(tempDir, "dataset.csv");
+        File.WriteAllText(datasetPath, """
+timestamp,open,high,low,close,spread
+2026-06-19T00:00:00Z,100,100.4,99.8,100.1,0.1
+bad-row
+2026-06-19T00:05:00Z,101,101.4,100.9,101.2,0.1
+""");
+
+        var load = new HermesPaperBotReplayDatasetLoader().Load(datasetPath);
+
+        return new
+        {
+            test_name = "dataset_csv_with_bad_rows",
+            passed = load.Success && load.BarsValid == 2 && load.BarsSkipped >= 1 && load.Warnings.Count > 0,
+            key_fields = new
+            {
+                load.Success,
+                load.Status,
+                load.Reason,
+                load.DatasetPath,
+                load.BarsTotal,
+                load.BarsValid,
+                load.BarsSkipped,
+                load.Warnings,
+            },
+        };
+    }
+
+    private static object RunDatasetMissingFileBlocksCase()
+    {
+        var datasetPath = Path.Combine(Path.GetTempPath(), "ctrader-paperbot-missing", Guid.NewGuid().ToString("N"), "missing.csv");
+        var load = new HermesPaperBotReplayDatasetLoader().Load(datasetPath);
+
+        return new
+        {
+            test_name = "dataset_missing_file_blocks",
+            passed = !load.Success && load.Status == "blocked" && load.BarsValid == 0,
+            key_fields = new
+            {
+                load.Success,
+                load.Status,
+                load.Reason,
+                load.DatasetPath,
+                load.BarsTotal,
+                load.BarsValid,
+                load.BarsSkipped,
+                load.Warnings,
+            },
+        };
+    }
+
+    private static object RunReplayWithDatasetGeneratesReportCase()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ctrader-paperbot-replay-dataset", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var datasetPath = Path.Combine(tempDir, "dataset.csv");
+        File.WriteAllText(datasetPath, """
+timestamp,open,high,low,close,spread
+2026-06-19T00:00:00Z,100,100.4,99.8,100.1,0.1
+2026-06-19T00:05:00Z,101,101.4,100.9,101.2,0.1
+2026-06-19T00:10:00Z,101.2,101.6,101.0,101.5,0.1
+""");
+
+        var runner = new HermesPaperBotReplayRunner();
+        var result = runner.Run(tempDir, datasetPath);
+        var jsonExists = File.Exists(result.JsonPath);
+        var json = jsonExists ? File.ReadAllText(result.JsonPath) : string.Empty;
+
+        return new
+        {
+            test_name = "replay_with_dataset_generates_report",
+            passed = result.Success && jsonExists && json.Contains("dataset_path", StringComparison.OrdinalIgnoreCase) && result.BrokerAction == "none",
+            key_fields = new
+            {
+                result.Success,
+                result.Status,
+                result.Reason,
+                result.DatasetPath,
+                result.BarsTotal,
+                result.BarsValid,
+                result.BarsSkipped,
+                result.JsonPath,
+                result.MarkdownPath,
+                result.BrokerAction,
+                json_exists = jsonExists,
             },
         };
     }
@@ -1515,7 +1943,7 @@ public static class PaperRuntimeOrchestratorHarness
             ExpiresAtUtc = expiresAtUtc,
         };
 
-    private static RuntimeMarketContext BuildMarketContext(string symbol, string timeframe, decimal bid, decimal ask) =>
+    private static RuntimeMarketContext BuildMarketContext(string symbol, string timeframe, decimal bid, decimal ask, DateTimeOffset? serverTime = null) =>
         new()
         {
             CurrentSymbol = symbol,
@@ -1523,6 +1951,7 @@ public static class PaperRuntimeOrchestratorHarness
             Bid = bid,
             Ask = ask,
             Spread = ask - bid,
+            ServerTime = serverTime ?? DateTimeOffset.UtcNow,
         };
 
     private static PaperPosition BuildOpenPaperPosition(SignalCandidate candidate, decimal entryPrice) =>

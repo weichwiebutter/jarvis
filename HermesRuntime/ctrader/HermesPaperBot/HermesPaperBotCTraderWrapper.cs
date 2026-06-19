@@ -1,5 +1,6 @@
 using System;
 using HermesPaperBot.Models;
+using HermesPaperBot.Services;
 
 #if HERMES_CTRADER_WRAPPER
 using cAlgo.API;
@@ -31,13 +32,18 @@ public class HermesPaperBotCTraderWrapper : Robot
     private HermesPaperBotCloudHost? _host;
 
     /// <summary>
+    /// Wrapper-local market context provider placeholder.
+    /// </summary>
+    private readonly CTraderMarketContextProvider _marketContextProvider = new();
+
+    /// <summary>
     /// paper_only
     /// broker_action=none
     /// no order API
     /// </summary>
     protected override void OnStart()
     {
-        _host = new HermesPaperBotCloudHost();
+        _host = new HermesPaperBotCloudHost(_marketContextProvider);
         _host.OnStart();
         Timer.Start(30);
         Print("paper-only start: host delegated, broker_action=none");
@@ -84,6 +90,28 @@ public class HermesPaperBotCTraderWrapper : Robot
         Print("defensive exception handled");
     }
 }
+
+/// <summary>
+/// cTrader-cloud-local market context provider placeholder for future API wiring.
+/// </summary>
+public sealed class CTraderMarketContextProvider : IMarketContextProvider
+{
+    private RuntimeMarketContext _context = new();
+
+    /// <summary>
+    /// Updates the cached market context from a future cTrader runtime bridge.
+    /// </summary>
+    public void Update(RuntimeMarketContext context)
+    {
+        _context = context ?? new RuntimeMarketContext();
+    }
+
+    /// <summary>
+    /// Reads the cached market context.
+    /// </summary>
+    public RuntimeMarketContext Read()
+        => _context;
+}
 #else
 /// <summary>
 /// Local paper-host wrapper stub used when the cTrader SDK is unavailable.
@@ -93,7 +121,7 @@ public class HermesPaperBotCTraderWrapper
     /// <summary>
     /// Safe paper host delegate.
     /// </summary>
-    private readonly HermesPaperBotCloudHost _host = new();
+    private readonly HermesPaperBotCloudHost _host = new(new StaticMarketContextProvider(new RuntimeMarketContext()));
 
     /// <summary>
     /// paper_only

@@ -151,6 +151,16 @@ Cloud mode uses `RuntimeMode=cloud_embedded_bundle` and an embedded release pack
 This is not a live cTrader host integration yet.
 It is only a guarded entry structure for the future cloud runtime path.
 
+## Cloud Market Context Adapter V1
+
+The runtime now accepts a read-only market context object through the safe host/orchestrator path.
+
+- `IMarketContextProvider` supplies `RuntimeMarketContext`
+- `StaticMarketContextProvider` is used by harnesses and defensive local runs
+- the cloud host can pass symbol, bid, ask, spread, and server time into the paper runtime
+- no System A dataset is required for cloud runtime steps
+- no orders, no demo orders, and no live orders are ever produced
+
 ## Cloud Host Adapter Skeleton
 
 `HermesPaperBotCloudHost.cs` is a separate host adapter skeleton that only delegates to the safe paper bot skeleton.

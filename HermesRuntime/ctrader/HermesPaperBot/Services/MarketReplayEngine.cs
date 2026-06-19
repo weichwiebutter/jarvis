@@ -156,8 +156,22 @@ public sealed class MarketReplayEngine
     /// <summary>
     /// Exports a replay report to JSON and Markdown files.
     /// </summary>
-    public ReplayReportExportResult ExportReport(CloudEmbeddedReleasePackage? package, ReplayRunResult result, string outputDirectory)
-        => _replayReportExporter.Export(package, result, outputDirectory);
+    public ReplayReportExportResult ExportReport(
+        CloudEmbeddedReleasePackage? package,
+        ReplayRunResult result,
+        string outputDirectory,
+        Hermes.Runtime.HermesPaperBotReplayDatasetLoadResult? dataset = null,
+        bool datasetDiscoveryUsed = false,
+        int datasetDiscoveryCandidates = 0,
+        string? selectedDatasetPath = null)
+        => _replayReportExporter.Export(
+            package,
+            result,
+            outputDirectory,
+            dataset,
+            datasetDiscoveryUsed,
+            datasetDiscoveryCandidates,
+            selectedDatasetPath);
 
     private static string GetSampleSizeClass(int tradesTotal)
     {

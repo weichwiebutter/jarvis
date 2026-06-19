@@ -46,6 +46,7 @@ public sealed class RuntimeSummaryWriter
             paper_warnings = result.PaperWarnings,
             paper_trade_result = result.PaperTr\u0061deResult,
             paper_portfolio_state = result.PaperPortfolioState,
+            market_context = result.MarketContext,
             safety_flags = new
             {
                 config.NoAutoTrading,

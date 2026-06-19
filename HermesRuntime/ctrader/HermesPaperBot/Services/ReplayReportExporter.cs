@@ -3,6 +3,7 @@ namespace HermesPaperBot.Services;
 using System;
 using System.IO;
 using System.Text.Json;
+using Hermes.Runtime;
 using HermesPaperBot.Models;
 
 /// <summary>
@@ -18,7 +19,14 @@ public sealed class ReplayReportExporter
     /// <summary>
     /// Writes replay report files to the target directory.
     /// </summary>
-    public ReplayReportExportResult Export(CloudEmbeddedReleasePackage? package, ReplayRunResult result, string outputDirectory)
+    public ReplayReportExportResult Export(
+        CloudEmbeddedReleasePackage? package,
+        ReplayRunResult result,
+        string outputDirectory,
+        HermesPaperBotReplayDatasetLoadResult? dataset = null,
+        bool datasetDiscoveryUsed = false,
+        int datasetDiscoveryCandidates = 0,
+        string? selectedDatasetPath = null)
     {
         if (result is null || string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -37,7 +45,7 @@ public sealed class ReplayReportExporter
             var jsonPath = Path.Combine(outputDirectory, "replay_report.json");
             var markdownPath = Path.Combine(outputDirectory, "replay_report.md");
 
-            var payload = BuildPayload(package, result);
+            var payload = BuildPayload(package, result, dataset, datasetDiscoveryUsed, datasetDiscoveryCandidates, selectedDatasetPath);
             File.WriteAllText(jsonPath, JsonSerializer.Serialize(payload, JsonOptions));
             File.WriteAllText(markdownPath, BuildMarkdown(payload));
 
@@ -62,13 +70,27 @@ public sealed class ReplayReportExporter
         }
     }
 
-    private static object BuildPayload(CloudEmbeddedReleasePackage? package, ReplayRunResult result) =>
+    private static object BuildPayload(
+        CloudEmbeddedReleasePackage? package,
+        ReplayRunResult result,
+        HermesPaperBotReplayDatasetLoadResult? dataset,
+        bool datasetDiscoveryUsed,
+        int datasetDiscoveryCandidates,
+        string? selectedDatasetPath) =>
         new
         {
             bot_version = package?.BotVersion ?? string.Empty,
             bot_release_id = package?.BotReleaseId ?? string.Empty,
             strategy_package_version = package?.StrategyPackageVersion ?? string.Empty,
             embedded_checksum = package?.EmbeddedChecksum ?? string.Empty,
+            dataset_path = dataset?.DatasetPath ?? string.Empty,
+            dataset_discovery_used = datasetDiscoveryUsed,
+            dataset_discovery_candidates = datasetDiscoveryCandidates,
+            selected_dataset_path = selectedDatasetPath ?? dataset?.DatasetPath ?? string.Empty,
+            bars_total = dataset?.BarsTotal ?? 0,
+            bars_valid = dataset?.BarsValid ?? 0,
+            bars_skipped = dataset?.BarsSkipped ?? 0,
+            dataset_warnings = dataset?.Warnings ?? [],
             trades_total = result.Statistics.TradesTotal,
             wins = result.Statistics.Wins,
             losses = result.Statistics.Losses,
@@ -98,6 +120,13 @@ public sealed class ReplayReportExporter
             $"- bot_release_id: `{GetString(root, "bot_release_id")}`",
             $"- strategy_package_version: `{GetString(root, "strategy_package_version")}`",
             $"- embedded_checksum: `{GetString(root, "embedded_checksum")}`",
+            $"- dataset_path: `{GetString(root, "dataset_path")}`",
+            $"- dataset_discovery_used: `{GetBool(root, "dataset_discovery_used")}`",
+            $"- dataset_discovery_candidates: `{GetNumber(root, "dataset_discovery_candidates")}`",
+            $"- selected_dataset_path: `{GetString(root, "selected_dataset_path")}`",
+            $"- bars_total: `{GetNumber(root, "bars_total")}`",
+            $"- bars_valid: `{GetNumber(root, "bars_valid")}`",
+            $"- bars_skipped: `{GetNumber(root, "bars_skipped")}`",
             $"- trades_total: `{GetNumber(root, "trades_total")}`",
             $"- wins: `{GetNumber(root, "wins")}`",
             $"- losses: `{GetNumber(root, "losses")}`",
@@ -114,12 +143,32 @@ public sealed class ReplayReportExporter
             string.Empty,
             "## Warnings",
             RenderWarnings(root),
+            string.Empty,
+            "## Dataset Warnings",
+            RenderDatasetWarnings(root),
         });
     }
 
     private static string RenderWarnings(JsonElement root)
     {
         if (!root.TryGetProperty("warnings", out var warnings) || warnings.ValueKind != JsonValueKind.Array || warnings.GetArrayLength() == 0)
+        {
+            return "- none";
+        }
+
+        var lines = new string[warnings.GetArrayLength()];
+        var index = 0;
+        foreach (var warning in warnings.EnumerateArray())
+        {
+            lines[index++] = $" - {warning.GetString()}";
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string RenderDatasetWarnings(JsonElement root)
+    {
+        if (!root.TryGetProperty("dataset_warnings", out var warnings) || warnings.ValueKind != JsonValueKind.Array || warnings.GetArrayLength() == 0)
         {
             return "- none";
         }

@@ -12,7 +12,14 @@ public sealed class PaperRuntimeOrchestrator
     /// Runs one defensive runtime step.
     /// </summary>
     public RuntimeStepResult RunStep(BotConfiguration config)
+        => RunStep(config, null);
+
+    /// <summary>
+    /// Runs one defensive runtime step with a supplied market context.
+    /// </summary>
+    public RuntimeStepResult RunStep(BotConfiguration config, RuntimeMarketContext? marketContext)
     {
+        var runtimeMarketContext = marketContext ?? new RuntimeMarketContext();
         var reasons = new List<string>();
         var configValidation = new ConfigurationValidator().Validate(config);
         reasons.Add(configValidation.Reason);
@@ -39,6 +46,7 @@ public sealed class PaperRuntimeOrchestrator
                 PaperDecision = "would_block_by_safety",
                 BrokerAction = "none",
                 Reasons = reasons.ToArray(),
+                MarketContext = runtimeMarketContext,
             };
 
             return FinalizeResult(config, earlyResult);
@@ -153,7 +161,7 @@ public sealed class PaperRuntimeOrchestrator
                 KillSwitchActive = killSwitchActive,
                 LastBundleValid = config.RuntimeMode == RuntimeMode.CloudEmbeddedBundle ? importValid : (importResult is not null && importResult.Success),
             },
-            new RuntimeMarketContext());
+            runtimeMarketContext);
 
         reasons.Add(paperDecision.Reason);
 
@@ -174,6 +182,7 @@ public sealed class PaperRuntimeOrchestrator
             PaperDecision = paperDecision.Decision,
             BrokerAction = "none",
             Reasons = reasons.ToArray(),
+            MarketContext = runtimeMarketContext,
         };
 
         return FinalizeResult(config, runtimeResult);
@@ -212,6 +221,7 @@ public sealed class PaperRuntimeOrchestrator
                 BrokerAction = "none",
                 Reasons = loggingReasons.ToArray(),
                 LoggingStatus = "logging_failed",
+                MarketContext = runtimeResult.MarketContext,
             };
         }
 
@@ -233,6 +243,7 @@ public sealed class PaperRuntimeOrchestrator
             BrokerAction = "none",
             Reasons = runtimeResult.Reasons,
             LoggingStatus = "ok",
+            MarketContext = runtimeResult.MarketContext,
         };
     }
 }

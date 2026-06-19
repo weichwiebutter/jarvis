@@ -25,13 +25,34 @@ public sealed class HermesPaperBotCloudHost
     private readonly HermesPaperBot _bot = new();
 
     /// <summary>
+    /// Market context provider for paper-only runtime steps.
+    /// </summary>
+    private readonly IMarketContextProvider _marketContextProvider;
+
+    /// <summary>
+    /// Creates a host with a fixed fallback market context provider.
+    /// </summary>
+    public HermesPaperBotCloudHost()
+        : this(new StaticMarketContextProvider(new RuntimeMarketContext()))
+    {
+    }
+
+    /// <summary>
+    /// Creates a host with a supplied market context provider.
+    /// </summary>
+    public HermesPaperBotCloudHost(IMarketContextProvider marketContextProvider)
+    {
+        _marketContextProvider = marketContextProvider ?? new StaticMarketContextProvider(new RuntimeMarketContext());
+    }
+
+    /// <summary>
     /// paper_only
     /// broker_action=none
     /// no order API
     /// </summary>
     public void OnStart()
     {
-        _bot.StartPaperRuntime();
+        _bot.StartPaperRuntime(null, _marketContextProvider.Read());
     }
 
     /// <summary>
@@ -41,7 +62,7 @@ public sealed class HermesPaperBotCloudHost
     /// </summary>
     public void OnTimer()
     {
-        _bot.RunPaperRuntimeStep();
+        _bot.RunPaperRuntimeStep(_marketContextProvider.Read());
     }
 
     /// <summary>

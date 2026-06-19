@@ -282,11 +282,11 @@ public sealed class HermesPaperBot
             return CreateBlockedResult("cloud_configuration_missing");
         }
 
-        var validationResult = _paperRuntimeOrchestrator.RunStep(_lastConfiguration);
-        if (!validationResult.Success)
-        {
-            return PersistRuntimeResult(validationResult);
-        }
+            var validationResult = _paperRuntimeOrchestrator.RunStep(_lastConfiguration, context);
+            if (!validationResult.Success)
+            {
+                return PersistRuntimeResult(validationResult);
+            }
 
         var tradeResult = _paperDecisionEngine.EvaluatePaperTrade(
             _signalCandidates,
@@ -320,6 +320,7 @@ public sealed class HermesPaperBot
             SignalCandidates = _signalCandidates,
             PaperPortfolioState = _paperPortfolioState,
             PaperTr\u0061deResult = tradeResult,
+            MarketContext = context,
         };
 
         _paperPortfolioState = combinedResult.PaperPortfolioState ?? _paperPortfolioState;
@@ -380,6 +381,7 @@ public sealed class HermesPaperBot
                 SignalCandidates = runtimeResult.SignalCandidates,
                 PaperPortfolioState = runtimeResult.PaperPortfolioState,
                 PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
+                MarketContext = runtimeResult.MarketContext,
             };
         }
 
@@ -405,6 +407,7 @@ public sealed class HermesPaperBot
             SignalCandidates = runtimeResult.SignalCandidates,
             PaperPortfolioState = runtimeResult.PaperPortfolioState,
             PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
+            MarketContext = runtimeResult.MarketContext,
         };
     }
 
@@ -438,6 +441,7 @@ public sealed class HermesPaperBot
                 SignalCandidates = runtimeResult.SignalCandidates,
                 PaperPortfolioState = runtimeResult.PaperPortfolioState,
                 PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
+                MarketContext = runtimeResult.MarketContext,
             };
         }
     }

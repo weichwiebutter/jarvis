@@ -48,6 +48,7 @@ public sealed class PaperLogger
             broker_action = result.BrokerAction,
             reasons = result.Reasons,
             warnings = result.PaperWarnings,
+            market_context = result.MarketContext,
         };
 
         var decisionEntry = new
@@ -58,6 +59,7 @@ public sealed class PaperLogger
             broker_action = result.BrokerAction,
             reasons = result.Reasons,
             warnings = result.PaperWarnings,
+            market_context = result.MarketContext,
         };
 
         File.AppendAllText(stepLogPath, JsonSerializer.Serialize(stepEntry, JsonOptions) + Environment.NewLine);

@@ -25,4 +25,5 @@ public sealed class RuntimeStepResult
     public PaperPortfolioState? PaperPortfolioState { get; init; }
     public PaperTr\u0061deResult? PaperTr\u0061deResult { get; init; }
     public string[] PaperWarnings { get; init; } = [];
+    public RuntimeMarketContext? MarketContext { get; init; }
 }
