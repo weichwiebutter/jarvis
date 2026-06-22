@@ -171,6 +171,17 @@
       }
     },
     {
+      "job_id": "planned_task_executor",
+      "job_type": "process_planned_tasks",
+      "enabled": true,
+      "schedule_type": "interval",
+      "command": "execute-planned-tasks",
+      "every_minutes": 60,
+      "parameters": {
+        "max_items": "10"
+      }
+    },
+    {
       "job_id": "execute_validation_tasks_after_queue",
       "job_type": "execute_validation_tasks",
       "enabled": true,

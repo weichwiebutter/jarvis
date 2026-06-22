@@ -242,6 +242,14 @@ public sealed record ScheduleConfig(
                 EveryMinutes: 60,
                 Parameters: new Dictionary<string, string> { ["max_items"] = "10" }),
             new(
+                JobId: "planned_task_executor",
+                JobType: "process_planned_tasks",
+                Enabled: true,
+                ScheduleType: "interval",
+                Command: "execute-planned-tasks",
+                EveryMinutes: 60,
+                Parameters: new Dictionary<string, string> { ["max_items"] = "10" }),
+            new(
                 JobId: "outcome_feedback_after_planned_tasks",
                 JobType: "evaluate_task_outcomes",
                 Enabled: true,

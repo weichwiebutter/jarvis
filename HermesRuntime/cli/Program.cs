@@ -214,6 +214,7 @@ internal sealed class HermesCli
             "execute-planned-tasks" => ExecutePlannedTasks(),
             "planned-task-status" => ShowPlannedTaskStatus(),
             "planned-task-executor-status" => ShowPlannedTaskExecutorStatus(),
+            "planned-task-scheduler-link-status" => ShowPlannedTaskSchedulerLinkStatus(),
             "task-execution-log" => ShowTaskExecutionLog(),
             "evaluate-task-outcomes" => EvaluateTaskOutcomes(),
             "outcome-feedback-status" => ShowOutcomeFeedbackStatus(),
@@ -524,6 +525,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes execute-planned-tasks --max-items 10 geplante Aufgaben kontrolliert ausfuehren");
         Console.WriteLine("  hermes planned-task-status Planned Task Execution Status anzeigen");
         Console.WriteLine("  hermes planned-task-executor-status Planned Task Executor Diagnose anzeigen");
+        Console.WriteLine("  hermes planned-task-scheduler-link-status Planned Task Scheduler Link Diagnose anzeigen");
         Console.WriteLine("  hermes task-execution-log Planned Task Execution Log anzeigen");
         Console.WriteLine("  hermes evaluate-task-outcomes --max-items 50 ausgefuehrte Planned Tasks bewerten");
         Console.WriteLine("  hermes outcome-feedback-status Outcome Feedback Status anzeigen");
@@ -9194,6 +9196,31 @@ internal sealed class HermesCli
         {
             WriteField($"{entry.TaskId} ({entry.TaskType})", $"{entry.Status}; executable={entry.Executable}; {entry.Reason}");
         }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPlannedTaskSchedulerLinkStatus()
+    {
+        WriteHeader("Hermes Planned Task Scheduler Link Diagnosis");
+        var service = new PlannedTaskSchedulerLinkDiagnosisService(
+            BuildStoragePaths(),
+            Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var diagnosis = service.Build();
+
+        WriteField("Report JSON", DisplayPath(service.ReportJsonPath));
+        WriteField("Report Markdown", DisplayPath(service.ReportMarkdownPath));
+        WriteField("Scheduler Enabled", diagnosis.SchedulerEnabled.ToString().ToLowerInvariant());
+        WriteField("planned_task_executor Job Exists", diagnosis.PlannedTaskExecutorJobExists.ToString().ToLowerInvariant());
+        WriteField("planned_task_executor Job Enabled", diagnosis.PlannedTaskExecutorJobEnabled.ToString().ToLowerInvariant());
+        WriteField("Last Scheduled Executor Run UTC", diagnosis.LastScheduledExecutorRunUtc?.ToString("O") ?? "-");
+        WriteField("Last Manual Executor Run UTC", diagnosis.LastManualExecutorRunUtc?.ToString("O") ?? "-");
+        WriteField("Pending Tasks", diagnosis.PendingTasks.ToString());
+        WriteField("Executable Tasks", diagnosis.ExecutableTasks.ToString());
+        WriteField("Blocked Tasks", diagnosis.BlockedTasks.ToString());
+        WriteField("Recommendation", diagnosis.Recommendation);
 
         Console.WriteLine();
         WriteSafety();
