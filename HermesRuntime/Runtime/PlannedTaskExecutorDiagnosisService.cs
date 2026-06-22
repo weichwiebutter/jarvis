@@ -63,23 +63,29 @@ public sealed class PlannedTaskExecutorDiagnosisService
             .ThenBy(task => task.TaskType, StringComparer.Ordinal)
             .Select(task =>
             {
-                var executable = AutonomousTaskPlanner.AllowedTaskTypes.Contains(task.TaskType)
-                    && task.Status is not ("completed" or "completed_with_missing_evidence" or "blocked_waiting_for_evidence" or "skipped" or "failed" or "running");
-                var reason = executable
-                    ? "current_planned_task_is_executable"
-                    : task.Status.Equals("running", StringComparison.OrdinalIgnoreCase)
-                        ? "task_is_running"
-                        : $"task_status_{task.Status}";
+                var active = IsActivePlannedStatus(task.Status);
+                var executable = active
+                    && AutonomousTaskPlanner.AllowedTaskTypes.Contains(task.TaskType)
+                    && !HasExplicitBlocker(task);
+                var reason = !active
+                    ? $"task_status_{task.Status}"
+                    : executable
+                        ? "current_planned_task_is_executable"
+                        : HasExplicitBlocker(task)
+                            ? "task_has_explicit_blocker"
+                            : "task_is_active_but_not_executable";
                 return new PlannedTaskDiagnosisEntry(task.TaskId, task.TaskType, task.Status, executable, reason);
             })
             .ToList();
 
+        var activeEntries = entries.Where(entry => IsActivePlannedStatus(entry.Status)).ToList();
+
         var diagnosis = new PlannedTaskExecutorDiagnosis(
             ReportVersion: "planned_task_executor_diagnosis_v1",
             GeneratedAtUtc: DateTimeOffset.UtcNow,
-            PendingCount: tasks.Count(task => !PlannedTaskExecutor.TerminalStatuses.Contains(task.Status) && !task.Status.Equals("running", StringComparison.OrdinalIgnoreCase)),
-            ExecutableCount: entries.Count(entry => entry.Executable),
-            BlockedCount: entries.Count(entry => !entry.Executable && !entry.Status.Equals("running", StringComparison.OrdinalIgnoreCase)),
+            PendingCount: activeEntries.Count,
+            ExecutableCount: activeEntries.Count(entry => entry.Executable),
+            BlockedCount: activeEntries.Count(entry => !entry.Executable),
             SkippedCount: recent.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase)),
             CompletedCount: recent.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase) || result.Status.Equals("completed_with_missing_evidence", StringComparison.OrdinalIgnoreCase)),
             FailedCount: recent.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)),
@@ -87,7 +93,11 @@ public sealed class PlannedTaskExecutorDiagnosisService
             Entries: entries,
             RecommendedNextAction: entries.Any(entry => entry.Executable)
                 ? "run planned-task-executor now"
-                : "inspect blocker reasons and refresh planning if needed",
+                : activeEntries.Count > 0 && activeEntries.Any(entry => !entry.Executable)
+                    ? "inspect blockers"
+                    : activeEntries.Count == 0 && tasks.Any()
+                        ? "no pending executable tasks"
+                        : "inspect planner/state mismatch",
             NoTradingExecution: true,
             NoBrokerAction: true,
             NoAutoTrading: true,
@@ -122,4 +132,20 @@ public sealed class PlannedTaskExecutorDiagnosisService
         sb.AppendLine("Safety: no_trading_execution=true, no_broker_action=true, no_auto_trading=true, human_review_required=true.");
         return sb.ToString();
     }
+
+    private static bool IsTerminalStatus(string status) =>
+        PlannedTaskExecutor.TerminalStatuses.Contains(status);
+
+    private static bool IsActivePlannedStatus(string status) =>
+        !string.IsNullOrWhiteSpace(status)
+        && !IsTerminalStatus(status)
+        && !status.Equals("running", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasExplicitBlocker(PlannedTask task) =>
+        !task.NoTradingExecution
+        || !task.HumanReviewRequired
+        || task.Reason.Contains("blocked", StringComparison.OrdinalIgnoreCase)
+        || task.Reason.Contains("waiting_for_evidence", StringComparison.OrdinalIgnoreCase)
+        || task.Reason.Contains("missing_evidence", StringComparison.OrdinalIgnoreCase)
+        || task.GoalReason.Contains("blocked", StringComparison.OrdinalIgnoreCase);
 }
