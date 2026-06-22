@@ -182,6 +182,12 @@ The conditional cTrader wrapper can later read market context without trading ac
 - no account, position, pending order, or trade operation APIs are used
 - no orders, no demo orders, and no live orders are ever produced
 
+## cTrader Cloud Wrapper Compile Check
+
+Use the manual wrapper compile checklist before the first real cTrader Cloud build:
+
+- `docs/trading/ctrader_cloud_wrapper_compile_check_v1.md`
+
 ## Future cTrader API Boundary
 
 The real cTrader API is not wired in yet.

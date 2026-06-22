@@ -6,7 +6,7 @@ TARGET_DIR="$ROOT_DIR/ctrader/HermesPaperBot"
 WRAPPER_PATH="$TARGET_DIR/HermesPaperBotCTraderWrapper.cs"
 
 FORBIDDEN_REGEX='ExecuteMarketOrder|PlaceLimitOrder|PlaceStopOrder|ModifyPosition|ClosePosition|CancelPendingOrder|PendingOrders|Positions\.Modify|TradeResult|TradeOperation|Account|Positions|Orders|Volume|Symbol\.QuantityToVolumeInUnits'
-ALLOWED_PATH_REGEX='^(.*ctrader/HermesPaperBot/tests/forbidden_references_check\.md|.*ctrader/HermesPaperBot/README\.md|.*docs/trading/ctrader_paper_bot_skeleton_safety_audit_v1\.md|.*docs/trading/ctrader_paper_bot_skeleton_spec_v1\.md|.*docs/trading/ctrader_bot_paper_runtime_scope_v1\.md|.*docs/trading/ctrader_cloud_api_adapter_boundary_v1\.md|.*docs/trading/ctrader_cloud_accessrights_attribute_decision_v1\.md):'
+ALLOWED_PATH_REGEX='^(.*ctrader/HermesPaperBot/tests/forbidden_references_check\.md|.*ctrader/HermesPaperBot/README\.md|.*ctrader/HermesPaperBot/README_CTRADER_COMPILE_CHECKLIST\.md|.*docs/trading/ctrader_paper_bot_skeleton_safety_audit_v1\.md|.*docs/trading/ctrader_paper_bot_skeleton_spec_v1\.md|.*docs/trading/ctrader_bot_paper_runtime_scope_v1\.md|.*docs/trading/ctrader_cloud_api_adapter_boundary_v1\.md|.*docs/trading/ctrader_cloud_accessrights_attribute_decision_v1\.md|.*docs/trading/ctrader_cloud_wrapper_compile_check_v1\.md):'
 
 if ! command -v grep >/dev/null 2>&1; then
   echo "FAIL: grep is required"
@@ -18,7 +18,7 @@ if [[ ! -f "$WRAPPER_PATH" ]]; then
   exit 1
 fi
 
-matches="$(grep -RInE "$FORBIDDEN_REGEX" "$TARGET_DIR" "$ROOT_DIR/docs/trading/ctrader_paper_bot_skeleton_safety_audit_v1.md" "$ROOT_DIR/docs/trading/ctrader_paper_bot_skeleton_spec_v1.md" "$ROOT_DIR/docs/trading/ctrader_bot_paper_runtime_scope_v1.md" 2>/dev/null || true)"
+matches="$(grep -RInE "$FORBIDDEN_REGEX" "$TARGET_DIR" "$ROOT_DIR/docs/trading/ctrader_paper_bot_skeleton_safety_audit_v1.md" "$ROOT_DIR/docs/trading/ctrader_paper_bot_skeleton_spec_v1.md" "$ROOT_DIR/docs/trading/ctrader_bot_paper_runtime_scope_v1.md" "$ROOT_DIR/docs/trading/ctrader_cloud_api_adapter_boundary_v1.md" "$ROOT_DIR/docs/trading/ctrader_cloud_accessrights_attribute_decision_v1.md" "$ROOT_DIR/docs/trading/ctrader_cloud_wrapper_compile_check_v1.md" "$TARGET_DIR/README_CTRADER_COMPILE_CHECKLIST.md" 2>/dev/null || true)"
 
 cAlgo_matches="$(find "$TARGET_DIR" -name '*.cs' ! -name 'HermesPaperBotCTraderWrapper.cs' -exec grep -HInE 'cAlgo\.API|AccessRights\.(None|FileSystem|Internet|FullAccess)' {} + 2>/dev/null || true)"
 
