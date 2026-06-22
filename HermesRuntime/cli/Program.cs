@@ -213,6 +213,7 @@ internal sealed class HermesCli
             "run-planning-cycle" => RunPlanningCycle(),
             "execute-planned-tasks" => ExecutePlannedTasks(),
             "planned-task-status" => ShowPlannedTaskStatus(),
+            "planned-task-executor-status" => ShowPlannedTaskExecutorStatus(),
             "task-execution-log" => ShowTaskExecutionLog(),
             "evaluate-task-outcomes" => EvaluateTaskOutcomes(),
             "outcome-feedback-status" => ShowOutcomeFeedbackStatus(),
@@ -522,6 +523,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes run-planning-cycle --max-items 20 Planning Cycle ausfuehren und Research Queue aktualisieren");
         Console.WriteLine("  hermes execute-planned-tasks --max-items 10 geplante Aufgaben kontrolliert ausfuehren");
         Console.WriteLine("  hermes planned-task-status Planned Task Execution Status anzeigen");
+        Console.WriteLine("  hermes planned-task-executor-status Planned Task Executor Diagnose anzeigen");
         Console.WriteLine("  hermes task-execution-log Planned Task Execution Log anzeigen");
         Console.WriteLine("  hermes evaluate-task-outcomes --max-items 50 ausgefuehrte Planned Tasks bewerten");
         Console.WriteLine("  hermes outcome-feedback-status Outcome Feedback Status anzeigen");
@@ -9165,6 +9167,32 @@ internal sealed class HermesCli
         foreach (var result in state.RecentResults.Take(10))
         {
             WritePlannedTaskExecutionResult(result);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPlannedTaskExecutorStatus()
+    {
+        WriteHeader("Hermes Planned Task Executor Diagnosis");
+        var service = new PlannedTaskExecutorDiagnosisService(BuildStoragePaths());
+        var diagnosis = service.Build();
+
+        WriteField("Report JSON", DisplayPath(service.ReportJsonPath));
+        WriteField("Report Markdown", DisplayPath(service.ReportMarkdownPath));
+        WriteField("Pending", diagnosis.PendingCount.ToString());
+        WriteField("Executable", diagnosis.ExecutableCount.ToString());
+        WriteField("Blocked", diagnosis.BlockedCount.ToString());
+        WriteField("Skipped", diagnosis.SkippedCount.ToString());
+        WriteField("Completed", diagnosis.CompletedCount.ToString());
+        WriteField("Failed", diagnosis.FailedCount.ToString());
+        WriteField("Last Successful Run UTC", diagnosis.LastSuccessfulExecutorRunUtc?.ToString("O") ?? "-");
+        WriteField("Recommended Next Action", diagnosis.RecommendedNextAction);
+        foreach (var entry in diagnosis.Entries.Take(10))
+        {
+            WriteField($"{entry.TaskId} ({entry.TaskType})", $"{entry.Status}; executable={entry.Executable}; {entry.Reason}");
         }
 
         Console.WriteLine();

@@ -4,9 +4,11 @@ namespace Hermes.Runtime;
 
 public sealed class PlannedTaskExecutor
 {
-    private static readonly ISet<string> TerminalStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    public static readonly ISet<string> TerminalStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "completed",
+        "completed_with_missing_evidence",
+        "blocked_waiting_for_evidence",
         "skipped",
         "failed"
     };
@@ -31,14 +33,9 @@ public sealed class PlannedTaskExecutor
 
         var planning = new AutonomousPlanningCycleService(_storagePaths);
         var decision = planning.LoadLatestDecision() ?? planning.PlanNextTasks(maxItems);
-        var alreadyLogged = LoadRecentResults(1000)
-            .Where(result => TerminalStatuses.Contains(result.Status))
-            .Select(result => result.TaskId)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var candidates = decision.PlannedTasks
             .Where(task => AutonomousTaskPlanner.AllowedTaskTypes.Contains(task.TaskType))
             .Where(task => !TerminalStatuses.Contains(task.Status))
-            .Where(task => !alreadyLogged.Contains(task.TaskId))
             .OrderByDescending(task => task.Priority.TotalScore)
             .ThenBy(task => task.TaskType, StringComparer.Ordinal)
             .Take(maxItems)
@@ -560,9 +557,16 @@ public sealed class PlannedTaskExecutor
         var needsMoreData = results.Count(result => result.Status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase));
         var skipped = results.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase));
         var failed = results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase));
+        var status = failed > 0
+            ? "failed"
+            : needsMoreData > 0 && completed == 0
+                ? "blocked_waiting_for_evidence"
+                : needsMoreData > 0
+                    ? "completed_with_missing_evidence"
+                    : "completed";
         return BuildResult(
             task,
-            failed > 0 ? "failed" : "completed",
+            status,
             $"Knowledge validation tasks executed; completed={completed}; needs_more_data={needsMoreData}; skipped={skipped}; failed={failed}.",
             [
                 executor.ExecutionLogPath,
@@ -583,10 +587,17 @@ public sealed class PlannedTaskExecutor
         var completed = results.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase));
         var needsMoreData = results.Count(result => result.Status.Equals("needs_more_data", StringComparison.OrdinalIgnoreCase));
         var failed = results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase));
+        var status = failed > 0
+            ? "failed"
+            : needsMoreData > 0 && completed == 0
+                ? "blocked_waiting_for_evidence"
+                : needsMoreData > 0
+                    ? "completed_with_missing_evidence"
+                    : "completed";
         var domainStatus = new DomainKnowledgeValidationService(_storagePaths).BuildStatus();
         return BuildResult(
             task,
-            failed > 0 ? "failed" : "completed",
+            status,
             $"Domain knowledge validation executed for '{normalizedDomain}'; completed={completed}; needs_more_data={needsMoreData}; failed={failed}.",
             [
                 executor.ExecutionLogPath,
