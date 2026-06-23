@@ -20,6 +20,7 @@ public sealed class PaperRuntimeOrchestrator
     public RuntimeStepResult RunStep(BotConfiguration config, RuntimeMarketContext? marketContext)
     {
         var runtimeMarketContext = marketContext ?? new RuntimeMarketContext();
+        var marketContextSeen = marketContext is not null;
         var reasons = new List<string>();
         var configValidation = new ConfigurationValidator().Validate(config);
         reasons.Add(configValidation.Reason);
@@ -47,6 +48,7 @@ public sealed class PaperRuntimeOrchestrator
                 BrokerAction = "none",
                 Reasons = reasons.ToArray(),
                 MarketContext = runtimeMarketContext,
+                MarketContextSeen = marketContextSeen,
             };
 
             return FinalizeResult(config, earlyResult);
@@ -183,6 +185,7 @@ public sealed class PaperRuntimeOrchestrator
             BrokerAction = "none",
             Reasons = reasons.ToArray(),
             MarketContext = runtimeMarketContext,
+            MarketContextSeen = marketContextSeen,
         };
 
         return FinalizeResult(config, runtimeResult);
@@ -222,6 +225,7 @@ public sealed class PaperRuntimeOrchestrator
                 Reasons = loggingReasons.ToArray(),
                 LoggingStatus = "logging_failed",
                 MarketContext = runtimeResult.MarketContext,
+                MarketContextSeen = runtimeResult.MarketContextSeen,
             };
         }
 
@@ -244,6 +248,7 @@ public sealed class PaperRuntimeOrchestrator
             Reasons = runtimeResult.Reasons,
             LoggingStatus = "ok",
             MarketContext = runtimeResult.MarketContext,
+            MarketContextSeen = runtimeResult.MarketContextSeen,
         };
     }
 }

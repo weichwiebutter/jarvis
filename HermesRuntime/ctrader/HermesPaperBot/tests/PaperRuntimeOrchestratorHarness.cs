@@ -42,6 +42,7 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunChecksumMismatchCase(tempRoot));
             results.Add(RunCloudWrapperDoesNotRequireSystemADatasetCase(tempRoot));
             results.Add(RunBrokerActionNoneCase(tempRoot));
+            results.Add(RunBrokerActionNoneWithMarketContextCase(tempRoot));
             results.Add(RunValidWithLoggingCase(tempRoot));
             results.Add(RunInvalidConfigWithKillSwitchLoggingCase(tempRoot));
             results.Add(RunCloudEmbeddedValidPackageCase(tempRoot));
@@ -121,7 +122,7 @@ public static class PaperRuntimeOrchestratorHarness
         return new
         {
             test_name = "market_context_passed_to_paper_engine",
-            passed = result.Success && result.BrokerAction == "none" && result.MarketContext is not null && result.MarketContext.Spread == context.Spread && result.MarketContext.ServerTime == context.ServerTime,
+            passed = result.Success && result.BrokerAction == "none" && result.MarketContextSeen && result.MarketContext is not null && result.MarketContext.Spread == context.Spread && result.MarketContext.ServerTime == context.ServerTime,
             key_fields = new
             {
                 result.Success,
@@ -157,7 +158,7 @@ public static class PaperRuntimeOrchestratorHarness
         return new
         {
             test_name = "spread_from_market_context_blocks",
-            passed = !started && result.BrokerAction == "none" && result.PaperDecision == "would_block_by_safety" && result.PaperWarnings.Contains("spread_too_high", StringComparer.OrdinalIgnoreCase),
+            passed = started && result.BrokerAction == "none" && result.PaperDecision == "would_block_by_spread" && result.PaperWarnings.Contains("spread_too_high", StringComparer.OrdinalIgnoreCase),
             key_fields = new
             {
                 started,
@@ -715,6 +716,30 @@ public static class PaperRuntimeOrchestratorHarness
         };
     }
 
+    private static object RunBrokerActionNoneWithMarketContextCase(string tempRoot)
+    {
+        var bundleDir = Path.Combine(tempRoot, "broker_action_none_market_context");
+        BuildFakeBundle(bundleDir, tamperChecksum: false, removeSchema: false);
+        var context = BuildMarketContext("EURUSD", "M5", 100m, 100.1m, DateTimeOffset.UtcNow);
+        var result = new PaperRuntimeOrchestrator().RunStep(BuildValidConfig(bundleDir), context);
+
+        return new
+        {
+            test_name = "broker_action_none_with_market_context",
+            passed = string.Equals(result.BrokerAction, "none", StringComparison.OrdinalIgnoreCase) && result.MarketContextSeen,
+            key_fields = new
+            {
+                result.Success,
+                result.State,
+                result.BrokerAction,
+                result.PaperDecision,
+                result.MarketContextSeen,
+                market_context_symbol = result.MarketContext?.Symbol ?? string.Empty,
+                market_context_timeframe = result.MarketContext?.Timeframe ?? string.Empty,
+            },
+        };
+    }
+
     private static object RunValidLongSignalCase()
     {
         var engine = new PaperDecisionEngine();
@@ -758,7 +783,7 @@ public static class PaperRuntimeOrchestratorHarness
         return new
         {
             test_name = "spread_too_high_blocks",
-            passed = result.Decision == "would_block_by_safety" && result.BrokerAction == "none" && nextPortfolio.ActiveTrades.Length == 0,
+            passed = result.Decision == "would_block_by_spread" && result.BrokerAction == "none" && nextPortfolio.ActiveTrades.Length == 0,
             key_fields = BuildPaperTradeFields(result, nextPortfolio, warnings),
         };
     }
@@ -1946,12 +1971,16 @@ timestamp,open,high,low,close,spread
     private static RuntimeMarketContext BuildMarketContext(string symbol, string timeframe, decimal bid, decimal ask, DateTimeOffset? serverTime = null) =>
         new()
         {
-            CurrentSymbol = symbol,
-            CurrentTimeframe = timeframe,
+            Symbol = symbol,
+            Timeframe = timeframe,
             Bid = bid,
             Ask = ask,
             Spread = ask - bid,
+            SpreadPips = ask - bid,
+            TickSize = 0.0001m,
+            PipSize = 1m,
             ServerTime = serverTime ?? DateTimeOffset.UtcNow,
+            Source = "static_harness",
         };
 
     private static PaperPosition BuildOpenPaperPosition(SignalCandidate candidate, decimal entryPrice) =>

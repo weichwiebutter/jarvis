@@ -284,10 +284,17 @@ public sealed class PaperDecisionEngine
                 continue;
             }
 
-            if (context.Spread > candidate.MaxSpread)
+            var spreadFilter = new SpreadFilter().Evaluate(context, candidate.MaxSpread);
+            if (!spreadFilter.Allowed && string.Equals(spreadFilter.Status, "blocked_by_spread", StringComparison.OrdinalIgnoreCase))
             {
                 warnings = ["spread_too_high"];
-                return BlockedTrade("spread_too_high", "would_block_by_safety");
+                return BlockedTrade("spread_too_high", "would_block_by_spread");
+            }
+
+            if (string.Equals(spreadFilter.Status, "spread_pips_missing", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(spreadFilter.Status, "spread_context_missing", StringComparison.OrdinalIgnoreCase))
+            {
+                warnings = [spreadFilter.Reason];
             }
 
             if (string.Equals(candidate.Direction, "long", StringComparison.OrdinalIgnoreCase))
@@ -593,12 +600,14 @@ public sealed class PaperDecisionEngine
             return false;
         }
 
-        if (!string.IsNullOrWhiteSpace(context.CurrentSymbol) && !string.Equals(context.CurrentSymbol, candidate.Asset, StringComparison.OrdinalIgnoreCase))
+        var contextSymbol = !string.IsNullOrWhiteSpace(context.Symbol) ? context.Symbol : context.CurrentSymbol;
+        if (!string.IsNullOrWhiteSpace(contextSymbol) && !string.Equals(contextSymbol, candidate.Asset, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        if (!string.IsNullOrWhiteSpace(context.CurrentTimeframe) && !string.Equals(context.CurrentTimeframe, candidate.Timeframe, StringComparison.OrdinalIgnoreCase))
+        var contextTimeframe = !string.IsNullOrWhiteSpace(context.Timeframe) ? context.Timeframe : context.CurrentTimeframe;
+        if (!string.IsNullOrWhiteSpace(contextTimeframe) && !string.Equals(contextTimeframe, candidate.Timeframe, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

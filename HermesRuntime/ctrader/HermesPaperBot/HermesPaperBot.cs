@@ -321,6 +321,7 @@ public sealed class HermesPaperBot
             PaperPortfolioState = _paperPortfolioState,
             PaperTr\u0061deResult = tradeResult,
             MarketContext = context,
+            MarketContextSeen = true,
         };
 
         _paperPortfolioState = combinedResult.PaperPortfolioState ?? _paperPortfolioState;
@@ -382,6 +383,7 @@ public sealed class HermesPaperBot
                 PaperPortfolioState = runtimeResult.PaperPortfolioState,
                 PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
                 MarketContext = runtimeResult.MarketContext,
+                MarketContextSeen = runtimeResult.MarketContextSeen,
             };
         }
 
@@ -408,6 +410,7 @@ public sealed class HermesPaperBot
             PaperPortfolioState = runtimeResult.PaperPortfolioState,
             PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
             MarketContext = runtimeResult.MarketContext,
+            MarketContextSeen = runtimeResult.MarketContextSeen,
         };
     }
 
@@ -510,6 +513,7 @@ public sealed class HermesPaperBot
         PaperWarnings = [reason],
         SignalCandidates = [],
         PaperPortfolioState = new PaperPortfolioState(),
+        MarketContextSeen = false,
     };
 
     private static string ResolvePaperStateSnapshotPath(BotConfiguration configuration)

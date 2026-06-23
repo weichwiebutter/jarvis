@@ -99,38 +99,22 @@ public class HermesPaperBotCTraderWrapper : Robot
     {
         var bid = Symbol.Bid;
         var ask = Symbol.Ask;
+        var spread = ask > bid ? ask - bid : 0m;
+        var pipSize = Symbol.PipSize;
         return new RuntimeMarketContext
         {
-            CurrentSymbol = SymbolName ?? string.Empty,
-            CurrentTimeframe = Bars?.TimeFrame?.ToString() ?? string.Empty,
+            Symbol = SymbolName ?? string.Empty,
+            Timeframe = Bars?.TimeFrame?.ToString() ?? string.Empty,
             Bid = bid,
             Ask = ask,
-            Spread = ask > bid ? ask - bid : 0m,
+            Spread = spread,
+            SpreadPips = pipSize > 0m ? spread / pipSize : null,
+            TickSize = Symbol.TickSize,
+            PipSize = pipSize,
             ServerTime = Server.Time,
+            Source = "ctrader_wrapper",
         };
     }
-}
-
-/// <summary>
-/// cTrader-cloud-local market context provider placeholder for future API wiring.
-/// </summary>
-public sealed class CTraderMarketContextProvider : IMarketContextProvider
-{
-    private RuntimeMarketContext _context = new();
-
-    /// <summary>
-    /// Updates the cached market context from a future cTrader runtime bridge.
-    /// </summary>
-    public void Update(RuntimeMarketContext context)
-    {
-        _context = context ?? new RuntimeMarketContext();
-    }
-
-    /// <summary>
-    /// Reads the cached market context.
-    /// </summary>
-    public RuntimeMarketContext Read()
-        => _context;
 }
 #else
 /// <summary>
