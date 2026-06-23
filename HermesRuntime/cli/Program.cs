@@ -2891,17 +2891,13 @@ internal sealed class HermesCli
     private static ScheduledJobExecutionResult ExecuteProcessPlannedTasksJob(StoragePaths storagePaths, ScheduledJobDefinition job)
     {
         var maxItems = ReadMaxItems(job, fallback: 20);
-        var executor = new PlannedTaskExecutor(storagePaths);
-        var results = executor.Execute(maxItems);
-        var completed = results.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase));
-        var skipped = results.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase));
-        var failed = results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase));
+        var execution = RunPlannedTaskExecution(storagePaths, maxItems);
         return new ScheduledJobExecutionResult(
-            Status: failed > 0 ? "failed" : "completed",
-            WorkPerformed: completed > 0,
-            Action: $"process_planned_tasks completed={completed}; skipped={skipped}; failed={failed}",
-            ReportPath: executor.ExecutionStatePath,
-            Warnings: results.SelectMany(result => result.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
+            Status: execution.Failed > 0 ? "failed" : "completed",
+            WorkPerformed: execution.Completed > 0 || execution.Skipped > 0 || execution.Failed > 0,
+            Action: $"process_planned_tasks completed={execution.Completed}; skipped={execution.Skipped}; failed={execution.Failed}; pending_after={execution.PendingAfter}",
+            ReportPath: execution.ExecutionStatePath,
+            Warnings: execution.Results.SelectMany(result => result.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList());
     }
 
     private static ScheduledJobExecutionResult ExecuteEvaluateTaskOutcomesJob(StoragePaths storagePaths, ScheduledJobDefinition job)
@@ -9126,19 +9122,19 @@ internal sealed class HermesCli
         WriteHeader("Hermes Controlled Planned Task Execution");
         var maxItems = ReadIntOption(_args, "--max-items", fallback: 10, min: 1, max: 100);
         var storagePaths = BuildStoragePaths();
-        var executor = new PlannedTaskExecutor(storagePaths);
-        var results = executor.Execute(maxItems);
-        var state = executor.LoadState() ?? executor.BuildStatus();
+        var execution = RunPlannedTaskExecution(storagePaths, maxItems);
+        var state = execution.State;
 
-        WriteField("Execution State", DisplayPath(executor.ExecutionStatePath));
-        WriteField("Execution Log", DisplayPath(executor.ExecutionLogPath));
+        WriteField("Execution State", DisplayPath(execution.ExecutionStatePath));
+        WriteField("Execution Log", DisplayPath(execution.ExecutionLogPath));
         WriteField("Requested Max Items", maxItems.ToString());
-        WriteField("Results", results.Count.ToString());
-        WriteField("Completed", results.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)).ToString());
-        WriteField("Skipped", results.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase)).ToString());
-        WriteField("Failed", results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)).ToString());
+        WriteField("Results", execution.Results.Count.ToString());
+        WriteField("Completed", execution.Completed.ToString());
+        WriteField("Skipped", execution.Skipped.ToString());
+        WriteField("Failed", execution.Failed.ToString());
         WriteField("Pending Tasks", state.PendingTasks.ToString());
-        foreach (var result in results)
+        WriteField("Pending After", execution.PendingAfter.ToString());
+        foreach (var result in execution.Results)
         {
             WritePlannedTaskExecutionResult(result);
         }
@@ -9146,7 +9142,23 @@ internal sealed class HermesCli
         TryWriteMasterStatusSnapshot(storagePaths);
         Console.WriteLine();
         WriteSafety();
-        return results.Any(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)) ? 1 : 0;
+        return execution.Failed > 0 ? 1 : 0;
+    }
+
+    private static PlannedTaskExecutionRun RunPlannedTaskExecution(StoragePaths storagePaths, int maxItems)
+    {
+        var executor = new PlannedTaskExecutor(storagePaths);
+        var results = executor.Execute(maxItems);
+        var state = executor.LoadState() ?? executor.BuildStatus();
+        return new PlannedTaskExecutionRun(
+            executor.ExecutionStatePath,
+            executor.ExecutionLogPath,
+            state,
+            results,
+            results.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)),
+            results.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase)),
+            results.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)),
+            state.PendingTasks);
     }
 
     private int ShowPlannedTaskStatus()
@@ -13569,6 +13581,16 @@ internal sealed class HermesCli
         string InsightsPath,
         string ClustersPath,
         StrategyEvolutionSummary Insights);
+
+    private sealed record PlannedTaskExecutionRun(
+        string ExecutionStatePath,
+        string ExecutionLogPath,
+        PlannedTaskExecutionState State,
+        IReadOnlyList<PlannedTaskExecutionResult> Results,
+        int Completed,
+        int Skipped,
+        int Failed,
+        int PendingAfter);
 
     private static string ResolveRuntimeRoot(string[] args)
     {
