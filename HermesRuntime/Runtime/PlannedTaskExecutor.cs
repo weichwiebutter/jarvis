@@ -13,6 +13,39 @@ public sealed class PlannedTaskExecutor
         "failed"
     };
 
+    public static readonly ISet<string> SupportedTaskTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "scan_knowledge_sources",
+        "process_research_queue",
+        "generate_hypotheses",
+        "run_walkforward_validation",
+        "run_strategy_research",
+        "run_realism_report",
+        "run_overfit_report",
+        "run_storage_hygiene",
+        "download_missing_market_data",
+        "generate_cognitive_insights",
+        "scan_software_domain",
+        "scan_documentation_domain",
+        "scan_process_domain",
+        "scan_research_domain",
+        "generate_domain_insights",
+        "evaluate_knowledge_quality",
+        "consolidate_memory",
+        "generate_validation_plans",
+        "validate_knowledge_items",
+        "execute_validation_tasks",
+        "validate_domain_knowledge",
+        "documentation_consistency_check",
+        "software_static_analysis",
+        "process_review_stub",
+        "research_citation_check",
+        "collect_evidence",
+        "resolve_contradictions",
+        "request_human_review",
+        "revalidate_stale_knowledge"
+    };
+
     private readonly StoragePaths _storagePaths;
 
     public PlannedTaskExecutor(StoragePaths storagePaths)
@@ -34,8 +67,7 @@ public sealed class PlannedTaskExecutor
         var planning = new AutonomousPlanningCycleService(_storagePaths);
         var decision = planning.LoadLatestDecision() ?? planning.PlanNextTasks(maxItems);
         var candidates = decision.PlannedTasks
-            .Where(task => AutonomousTaskPlanner.AllowedTaskTypes.Contains(task.TaskType))
-            .Where(task => !TerminalStatuses.Contains(task.Status))
+            .Where(IsActivePlannedTask)
             .OrderByDescending(task => task.Priority.TotalScore)
             .ThenBy(task => task.TaskType, StringComparer.Ordinal)
             .Take(maxItems)
@@ -45,6 +77,29 @@ public sealed class PlannedTaskExecutor
         var workKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var task in candidates)
         {
+            if (!IsSupportedTaskType(task.TaskType))
+            {
+                var unsupported = BuildResult(
+                    task,
+                    "skipped",
+                    $"Task type '{task.TaskType}' is not supported by the planned task executor.",
+                    [],
+                    ["unsupported_task_type"],
+                    "unsupported_task_type");
+                results.Add(unsupported);
+                AppendLog(unsupported);
+                planning.UpdateTaskStatuses(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [task.TaskId] = unsupported.Status
+                });
+                new ResearchQueueService(_storagePaths).MarkPlannedTaskExecution(
+                    task.TaskId,
+                    unsupported.Status,
+                    unsupported.SkippedReason ?? unsupported.Reason,
+                    unsupported.Warnings);
+                continue;
+            }
+
             var workKey = WorkKey(task.TaskType);
             PlannedTaskExecutionResult result;
             if (!workKeys.Add(workKey))
@@ -785,4 +840,11 @@ public sealed class PlannedTaskExecutor
             "run_realism_report" => "realistic_simulation",
             _ => taskType
         };
+
+    public static bool IsActivePlannedTask(PlannedTask task) =>
+        !TerminalStatuses.Contains(task.Status)
+        && !task.Status.Equals("running", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsSupportedTaskType(string taskType) =>
+        SupportedTaskTypes.Contains(taskType);
 }
