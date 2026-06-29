@@ -12,5 +12,6 @@
     <Compile Remove="cli/**/*.cs" />
     <Compile Remove="bin/**/*.cs" />
     <Compile Remove="obj/**/*.cs" />
+    <Compile Remove="reports/**/source_export/**/*.cs" />
   </ItemGroup>
 </Project>
