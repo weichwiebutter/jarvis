@@ -40,12 +40,17 @@ Das heißt: Der Kern ist lokal geprüft, aber der echte cTrader-Compile bleibt e
 
 Für den manuellen Import bzw. die manuelle Projekterstellung in cTrader werden typischerweise diese Dateien benötigt:
 
+- `ctrader/HermesPaperBot.AlgoProject/HermesPaperBot.AlgoProject.csproj`
 - `HermesPaperBotCTraderWrapper.cs`
 - `Generated/EmbeddedReleasePackage.g.cs`
 - `Models/*.cs`
 - `Services/*.cs`
 
 Die restlichen Dateien bleiben außerhalb der cTrader-Umgebung und werden nur übernommen, wenn sie für den Compile erforderlich sind.
+
+### 3.0 Primärer Build-Pfad
+
+Der bevorzugte Pfad ist inzwischen das echte AlgoProject. Der frühere Single-File-Import ist nicht mehr der primäre Arbeitsweg.
 
 ### 3.1 Wrapper-Status
 

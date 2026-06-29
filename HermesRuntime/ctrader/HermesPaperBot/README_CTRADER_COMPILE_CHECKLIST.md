@@ -2,6 +2,14 @@
 
 Diese Checkliste beschreibt den ersten echten cTrader-Cloud-Kompilierungstest für den HermesPaperBot.
 
+## Primärer Pfad
+
+Der bevorzugte Import- und Build-Pfad ist inzwischen das echte AlgoProject:
+
+- `ctrader/HermesPaperBot.AlgoProject/HermesPaperBot.AlgoProject.csproj`
+
+Der frühere Single-File-Import ist nicht mehr der primäre Arbeitsweg.
+
 ## Ziel
 
 - cTrader Cloud soll den paper-only Wrapper kompilieren können

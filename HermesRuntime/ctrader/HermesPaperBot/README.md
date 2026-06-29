@@ -199,6 +199,8 @@ The conditional cTrader wrapper can later read market context without trading ac
 Use the manual wrapper compile checklist before the first real cTrader Cloud build:
 
 - `docs/trading/ctrader_cloud_wrapper_compile_check_v1.md`
+- the primary build path is now the AlgoProject at `ctrader/HermesPaperBot.AlgoProject/HermesPaperBot.AlgoProject.csproj`
+- the earlier single-file import path is deprecated as the default flow
 
 ## Future cTrader API Boundary
 

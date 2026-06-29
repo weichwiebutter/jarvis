@@ -1,0 +1,127 @@
+namespace HermesPaperBot.Models;
+
+/// <summary>
+/// Paper-only bot configuration.
+/// </summary>
+public sealed class BotConfiguration
+{
+    /// <summary>
+    /// Runtime mode for the paper bot.
+    /// </summary>
+    public RuntimeMode RuntimeMode { get; init; } = RuntimeMode.LocalFileBundle;
+
+    /// <summary>
+    /// Release bundle inbox path.
+    /// </summary>
+    public string ReleaseBundleInboxPath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Active release bundle path.
+    /// </summary>
+    public string ActiveReleaseBundlePath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Last valid release bundle path.
+    /// </summary>
+    public string LastValidReleaseBundlePath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Local runtime logs path.
+    /// </summary>
+    public string LocalRuntimeLogsPath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Reload interval in seconds.
+    /// </summary>
+    public int ReloadIntervalSeconds { get; init; } = 30;
+
+    /// <summary>
+    /// Whether bundle import is enabled.
+    /// </summary>
+    public bool ImportEnabled { get; init; } = true;
+
+    /// <summary>
+    /// Manual kill switch.
+    /// </summary>
+    public bool ManualKillSwitch { get; init; } = false;
+
+    /// <summary>
+    /// Logging verbosity.
+    /// </summary>
+    public LogVerbosity LogVerbosity { get; init; } = LogVerbosity.Normal;
+
+    /// <summary>
+    /// Paper-only safety defaults.
+    /// </summary>
+    public bool NoAutoTrading { get; init; } = true;
+
+    /// <summary>
+    /// Human review is required.
+    /// </summary>
+    public bool HumanReviewRequired { get; init; } = true;
+
+    /// <summary>
+    /// Broker trading is disabled.
+    /// </summary>
+    public bool BrokerTradingEnabled { get; init; } = false;
+
+    /// <summary>
+    /// Live trading is disabled.
+    /// </summary>
+    public bool LiveTradingEnabled { get; init; } = false;
+
+    /// <summary>
+    /// Order API is disabled.
+    /// </summary>
+    public bool OrderApiEnabled { get; init; } = false;
+
+    /// <summary>
+    /// Paper mode is enabled.
+    /// </summary>
+    public bool PaperMode { get; init; } = true;
+
+    /// <summary>
+    /// Maximum active paper trades.
+    /// </summary>
+    public int MaxActivePaperTrades { get; init; } = 1;
+
+    /// <summary>
+    /// Maximum new paper trades per day.
+    /// </summary>
+    public int MaxNewPaperTradesPerDay { get; init; } = 3;
+
+    /// <summary>
+    /// Maximum new paper trades per hour.
+    /// </summary>
+    public int MaxNewPaperTradesPerHour { get; init; } = 2;
+
+    /// <summary>
+    /// Maximum consecutive paper losses.
+    /// </summary>
+    public int MaxConsecutivePaperLosses { get; init; } = 3;
+
+    /// <summary>
+    /// Maximum daily paper R loss.
+    /// </summary>
+    public decimal MaxDailyPaperRLoss { get; init; } = 3m;
+
+    /// <summary>
+    /// Local runtime logs path for JSONL/JSON output.
+    /// </summary>
+    public string? LocalRuntimeLogsPathOverride { get; init; }
+
+    /// <summary>
+    /// Paper state snapshot path.
+    /// </summary>
+    public string PaperStateSnapshotPath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Recovery mode for corrupt paper snapshots.
+    /// </summary>
+    public PaperSnapshotRecoveryMode PaperSnapshotRecoveryMode { get; init; } = PaperSnapshotRecoveryMode.FreshState;
+
+    /// <summary>
+    /// Embedded release package for cloud runtime.
+    /// </summary>
+    public CloudEmbeddedReleasePackage? CloudEmbeddedReleasePackage { get; init; }
+}

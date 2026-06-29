@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>HermesPaperBot</RootNamespace>
+    <AssemblyName>HermesPaperBot</AssemblyName>
+    <AlgoBuild>true</AlgoBuild>
+    <DefineConstants>$(DefineConstants);HERMES_CTRADER_WRAPPER</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="cTrader.Automate" Version="1.0.17" />
+  </ItemGroup>
+</Project>
