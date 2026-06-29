@@ -59,6 +59,7 @@ internal sealed class HermesCli
             "nightly-status" => ShowNightlyStatus(),
             "nightly-stop-request" => RequestNightlyStop(),
             "scheduler-status" => ShowSchedulerStatus(),
+            "workload-schedule-status" => ShowWorkloadScheduleStatus(),
             "scheduler-jobs" => ShowSchedulerJobs(),
             "time-control-status" => ShowTimeControlStatus(),
             "time-control-update" => UpdateTimeControl(),
@@ -374,6 +375,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes nightly-status    Nightly Beta 3 Status anzeigen");
         Console.WriteLine("  hermes nightly-stop-request sicheren Stop-Request fuer Nightly Beta 3 setzen");
         Console.WriteLine("  hermes scheduler-status  internen Hermes Scheduler Status anzeigen");
+        Console.WriteLine("  hermes workload-schedule-status Hermes Research Workload Schedule anzeigen");
         Console.WriteLine("  hermes scheduler-jobs    geplante Hermes Jobs anzeigen");
         Console.WriteLine("  hermes time-control-status zentrale Arbeitszeit-/Window-Konfiguration anzeigen");
         Console.WriteLine("  hermes time-control-update zentrale Arbeitszeit-/Window-Konfiguration aktualisieren");
@@ -2174,6 +2176,34 @@ internal sealed class HermesCli
         foreach (var job in status.Jobs.Take(8))
         {
             WriteSchedulerJob(job);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowWorkloadScheduleStatus()
+    {
+        WriteHeader("Hermes Research Workload Schedule");
+        var storagePaths = BuildStoragePaths();
+        var service = new SchedulerWorkloadPlanService(storagePaths, Path.Combine(_runtimeRoot, "config", "schedules.json"));
+        var report = service.Build();
+
+        WriteField("Report JSON", DisplayPath(service.ReportPath));
+        WriteField("Report Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Current Window", report.CurrentTimeWindow);
+        WriteField("Day Jobs Enabled", report.DayJobsEnabled.ToString().ToLowerInvariant());
+        WriteField("Night Heavy Jobs Enabled", report.NightHeavyJobsEnabled.ToString().ToLowerInvariant());
+        WriteField("Learning Window Active", report.LearningWindowActive.ToString().ToLowerInvariant());
+        WriteField("Human Review Window Active", report.HumanReviewWindowActive.ToString().ToLowerInvariant());
+        WriteField("Research Insights Status", report.ResearchInsightsStatus);
+        WriteField("Nightly Status", report.NightlyStatus);
+        WriteField("Recommended Action", report.RecommendedAction);
+        WriteMessages("Stale Running Jobs", report.StaleRunningJobs);
+        foreach (var job in report.HeavyJobsNextRun.Take(10))
+        {
+            WriteField($"{job.JobId} ({job.JobType})", $"{job.Status}; next_run={(job.NextRunUtc?.ToString("O") ?? "-")}; heavy={job.Heavy.ToString().ToLowerInvariant()}");
         }
 
         Console.WriteLine();

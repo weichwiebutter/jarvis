@@ -36,13 +36,13 @@ public sealed record ScheduleConfig(
 
     public DateTimeOffset? ValidationBacklogExecutorNextRunUtc { get; init; }
 
-    public SchedulerWindowConfig WorkWindow { get; init; } = new("08:00", "18:00", true);
+    public SchedulerWindowConfig WorkWindow { get; init; } = new("07:00", "22:00", true);
 
-    public SchedulerWindowConfig NightlyWindow { get; init; } = new("23:00", "05:00", true);
+    public SchedulerWindowConfig NightlyWindow { get; init; } = new("22:00", "07:00", true);
 
-    public SchedulerWindowConfig LearningWindow { get; init; } = new("05:30", "07:00", true);
+    public SchedulerWindowConfig LearningWindow { get; init; } = new("05:00", "06:30", true);
 
-    public SchedulerWindowConfig HumanReviewWindow { get; init; } = new("08:00", "18:00", true);
+    public SchedulerWindowConfig HumanReviewWindow { get; init; } = new("07:00", "19:30", true);
 
     public IReadOnlyList<string> ActiveWeekdays { get; init; } =
     [
@@ -77,7 +77,7 @@ public sealed record ScheduleConfig(
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "run-planning-cycle",
-                DailyAt: "22:45",
+                DailyAt: "21:45",
                 Parameters: new Dictionary<string, string> { ["max_items"] = "20" }),
             new(
                 JobId: "goal_review_before_nightly",
@@ -85,15 +85,15 @@ public sealed record ScheduleConfig(
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "goals",
-                DailyAt: "22:50"),
+                DailyAt: "21:50"),
             new(
                 JobId: "nightly_beta3_research",
                 JobType: "trading_nightly_beta3",
                 Enabled: true,
                 ScheduleType: "window",
                 Command: "run-nightly-beta3",
-                WindowStart: "23:00",
-                WindowEnd: "05:00",
+                WindowStart: "22:00",
+                WindowEnd: "07:00",
                 MaxRuntimeMinutes: 360,
                 SleepSeconds: 60,
                 MaxIdleIterations: 10),
@@ -103,8 +103,8 @@ public sealed record ScheduleConfig(
                 Enabled: true,
                 ScheduleType: "window",
                 Command: "run-nightly-work-areas",
-                WindowStart: "23:00",
-                WindowEnd: "05:00",
+                WindowStart: "22:00",
+                WindowEnd: "07:00",
                 MaxRuntimeMinutes: 30,
                 SleepSeconds: 60),
             new(
@@ -113,7 +113,7 @@ public sealed record ScheduleConfig(
                 Enabled: false,
                 ScheduleType: "window",
                 Command: "evidence-auto-loop",
-                WindowStart: "05:30",
+                WindowStart: "05:00",
                 WindowEnd: "06:30",
                 MaxRuntimeMinutes: 30,
                 SleepSeconds: 60,
@@ -129,7 +129,7 @@ public sealed record ScheduleConfig(
                 Enabled: false,
                 ScheduleType: "window",
                 Command: "validation-backlog-executor",
-                WindowStart: "05:30",
+                WindowStart: "05:00",
                 WindowEnd: "06:30",
                 MaxRuntimeMinutes: 30,
                 SleepSeconds: 60,
@@ -150,50 +150,50 @@ public sealed record ScheduleConfig(
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "research-insights",
-                DailyAt: "05:30"),
+                DailyAt: "07:15"),
             new(
                 JobId: "scan_knowledge_sources",
                 JobType: "scan_knowledge_sources",
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "scan-knowledge-sources",
-                DailyAt: "05:40"),
+                DailyAt: "07:20"),
             new(
                 JobId: "scan_software_domain",
                 JobType: "scan_software_domain",
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "scan-software-domain",
-                DailyAt: "05:42"),
+                DailyAt: "07:25"),
             new(
                 JobId: "scan_documentation_domain",
                 JobType: "scan_documentation_domain",
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "scan-documentation-domain",
-                DailyAt: "05:43"),
+                DailyAt: "07:30"),
             new(
                 JobId: "scan_process_domain",
                 JobType: "scan_process_domain",
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "scan-process-domain",
-                DailyAt: "05:44"),
+                DailyAt: "07:35"),
             new(
                 JobId: "scan_research_domain",
                 JobType: "scan_research_domain",
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "scan-research-domain",
-                DailyAt: "05:45"),
+                DailyAt: "07:40"),
             new(
                 JobId: "process_research_queue",
                 JobType: "process_research_queue",
                 Enabled: true,
                 ScheduleType: "window",
                 Command: "process-research-queue",
-                WindowStart: "23:00",
-                WindowEnd: "05:00",
+                WindowStart: "22:00",
+                WindowEnd: "07:00",
                 MaxRuntimeMinutes: 60,
                 Parameters: new Dictionary<string, string> { ["max_items"] = "50" }),
             new(
@@ -202,7 +202,7 @@ public sealed record ScheduleConfig(
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "generate-hypotheses",
-                DailyAt: "05:50",
+                DailyAt: "07:45",
                 Parameters: new Dictionary<string, string> { ["domain"] = "trading" }),
             new(
                 JobId: "generate_domain_insights",
@@ -210,14 +210,14 @@ public sealed record ScheduleConfig(
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "domain-insights",
-                DailyAt: "05:52"),
+                DailyAt: "07:47"),
             new(
                 JobId: "planning_cycle_after_nightly",
                 JobType: "run_planning_cycle",
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "run-planning-cycle",
-                DailyAt: "05:55",
+                DailyAt: "07:50",
                 Parameters: new Dictionary<string, string> { ["max_items"] = "20" }),
             new(
                 JobId: "goal_progress_update",
@@ -225,14 +225,14 @@ public sealed record ScheduleConfig(
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "goal-progress",
-                DailyAt: "05:58"),
+                DailyAt: "07:55"),
             new(
                 JobId: "goal_review_after_nightly",
                 JobType: "review_goals",
                 Enabled: true,
                 ScheduleType: "daily",
                 Command: "goals",
-                DailyAt: "06:00"),
+                DailyAt: "08:00"),
             new(
                 JobId: "process_planned_tasks_after_planning",
                 JobType: "process_planned_tasks",
@@ -308,15 +308,23 @@ public sealed record ScheduleConfig(
                 Enabled: false,
                 ScheduleType: "daily",
                 Command: "download-history",
-                DailyAt: "22:30")
+                DailyAt: "22:30"),
+            new(
+                JobId: "scalping_robustness_after_research",
+                JobType: "run_scalping_robustness_expansion",
+                Enabled: true,
+                ScheduleType: "daily",
+                Command: "run-scalping-robustness-expansion",
+                DailyAt: "22:30",
+                Parameters: new Dictionary<string, string> { ["all_robust"] = "true" })
         ])
     {
         TimeZone = "Europe/Berlin",
-        WorkWindow = new SchedulerWindowConfig("08:00", "18:00", true),
-        NightlyWindow = new SchedulerWindowConfig("23:00", "05:00", true),
-        LearningWindow = new SchedulerWindowConfig("05:30", "07:00", true),
-        HumanReviewWindow = new SchedulerWindowConfig("08:00", "18:00", true),
-        ActiveWeekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+        WorkWindow = new SchedulerWindowConfig("07:00", "22:00", true),
+        NightlyWindow = new SchedulerWindowConfig("22:00", "07:00", true),
+        LearningWindow = new SchedulerWindowConfig("05:00", "06:30", true),
+        HumanReviewWindow = new SchedulerWindowConfig("07:00", "19:30", true),
+        ActiveWeekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     };
 
     public static ScheduleConfig LoadOrDefault(string path)

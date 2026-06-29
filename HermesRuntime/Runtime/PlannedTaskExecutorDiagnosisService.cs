@@ -10,6 +10,7 @@ public sealed record PlannedTaskExecutorDiagnosis(
     int ExecutableCount,
     int BlockedCount,
     int UnsupportedCount,
+    int WaitingForEvidenceCount,
     int SkippedCount,
     int CompletedCount,
     int FailedCount,
@@ -64,33 +65,29 @@ public sealed class PlannedTaskExecutorDiagnosisService
             .ThenBy(task => task.TaskType, StringComparer.Ordinal)
             .Select(task =>
             {
-                var active = PlannedTaskExecutor.IsActivePlannedTask(task);
-                var supported = PlannedTaskExecutor.IsSupportedTaskType(task.TaskType);
-                var executable = active
-                    && supported
-                    && !HasExplicitBlocker(task);
-                var reason = !active
-                    ? $"task_status_{task.Status}"
-                    : !supported
-                        ? "unsupported_task_type"
-                        : executable
-                        ? "current_planned_task_is_executable"
-                        : HasExplicitBlocker(task)
-                            ? "task_has_explicit_blocker"
-                            : "task_is_active_but_not_executable";
+                var (executable, reason) = EvaluateExecutability(task);
                 return new PlannedTaskDiagnosisEntry(task.TaskId, task.TaskType, task.Status, executable, reason);
             })
             .ToList();
 
         var activeEntries = entries.Where(entry => IsActivePlannedStatus(entry.Status)).ToList();
-
         var diagnosis = new PlannedTaskExecutorDiagnosis(
             ReportVersion: "planned_task_executor_diagnosis_v1",
             GeneratedAtUtc: DateTimeOffset.UtcNow,
             PendingCount: activeEntries.Count,
             ExecutableCount: activeEntries.Count(entry => entry.Executable),
-            BlockedCount: activeEntries.Count(entry => !entry.Executable && !entry.Reason.Equals("unsupported_task_type", StringComparison.OrdinalIgnoreCase)),
-            UnsupportedCount: activeEntries.Count(entry => entry.Reason.Equals("unsupported_task_type", StringComparison.OrdinalIgnoreCase)),
+            BlockedCount: activeEntries.Count(entry =>
+                !entry.Executable
+                && !entry.Reason.Equals("unsupported_task_type", StringComparison.OrdinalIgnoreCase)
+                && !entry.Reason.Equals("not_allowed_task_type", StringComparison.OrdinalIgnoreCase)
+                && !entry.Reason.Equals("blocked_waiting_for_evidence", StringComparison.OrdinalIgnoreCase)
+                && !entry.Reason.Equals("completed_with_missing_evidence", StringComparison.OrdinalIgnoreCase)),
+            UnsupportedCount: activeEntries.Count(entry =>
+                entry.Reason.Equals("unsupported_task_type", StringComparison.OrdinalIgnoreCase)
+                || entry.Reason.Equals("not_allowed_task_type", StringComparison.OrdinalIgnoreCase)),
+            WaitingForEvidenceCount: activeEntries.Count(entry =>
+                entry.Reason.Equals("blocked_waiting_for_evidence", StringComparison.OrdinalIgnoreCase)
+                || entry.Reason.Equals("completed_with_missing_evidence", StringComparison.OrdinalIgnoreCase)),
             SkippedCount: recent.Count(result => result.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase)),
             CompletedCount: recent.Count(result => result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase) || result.Status.Equals("completed_with_missing_evidence", StringComparison.OrdinalIgnoreCase)),
             FailedCount: recent.Count(result => result.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)),
@@ -98,10 +95,13 @@ public sealed class PlannedTaskExecutorDiagnosisService
             Entries: entries,
             RecommendedNextAction: entries.Any(entry => entry.Executable)
                 ? "run planned-task-executor now"
-                : activeEntries.Any(entry => !entry.Executable && !entry.Reason.Equals("unsupported_task_type", StringComparison.OrdinalIgnoreCase))
+                : activeEntries.Any(entry => !entry.Executable && IsRealBlockerReason(entry.Reason))
                     ? "inspect blockers"
-                    : activeEntries.Any(entry => entry.Reason.Equals("unsupported_task_type", StringComparison.OrdinalIgnoreCase))
+                : activeEntries.Any(entry => IsUnsupportedReason(entry.Reason))
                         ? "inspect unsupported task types"
+                        : activeEntries.Any(entry => entry.Reason.Equals("blocked_waiting_for_evidence", StringComparison.OrdinalIgnoreCase)
+                            || entry.Reason.Equals("completed_with_missing_evidence", StringComparison.OrdinalIgnoreCase))
+                        ? "inspect evidence backlog"
                         : activeEntries.Count == 0 && tasks.Any()
                         ? "no pending executable tasks"
                         : "inspect planner/state mismatch",
@@ -124,6 +124,7 @@ public sealed class PlannedTaskExecutorDiagnosisService
         sb.AppendLine($"- Executable: {diagnosis.ExecutableCount}");
         sb.AppendLine($"- Blocked: {diagnosis.BlockedCount}");
         sb.AppendLine($"- Unsupported: {diagnosis.UnsupportedCount}");
+        sb.AppendLine($"- Waiting for evidence: {diagnosis.WaitingForEvidenceCount}");
         sb.AppendLine($"- Skipped: {diagnosis.SkippedCount}");
         sb.AppendLine($"- Completed: {diagnosis.CompletedCount}");
         sb.AppendLine($"- Failed: {diagnosis.FailedCount}");
@@ -144,6 +145,36 @@ public sealed class PlannedTaskExecutorDiagnosisService
     private static bool IsTerminalStatus(string status) =>
         PlannedTaskExecutor.TerminalStatuses.Contains(status);
 
+    private static (bool Executable, string Reason) EvaluateExecutability(PlannedTask task)
+    {
+        if (!PlannedTaskExecutor.IsActivePlannedTask(task))
+        {
+            return (false, $"task_status_{task.Status}");
+        }
+
+        if (!task.NoTradingExecution || !task.HumanReviewRequired)
+        {
+            return (false, "task_has_invalid_safety_flags");
+        }
+
+        if (!AutonomousTaskPlanner.AllowedTaskTypes.Contains(task.TaskType))
+        {
+            return (false, "not_allowed_task_type");
+        }
+
+        if (!PlannedTaskExecutor.IsSupportedTaskType(task.TaskType))
+        {
+            return (false, "unsupported_task_type");
+        }
+
+        if (HasExplicitBlocker(task))
+        {
+            return (false, HasWaitingForEvidence(task) ? "blocked_waiting_for_evidence" : "task_has_explicit_blocker");
+        }
+
+        return (true, "current_planned_task_is_executable");
+    }
+
     private static bool HasExplicitBlocker(PlannedTask task) =>
         !task.NoTradingExecution
         || !task.HumanReviewRequired
@@ -151,6 +182,21 @@ public sealed class PlannedTaskExecutorDiagnosisService
         || task.Reason.Contains("waiting_for_evidence", StringComparison.OrdinalIgnoreCase)
         || task.Reason.Contains("missing_evidence", StringComparison.OrdinalIgnoreCase)
         || task.GoalReason.Contains("blocked", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasWaitingForEvidence(PlannedTask task) =>
+        task.Reason.Contains("waiting_for_evidence", StringComparison.OrdinalIgnoreCase)
+        || task.Reason.Contains("missing_evidence", StringComparison.OrdinalIgnoreCase)
+        || task.GoalReason.Contains("waiting_for_evidence", StringComparison.OrdinalIgnoreCase)
+        || task.GoalReason.Contains("missing_evidence", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsUnsupportedReason(string reason) =>
+        reason.Equals("unsupported_task_type", StringComparison.OrdinalIgnoreCase)
+        || reason.Equals("not_allowed_task_type", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsRealBlockerReason(string reason) =>
+        !IsUnsupportedReason(reason)
+        && !reason.Equals("blocked_waiting_for_evidence", StringComparison.OrdinalIgnoreCase)
+        && !reason.Equals("completed_with_missing_evidence", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsActivePlannedStatus(string status) =>
         !string.IsNullOrWhiteSpace(status)

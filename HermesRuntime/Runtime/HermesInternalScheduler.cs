@@ -262,7 +262,13 @@ public sealed class HermesInternalScheduler
             var states = JsonSerializer.Deserialize<IReadOnlyList<ScheduledJobState>>(
                 File.ReadAllText(SchedulerStatePath),
                 JsonDefaults.SnapshotReadOptions) ?? [];
-            return states.ToDictionary(state => state.JobId, StringComparer.OrdinalIgnoreCase);
+            var dictionary = states.ToDictionary(state => state.JobId, StringComparer.OrdinalIgnoreCase);
+            if (RepairStaleRunningStates(dictionary, DateTimeOffset.UtcNow))
+            {
+                PersistStates(dictionary);
+            }
+
+            return dictionary;
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
@@ -274,13 +280,18 @@ public sealed class HermesInternalScheduler
     {
         var states = LoadStates();
         states[state.JobId] = state;
+        PersistStates(states);
+        return state;
+    }
+
+    private void PersistStates(Dictionary<string, ScheduledJobState> states)
+    {
         Directory.CreateDirectory(StateDirectory);
         File.WriteAllText(
             SchedulerStatePath,
             JsonSerializer.Serialize(
                 states.Values.OrderBy(item => item.JobId, StringComparer.OrdinalIgnoreCase).ToList(),
                 JsonDefaults.WriteOptions));
-        return state;
     }
 
     private static ScheduledJobState EmptyState(ScheduledJobDefinition job) =>
@@ -438,6 +449,71 @@ public sealed class HermesInternalScheduler
     {
         var minutes = Math.Clamp(job.EveryMinutes ?? 60, 1, 1440);
         return state.LastRunUtc is null || nowUtc - state.LastRunUtc.Value >= TimeSpan.FromMinutes(minutes);
+    }
+
+    private bool RepairStaleRunningStates(Dictionary<string, ScheduledJobState> states, DateTimeOffset nowUtc)
+    {
+        var config = LoadConfig();
+        var changed = false;
+
+        foreach (var job in config.Jobs)
+        {
+            if (!states.TryGetValue(job.JobId, out var state) || !state.CurrentlyRunning)
+            {
+                continue;
+            }
+
+            if (!IsStaleRunning(job, state, nowUtc))
+            {
+                continue;
+            }
+
+            var recovered = state with
+            {
+                Status = "stale_running_recovered",
+                CurrentlyRunning = false,
+                LastAction = "stale_running_recovered",
+                LastSkippedReason = "stale_running_without_completion",
+                NextRunUtc = CalculateNextRunUtc(job, state with { CurrentlyRunning = false }, nowUtc),
+                Warnings = state.Warnings.Concat(["stale_running_without_completion"]).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+            };
+            states[job.JobId] = recovered;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static bool IsStaleRunning(ScheduledJobDefinition job, ScheduledJobState state, DateTimeOffset nowUtc)
+    {
+        if (!state.CurrentlyRunning)
+        {
+            return false;
+        }
+
+        var startedAtUtc = state.LastRunUtc ?? state.LastCompletedUtc;
+        if (startedAtUtc is null)
+        {
+            return true;
+        }
+
+        var expectedMinutes = job.JobType switch
+        {
+            "research_insights" => 30,
+            "process_planned_tasks" => 30,
+            "run_autonomous_loop" => 30,
+            "run_planning_cycle" => 30,
+            "evaluate_task_outcomes" => 30,
+            "execute_validation_tasks" => 45,
+            "validate_domain_knowledge" => 45,
+            "nightly_beta3_research" or "trading_nightly_beta3" => Math.Clamp(job.MaxRuntimeMinutes ?? 360, 30, 1440),
+            _ => job.ScheduleType.Equals("interval", StringComparison.OrdinalIgnoreCase)
+                ? Math.Clamp((job.EveryMinutes ?? 60) * 2, 30, 720)
+                : 240
+        };
+
+        var staleThreshold = TimeSpan.FromMinutes(expectedMinutes + 15);
+        return nowUtc - startedAtUtc > staleThreshold;
     }
 
     private static DateTimeOffset NextWindowRunUtc(ScheduledJobDefinition job, ScheduledJobState state, DateTimeOffset nowUtc)

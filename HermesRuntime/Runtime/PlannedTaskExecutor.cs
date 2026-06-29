@@ -77,15 +77,18 @@ public sealed class PlannedTaskExecutor
         var workKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var task in candidates)
         {
-            if (!IsSupportedTaskType(task.TaskType))
+            if (!IsExecutableTaskType(task.TaskType))
             {
+                var reason = !AutonomousTaskPlanner.AllowedTaskTypes.Contains(task.TaskType)
+                    ? "not_allowed_task_type"
+                    : "unsupported_task_type";
                 var unsupported = BuildResult(
                     task,
                     "skipped",
-                    $"Task type '{task.TaskType}' is not supported by the planned task executor.",
+                    $"Task type '{task.TaskType}' cannot be executed by the planned task executor.",
                     [],
-                    ["unsupported_task_type"],
-                    "unsupported_task_type");
+                    [reason],
+                    reason);
                 results.Add(unsupported);
                 AppendLog(unsupported);
                 planning.UpdateTaskStatuses(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -847,4 +850,8 @@ public sealed class PlannedTaskExecutor
 
     public static bool IsSupportedTaskType(string taskType) =>
         SupportedTaskTypes.Contains(taskType);
+
+    public static bool IsExecutableTaskType(string taskType) =>
+        AutonomousTaskPlanner.AllowedTaskTypes.Contains(taskType)
+        && SupportedTaskTypes.Contains(taskType);
 }
