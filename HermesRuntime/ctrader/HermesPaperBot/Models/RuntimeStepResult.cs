@@ -31,4 +31,9 @@ public sealed class RuntimeStepResult
     public string[] PaperWarnings { get; init; } = [];
     public RuntimeMarketContext? MarketContext { get; init; }
     public bool MarketContextSeen { get; init; } = false;
+    public bool PaperPositionOpen { get; init; } = false;
+    public string PaperPositionStatus { get; init; } = "none";
+    public string PaperExitReason { get; init; } = "none";
+    public decimal? RMultiple { get; init; }
+    public string PositionId { get; init; } = string.Empty;
 }

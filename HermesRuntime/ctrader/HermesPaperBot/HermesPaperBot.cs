@@ -68,6 +68,21 @@ public sealed class HermesPaperBot
     private PaperPortfolioState _paperPortfolioState = new();
 
     /// <summary>
+    /// Active cloud paper position kept in memory only.
+    /// </summary>
+    private PaperPosition? _activePaperPosition;
+
+    /// <summary>
+    /// Completed cloud paper positions count kept in memory only.
+    /// </summary>
+    private int _completedPaperPositionsCount;
+
+    /// <summary>
+    /// Last cloud paper exit reason kept in memory only.
+    /// </summary>
+    private PaperExitReason _lastPaperExitReason = PaperExitReason.None;
+
+    /// <summary>
     /// Paper state store kept in memory only.
     /// </summary>
     private PaperStateStore? _paperStateStore;
@@ -154,6 +169,9 @@ public sealed class HermesPaperBot
             }
 
             _paperPortfolioState = stateRestore.PaperPortfolioState ?? new PaperPortfolioState();
+            _activePaperPosition = _paperPortfolioState.ActiveTrades is { Length: > 0 }
+                ? _paperPortfolioState.ActiveTrades[0]
+                : null;
             _signalCandidates = _paperDecisionEngine.ParseSignalCandidates(currentConfiguration.CloudEmbeddedReleasePackage, out var signalWarnings);
             _lastRuntimeStepResult = ExecutePaperRuntimeStep(context ?? new RuntimeMarketContext(), signalWarnings);
             return _lastRuntimeStepResult.Success;
@@ -303,6 +321,12 @@ public sealed class HermesPaperBot
         }
         var combinedSignalWarnings = MergeWarnings(signalWarnings, embeddedSignalWarnings);
 
+        if (_lastConfiguration.RuntimeMode == RuntimeMode.CloudEmbeddedBundle || _activePaperPosition is not null)
+        {
+            var cloudResult = ExecuteCloudPaperPositionStep(validationResult, embeddedSignal, context, combinedSignalWarnings);
+            return PersistRuntimeResult(cloudResult);
+        }
+
         if (_paperPortfolioState.ActiveTrades.Length == 0)
         {
             var signalResult = BuildSignalRuntimeResult(validationResult, embeddedSignal, context, combinedSignalWarnings);
@@ -434,6 +458,75 @@ public sealed class HermesPaperBot
             SignalExpired = signalExpired,
             SignalCandidates = _signalCandidates,
             PaperPortfolioState = _paperPortfolioState,
+            PaperPositionOpen = false,
+            PaperPositionStatus = "none",
+            PaperExitReason = "none",
+            RMultiple = null,
+            PositionId = string.Empty,
+            MarketContext = context,
+            MarketContextSeen = true,
+        };
+    }
+
+    private RuntimeStepResult ExecuteCloudPaperPositionStep(
+        RuntimeStepResult validationResult,
+        SignalDecision? embeddedSignal,
+        RuntimeMarketContext context,
+        string[] signalWarnings)
+    {
+        var positionResult = _paperDecisionEngine.EvaluateCloudSignalPosition(
+            embeddedSignal,
+            _activePaperPosition,
+            context,
+            _lastConfiguration ?? new BotConfiguration(),
+            out var nextActivePosition,
+            out var positionWarnings);
+
+        var previousActivePosition = _activePaperPosition;
+        _activePaperPosition = nextActivePosition;
+
+        if (previousActivePosition is not null && nextActivePosition is null &&
+            !string.Equals(positionResult.PaperExitReason, PaperExitReason.None.ToString().ToLowerInvariant(), StringComparison.OrdinalIgnoreCase))
+        {
+            _completedPaperPositionsCount += 1;
+            _lastPaperExitReason = Enum.TryParse<PaperExitReason>(positionResult.PaperExitReason, ignoreCase: true, out var parsedExitReason)
+                ? parsedExitReason
+                : PaperExitReason.None;
+        }
+
+        var activePortfolio = BuildCloudPortfolioState(_activePaperPosition);
+        var combinedReasons = MergeReasons(validationResult.Reasons, signalWarnings, positionWarnings, [positionResult.Reason]);
+
+        return new RuntimeStepResult
+        {
+            Success = validationResult.Success && !string.Equals(positionResult.Decision, "would_block_by_safety", StringComparison.OrdinalIgnoreCase),
+            State = BuildCloudPositionState(validationResult.State, positionResult.PaperPositionStatus, positionResult.PaperExitReason),
+            ConfigValid = validationResult.ConfigValid,
+            ImportAttempted = validationResult.ImportAttempted,
+            ImportValid = validationResult.ImportValid,
+            BundleValid = validationResult.BundleValid,
+            ChecksumValid = validationResult.ChecksumValid,
+            SafetyAllowed = validationResult.SafetyAllowed,
+            DriftAllowed = validationResult.DriftAllowed,
+            KillSwitchActive = validationResult.KillSwitchActive,
+            FallbackPossible = validationResult.FallbackPossible,
+            DisabledUntilValidBundle = validationResult.DisabledUntilValidBundle,
+            PaperDecision = positionResult.Decision,
+            BrokerAction = "none",
+            Reasons = combinedReasons,
+            PaperWarnings = MergeWarnings(signalWarnings, positionWarnings, [positionResult.Reason]),
+            SignalSeen = embeddedSignal is not null,
+            SignalDirection = embeddedSignal?.Direction.ToString().ToLowerInvariant() ?? "flat",
+            SignalConfidence = embeddedSignal?.Confidence,
+            SignalExpired = embeddedSignal is not null && context.ServerTime >= embeddedSignal.ExpiryUtc,
+            PaperPositionOpen = positionResult.PaperPositionOpen,
+            PaperPositionStatus = positionResult.PaperPositionStatus,
+            PaperExitReason = positionResult.PaperExitReason,
+            RMultiple = positionResult.RMultiple,
+            PositionId = positionResult.PositionId,
+            SignalCandidates = [],
+            PaperPortfolioState = activePortfolio,
+            PaperTr\u0061deResult = positionResult,
             MarketContext = context,
             MarketContextSeen = true,
         };
@@ -465,6 +558,35 @@ public sealed class HermesPaperBot
             "signal_missing" => "paper_signal_missing",
             _ => validationState,
         };
+
+    private static string BuildCloudPositionState(string validationState, string positionStatus, string exitReason)
+        => positionStatus switch
+        {
+            "open" => "paper_position_open",
+            "active" => "paper_position_active",
+            "takeprofithit" => "paper_position_tp_hit",
+            "stoplosshit" => "paper_position_sl_hit",
+            "expired" => "paper_position_expired",
+            "closed" => "paper_position_closed",
+            "invalidated" => "paper_position_invalidated",
+            _ => !string.Equals(exitReason, "none", StringComparison.OrdinalIgnoreCase) ? $"paper_position_{exitReason}" : validationState,
+        };
+
+    private PaperPortfolioState BuildCloudPortfolioState(PaperPosition? activePosition)
+    {
+        var activeTrades = activePosition is null
+            ? Array.Empty<PaperPosition>()
+            : new[] { activePosition };
+        return new PaperPortfolioState
+        {
+            ActiveTrades = activeTrades,
+            OpenTradeCountToday = activeTrades.Length,
+            OpenTradeCountThisHour = activeTrades.Length,
+            ConsecutiveLosses = 0,
+            DailyPaperLossR = 0m,
+            LastUpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+    }
 
     private RuntimeStepResult PersistRuntimeResult(RuntimeStepResult runtimeResult)
     {
@@ -504,6 +626,11 @@ public sealed class HermesPaperBot
                 SignalDirection = runtimeResult.SignalDirection,
                 SignalConfidence = runtimeResult.SignalConfidence,
                 SignalExpired = runtimeResult.SignalExpired,
+                PaperPositionOpen = runtimeResult.PaperPositionOpen,
+                PaperPositionStatus = runtimeResult.PaperPositionStatus,
+                PaperExitReason = runtimeResult.PaperExitReason,
+                RMultiple = runtimeResult.RMultiple,
+                PositionId = runtimeResult.PositionId,
                 SignalCandidates = runtimeResult.SignalCandidates,
                 PaperPortfolioState = runtimeResult.PaperPortfolioState,
                 PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
@@ -535,6 +662,11 @@ public sealed class HermesPaperBot
             SignalDirection = runtimeResult.SignalDirection,
             SignalConfidence = runtimeResult.SignalConfidence,
             SignalExpired = runtimeResult.SignalExpired,
+            PaperPositionOpen = runtimeResult.PaperPositionOpen,
+            PaperPositionStatus = runtimeResult.PaperPositionStatus,
+            PaperExitReason = runtimeResult.PaperExitReason,
+            RMultiple = runtimeResult.RMultiple,
+            PositionId = runtimeResult.PositionId,
             SignalCandidates = runtimeResult.SignalCandidates,
             PaperPortfolioState = runtimeResult.PaperPortfolioState,
             PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
@@ -574,6 +706,11 @@ public sealed class HermesPaperBot
                 SignalDirection = runtimeResult.SignalDirection,
                 SignalConfidence = runtimeResult.SignalConfidence,
                 SignalExpired = runtimeResult.SignalExpired,
+                PaperPositionOpen = runtimeResult.PaperPositionOpen,
+                PaperPositionStatus = runtimeResult.PaperPositionStatus,
+                PaperExitReason = runtimeResult.PaperExitReason,
+                RMultiple = runtimeResult.RMultiple,
+                PositionId = runtimeResult.PositionId,
                 SignalCandidates = runtimeResult.SignalCandidates,
                 PaperPortfolioState = runtimeResult.PaperPortfolioState,
                 PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
@@ -648,6 +785,11 @@ public sealed class HermesPaperBot
         SignalDirection = "flat",
         SignalConfidence = null,
         SignalExpired = false,
+        PaperPositionOpen = false,
+        PaperPositionStatus = "none",
+        PaperExitReason = "none",
+        RMultiple = null,
+        PositionId = string.Empty,
         SignalCandidates = [],
         PaperPortfolioState = new PaperPortfolioState(),
         MarketContextSeen = false,

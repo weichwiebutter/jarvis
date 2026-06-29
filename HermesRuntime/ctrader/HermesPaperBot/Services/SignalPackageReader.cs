@@ -82,6 +82,11 @@ public sealed class SignalPackageReader
                 collectedWarnings.Add("signal_reason_missing");
             }
 
+            var stopLossPrice = TryGetOptionalDecimal(signalElement, "stop_loss_price");
+            var takeProfitPrice = TryGetOptionalDecimal(signalElement, "take_profit_price");
+            var maxHoldingSeconds = TryGetOptionalInt(signalElement, "max_holding_seconds");
+            var riskR = TryGetOptionalDecimal(signalElement, "risk_r");
+
             if (collectedWarnings.Count > 0)
             {
                 warnings = collectedWarnings.ToArray();
@@ -97,6 +102,10 @@ public sealed class SignalPackageReader
                 SignalTimestampUtc = signalTimestampUtc,
                 ExpiryUtc = expiryUtc,
                 Reason = reason,
+                StopLossPrice = stopLossPrice,
+                TakeProfitPrice = takeProfitPrice,
+                MaxHoldingSeconds = maxHoldingSeconds,
+                RiskR = riskR,
             };
         }
         catch (JsonException)
@@ -151,6 +160,42 @@ public sealed class SignalPackageReader
 
         value = DateTimeOffset.MinValue;
         return false;
+    }
+
+    private static decimal? TryGetOptionalDecimal(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propertyName, out var property))
+        {
+            if (property.ValueKind == JsonValueKind.Number && property.TryGetDecimal(out var value))
+            {
+                return value;
+            }
+
+            if (property.ValueKind == JsonValueKind.String && decimal.TryParse(property.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private static int? TryGetOptionalInt(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propertyName, out var property))
+        {
+            if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var value))
+            {
+                return value;
+            }
+
+            if (property.ValueKind == JsonValueKind.String && int.TryParse(property.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
     }
 
     private static bool TryGetDirection(JsonElement element, string propertyName, out SignalDirection direction)

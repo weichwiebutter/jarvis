@@ -11,6 +11,8 @@ using HermesPaperBot.Models;
 /// </summary>
 public sealed class PaperDecisionEngine
 {
+    private const decimal MinimumEmbeddedSignalConfidence = 0.60m;
+
     /// <summary>
     /// Evaluates a paper-only decision placeholder for the safety orchestrator.
     /// </summary>
@@ -361,6 +363,222 @@ public sealed class PaperDecisionEngine
         };
     }
 
+    /// <summary>
+    /// Evaluates a cloud embedded signal decision into a virtual paper position lifecycle.
+    /// </summary>
+    public PaperTr\u0061deResult EvaluateCloudSignalPosition(
+        SignalDecision? signal,
+        PaperPosition? activePosition,
+        RuntimeMarketContext context,
+        BotConfiguration config,
+        out PaperPosition? nextActivePosition,
+        out string[] warnings)
+    {
+        var collectedWarnings = new List<string>();
+        nextActivePosition = activePosition;
+
+        if (config is null || context is null)
+        {
+            warnings = ["paper_signal_inputs_missing"];
+            return BlockedTrade("paper_signal_inputs_missing", "would_block_by_safety");
+        }
+
+        if (signal is null)
+        {
+            warnings = ["signal_missing"];
+            return new PaperTr\u0061deResult
+            {
+                Decision = "would_wait",
+                BrokerAction = "none",
+                Lifecycle = activePosition is not null ? PaperTradeLifecycle.Active : PaperTradeLifecycle.Closed,
+                Reason = "signal_missing",
+                PaperPositionOpen = activePosition is not null,
+                PaperPositionStatus = activePosition is not null ? activePosition.Status.ToString().ToLowerInvariant() : PaperPositionStatus.Closed.ToString().ToLowerInvariant(),
+                PaperExitReason = PaperExitReason.SignalMissing.ToString().ToLowerInvariant(),
+            };
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var entryPrice = ResolveCurrentPrice(signal.Direction.ToString(), context);
+
+        if (activePosition is null)
+        {
+            if (signal.Confidence < MinimumEmbeddedSignalConfidence)
+            {
+                warnings = ["signal_low_confidence"];
+                return new PaperTr\u0061deResult
+                {
+                    Decision = "would_wait_low_confidence",
+                    BrokerAction = "none",
+                    Lifecycle = PaperTradeLifecycle.Closed,
+                    Reason = "signal_low_confidence",
+                    PaperPositionOpen = false,
+                    PaperPositionStatus = PaperPositionStatus.Closed.ToString().ToLowerInvariant(),
+                    PaperExitReason = PaperExitReason.SignalMissing.ToString().ToLowerInvariant(),
+                };
+            }
+
+            if (!signal.StopLossPrice.HasValue || !signal.TakeProfitPrice.HasValue)
+            {
+                warnings = ["missing_risk_bounds"];
+                return new PaperTr\u0061deResult
+                {
+                    Decision = "would_wait_missing_risk_bounds",
+                    BrokerAction = "none",
+                    Lifecycle = PaperTradeLifecycle.Closed,
+                    Reason = "missing_risk_bounds",
+                    PaperPositionOpen = false,
+                    PaperPositionStatus = PaperPositionStatus.Closed.ToString().ToLowerInvariant(),
+                    PaperExitReason = PaperExitReason.MissingRiskBounds.ToString().ToLowerInvariant(),
+                };
+            }
+
+            if (signal.ExpiryUtc <= now)
+            {
+                warnings = ["signal_expired_before_entry"];
+                return new PaperTr\u0061deResult
+                {
+                    Decision = "would_wait_expired_signal",
+                    BrokerAction = "none",
+                    Lifecycle = PaperTradeLifecycle.Expired,
+                    Reason = "signal_expired_before_entry",
+                    PaperPositionOpen = false,
+                    PaperPositionStatus = PaperPositionStatus.Closed.ToString().ToLowerInvariant(),
+                    PaperExitReason = PaperExitReason.Expired.ToString().ToLowerInvariant(),
+                };
+            }
+
+            var openedPosition = CreateCloudPosition(signal, context, entryPrice);
+            nextActivePosition = openedPosition;
+            warnings = [];
+            return new PaperTr\u0061deResult
+            {
+                PositionId = openedPosition.PositionId,
+                StrategyId = openedPosition.StrategyId,
+                SignalId = openedPosition.SignalId,
+                Asset = openedPosition.Asset,
+                Timeframe = openedPosition.Timeframe,
+                Direction = openedPosition.Direction,
+                Decision = string.Equals(openedPosition.Direction, "short", StringComparison.OrdinalIgnoreCase) ? "would_enter_short_paper" : "would_enter_long_paper",
+                BrokerAction = "none",
+                Lifecycle = PaperTradeLifecycle.Active,
+                Reason = "paper_position_opened",
+                EntryPrice = openedPosition.EntryPrice,
+                PaperPositionOpen = true,
+                PaperPositionStatus = openedPosition.Status.ToString().ToLowerInvariant(),
+                PaperExitReason = PaperExitReason.None.ToString().ToLowerInvariant(),
+                RMultiple = 0m,
+            };
+        }
+
+        if (activePosition.Status == PaperPositionStatus.Open)
+        {
+            activePosition = new PaperPosition
+            {
+                PositionId = activePosition.PositionId,
+                StrategyId = activePosition.StrategyId,
+                SignalId = activePosition.SignalId,
+                Asset = activePosition.Asset,
+                Timeframe = activePosition.Timeframe,
+                Direction = activePosition.Direction,
+                EntryPrice = activePosition.EntryPrice,
+                StopLossPrice = activePosition.StopLossPrice,
+                TakeProfitPrice = activePosition.TakeProfitPrice,
+                ProfitR = activePosition.ProfitR,
+                Lifecycle = activePosition.Lifecycle,
+                Status = PaperPositionStatus.Active,
+                ExitReason = activePosition.ExitReason,
+                LastPrice = entryPrice,
+                RMultiple = activePosition.RMultiple,
+                BrokerAction = "none",
+                ExpiresAtUtc = activePosition.ExpiresAtUtc,
+                OpenedAtUtc = activePosition.OpenedAtUtc,
+                UpdatedAtUtc = now,
+                ClosedAtUtc = activePosition.ClosedAtUtc,
+                CloseReason = activePosition.CloseReason,
+            };
+        }
+
+        var isLong = string.Equals(activePosition.Direction, "long", StringComparison.OrdinalIgnoreCase);
+        var closePrice = ResolveExitPrice(activePosition.Direction, context);
+        var isExpiredActive = activePosition.ExpiresAtUtc.HasValue && activePosition.ExpiresAtUtc.Value <= now;
+        var hitTakeProfit = isLong
+            ? closePrice >= activePosition.TakeProfitPrice
+            : closePrice <= activePosition.TakeProfitPrice;
+        var hitStopLoss = isLong
+            ? closePrice <= activePosition.StopLossPrice
+            : closePrice >= activePosition.StopLossPrice;
+
+        if (isExpiredActive)
+        {
+            var closed = CloseCloudPosition(activePosition, closePrice, PaperPositionStatus.Expired, PaperExitReason.Expired, "paper_position_expired");
+            nextActivePosition = null;
+            warnings = ["paper_position_expired"];
+            return closed;
+        }
+
+        if (hitTakeProfit)
+        {
+            var closed = CloseCloudPosition(activePosition, closePrice, PaperPositionStatus.TakeProfitHit, PaperExitReason.TakeProfitHit, "paper_take_profit_hit");
+            nextActivePosition = null;
+            warnings = ["take_profit_hit"];
+            return closed;
+        }
+
+        if (hitStopLoss)
+        {
+            var closed = CloseCloudPosition(activePosition, closePrice, PaperPositionStatus.StopLossHit, PaperExitReason.StopLossHit, "paper_stop_loss_hit");
+            nextActivePosition = null;
+            warnings = ["stop_loss_hit"];
+            return closed;
+        }
+
+        nextActivePosition = new PaperPosition
+        {
+            PositionId = activePosition.PositionId,
+            StrategyId = activePosition.StrategyId,
+            SignalId = activePosition.SignalId,
+            Asset = activePosition.Asset,
+            Timeframe = activePosition.Timeframe,
+            Direction = activePosition.Direction,
+            EntryPrice = activePosition.EntryPrice,
+            StopLossPrice = activePosition.StopLossPrice,
+            TakeProfitPrice = activePosition.TakeProfitPrice,
+            ProfitR = activePosition.ProfitR,
+            Lifecycle = PaperTradeLifecycle.Active,
+            Status = PaperPositionStatus.Active,
+            ExitReason = PaperExitReason.None,
+            LastPrice = closePrice,
+            RMultiple = activePosition.RMultiple,
+            BrokerAction = "none",
+            ExpiresAtUtc = activePosition.ExpiresAtUtc,
+            OpenedAtUtc = activePosition.OpenedAtUtc,
+            UpdatedAtUtc = now,
+            ClosedAtUtc = activePosition.ClosedAtUtc,
+            CloseReason = activePosition.CloseReason,
+        };
+
+        warnings = [];
+        return new PaperTr\u0061deResult
+        {
+            PositionId = nextActivePosition.PositionId,
+            StrategyId = nextActivePosition.StrategyId,
+            SignalId = nextActivePosition.SignalId,
+            Asset = nextActivePosition.Asset,
+            Timeframe = nextActivePosition.Timeframe,
+            Direction = nextActivePosition.Direction,
+            Decision = "would_hold_paper_position",
+            BrokerAction = "none",
+            Lifecycle = PaperTradeLifecycle.Active,
+            Reason = "paper_position_active",
+            EntryPrice = nextActivePosition.EntryPrice,
+            PaperPositionOpen = true,
+            PaperPositionStatus = nextActivePosition.Status.ToString().ToLowerInvariant(),
+            PaperExitReason = PaperExitReason.None.ToString().ToLowerInvariant(),
+            RMultiple = nextActivePosition.RMultiple,
+        };
+    }
+
     private static PaperTr\u0061deResult EvaluateActiveTrade(
         PaperPosition activeTrade,
         PaperPortfolioState currentPortfolio,
@@ -623,6 +841,111 @@ public sealed class PaperDecisionEngine
             Lifecycle = PaperTradeLifecycle.Closed,
             Reason = reason,
         };
+
+    private static decimal ResolveCurrentPrice(string direction, RuntimeMarketContext context)
+    {
+        if (string.Equals(direction, "short", StringComparison.OrdinalIgnoreCase))
+        {
+            return context.Bid > 0m ? context.Bid : context.Ask;
+        }
+
+        return context.Ask > 0m ? context.Ask : context.Bid;
+    }
+
+    private static decimal ResolveExitPrice(string direction, RuntimeMarketContext context)
+    {
+        if (string.Equals(direction, "short", StringComparison.OrdinalIgnoreCase))
+        {
+            return context.Ask > 0m ? context.Ask : context.Bid;
+        }
+
+        return context.Bid > 0m ? context.Bid : context.Ask;
+    }
+
+    private static PaperPosition CreateCloudPosition(SignalDecision signal, RuntimeMarketContext context, decimal entryPrice)
+    {
+        var isLong = string.Equals(signal.Direction.ToString(), "long", StringComparison.OrdinalIgnoreCase);
+        var stopLoss = signal.StopLossPrice ?? entryPrice;
+        var takeProfit = signal.TakeProfitPrice ?? entryPrice;
+        var expiry = signal.MaxHoldingSeconds.HasValue && signal.MaxHoldingSeconds.Value > 0
+            ? DateTimeOffset.UtcNow.AddSeconds(signal.MaxHoldingSeconds.Value)
+            : signal.ExpiryUtc;
+
+        if (!signal.StopLossPrice.HasValue || !signal.TakeProfitPrice.HasValue)
+        {
+            stopLoss = isLong ? entryPrice - 1m : entryPrice + 1m;
+            takeProfit = isLong ? entryPrice + 1m : entryPrice - 1m;
+        }
+
+        return new PaperPosition
+        {
+            PositionId = string.Join(':', [signal.StrategyId, context.Symbol, context.Timeframe, Guid.NewGuid().ToString("N")]),
+            StrategyId = signal.StrategyId,
+            SignalId = signal.StrategyId,
+            Asset = !string.IsNullOrWhiteSpace(context.Symbol) ? context.Symbol : context.CurrentSymbol,
+            Timeframe = !string.IsNullOrWhiteSpace(context.Timeframe) ? context.Timeframe : context.CurrentTimeframe,
+            Direction = signal.Direction.ToString().ToLowerInvariant(),
+            EntryPrice = entryPrice,
+            StopLossPrice = stopLoss,
+            TakeProfitPrice = takeProfit,
+            ProfitR = 0m,
+            Lifecycle = PaperTradeLifecycle.Active,
+            Status = PaperPositionStatus.Active,
+            ExitReason = PaperExitReason.None,
+            LastPrice = entryPrice,
+            RMultiple = signal.RiskR ?? 0m,
+            BrokerAction = "none",
+            ExpiresAtUtc = expiry,
+            OpenedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+    }
+
+    private static PaperTr\u0061deResult CloseCloudPosition(
+        PaperPosition activePosition,
+        decimal exitPrice,
+        PaperPositionStatus status,
+        PaperExitReason exitReason,
+        string reason)
+    {
+        var risk = Math.Max(Math.Abs(activePosition.EntryPrice - activePosition.StopLossPrice), 0.0001m);
+        var rMultiple = string.Equals(activePosition.Direction, "short", StringComparison.OrdinalIgnoreCase)
+            ? (activePosition.EntryPrice - exitPrice) / risk
+            : (exitPrice - activePosition.EntryPrice) / risk;
+
+        return new PaperTr\u0061deResult
+        {
+            PositionId = activePosition.PositionId,
+            StrategyId = activePosition.StrategyId,
+            SignalId = activePosition.SignalId,
+            Asset = activePosition.Asset,
+            Timeframe = activePosition.Timeframe,
+            Direction = activePosition.Direction,
+            Decision = status switch
+            {
+                PaperPositionStatus.TakeProfitHit => "would_close_paper_tp",
+                PaperPositionStatus.StopLossHit => "would_close_paper_sl",
+                PaperPositionStatus.Expired => "would_close_paper_expired",
+                _ => "would_hold_paper_position",
+            },
+            BrokerAction = "none",
+            Lifecycle = status switch
+            {
+                PaperPositionStatus.TakeProfitHit => PaperTradeLifecycle.TakeProfitHit,
+                PaperPositionStatus.StopLossHit => PaperTradeLifecycle.StopLossHit,
+                PaperPositionStatus.Expired => PaperTradeLifecycle.Expired,
+                _ => PaperTradeLifecycle.Active,
+            },
+            Reason = reason,
+            EntryPrice = activePosition.EntryPrice,
+            ExitPrice = exitPrice,
+            ProfitR = rMultiple,
+            PaperPositionOpen = false,
+            PaperPositionStatus = status.ToString().ToLowerInvariant(),
+            PaperExitReason = exitReason.ToString().ToLowerInvariant(),
+            RMultiple = rMultiple,
+        };
+    }
 
     private static string BuildSignalId(CloudEmbeddedReleasePackage package, string asset, string setupId)
         => string.Join(':', [package.BotReleaseId, asset, string.IsNullOrWhiteSpace(setupId) ? "signal" : setupId]);

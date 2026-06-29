@@ -50,6 +50,11 @@ public sealed class PaperLogger
             signal_direction = result.SignalDirection,
             signal_confidence = result.SignalConfidence,
             signal_expired = result.SignalExpired,
+            paper_position_open = result.PaperPositionOpen,
+            paper_position_status = result.PaperPositionStatus,
+            paper_exit_reason = result.PaperExitReason,
+            r_multiple = result.RMultiple,
+            position_id = result.PositionId,
             reasons = result.Reasons,
             warnings = result.PaperWarnings,
             market_context = result.MarketContext,
@@ -65,6 +70,11 @@ public sealed class PaperLogger
             signal_direction = result.SignalDirection,
             signal_confidence = result.SignalConfidence,
             signal_expired = result.SignalExpired,
+            paper_position_open = result.PaperPositionOpen,
+            paper_position_status = result.PaperPositionStatus,
+            paper_exit_reason = result.PaperExitReason,
+            r_multiple = result.RMultiple,
+            position_id = result.PositionId,
             reasons = result.Reasons,
             warnings = result.PaperWarnings,
             market_context = result.MarketContext,
@@ -103,6 +113,11 @@ public sealed class PaperLogger
                 result.PaperTr\u0061deResult.EntryPrice,
                 result.PaperTr\u0061deResult.ExitPrice,
                 result.PaperTr\u0061deResult.ProfitR,
+                result.PaperPositionOpen,
+                result.PaperPositionStatus,
+                result.PaperExitReason,
+                result.RMultiple,
+                result.PositionId,
             };
 
             File.AppendAllText(tradeResultLogPath, JsonSerializer.Serialize(tradeEntry, JsonOptions) + Environment.NewLine);
@@ -120,6 +135,11 @@ public sealed class PaperLogger
                 result.PaperPortfolioState.ConsecutiveLosses,
                 result.PaperPortfolioState.DailyPaperLossR,
                 trades = result.PaperPortfolioState.ActiveTrades,
+                result.PaperPositionOpen,
+                result.PaperPositionStatus,
+                result.PaperExitReason,
+                result.RMultiple,
+                result.PositionId,
             };
 
             File.AppendAllText(positionLogPath, JsonSerializer.Serialize(portfolioEntry, JsonOptions) + Environment.NewLine);

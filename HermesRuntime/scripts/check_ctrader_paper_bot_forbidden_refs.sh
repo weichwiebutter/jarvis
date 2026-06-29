@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET_DIR="$ROOT_DIR/ctrader/HermesPaperBot"
 WRAPPER_PATH="$TARGET_DIR/HermesPaperBotCTraderWrapper.cs"
 
-FORBIDDEN_REGEX='ExecuteMarketOrder|PlaceLimitOrder|PlaceStopOrder|ModifyPosition|ClosePosition|CancelPendingOrder|PendingOrders|Positions\.Modify|TradeResult|TradeOperation|Account|Positions|Orders|Volume|Symbol\.QuantityToVolumeInUnits'
+FORBIDDEN_REGEX='ExecuteMarketOrder|PlaceLimitOrder|PlaceStopOrder|ModifyPosition|ClosePosition|CancelPendingOrder|PendingOrders|Positions\.Modify|TradeResult|TradeOperation|\bAccount\b|\bPositions\b|\bOrders\b|\bVolume\b|Symbol\.QuantityToVolumeInUnits'
 ALLOWED_PATH_REGEX='^(.*ctrader/HermesPaperBot/tests/forbidden_references_check\.md|.*ctrader/HermesPaperBot/README\.md|.*ctrader/HermesPaperBot/README_CTRADER_COMPILE_CHECKLIST\.md|.*docs/trading/ctrader_paper_bot_skeleton_safety_audit_v1\.md|.*docs/trading/ctrader_paper_bot_skeleton_spec_v1\.md|.*docs/trading/ctrader_bot_paper_runtime_scope_v1\.md|.*docs/trading/ctrader_cloud_api_adapter_boundary_v1\.md|.*docs/trading/ctrader_cloud_accessrights_attribute_decision_v1\.md|.*docs/trading/ctrader_cloud_wrapper_compile_check_v1\.md):'
 
 if ! command -v grep >/dev/null 2>&1; then

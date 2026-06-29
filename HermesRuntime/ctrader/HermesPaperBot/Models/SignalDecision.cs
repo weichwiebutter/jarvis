@@ -34,4 +34,24 @@ public sealed class SignalDecision
     /// Decision reason.
     /// </summary>
     public string Reason { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Optional stop loss price.
+    /// </summary>
+    public decimal? StopLossPrice { get; init; }
+
+    /// <summary>
+    /// Optional take profit price.
+    /// </summary>
+    public decimal? TakeProfitPrice { get; init; }
+
+    /// <summary>
+    /// Optional maximum holding seconds.
+    /// </summary>
+    public int? MaxHoldingSeconds { get; init; }
+
+    /// <summary>
+    /// Optional risk in R.
+    /// </summary>
+    public decimal? RiskR { get; init; }
 }

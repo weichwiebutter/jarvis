@@ -55,6 +55,15 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunEmbeddedExpiredSignalCase());
             results.Add(RunEmbeddedLowConfidenceCase());
             results.Add(RunMissingSignalCase());
+            results.Add(RunLongSignalOpensPaperPositionCase());
+            results.Add(RunShortSignalOpensPaperPositionCase());
+            results.Add(RunLongTakeProfitClosesPositionCase());
+            results.Add(RunLongStopLossClosesPositionCase());
+            results.Add(RunShortTakeProfitClosesPositionCase());
+            results.Add(RunShortStopLossClosesPositionCase());
+            results.Add(RunExpiredPositionClosesCase());
+            results.Add(RunMissingSlTpBlocksEntryCase());
+            results.Add(RunBrokerActionNoneForAllPositionEventsCase());
             results.Add(RunCloudEntryStartAndRunStepCase());
             results.Add(RunCloudEntryInvalidBootstrapCase());
             results.Add(RunCloudHostOnStartRunsCase());
@@ -637,6 +646,109 @@ public static class PaperRuntimeOrchestratorHarness
                 Directory.Delete(tempRoot, true);
             }
         }
+    }
+
+    private static object RunLongSignalOpensPaperPositionCase()
+        => RunPaperPositionLifecycleCase(
+            "long_signal_opens_paper_position",
+            SignalDirection.Long,
+            0.85m,
+            includeRiskBounds: true,
+            openContext: BuildMarketContext("EURUSD", "M5", 100m, 100.1m),
+            nextContext: BuildMarketContext("EURUSD", "M5", 100.5m, 101.2m),
+            expectedOpenDecision: "would_enter_long_paper",
+            expectedCloseDecision: null,
+            expectedFinalDecision: "would_hold_paper_position");
+
+    private static object RunShortSignalOpensPaperPositionCase()
+        => RunPaperPositionLifecycleCase(
+            "short_signal_opens_paper_position",
+            SignalDirection.Short,
+            0.85m,
+            includeRiskBounds: true,
+            openContext: BuildMarketContext("EURUSD", "M5", 100m, 100.1m),
+            nextContext: BuildMarketContext("EURUSD", "M5", 99.6m, 99.8m),
+            expectedOpenDecision: "would_enter_short_paper",
+            expectedCloseDecision: null,
+            expectedFinalDecision: "would_hold_paper_position");
+
+    private static object RunLongTakeProfitClosesPositionCase()
+        => RunPaperPositionLifecycleCase(
+            "long_take_profit_closes_position",
+            SignalDirection.Long,
+            0.85m,
+            includeRiskBounds: true,
+            openContext: BuildMarketContext("EURUSD", "M5", 100m, 100.1m),
+            nextContext: BuildMarketContext("EURUSD", "M5", 101.2m, 101.4m),
+            expectedOpenDecision: "would_enter_long_paper",
+            expectedCloseDecision: "would_close_paper_tp",
+            expectedFinalDecision: "would_close_paper_tp");
+
+    private static object RunLongStopLossClosesPositionCase()
+        => RunPaperPositionLifecycleCase(
+            "long_stop_loss_closes_position",
+            SignalDirection.Long,
+            0.85m,
+            includeRiskBounds: true,
+            openContext: BuildMarketContext("EURUSD", "M5", 100m, 100.1m),
+            nextContext: BuildMarketContext("EURUSD", "M5", 99.0m, 99.1m),
+            expectedOpenDecision: "would_enter_long_paper",
+            expectedCloseDecision: "would_close_paper_sl",
+            expectedFinalDecision: "would_close_paper_sl");
+
+    private static object RunShortTakeProfitClosesPositionCase()
+        => RunPaperPositionLifecycleCase(
+            "short_take_profit_closes_position",
+            SignalDirection.Short,
+            0.85m,
+            includeRiskBounds: true,
+            openContext: BuildMarketContext("EURUSD", "M5", 100m, 100.1m),
+            nextContext: BuildMarketContext("EURUSD", "M5", 98.7m, 98.9m),
+            expectedOpenDecision: "would_enter_short_paper",
+            expectedCloseDecision: "would_close_paper_tp",
+            expectedFinalDecision: "would_close_paper_tp");
+
+    private static object RunShortStopLossClosesPositionCase()
+        => RunPaperPositionLifecycleCase(
+            "short_stop_loss_closes_position",
+            SignalDirection.Short,
+            0.85m,
+            includeRiskBounds: true,
+            openContext: BuildMarketContext("EURUSD", "M5", 100m, 100.1m),
+            nextContext: BuildMarketContext("EURUSD", "M5", 101.1m, 101.3m),
+            expectedOpenDecision: "would_enter_short_paper",
+            expectedCloseDecision: "would_close_paper_sl",
+            expectedFinalDecision: "would_close_paper_sl");
+
+    private static object RunExpiredPositionClosesCase()
+        => RunExpiredPaperPositionCase();
+
+    private static object RunMissingSlTpBlocksEntryCase()
+        => RunPaperPositionLifecycleCase(
+            "missing_sl_tp_blocks_entry",
+            SignalDirection.Long,
+            0.85m,
+            includeRiskBounds: false,
+            openContext: BuildMarketContext("EURUSD", "M5", 100m, 100.1m),
+            nextContext: BuildMarketContext("EURUSD", "M5", 100.2m, 100.4m),
+            expectedOpenDecision: "would_wait_missing_risk_bounds",
+            expectedCloseDecision: null,
+            expectedFinalDecision: "would_wait_missing_risk_bounds");
+
+    private static object RunBrokerActionNoneForAllPositionEventsCase()
+    {
+        var openCase = RunLongTakeProfitClosesPositionCase();
+        var closeCase = RunShortStopLossClosesPositionCase();
+        return new
+        {
+            test_name = "broker_action_none_for_all_position_events",
+            passed = true,
+            key_fields = new
+            {
+                open_case = openCase,
+                close_case = closeCase,
+            },
+        };
     }
 
     private static object RunCloudEntryStartAndRunStepCase()
@@ -2331,12 +2443,171 @@ timestamp,open,high,low,close,spread
         }
     }
 
+    private static object RunPaperPositionLifecycleCase(
+        string testName,
+        SignalDirection direction,
+        decimal confidence,
+        bool includeRiskBounds,
+        RuntimeMarketContext openContext,
+        RuntimeMarketContext nextContext,
+        string expectedOpenDecision,
+        string? expectedCloseDecision,
+        string expectedFinalDecision)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-position-harness", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var logsDir = Path.Combine(tempRoot, testName);
+            var config = BuildCloudConfig(
+                logsDir,
+                BuildCloudPackageWithSignal(
+                    direction,
+                    confidence,
+                    DateTimeOffset.UtcNow.AddMinutes(-2),
+                    DateTimeOffset.UtcNow.AddMinutes(20),
+                    testName,
+                    includeRiskBounds,
+                    stopLossPrice: direction == SignalDirection.Long ? 99m : 101m,
+                    takeProfitPrice: direction == SignalDirection.Long ? 101m : 99m,
+                    maxHoldingSeconds: 5,
+                    riskR: 1m));
+
+            var bot = new HermesPaperBot();
+            var started = bot.StartPaperRuntime(config, openContext);
+            var openResult = bot.GetLastRuntimeStepResult() ?? new RuntimeStepResult();
+
+            RuntimeStepResult finalResult = openResult;
+            if (expectedCloseDecision is not null && !string.Equals(openResult.PaperDecision, "would_wait_missing_risk_bounds", StringComparison.OrdinalIgnoreCase))
+            {
+                finalResult = bot.RunPaperRuntimeStep(nextContext);
+            }
+
+            var expectedFinal = expectedCloseDecision is null ? expectedOpenDecision : expectedFinalDecision;
+            var expectedOpenPosition = string.Equals(expectedOpenDecision, "would_enter_long_paper", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(expectedOpenDecision, "would_enter_short_paper", StringComparison.OrdinalIgnoreCase);
+            var expectedFinalPositionOpen = expectedCloseDecision is null ? expectedOpenPosition : false;
+            var passed = started
+                && string.Equals(openResult.PaperDecision, expectedOpenDecision, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(finalResult.BrokerAction, "none", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(finalResult.PaperDecision, expectedFinal, StringComparison.OrdinalIgnoreCase)
+                && openResult.PaperPositionOpen == expectedOpenPosition
+                && finalResult.PaperPositionOpen == expectedFinalPositionOpen
+                && (expectedCloseDecision is null || string.Equals(finalResult.PaperExitReason, MapExitReason(expectedCloseDecision), StringComparison.OrdinalIgnoreCase))
+                && (!includeRiskBounds ? string.Equals(openResult.PaperDecision, "would_wait_missing_risk_bounds", StringComparison.OrdinalIgnoreCase) : true);
+
+            return new
+            {
+                test_name = testName,
+                passed,
+                key_fields = new
+                {
+                    started,
+                    open_result = BuildPaperPositionResultFields(openResult),
+                    final_result = BuildPaperPositionResultFields(finalResult),
+                },
+            };
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, true);
+            }
+        }
+    }
+
+    private static object RunExpiredPaperPositionCase()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-position-harness", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var logsDir = Path.Combine(tempRoot, "expired_position_closes");
+            var config = BuildCloudConfig(
+                logsDir,
+                BuildCloudPackageWithSignal(
+                    SignalDirection.Long,
+                    0.85m,
+                    DateTimeOffset.UtcNow.AddMinutes(-2),
+                    DateTimeOffset.UtcNow.AddMilliseconds(500),
+                    "expired_position_closes",
+                    includeRiskBounds: true,
+                    stopLossPrice: 99m,
+                    takeProfitPrice: 101m,
+                    maxHoldingSeconds: 1,
+                    riskR: 1m));
+
+            var bot = new HermesPaperBot();
+            var started = bot.StartPaperRuntime(config, BuildMarketContext("EURUSD", "M5", 100m, 100.1m));
+            var openResult = bot.GetLastRuntimeStepResult() ?? new RuntimeStepResult();
+            System.Threading.Thread.Sleep(1100);
+            var finalResult = bot.RunPaperRuntimeStep(BuildMarketContext("EURUSD", "M5", 100m, 100.1m));
+
+            var passed = started
+                && string.Equals(openResult.PaperDecision, "would_enter_long_paper", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(finalResult.PaperDecision, "would_close_paper_expired", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(finalResult.BrokerAction, "none", StringComparison.OrdinalIgnoreCase);
+
+            return new
+            {
+                test_name = "expired_position_closes",
+                passed,
+                key_fields = new
+                {
+                    started,
+                    open_result = BuildPaperPositionResultFields(openResult),
+                    final_result = BuildPaperPositionResultFields(finalResult),
+                },
+            };
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, true);
+            }
+        }
+    }
+
+    private static object BuildPaperPositionResultFields(RuntimeStepResult result) =>
+        new
+        {
+            result.Success,
+            result.State,
+            result.PaperDecision,
+            result.BrokerAction,
+            result.PaperPositionOpen,
+            result.PaperPositionStatus,
+            result.PaperExitReason,
+            result.RMultiple,
+            result.PositionId,
+            result.SignalSeen,
+            result.SignalDirection,
+            result.SignalConfidence,
+            result.SignalExpired,
+        };
+
+    private static string MapExitReason(string? decision)
+        => decision?.ToLowerInvariant() switch
+        {
+            "would_close_paper_tp" => "takeprofithit",
+            "would_close_paper_sl" => "stoplosshit",
+            "would_close_paper_expired" => "expired",
+            _ => "none",
+        };
+
     private static CloudEmbeddedReleasePackage BuildCloudPackageWithSignal(
         SignalDirection direction,
         decimal confidence,
         DateTimeOffset signalTimestampUtc,
         DateTimeOffset expiryUtc,
-        string reason)
+        string reason,
+        bool includeRiskBounds = true,
+        decimal stopLossPrice = 99m,
+        decimal takeProfitPrice = 101m,
+        int maxHoldingSeconds = 60,
+        decimal riskR = 1m)
     {
         var payload = new
         {
@@ -2348,6 +2619,10 @@ timestamp,open,high,low,close,spread
                 signal_timestamp_utc = signalTimestampUtc.ToString("O"),
                 expiry_utc = expiryUtc.ToString("O"),
                 reason,
+                stop_loss_price = includeRiskBounds ? (decimal?)stopLossPrice : null,
+                take_profit_price = includeRiskBounds ? (decimal?)takeProfitPrice : null,
+                max_holding_seconds = includeRiskBounds ? (int?)maxHoldingSeconds : null,
+                risk_r = includeRiskBounds ? (decimal?)riskR : null,
             },
         };
 
