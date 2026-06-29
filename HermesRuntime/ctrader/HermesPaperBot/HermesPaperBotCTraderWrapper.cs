@@ -44,10 +44,11 @@ public class HermesPaperBotCTraderWrapper : Robot
     protected override void OnStart()
     {
         _host = new HermesPaperBotCloudHost(_marketContextProvider);
-        _marketContextProvider.Update(CaptureMarketContext());
+        var context = CaptureMarketContext();
+        _marketContextProvider.Update(context);
         _host.OnStart();
         Timer.Start(30);
-        Print("paper-only start: host delegated, broker_action=none");
+        Print($"HermesPaperBot OnStart; paper_mode=true; broker_action=none; market_context_seen=true; symbol={context.CurrentSymbol}; timeframe={context.CurrentTimeframe}; spread={context.Spread}; decision=starting");
     }
 
     /// <summary>
@@ -57,10 +58,12 @@ public class HermesPaperBotCTraderWrapper : Robot
     /// </summary>
     protected override void OnTimer()
     {
-        _marketContextProvider.Update(CaptureMarketContext());
+        var context = CaptureMarketContext();
+        _marketContextProvider.Update(context);
         _host?.OnTimer();
         var result = _host?.GetLastRuntimeStepResult();
-        Print($"state={result?.State ?? "unknown"}; paper_decision={result?.PaperDecision ?? "unknown"}; broker_action={result?.BrokerAction ?? "none"}; kill_switch_active={result?.KillSwitchActive ?? true}; symbol={result?.MarketContext?.CurrentSymbol ?? "unknown"}; spread={result?.MarketContext?.Spread ?? 0m}");
+        var currentContext = result?.MarketContext ?? context;
+        Print($"HermesPaperBot OnTimer; paper_mode=true; broker_action={result?.BrokerAction ?? "none"}; market_context_seen={result?.MarketContextSeen ?? true}; state={result?.State ?? "unknown"}; decision={result?.PaperDecision ?? "unknown"}; symbol={currentContext.CurrentSymbol}; timeframe={currentContext.CurrentTimeframe}; spread={currentContext.Spread}; kill_switch_active={result?.KillSwitchActive ?? true}");
     }
 
     /// <summary>
@@ -77,7 +80,8 @@ public class HermesPaperBotCTraderWrapper : Robot
         finally
         {
             Timer.Stop();
-            Print("paper-only stopped");
+            var result = _host?.GetLastRuntimeStepResult();
+            Print($"HermesPaperBot OnStop; paper_mode=true; broker_action={result?.BrokerAction ?? "none"}; state={result?.State ?? "unknown"}; decision={result?.PaperDecision ?? "unknown"}");
         }
     }
 
@@ -89,7 +93,7 @@ public class HermesPaperBotCTraderWrapper : Robot
     protected override void OnException(Exception ex)
     {
         _host?.OnException(ex);
-        Print("defensive exception handled");
+        Print($"HermesPaperBot OnException; paper_mode=true; broker_action=none; exception={ex.GetType().Name}; message={ex.Message}");
     }
 
     /// <summary>

@@ -7,11 +7,28 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>HermesPaperBot</RootNamespace>
     <AssemblyName>HermesPaperBot</AssemblyName>
+    <AlgoName>HermesPaperBot</AlgoName>
     <AlgoBuild>true</AlgoBuild>
+    <AlgoPublish>false</AlgoPublish>
+    <IncludeSource>true</IncludeSource>
     <DefineConstants>$(DefineConstants);HERMES_CTRADER_WRAPPER</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="cTrader.Automate" Version="1.0.17" />
   </ItemGroup>
+
+  <Target Name="RenameAlgoArtifact" AfterTargets="_AlgoBuildAfterBuild">
+    <PropertyGroup>
+      <_GeneratedAlgo>$(TargetDir)ctrader.algo</_GeneratedAlgo>
+      <_GeneratedAlgoMetadata>$(TargetDir)ctrader.algo.metadata</_GeneratedAlgoMetadata>
+      <_NamedAlgo>$(TargetDir)HermesPaperBot.algo</_NamedAlgo>
+      <_NamedAlgoMetadata>$(TargetDir)HermesPaperBot.algo.metadata</_NamedAlgoMetadata>
+    </PropertyGroup>
+
+    <Copy SourceFiles="$(_GeneratedAlgo)" DestinationFiles="$(_NamedAlgo)" Condition="Exists('$(_GeneratedAlgo)')" />
+    <Copy SourceFiles="$(_GeneratedAlgoMetadata)" DestinationFiles="$(_NamedAlgoMetadata)" Condition="Exists('$(_GeneratedAlgoMetadata)')" />
+    <Delete Files="$(_GeneratedAlgo)" Condition="Exists('$(_GeneratedAlgo)')" />
+    <Delete Files="$(_GeneratedAlgoMetadata)" Condition="Exists('$(_GeneratedAlgoMetadata)')" />
+  </Target>
 </Project>

@@ -10,6 +10,12 @@ Der bevorzugte Import- und Build-Pfad ist inzwischen das echte AlgoProject:
 
 Der frühere Single-File-Import ist nicht mehr der primäre Arbeitsweg.
 
+## Algo artifact name
+
+The current AlgoProject post-build step renames the generated artifact to:
+
+- `HermesPaperBot.algo`
+
 ## Ziel
 
 - cTrader Cloud soll den paper-only Wrapper kompilieren können
