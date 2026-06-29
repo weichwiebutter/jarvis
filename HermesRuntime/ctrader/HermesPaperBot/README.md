@@ -102,6 +102,18 @@ The virtual paper portfolio is saved as a local snapshot and restored defensivel
 - restored state still keeps `broker_action=none`
 - no broker orders, no demo orders, and no live orders are ever created
 
+## Paper Position Acceptance Replay V1
+
+The harness now covers the full cloud paper position chain:
+
+- embedded signal entry
+- hold across runtime steps
+- TP / SL / expiry close
+- restore of an open paper position
+
+This is a core/harness replay check only, not a real cTrader Cloud SDK compile.
+`broker_action=none` remains mandatory.
+
 ## Paper Trading Engine V1
 
 The paper runtime now derives virtual paper-trade steps from the embedded strategy package.
