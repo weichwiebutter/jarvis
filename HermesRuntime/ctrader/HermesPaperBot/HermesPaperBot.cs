@@ -20,6 +20,8 @@ namespace HermesPaperBot.Bot;
 /// </remarks>
 public sealed class HermesPaperBot
 {
+    private const decimal MinimumEmbeddedSignalConfidence = 0.60m;
+
     /// <summary>
     /// Defensive cloud embedded bootstrapper.
     /// </summary>
@@ -34,6 +36,11 @@ public sealed class HermesPaperBot
     /// Paper decision engine for virtual trade steps.
     /// </summary>
     private readonly PaperDecisionEngine _paperDecisionEngine = new();
+
+    /// <summary>
+    /// Embedded signal package reader for cloud runtime.
+    /// </summary>
+    private readonly SignalPackageReader _signalPackageReader = new();
 
     /// <summary>
     /// Last runtime configuration kept in memory only.
@@ -282,11 +289,25 @@ public sealed class HermesPaperBot
             return CreateBlockedResult("cloud_configuration_missing");
         }
 
-            var validationResult = _paperRuntimeOrchestrator.RunStep(_lastConfiguration, context);
-            if (!validationResult.Success)
-            {
-                return PersistRuntimeResult(validationResult);
-            }
+        var validationResult = _paperRuntimeOrchestrator.RunStep(_lastConfiguration, context);
+        if (!validationResult.Success)
+        {
+            return PersistRuntimeResult(validationResult);
+        }
+
+        string[] embeddedSignalWarnings = [];
+        SignalDecision? embeddedSignal = null;
+        if (_lastConfiguration.RuntimeMode == RuntimeMode.CloudEmbeddedBundle || _lastConfiguration.CloudEmbeddedReleasePackage is not null)
+        {
+            embeddedSignal = _signalPackageReader.Read(_lastConfiguration.CloudEmbeddedReleasePackage, out embeddedSignalWarnings);
+        }
+        var combinedSignalWarnings = MergeWarnings(signalWarnings, embeddedSignalWarnings);
+
+        if (_paperPortfolioState.ActiveTrades.Length == 0)
+        {
+            var signalResult = BuildSignalRuntimeResult(validationResult, embeddedSignal, context, combinedSignalWarnings);
+            return PersistRuntimeResult(signalResult);
+        }
 
         var tradeResult = _paperDecisionEngine.EvaluatePaperTrade(
             _signalCandidates,
@@ -298,7 +319,7 @@ public sealed class HermesPaperBot
 
         _paperPortfolioState = nextPortfolioState;
 
-        var combinedReasons = MergeReasons(validationResult.Reasons, signalWarnings, tradeWarnings, [tradeResult.Reason]);
+        var combinedReasons = MergeReasons(validationResult.Reasons, combinedSignalWarnings, tradeWarnings, [tradeResult.Reason]);
         var combinedResult = new RuntimeStepResult
         {
             Success = validationResult.Success && !string.Equals(tradeResult.Decision, "would_block_by_safety", StringComparison.OrdinalIgnoreCase),
@@ -316,7 +337,11 @@ public sealed class HermesPaperBot
             PaperDecision = tradeResult.Decision,
             BrokerAction = "none",
             Reasons = combinedReasons,
-            PaperWarnings = MergeWarnings(signalWarnings, tradeWarnings, [tradeResult.Reason]),
+            PaperWarnings = MergeWarnings(combinedSignalWarnings, tradeWarnings, [tradeResult.Reason]),
+            SignalSeen = embeddedSignal is not null,
+            SignalDirection = embeddedSignal?.Direction.ToString().ToLowerInvariant() ?? "flat",
+            SignalConfidence = embeddedSignal?.Confidence,
+            SignalExpired = embeddedSignal is not null && context.ServerTime >= embeddedSignal.ExpiryUtc,
             SignalCandidates = _signalCandidates,
             PaperPortfolioState = _paperPortfolioState,
             PaperTr\u0061deResult = tradeResult,
@@ -328,6 +353,90 @@ public sealed class HermesPaperBot
         var persisted = PersistRuntimeResult(combinedResult);
         PersistPaperStateSnapshot(_paperPortfolioState, persisted);
         return persisted;
+    }
+
+    private RuntimeStepResult BuildSignalRuntimeResult(
+        RuntimeStepResult validationResult,
+        SignalDecision? embeddedSignal,
+        RuntimeMarketContext context,
+        string[] signalWarnings)
+    {
+        var signalSeen = embeddedSignal is not null;
+        var signalExpired = signalSeen && context.ServerTime >= embeddedSignal!.ExpiryUtc;
+        var signalDirection = embeddedSignal?.Direction.ToString().ToLowerInvariant() ?? "flat";
+        var signalConfidence = embeddedSignal?.Confidence;
+
+        var paperDecision = "would_wait";
+        var state = BuildSignalState(validationResult.State, "signal_missing");
+        var reasons = new List<string>(validationResult.Reasons);
+        var warnings = new List<string>(signalWarnings);
+        if (!signalSeen)
+        {
+            reasons.Add("signal_missing");
+            warnings.Add("signal_missing");
+        }
+        else
+        {
+            if (signalExpired)
+            {
+                paperDecision = "would_wait_expired_signal";
+                state = BuildSignalState(validationResult.State, "signal_expired");
+                reasons.Add("signal_expired");
+                warnings.Add("signal_expired");
+            }
+            else if (signalConfidence is not null && signalConfidence.Value < MinimumEmbeddedSignalConfidence)
+            {
+                paperDecision = "would_wait_low_confidence";
+                state = BuildSignalState(validationResult.State, "signal_low_confidence");
+                reasons.Add("signal_low_confidence");
+                warnings.Add("signal_low_confidence");
+            }
+            else if (embeddedSignal.Direction == SignalDirection.Long)
+            {
+                paperDecision = "would_enter_long_paper";
+                state = BuildSignalState(validationResult.State, "signal_long");
+            }
+            else if (embeddedSignal.Direction == SignalDirection.Short)
+            {
+                paperDecision = "would_enter_short_paper";
+                state = BuildSignalState(validationResult.State, "signal_short");
+            }
+            else
+            {
+                paperDecision = "would_wait";
+                state = BuildSignalState(validationResult.State, "signal_flat");
+                reasons.Add("signal_flat");
+                warnings.Add("signal_flat");
+            }
+        }
+
+        return new RuntimeStepResult
+        {
+            Success = validationResult.Success,
+            State = state,
+            ConfigValid = validationResult.ConfigValid,
+            ImportAttempted = validationResult.ImportAttempted,
+            ImportValid = validationResult.ImportValid,
+            BundleValid = validationResult.BundleValid,
+            ChecksumValid = validationResult.ChecksumValid,
+            SafetyAllowed = validationResult.SafetyAllowed,
+            DriftAllowed = validationResult.DriftAllowed,
+            KillSwitchActive = validationResult.KillSwitchActive,
+            FallbackPossible = validationResult.FallbackPossible,
+            DisabledUntilValidBundle = validationResult.DisabledUntilValidBundle,
+            PaperDecision = paperDecision,
+            BrokerAction = "none",
+            Reasons = reasons.ToArray(),
+            PaperWarnings = warnings.ToArray(),
+            SignalSeen = signalSeen,
+            SignalDirection = signalDirection,
+            SignalConfidence = signalConfidence,
+            SignalExpired = signalExpired,
+            SignalCandidates = _signalCandidates,
+            PaperPortfolioState = _paperPortfolioState,
+            MarketContext = context,
+            MarketContextSeen = true,
+        };
     }
 
     private static string BuildCombinedState(string validationState, PaperTradeLifecycle lifecycle)
@@ -344,6 +453,18 @@ public sealed class HermesPaperBot
             _ => validationState,
         };
     }
+
+    private static string BuildSignalState(string validationState, string signalState)
+        => signalState switch
+        {
+            "signal_long" => "paper_signal_long",
+            "signal_short" => "paper_signal_short",
+            "signal_expired" => "paper_signal_expired",
+            "signal_low_confidence" => "paper_signal_low_confidence",
+            "signal_flat" => "paper_signal_flat",
+            "signal_missing" => "paper_signal_missing",
+            _ => validationState,
+        };
 
     private RuntimeStepResult PersistRuntimeResult(RuntimeStepResult runtimeResult)
     {
@@ -379,6 +500,10 @@ public sealed class HermesPaperBot
                 Reasons = loggingReasons.ToArray(),
                 LoggingStatus = "logging_failed",
                 PaperWarnings = runtimeResult.PaperWarnings,
+                SignalSeen = runtimeResult.SignalSeen,
+                SignalDirection = runtimeResult.SignalDirection,
+                SignalConfidence = runtimeResult.SignalConfidence,
+                SignalExpired = runtimeResult.SignalExpired,
                 SignalCandidates = runtimeResult.SignalCandidates,
                 PaperPortfolioState = runtimeResult.PaperPortfolioState,
                 PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
@@ -406,6 +531,10 @@ public sealed class HermesPaperBot
             Reasons = runtimeResult.Reasons,
             LoggingStatus = "ok",
             PaperWarnings = runtimeResult.PaperWarnings,
+            SignalSeen = runtimeResult.SignalSeen,
+            SignalDirection = runtimeResult.SignalDirection,
+            SignalConfidence = runtimeResult.SignalConfidence,
+            SignalExpired = runtimeResult.SignalExpired,
             SignalCandidates = runtimeResult.SignalCandidates,
             PaperPortfolioState = runtimeResult.PaperPortfolioState,
             PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
@@ -441,6 +570,10 @@ public sealed class HermesPaperBot
                 Reasons = MergeReasons(runtimeResult.Reasons, ["snapshot_save_failed"]),
                 LoggingStatus = runtimeResult.LoggingStatus,
                 PaperWarnings = MergeWarnings(runtimeResult.PaperWarnings, ["snapshot_save_failed"]),
+                SignalSeen = runtimeResult.SignalSeen,
+                SignalDirection = runtimeResult.SignalDirection,
+                SignalConfidence = runtimeResult.SignalConfidence,
+                SignalExpired = runtimeResult.SignalExpired,
                 SignalCandidates = runtimeResult.SignalCandidates,
                 PaperPortfolioState = runtimeResult.PaperPortfolioState,
                 PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
@@ -511,6 +644,10 @@ public sealed class HermesPaperBot
         BrokerAction = "none",
         Reasons = [reason],
         PaperWarnings = [reason],
+        SignalSeen = false,
+        SignalDirection = "flat",
+        SignalConfidence = null,
+        SignalExpired = false,
         SignalCandidates = [],
         PaperPortfolioState = new PaperPortfolioState(),
         MarketContextSeen = false,

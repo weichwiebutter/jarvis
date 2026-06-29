@@ -64,6 +64,7 @@ public sealed class CloudEmbeddedPackageBootstrapper
                 ReleaseMode = ReleaseMode.PaperOnly,
                 SafetyFlags = BuildSafetyFlags(safetyFlags),
                 ForbiddenCapabilities = BuildForbiddenCapabilities(forbiddenCapabilities),
+                SignalDecision = new SignalPackageReader().Read(packageJson, out _),
                 PackageJson = packageJson,
                 EmbeddedManifestJson = TryGetString(root, Key("embedded_", "manifest_", "json"), out var embeddedManifestJson) ? embeddedManifestJson : null,
                 EmbeddedStrategyJson = TryGetString(root, Key("embedded_", "strategy_", "json"), out var embeddedStrategyJson) ? embeddedStrategyJson : null,

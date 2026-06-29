@@ -50,6 +50,11 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunCloudEmbeddedSafetyViolationCase(tempRoot));
             results.Add(RunCloudBootstrapFromGeneratedPackageCase());
             results.Add(RunCloudBootstrapInvalidJsonCase());
+            results.Add(RunEmbeddedLongSignalCase());
+            results.Add(RunEmbeddedShortSignalCase());
+            results.Add(RunEmbeddedExpiredSignalCase());
+            results.Add(RunEmbeddedLowConfidenceCase());
+            results.Add(RunMissingSignalCase());
             results.Add(RunCloudEntryStartAndRunStepCase());
             results.Add(RunCloudEntryInvalidBootstrapCase());
             results.Add(RunCloudHostOnStartRunsCase());
@@ -151,33 +156,49 @@ public static class PaperRuntimeOrchestratorHarness
     private static object RunSpreadFromMarketContextBlocksCase(string tempRoot)
     {
         var context = BuildMarketContext("EURUSD", "M5", 100m, 101m);
-        var bot = new HermesPaperBot();
-        var started = bot.StartPaperRuntime(BuildPaperTradeConfig(Path.Combine(tempRoot, "spread_block_snapshot.json")), context);
-        var result = bot.GetLastRuntimeStepResult() ?? new RuntimeStepResult();
+        var config = BuildPaperTradeConfig(Path.Combine(tempRoot, "spread_block_snapshot.json"));
+        var candidate = new SignalCandidate
+        {
+            SignalId = "spread_block_signal",
+            Asset = "EURUSD",
+            Timeframe = "M5",
+            Direction = "long",
+            SetupId = "spread_block_setup",
+            SetupName = "spread_block_setup",
+            PrimaryCandidate = "spread_block_primary",
+            Readiness = "ready",
+            PaperEntryEnabled = true,
+            ConfidenceBaseline = 0.75m,
+            MaxSpread = 0.25m,
+            StopLossR = 1m,
+            TakeProfitR = 1m,
+            ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(30),
+            EntryLogic = ["spread_check"],
+            ExitLogic = ["exit"],
+            StopLossLogic = ["sl"],
+            TakeProfitLogic = ["tp"],
+            InvalidationLogic = ["invalidate"],
+            MarketRegimeTags = ["test"],
+            SessionTags = ["test"],
+            RiskNotes = ["test"],
+        };
+        var result = new PaperDecisionEngine().EvaluatePaperTrade([candidate], new PaperPortfolioState(), context, config, out _, out var warnings);
 
         return new
         {
             test_name = "spread_from_market_context_blocks",
-            passed = started && result.BrokerAction == "none" && result.PaperDecision == "would_block_by_spread" && result.PaperWarnings.Contains("spread_too_high", StringComparer.OrdinalIgnoreCase),
+            passed = result.BrokerAction == "none" && result.Decision == "would_block_by_spread" && warnings.Contains("spread_too_high", StringComparer.OrdinalIgnoreCase),
             key_fields = new
             {
-                started,
-                result.Success,
-                result.State,
-                result.ConfigValid,
-                result.ImportAttempted,
-                result.ImportValid,
-                result.BundleValid,
-                result.ChecksumValid,
-                result.SafetyAllowed,
-                result.DriftAllowed,
-                result.KillSwitchActive,
-                result.FallbackPossible,
-                result.DisabledUntilValidBundle,
-                result.PaperDecision,
+                result.SignalId,
+                result.Asset,
+                result.Timeframe,
+                result.Direction,
+                result.Decision,
                 result.BrokerAction,
-                warnings = result.PaperWarnings,
-                market_context_spread = result.MarketContext?.Spread ?? 0m,
+                result.Lifecycle,
+                result.Reason,
+                warnings,
             },
         };
     }
@@ -549,6 +570,73 @@ public static class PaperRuntimeOrchestratorHarness
                 result_logging_status = result.LoggingStatus,
             },
         };
+    }
+
+    private static object RunEmbeddedLongSignalCase()
+        => RunEmbeddedSignalCase(
+            "embedded_long_signal",
+            SignalDirection.Long,
+            0.85m,
+            DateTimeOffset.UtcNow.AddMinutes(-2),
+            DateTimeOffset.UtcNow.AddMinutes(20),
+            "would_enter_long_paper",
+            expectedSignalSeen: true,
+            expectedSignalExpired: false);
+
+    private static object RunEmbeddedShortSignalCase()
+        => RunEmbeddedSignalCase(
+            "embedded_short_signal",
+            SignalDirection.Short,
+            0.85m,
+            DateTimeOffset.UtcNow.AddMinutes(-2),
+            DateTimeOffset.UtcNow.AddMinutes(20),
+            "would_enter_short_paper",
+            expectedSignalSeen: true,
+            expectedSignalExpired: false);
+
+    private static object RunEmbeddedExpiredSignalCase()
+        => RunEmbeddedSignalCase(
+            "embedded_expired_signal",
+            SignalDirection.Long,
+            0.85m,
+            DateTimeOffset.UtcNow.AddHours(-2),
+            DateTimeOffset.UtcNow.AddMinutes(-1),
+            "would_wait_expired_signal",
+            expectedSignalSeen: true,
+            expectedSignalExpired: true);
+
+    private static object RunEmbeddedLowConfidenceCase()
+        => RunEmbeddedSignalCase(
+            "embedded_low_confidence",
+            SignalDirection.Long,
+            0.42m,
+            DateTimeOffset.UtcNow.AddMinutes(-2),
+            DateTimeOffset.UtcNow.AddMinutes(20),
+            "would_wait_low_confidence",
+            expectedSignalSeen: true,
+            expectedSignalExpired: false,
+            expectedConfidence: 0.42m);
+
+    private static object RunMissingSignalCase()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-signal-harness", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var logsDir = Path.Combine(tempRoot, "logs_missing_signal");
+            var config = BuildCloudConfig(logsDir, BuildCloudPackage(valid: true));
+            var bot = new HermesPaperBot();
+            var started = bot.StartPaperRuntime(config, BuildMarketContext("EURUSD", "M5", 100m, 100.2m, DateTimeOffset.UtcNow));
+            var result = bot.GetLastRuntimeStepResult() ?? new RuntimeStepResult();
+            return BuildReport("missing_signal", result, started && result.PaperDecision == "would_wait" && !result.SignalSeen && result.BrokerAction == "none");
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, true);
+            }
+        }
     }
 
     private static object RunCloudEntryStartAndRunStepCase()
@@ -2116,6 +2204,10 @@ timestamp,open,high,low,close,spread
                 result.DisabledUntilValidBundle,
                 result.PaperDecision,
                 result.BrokerAction,
+                result.SignalSeen,
+                result.SignalDirection,
+                result.SignalConfidence,
+                result.SignalExpired,
             },
         };
 
@@ -2197,6 +2289,100 @@ timestamp,open,high,low,close,spread
         };
 
         return valid ? package : null;
+    }
+
+    private static object RunEmbeddedSignalCase(
+        string testName,
+        SignalDirection direction,
+        decimal confidence,
+        DateTimeOffset signalTimestampUtc,
+        DateTimeOffset expiryUtc,
+        string expectedDecision,
+        bool expectedSignalSeen,
+        bool expectedSignalExpired,
+        decimal? expectedConfidence = null)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-signal-harness", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var logsDir = Path.Combine(tempRoot, testName);
+            var config = BuildCloudConfig(logsDir, BuildCloudPackageWithSignal(direction, confidence, signalTimestampUtc, expiryUtc, testName));
+            var bot = new HermesPaperBot();
+            var started = bot.StartPaperRuntime(config, BuildMarketContext("EURUSD", "M5", 100m, 100.2m, DateTimeOffset.UtcNow));
+            var result = bot.GetLastRuntimeStepResult() ?? new RuntimeStepResult();
+
+            return BuildReport(
+                testName,
+                result,
+                started &&
+                result.PaperDecision == expectedDecision
+                && result.SignalSeen == expectedSignalSeen
+                && result.SignalExpired == expectedSignalExpired
+                && (expectedConfidence is null || result.SignalConfidence == expectedConfidence)
+                && result.BrokerAction == "none");
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, true);
+            }
+        }
+    }
+
+    private static CloudEmbeddedReleasePackage BuildCloudPackageWithSignal(
+        SignalDirection direction,
+        decimal confidence,
+        DateTimeOffset signalTimestampUtc,
+        DateTimeOffset expiryUtc,
+        string reason)
+    {
+        var payload = new
+        {
+            signal_decision = new
+            {
+                direction = direction.ToString().ToLowerInvariant(),
+                confidence,
+                strategy_id = "embedded_signal_strategy",
+                signal_timestamp_utc = signalTimestampUtc.ToString("O"),
+                expiry_utc = expiryUtc.ToString("O"),
+                reason,
+            },
+        };
+
+        return new CloudEmbeddedReleasePackage
+        {
+            BotReleaseId = "cloud-release-signal-001",
+            BotVersion = "0.1.0-paper",
+            StrategyPackageVersion = "1.0.0",
+            SchemaVersion = "1.0.0",
+            ReleaseMode = ReleaseMode.PaperOnly,
+            SafetyFlags = new SafetyFlags
+            {
+                NoAutoTrading = true,
+                HumanReviewRequired = true,
+                BrokerTradingEnabled = false,
+                LiveTradingEnabled = false,
+                OrderApiEnabled = false,
+                PaperMode = true,
+                BrokerAction = "none",
+            },
+            ForbiddenCapabilities = new ForbiddenCapabilities
+            {
+                MarketOrderExecutionForbidden = true,
+                LimitOrderPlacementForbidden = true,
+                StopOrderPlacementForbidden = true,
+                PositionModificationForbidden = true,
+                PositionClosingForbidden = true,
+                PendingOrderCancellationForbidden = true,
+                ExternalNetworkAccessForbidden = true,
+            },
+            EmbeddedManifestJson = "{\"paper_mode\":true}",
+            EmbeddedStrategyJson = "{\"strategy\":\"paper\"}",
+            EmbeddedChecksum = new string('b', 64),
+            PackageJson = JsonSerializer.Serialize(payload, JsonOptions),
+        };
     }
 
     private static void BuildFakeBundle(string bundleDir, bool tamperChecksum, bool removeSchema)
