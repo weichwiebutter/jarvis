@@ -138,10 +138,10 @@ public sealed class NightlyResearchService
             var recovered = state with
             {
                 UpdatedAtUtc = now,
-                Status = stopRequested ? "stop_requested_no_running_process" : "stale_running_recovered",
-                NextAction = stopRequested ? "no_running_nightly_process" : "wait_for_nightly_window",
+                Status = "stale_running_recovered",
+                NextAction = "wait_for_nightly_window",
                 LastStopUtc = state.LastStopUtc ?? now,
-                StopRequestedAtUtc = stopRequested ? state.StopRequestedAtUtc ?? now : null,
+                StopRequestedAtUtc = null,
                 CurrentlyRunning = false
             };
 
