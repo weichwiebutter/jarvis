@@ -13,7 +13,11 @@ public sealed record WebResearchImportCandidateRecord(
     string EvidenceReason,
     string IndependenceClaim,
     string HumanReviewStatus,
-    IReadOnlyList<string> SafetyFlags);
+    IReadOnlyList<string> SafetyFlags,
+    double RelevanceScore = 0,
+    IReadOnlyList<string>? MatchedTerms = null,
+    string? RejectionReason = null,
+    string? SourceRelevanceStatus = null);
 
 public sealed record WebResearchImportReport(
     string ReportVersion,

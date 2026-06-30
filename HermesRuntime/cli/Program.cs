@@ -218,6 +218,7 @@ internal sealed class HermesCli
             "web-research-import" => RunWebResearchImport(),
             "automated-web-research-status" => ShowAutomatedWebResearchStatus(),
             "automated-web-research-fetch" => RunAutomatedWebResearchFetch(),
+            "research-query-builder-status" => ShowResearchQueryBuilderStatus(),
             "direct-domain-research-status" => ShowDirectDomainResearchStatus(),
             "direct-domain-research-fetch" => RunDirectDomainResearchFetch(),
             "browser-research-status" => ShowBrowserResearchStatus(),
@@ -546,6 +547,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes web-research-import [--dry-run|--apply] Web Research Quellen importieren");
         Console.WriteLine("  hermes automated-web-research-status Web Research Fetcher Status anzeigen");
         Console.WriteLine("  hermes automated-web-research-fetch --max-items 10 [--dry-run|--apply] Web Research automatisch abrufen");
+        Console.WriteLine("  hermes research-query-builder-status Research Query Builder Status anzeigen");
         Console.WriteLine("  hermes direct-domain-research-status Direct Domain Research Status anzeigen");
         Console.WriteLine("  hermes direct-domain-research-fetch --max-items 5 [--dry-run|--apply] Direct Domain Research ausfuehren");
         Console.WriteLine("  hermes browser-research-status Browser Research Agent Status anzeigen");
@@ -9143,6 +9145,34 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowResearchQueryBuilderStatus()
+    {
+        WriteHeader("Hermes Research Query Builder");
+        var service = new ResearchQueryBuilderService(BuildStoragePaths());
+        var report = service.LoadStatus();
+        WriteField("Status", report.Status);
+        WriteField("Requests Path", DisplayPath(report.RequestsPath));
+        WriteField("Loaded Requests", report.LoadedRequests.ToString());
+        WriteField("Generated Queries", report.GeneratedQueries.ToString());
+        WriteField("Knowledge Items Matched", report.KnowledgeItemsMatched.ToString());
+        WriteMessages("Warnings", report.Warnings);
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        foreach (var item in report.Items.Take(20))
+        {
+            WriteField("Query Plan", $"{item.KnowledgeItemId} | {item.Domain} | {item.BaseTerm} | queries={item.QueryTerms.Count}");
+            WriteField("Knowledge Title", item.KnowledgeTitle);
+            WriteField("Recommended Domains", item.RecommendedSourceDomains.Count == 0 ? "-" : string.Join(", ", item.RecommendedSourceDomains));
+            foreach (var query in item.QueryTerms.Take(8))
+            {
+                WriteField("Query", query);
+            }
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int RunAutomatedWebResearchFetch()
     {
         WriteHeader("Hermes Automated Web Research Fetcher");
@@ -9182,7 +9212,11 @@ internal sealed class HermesCli
         WriteField("Considered Requests", report.ConsideredRequests.ToString());
         WriteField("Fetched Pages", report.FetchedPages.ToString());
         WriteField("Extracted Candidates", report.ExtractedCandidates.ToString());
+        WriteField("Accepted Relevant Candidates", report.AcceptedRelevantCandidates.ToString());
+        WriteField("Candidates Rejected Low Relevance", report.CandidatesRejectedLowRelevance.ToString());
         WriteField("Blocked Domains", report.BlockedDomains.ToString());
+        WriteField("Generated Queries", report.GeneratedQueries.Count.ToString());
+        WriteMessages("Top Rejection Reasons", report.TopRejectionReasons.Select(pair => $"{pair.Key}: {pair.Value}").ToList());
         WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
         WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
         WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
@@ -9208,19 +9242,32 @@ internal sealed class HermesCli
         WriteField("Considered Requests", report.ConsideredRequests.ToString());
         WriteField("Fetched Pages", report.FetchedPages.ToString());
         WriteField("Extracted Candidates", report.ExtractedCandidates.ToString());
+        WriteField("Accepted Relevant Candidates", report.AcceptedRelevantCandidates.ToString());
+        WriteField("Candidates Rejected Low Relevance", report.CandidatesRejectedLowRelevance.ToString());
         WriteField("Blocked Domains", report.BlockedDomains.ToString());
+        WriteField("Generated Queries", report.GeneratedQueries.Count.ToString());
         WriteField("Requests Path", DisplayPath(report.RequestsPath));
         WriteField("Import Candidates Path", DisplayPath(report.CandidateOutputPath));
         WriteField("Report", DisplayPath(report.ReportPath));
         WriteField("Markdown", DisplayPath(report.MarkdownPath));
         WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Top Rejection Reasons", report.TopRejectionReasons.Select(pair => $"{pair.Key}: {pair.Value}").ToList());
         foreach (var candidate in report.Candidates.Take(20))
         {
-            WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Url}");
+            WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Url} | relevance={candidate.RelevanceScore:0.###} | {candidate.SourceRelevanceStatus}");
+            WriteMessages("Matched Terms", candidate.MatchedTerms);
+            if (!string.IsNullOrWhiteSpace(candidate.RejectionReason))
+            {
+                WriteField("Rejection Reason", candidate.RejectionReason);
+            }
         }
         foreach (var result in report.RequestResults.Take(20))
         {
-            WriteField("Request", $"{result.KnowledgeItemId} | {result.Domain} | {result.Status} | {result.SkippedReason}");
+            WriteField("Request", $"{result.KnowledgeItemId} | {result.Domain} | {result.Status} | {result.SkippedReason} | best={result.BestRelevanceScore:0.###}");
+            if (result.QueryTerms is not null && result.QueryTerms.Count > 0)
+            {
+                WriteMessages("Query Terms", result.QueryTerms);
+            }
         }
         Console.WriteLine();
         WriteSafety();

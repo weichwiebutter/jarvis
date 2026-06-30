@@ -14,7 +14,11 @@ public sealed record DirectDomainResearchCandidate(
     string SourceType,
     string HumanReviewStatus,
     IReadOnlyList<string> SafetyFlags,
-    DateTimeOffset RetrievedAtUtc);
+    DateTimeOffset RetrievedAtUtc,
+    double RelevanceScore = 0,
+    IReadOnlyList<string>? MatchedTerms = null,
+    string? RejectionReason = null,
+    string? SourceRelevanceStatus = null);
 
 public sealed record DirectDomainResearchRequestResult(
     string RequestId,
@@ -26,7 +30,12 @@ public sealed record DirectDomainResearchRequestResult(
     int FetchedPages,
     int ExtractedCandidates,
     IReadOnlyList<string> CandidateUrls,
-    string? OpenedUrl);
+    string? OpenedUrl,
+    IReadOnlyList<string>? QueryTerms = null,
+    double BestRelevanceScore = 0,
+    int AcceptedRelevantCandidates = 0,
+    int RejectedLowRelevanceCandidates = 0,
+    IReadOnlyDictionary<string, int>? TopRejectionReasons = null);
 
 public sealed record DirectDomainResearchReport(
     string ReportVersion,
@@ -36,10 +45,14 @@ public sealed record DirectDomainResearchReport(
     int ConsideredRequests,
     int FetchedPages,
     int ExtractedCandidates,
+    int AcceptedRelevantCandidates,
+    int CandidatesRejectedLowRelevance,
     int BlockedDomains,
+    IReadOnlyList<string> GeneratedQueries,
     IReadOnlyList<DirectDomainResearchRequestResult> RequestResults,
     IReadOnlyList<DirectDomainResearchCandidate> Candidates,
     IReadOnlyList<DirectDomainResearchCandidate> Rejected,
+    IReadOnlyDictionary<string, int> TopRejectionReasons,
     IReadOnlyList<string> Warnings,
     string RequestsPath,
     string CandidateOutputPath,
@@ -81,7 +94,12 @@ public sealed class DirectDomainResearchFetcherService
         Directory.CreateDirectory(Root);
         var now = DateTimeOffset.UtcNow;
         var load = LoadRequestsEnvelope();
-        var requests = load.Requests.Take(Math.Max(0, maxItems)).ToList();
+        var requests = load.Requests
+            .OrderByDescending(RequestPriorityScore)
+            .ThenBy(request => request.Domain, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(request => request.KnowledgeItemId, StringComparer.OrdinalIgnoreCase)
+            .Take(Math.Max(0, maxItems))
+            .ToList();
         var considered = requests.Count;
         var existingCandidates = LoadImportCandidates();
         var importedUrls = existingCandidates
@@ -94,6 +112,10 @@ public sealed class DirectDomainResearchFetcherService
         var warnings = load.Warnings.ToList();
         var fetchedPages = 0;
         var blockedDomains = 0;
+        var generatedQueries = new List<string>();
+        var acceptedRelevantCandidates = 0;
+        var rejectedLowRelevanceCandidates = 0;
+        var topRejectionReasons = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         if (dryRun)
         {
@@ -105,7 +127,10 @@ public sealed class DirectDomainResearchFetcherService
                 ConsideredRequests: considered,
                 FetchedPages: 0,
                 ExtractedCandidates: 0,
+                AcceptedRelevantCandidates: 0,
+                CandidatesRejectedLowRelevance: 0,
                 BlockedDomains: 0,
+                GeneratedQueries: [],
                 RequestResults: requests.Select(request => new DirectDomainResearchRequestResult(
                     request.RequestId,
                     request.KnowledgeItemId,
@@ -116,9 +141,15 @@ public sealed class DirectDomainResearchFetcherService
                     FetchedPages: 0,
                     ExtractedCandidates: 0,
                     CandidateUrls: [],
-                    OpenedUrl: null)).ToList(),
+                    OpenedUrl: null,
+                    QueryTerms: [],
+                    BestRelevanceScore: 0,
+                    AcceptedRelevantCandidates: 0,
+                    RejectedLowRelevanceCandidates: 0,
+                    TopRejectionReasons: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase))).ToList(),
                 Candidates: [],
                 Rejected: [],
+                TopRejectionReasons: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 Warnings: warnings.Concat(["dry_run_no_network"]).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 RequestsPath: RequestsPath,
                 CandidateOutputPath: CandidateOutputPath,
@@ -138,6 +169,13 @@ public sealed class DirectDomainResearchFetcherService
             var result = FetchForRequest(request);
             requestResults.Add(result.RequestResult);
             fetchedPages += result.RequestResult.FetchedPages;
+            generatedQueries.AddRange(result.RequestResult.QueryTerms ?? []);
+            acceptedRelevantCandidates += result.RequestResult.AcceptedRelevantCandidates;
+            rejectedLowRelevanceCandidates += result.RequestResult.RejectedLowRelevanceCandidates;
+            foreach (var pair in result.RequestResult.TopRejectionReasons ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase))
+            {
+                topRejectionReasons[pair.Key] = topRejectionReasons.TryGetValue(pair.Key, out var current) ? current + pair.Value : pair.Value;
+            }
             if (result.RequestResult.Status.Equals("blocked_domain", StringComparison.OrdinalIgnoreCase))
             {
                 blockedDomains++;
@@ -174,10 +212,14 @@ public sealed class DirectDomainResearchFetcherService
             ConsideredRequests: considered,
             FetchedPages: fetchedPages,
             ExtractedCandidates: candidates.Count,
+            AcceptedRelevantCandidates: acceptedRelevantCandidates,
+            CandidatesRejectedLowRelevance: rejectedLowRelevanceCandidates,
             BlockedDomains: blockedDomains,
+            GeneratedQueries: generatedQueries.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             RequestResults: requestResults,
             Candidates: candidates,
             Rejected: rejected,
+            TopRejectionReasons: topRejectionReasons.OrderByDescending(pair => pair.Value).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase),
             Warnings: warnings.Concat(candidates.Count == 0 ? ["no_direct_domain_candidates_extracted"] : []).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             RequestsPath: RequestsPath,
             CandidateOutputPath: CandidateOutputPath,
@@ -197,28 +239,7 @@ public sealed class DirectDomainResearchFetcherService
         var reportPath = ReportPath;
         if (!File.Exists(reportPath))
         {
-            return new DirectDomainResearchReport(
-                ReportVersion: "direct_domain_research_v1",
-                UpdatedAtUtc: DateTimeOffset.UtcNow,
-                Status: "status_unavailable",
-                LoadedRequests: LoadRequestsEnvelope().LoadedRequests,
-                ConsideredRequests: 0,
-                FetchedPages: 0,
-                ExtractedCandidates: 0,
-                BlockedDomains: 0,
-                RequestResults: [],
-                Candidates: [],
-                Rejected: [],
-                Warnings: ["direct_domain_report_missing"],
-                RequestsPath: RequestsPath,
-                CandidateOutputPath: CandidateOutputPath,
-                ReportPath: ReportPath,
-                MarkdownPath: MarkdownPath,
-                NoTradingExecution: true,
-                NoBrokerAction: true,
-                NoAutoTrading: true,
-                HumanReviewRequired: true,
-                ResearchOnly: true);
+            return Run(maxItems: 5, dryRun: true) with { Status = "status_snapshot_generated" };
         }
 
         try
@@ -228,28 +249,7 @@ public sealed class DirectDomainResearchFetcherService
         }
         catch
         {
-            return new DirectDomainResearchReport(
-                ReportVersion: "direct_domain_research_v1",
-                UpdatedAtUtc: DateTimeOffset.UtcNow,
-                Status: "status_unavailable",
-                LoadedRequests: LoadRequestsEnvelope().LoadedRequests,
-                ConsideredRequests: 0,
-                FetchedPages: 0,
-                ExtractedCandidates: 0,
-                BlockedDomains: 0,
-                RequestResults: [],
-                Candidates: [],
-                Rejected: [],
-                Warnings: ["direct_domain_report_unreadable"],
-                RequestsPath: RequestsPath,
-                CandidateOutputPath: CandidateOutputPath,
-                ReportPath: ReportPath,
-                MarkdownPath: MarkdownPath,
-                NoTradingExecution: true,
-                NoBrokerAction: true,
-                NoAutoTrading: true,
-                HumanReviewRequired: true,
-                ResearchOnly: true);
+            return Run(maxItems: 5, dryRun: true) with { Status = "status_snapshot_generated" };
         }
     }
 
@@ -289,7 +289,9 @@ public sealed class DirectDomainResearchFetcherService
 
     private DirectDomainResearchFetchResult FetchForRequest(WebResearchSourceRequest request)
     {
-        var candidateDomains = CandidateDomainsForRequest(request);
+        var queryBuilder = new ResearchQueryBuilderService(_storagePaths);
+        var queryPlan = queryBuilder.BuildForRequest(request);
+        var candidateDomains = CandidateDomainsForRequest(request, queryPlan);
         if (candidateDomains.Count == 0)
         {
             return new DirectDomainResearchFetchResult(
@@ -303,40 +305,74 @@ public sealed class DirectDomainResearchFetcherService
                     FetchedPages: 0,
                     ExtractedCandidates: 0,
                     CandidateUrls: [],
-                    OpenedUrl: null),
-                []);
+                    OpenedUrl: null,
+                    QueryTerms: queryPlan.QueryTerms,
+                    BestRelevanceScore: 0,
+                    AcceptedRelevantCandidates: 0,
+                    RejectedLowRelevanceCandidates: 0,
+                    TopRejectionReasons: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)),
+                [],
+                0,
+                new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
+                0);
         }
 
         var requestResults = new List<DirectDomainResearchCandidate>();
         var fetchedPages = 0;
         var openedUrl = (string?)null;
         var status = "no_results";
+        var acceptedRelevantCandidates = 0;
+        var rejectedLowRelevanceCandidates = 0;
+        var topRejectionReasons = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var bestRelevanceScore = 0d;
+        var queryTerms = queryPlan.QueryTerms.Take(3).ToList();
+        var maxPagesPerRequest = 4;
         foreach (var domain in candidateDomains)
         {
-            foreach (var url in BuildCandidateUrls(request.Query, domain).Take(2))
+            foreach (var query in queryTerms)
             {
-                if (openedUrl is null)
+                foreach (var url in BuildCandidateUrls(query, domain).Take(2))
                 {
-                    openedUrl = url;
+                    if (fetchedPages >= maxPagesPerRequest)
+                    {
+                        break;
+                    }
+
+                    if (openedUrl is null)
+                    {
+                        openedUrl = url;
+                    }
+
+                    var html = FetchHtml(url, domain);
+                    if (string.IsNullOrWhiteSpace(html))
+                    {
+                        continue;
+                    }
+
+                    fetchedPages++;
+                    var extracted = ExtractCandidatesFromHtml(html, request, domain, queryPlan);
+                    requestResults.AddRange(extracted.Accepted);
+                    acceptedRelevantCandidates += extracted.Accepted.Count;
+                    rejectedLowRelevanceCandidates += extracted.RejectedLowRelevance.Count;
+                    bestRelevanceScore = Math.Max(bestRelevanceScore, extracted.BestRelevanceScore);
+                    foreach (var pair in extracted.RejectionReasons)
+                    {
+                        topRejectionReasons[pair.Key] = topRejectionReasons.TryGetValue(pair.Key, out var current) ? current + pair.Value : pair.Value;
+                    }
+                    if (extracted.Accepted.Count > 0)
+                    {
+                        status = "candidates_extracted";
+                        break;
+                    }
                 }
 
-                var html = FetchHtml(url, domain);
-                if (string.IsNullOrWhiteSpace(html))
+                if (requestResults.Count > 0 || fetchedPages >= maxPagesPerRequest)
                 {
-                    continue;
-                }
-
-                fetchedPages++;
-                var extracted = ExtractCandidatesFromHtml(html, request, domain);
-                requestResults.AddRange(extracted);
-                if (extracted.Count > 0)
-                {
-                    status = "candidates_extracted";
                     break;
                 }
             }
 
-            if (requestResults.Count > 0)
+            if (requestResults.Count > 0 || fetchedPages >= maxPagesPerRequest)
             {
                 break;
             }
@@ -351,21 +387,29 @@ public sealed class DirectDomainResearchFetcherService
             new DirectDomainResearchRequestResult(
                 request.RequestId,
                 request.KnowledgeItemId,
-                request.Query,
+                queryPlan.BaseTerm,
                 request.Domain,
                 Status: status,
                 SkippedReason: status == "no_results" ? "no_html_results" : string.Empty,
                 FetchedPages: fetchedPages,
                 ExtractedCandidates: requestResults.Count,
                 CandidateUrls: requestResults.Select(candidate => candidate.Url).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-                OpenedUrl: openedUrl),
-            requestResults);
+                OpenedUrl: openedUrl,
+                QueryTerms: queryPlan.QueryTerms,
+                BestRelevanceScore: bestRelevanceScore,
+                AcceptedRelevantCandidates: acceptedRelevantCandidates,
+                RejectedLowRelevanceCandidates: rejectedLowRelevanceCandidates,
+                TopRejectionReasons: topRejectionReasons),
+            requestResults,
+            rejectedLowRelevanceCandidates,
+            topRejectionReasons,
+            bestRelevanceScore);
     }
 
-    private IReadOnlyList<string> CandidateDomainsForRequest(WebResearchSourceRequest request)
+    private IReadOnlyList<string> CandidateDomainsForRequest(WebResearchSourceRequest request, ResearchQueryBuilderResult queryPlan)
     {
         var domain = request.Domain.Trim().ToLowerInvariant();
-        var query = request.Query.ToLowerInvariant();
+        var query = string.Join(' ', queryPlan.QueryTerms).ToLowerInvariant();
         var domains = new List<string>();
 
         if (domain.Contains("trading") || query.Contains("ctrader") || query.Contains("spotware"))
@@ -459,18 +503,20 @@ public sealed class DirectDomainResearchFetcherService
         }
     }
 
-    private IReadOnlyList<DirectDomainResearchCandidate> ExtractCandidatesFromHtml(string html, WebResearchSourceRequest request, string domain)
+    private CandidateExtractionResult ExtractCandidatesFromHtml(string html, WebResearchSourceRequest request, string domain, ResearchQueryBuilderResult queryPlan)
     {
         if (string.IsNullOrWhiteSpace(html))
         {
-            return [];
+            return new CandidateExtractionResult([], [], new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), 0);
         }
 
         var pageLinks = Regex.Matches(html, "<a[^>]+href=[\"'](?<href>[^\"']+)[\"'][^>]*>(?<text>.*?)</a>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        var candidates = new List<DirectDomainResearchCandidate>();
+        var accepted = new List<DirectDomainResearchCandidate>();
+        var rejectedLowRelevance = new List<DirectDomainResearchCandidate>();
+        var rejectionReasons = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var now = DateTimeOffset.UtcNow;
-        var allowed = request.RecommendedSourceDomains.Any()
-            ? request.RecommendedSourceDomains.Select(NormalizeDomain).ToHashSet(StringComparer.OrdinalIgnoreCase)
+        var allowed = queryPlan.RecommendedSourceDomains.Any()
+            ? queryPlan.RecommendedSourceDomains.Select(NormalizeDomain).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (Match match in pageLinks)
@@ -494,7 +540,18 @@ public sealed class DirectDomainResearchFetcherService
             }
 
             var snippet = ExtractSnippet(html, match.Index);
-            candidates.Add(new DirectDomainResearchCandidate(
+            var relevance = ResearchQueryBuilderService.ScoreCandidate(
+                knowledgeTitle: queryPlan.KnowledgeTitle,
+                requestDomain: request.Domain,
+                requestKnowledgeItemId: request.KnowledgeItemId,
+                candidateTitle: text,
+                candidateUrl: href,
+                candidateSnippet: snippet,
+                candidateDomain: actualDomain,
+                queryTerms: queryPlan.QueryTerms,
+                recommendedDomains: queryPlan.RecommendedSourceDomains);
+
+            var candidate = new DirectDomainResearchCandidate(
                 KnowledgeItemId: request.KnowledgeItemId,
                 Title: text,
                 Url: href,
@@ -503,14 +560,32 @@ public sealed class DirectDomainResearchFetcherService
                 SourceType: "direct_domain_research_candidate",
                 HumanReviewStatus: "pending",
                 SafetyFlags: ["no_trading_execution", "human_review_required"],
-                RetrievedAtUtc: now));
-            if (candidates.Count >= 5)
+                RetrievedAtUtc: now,
+                RelevanceScore: relevance.RelevanceScore,
+                MatchedTerms: relevance.MatchedTerms,
+                RejectionReason: relevance.RejectionReason,
+                SourceRelevanceStatus: relevance.SourceRelevanceStatus);
+
+            if (relevance.RelevanceScore >= 0.30)
+            {
+                accepted.Add(candidate);
+            }
+            else
+            {
+                rejectedLowRelevance.Add(candidate);
+                if (!string.IsNullOrWhiteSpace(relevance.RejectionReason))
+                {
+                    rejectionReasons[relevance.RejectionReason] = rejectionReasons.TryGetValue(relevance.RejectionReason, out var existing) ? existing + 1 : 1;
+                }
+            }
+
+            if (accepted.Count >= 5)
             {
                 break;
             }
         }
 
-        return candidates;
+        return new CandidateExtractionResult(accepted, rejectedLowRelevance, rejectionReasons, accepted.Count == 0 ? 0 : accepted.Max(candidate => candidate.RelevanceScore));
     }
 
     private static bool DomainMatchesAny(string actualDomain, HashSet<string> allowed, string requestDomain, string candidateDomain)
@@ -571,6 +646,42 @@ public sealed class DirectDomainResearchFetcherService
         return CleanText(System.Net.WebUtility.HtmlDecode(html.Substring(start, length)));
     }
 
+    private static int RequestPriorityScore(WebResearchSourceRequest request)
+    {
+        var text = $"{request.Domain} {request.Query} {request.Reason}".ToLowerInvariant();
+        var score = 0;
+
+        if (text.Contains("trading") || text.Contains("ctrader") || text.Contains("spotware"))
+        {
+            score += 100;
+        }
+
+        if (text.Contains("breakout") || text.Contains("inside bar") || text.Contains("liquidity") || text.Contains("engulfing") || text.Contains("sweep"))
+        {
+            score += 50;
+        }
+
+        if (text.Contains("strategy") || text.Contains("setup") || text.Contains("examples"))
+        {
+            score += 20;
+        }
+
+        if (request.Domain.Equals("trading", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 30;
+        }
+        else if (request.Domain.Equals("software", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 15;
+        }
+        else if (request.Domain.Equals("documentation", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 5;
+        }
+
+        return score;
+    }
+
     private IReadOnlyList<WebResearchImportCandidateRecord> LoadImportCandidates()
     {
         if (!File.Exists(CandidateOutputPath))
@@ -600,7 +711,11 @@ public sealed class DirectDomainResearchFetcherService
             EvidenceReason: candidate.Snippet,
             IndependenceClaim: "direct_domain_research_candidate",
             HumanReviewStatus: candidate.HumanReviewStatus,
-            SafetyFlags: candidate.SafetyFlags);
+            SafetyFlags: candidate.SafetyFlags,
+            RelevanceScore: candidate.RelevanceScore,
+            MatchedTerms: candidate.MatchedTerms,
+            RejectionReason: candidate.RejectionReason,
+            SourceRelevanceStatus: candidate.SourceRelevanceStatus);
 
     private static WebResearchImportCandidateRecord ToRejectedCandidate(DirectDomainResearchCandidate candidate) =>
         new(
@@ -614,7 +729,11 @@ public sealed class DirectDomainResearchFetcherService
             EvidenceReason: candidate.Snippet,
             IndependenceClaim: "direct_domain_research_candidate",
             HumanReviewStatus: candidate.HumanReviewStatus,
-            SafetyFlags: candidate.SafetyFlags);
+            SafetyFlags: candidate.SafetyFlags,
+            RelevanceScore: candidate.RelevanceScore,
+            MatchedTerms: candidate.MatchedTerms,
+            RejectionReason: candidate.RejectionReason,
+            SourceRelevanceStatus: candidate.SourceRelevanceStatus);
 
     private static void WriteReport(DirectDomainResearchReport report)
     {
@@ -633,7 +752,18 @@ public sealed class DirectDomainResearchFetcherService
         sb.AppendLine($"- Considered Requests: {report.ConsideredRequests}");
         sb.AppendLine($"- Fetched Pages: {report.FetchedPages}");
         sb.AppendLine($"- Extracted Candidates: {report.ExtractedCandidates}");
+        sb.AppendLine($"- Accepted Relevant Candidates: {report.AcceptedRelevantCandidates}");
+        sb.AppendLine($"- Candidates Rejected Low Relevance: {report.CandidatesRejectedLowRelevance}");
         sb.AppendLine($"- Blocked Domains: {report.BlockedDomains}");
+        if (report.GeneratedQueries.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Generated Queries");
+            foreach (var query in report.GeneratedQueries.Take(20))
+            {
+                sb.AppendLine($"- {query}");
+            }
+        }
         sb.AppendLine();
         sb.AppendLine("## Safety");
         sb.AppendLine($"- no_trading_execution: {report.NoTradingExecution}");
@@ -645,7 +775,16 @@ public sealed class DirectDomainResearchFetcherService
         sb.AppendLine("## Request Results");
         foreach (var result in report.RequestResults.Take(20))
         {
-            sb.AppendLine($"- {result.KnowledgeItemId} | {result.Domain} | {result.Status} | {result.ExtractedCandidates} candidates");
+            sb.AppendLine($"- {result.KnowledgeItemId} | {result.Domain} | {result.Status} | {result.ExtractedCandidates} candidates | best={result.BestRelevanceScore:0.###}");
+        }
+        if (report.TopRejectionReasons.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Top Rejection Reasons");
+            foreach (var item in report.TopRejectionReasons.Take(10))
+            {
+                sb.AppendLine($"- {item.Key}: {item.Value}");
+            }
         }
         if (report.Warnings.Count > 0)
         {
@@ -663,5 +802,13 @@ public sealed class DirectDomainResearchFetcherService
     private sealed record DirectDomainRequestEnvelope(IReadOnlyList<WebResearchSourceRequest> Requests, int LoadedRequests, IReadOnlyList<string> Warnings);
     private sealed record DirectDomainResearchFetchResult(
         DirectDomainResearchRequestResult RequestResult,
-        IReadOnlyList<DirectDomainResearchCandidate> Candidates);
+        IReadOnlyList<DirectDomainResearchCandidate> Candidates,
+        int RejectedLowRelevanceCandidates,
+        IReadOnlyDictionary<string, int> RejectionReasons,
+        double BestRelevanceScore);
+    private sealed record CandidateExtractionResult(
+        IReadOnlyList<DirectDomainResearchCandidate> Accepted,
+        IReadOnlyList<DirectDomainResearchCandidate> RejectedLowRelevance,
+        IReadOnlyDictionary<string, int> RejectionReasons,
+        double BestRelevanceScore);
 }
