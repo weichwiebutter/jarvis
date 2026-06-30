@@ -116,6 +116,9 @@ internal sealed class HermesCli
             "promotion-status" => ShowPromotionStatus(),
             "knowledge-trust-promotion-status" => ShowKnowledgeTrustPromotionStatus(),
             "knowledge-trust-promote" => RunKnowledgeTrustPromotion(),
+            "multi-source-evidence-status" => ShowMultiSourceEvidenceStatus(),
+            "multi-source-evidence-plan" => ShowMultiSourceEvidencePlan(),
+            "multi-source-evidence-apply" => RunMultiSourceEvidenceApply(),
             "knowledge-consolidation-analyzer" => ShowKnowledgeConsolidationAnalyzer(),
             "knowledge-consolidation-executor" => ShowKnowledgeConsolidationExecutor(),
             "strategy-mutation-analyzer" => ShowStrategyMutationAnalyzer(),
@@ -430,6 +433,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes knowledge-trust-promotion-status Trust-Promotion Pipeline Status anzeigen");
         Console.WriteLine("  hermes knowledge-trust-promote [--dry-run|--apply] Trusted Knowledge promoten");
+        Console.WriteLine("  hermes multi-source-evidence-status Multi-Source Evidence Status anzeigen");
+        Console.WriteLine("  hermes multi-source-evidence-plan Multi-Source Evidence Plan anzeigen");
+        Console.WriteLine("  hermes multi-source-evidence-apply [--dry-run|--apply] Multi-Source Evidence anwenden");
         Console.WriteLine("  hermes knowledge-consolidation-analyzer Knowledge Consolidation Analyzer anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-executor Knowledge Consolidation Kandidaten erzeugen");
         Console.WriteLine("  hermes strategy-mutation-analyzer Strategy Mutation Kandidaten anzeigen");
@@ -14005,6 +14011,53 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowMultiSourceEvidenceStatus()
+    {
+        WriteHeader("Hermes Multi-Source Evidence Ingestion");
+        var storagePaths = BuildStoragePaths();
+        var service = new MultiSourceEvidenceIngestionService(storagePaths);
+        var report = service.Run(apply: false, dryRun: true);
+
+        WriteMultiSourceEvidenceReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowMultiSourceEvidencePlan()
+    {
+        WriteHeader("Hermes Multi-Source Evidence Ingestion");
+        var storagePaths = BuildStoragePaths();
+        var service = new MultiSourceEvidenceIngestionService(storagePaths);
+        var report = service.Run(apply: false, dryRun: true);
+
+        WriteMultiSourceEvidenceReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunMultiSourceEvidenceApply()
+    {
+        WriteHeader("Hermes Multi-Source Evidence Ingestion");
+        var storagePaths = BuildStoragePaths();
+        var service = new MultiSourceEvidenceIngestionService(storagePaths);
+        var apply = HasArg("--apply");
+        var dryRun = HasArg("--dry-run");
+
+        if (apply && dryRun)
+        {
+            Console.WriteLine("Error: use either --dry-run or --apply, not both.");
+            return 1;
+        }
+
+        var report = service.Run(apply: apply && !dryRun, dryRun: dryRun || !apply);
+        WriteMultiSourceEvidenceReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowTrustedCandidates()
     {
         WriteHeader("Hermes Trusted Knowledge Candidates");
@@ -14113,6 +14166,66 @@ internal sealed class HermesCli
             WriteMessages("Satisfied", candidate.SatisfiedConditions);
             WriteMessages("Missing Evidence", candidate.MissingEvidenceCategories);
             WriteMessages("Blockers", candidate.Blockers);
+        }
+    }
+
+    private void WriteMultiSourceEvidenceReport(MultiSourceEvidencePlanReport report)
+    {
+        WriteField("Report", report.ReportVersion);
+        WriteField("Items Needing Second Source", report.ItemsNeedingSecondSource.ToString());
+        WriteField("Prioritized Items", report.PrioritizedItems.ToString());
+        WriteField("Updated Source Confirmations", report.UpdatedSourceConfirmations.ToString());
+        WriteField("Created Research Queue Items", report.CreatedResearchQueueItems.ToString());
+        WriteField("Source Confirmations Path", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Knowledge Evidence Path", DisplayPath(report.KnowledgeEvidencePath));
+        WriteField("Evidence Graph Path", DisplayPath(report.EvidenceGraphPath));
+        WriteField("Validation Plans Path", DisplayPath(report.ValidationPlansPath));
+        WriteField("Knowledge Quality Path", DisplayPath(report.KnowledgeQualityPath));
+        WriteField("Research Queue Path", DisplayPath(report.ResearchQueuePath));
+        WriteField("Dry Run", report.DryRun.ToString().ToLowerInvariant());
+
+        Console.WriteLine();
+        Console.WriteLine("Source Types Needed:");
+        foreach (var entry in report.SourceTypeNeededDistribution.OrderByDescending(entry => entry.Value).ThenBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"  - {entry.Key}: {entry.Value}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Missing Evidence:");
+        foreach (var entry in report.MissingEvidenceDistribution.OrderByDescending(entry => entry.Value).ThenBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"  - {entry.Key}: {entry.Value}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Recommended Queries:");
+        foreach (var query in report.RecommendedQueries.Take(20))
+        {
+            Console.WriteLine($"  - {query}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Prioritized Items:");
+        foreach (var candidate in report.PrioritizedCandidates.Take(20))
+        {
+            Console.WriteLine($"  {candidate.Title} / {candidate.KnowledgeId}");
+            Console.WriteLine($"    Domain: {candidate.Domain}");
+            Console.WriteLine($"    Current Source Count: {candidate.CurrentSourceCount}");
+            Console.WriteLine($"    Source Type Needed: {candidate.SourceTypeNeeded}");
+            Console.WriteLine($"    Trust: {candidate.TrustScore:0.###}, Quality: {candidate.QualityScore:0.###}, Validation: {candidate.ValidationScore:0.###}");
+            Console.WriteLine($"    Open Validation Plans: {candidate.OpenValidationPlans}");
+            Console.WriteLine($"    Priority Score: {candidate.PriorityScore:0.####}");
+            Console.WriteLine($"    Query: {candidate.Query}");
+            Console.WriteLine($"    Has Local Alternative Sources: {candidate.HasLocalAlternativeSources.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"    Would Update Source Confirmations: {candidate.WouldUpdateSourceConfirmations.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"    Would Create Research Queue Item: {candidate.WouldCreateResearchQueueItem.ToString().ToLowerInvariant()}");
+            if (candidate.MissingEvidenceTypes.Count > 0)
+            {
+                Console.WriteLine($"    Missing: {string.Join(", ", candidate.MissingEvidenceTypes.Take(5))}");
+            }
+
+            Console.WriteLine();
         }
     }
 

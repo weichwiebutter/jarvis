@@ -410,6 +410,22 @@ public sealed class ResearchQueueService
         return Write(items);
     }
 
+    public ResearchQueueItem EnqueueResearchTask(
+        string domain,
+        string type,
+        ResearchPriority priority,
+        IReadOnlyList<string> sourceRefs,
+        string requestedBy,
+        IReadOnlyList<string> notes)
+    {
+        var queue = LoadOrCreateQueue();
+        var item = NewItem(domain, type, priority, sourceRefs, requestedBy, notes);
+        var items = queue.Items.ToList();
+        items.Add(item);
+        Write(items);
+        return item;
+    }
+
     public ResearchQueue EnqueuePlannedTasks(IReadOnlyList<PlannedTask> tasks)
     {
         var queue = LoadOrCreateQueue();
@@ -788,6 +804,7 @@ public sealed class ResearchQueueService
             "download_missing_market_data" => "discovery",
             "collect_missing_evidence" => "discovery",
             "run_cross_source_check" => "discovery",
+            "collect_second_independent_source" => "discovery",
             "simulation" => "simulation",
             "run_strategy_research" => "simulation",
             "run_oos_validation" => "validation",
