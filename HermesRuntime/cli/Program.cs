@@ -9214,6 +9214,14 @@ internal sealed class HermesCli
         WriteField("Skipped Due To Schema", report.SkippedDueToSchema.ToString());
         WriteField("Skipped Due To Status", report.SkippedDueToStatus.ToString());
         WriteField("Skipped Due To Missing Query", report.SkippedDueToMissingQuery.ToString());
+        WriteField("Opened Search URL", report.OpenedSearchUrl);
+        WriteField("Page Title", report.PageTitle);
+        WriteField("Extracted Links Count", report.ExtractedLinksCount.ToString());
+        WriteField("Extraction Status", report.ExtractionStatus);
+        if (report.DebugArtifactPaths.Count > 0)
+        {
+            WriteMessages("Debug Artifacts", report.DebugArtifactPaths);
+        }
         WriteField("Requests Path", DisplayPath(report.RequestsPath));
         WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
         WriteField("Report", DisplayPath(report.ReportPath));

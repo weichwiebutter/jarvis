@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Hermes.Runtime;
 
@@ -30,6 +31,14 @@ public sealed record BrowserResearchCandidate(
     IReadOnlyList<string> SafetyFlags,
     DateTimeOffset RetrievedAtUtc);
 
+public sealed record BrowserSearchOutcome(
+    string OpenedSearchUrl,
+    string PageTitle,
+    int ExtractedLinksCount,
+    string ExtractionStatus,
+    IReadOnlyList<string> DebugArtifactPaths,
+    IReadOnlyList<BrowserResearchCandidate> Candidates);
+
 public sealed record BrowserResearchAgentReport(
     string ReportVersion,
     DateTimeOffset UpdatedAtUtc,
@@ -44,6 +53,11 @@ public sealed record BrowserResearchAgentReport(
     int RejectedCandidates,
     int DuplicateCandidates,
     int ImportedCandidates,
+    string OpenedSearchUrl,
+    string PageTitle,
+    int ExtractedLinksCount,
+    string ExtractionStatus,
+    IReadOnlyList<string> DebugArtifactPaths,
     IReadOnlyList<BrowserResearchCandidate> Candidates,
     IReadOnlyList<BrowserResearchCandidate> Rejected,
     IReadOnlyList<string> Warnings,
@@ -75,6 +89,8 @@ public sealed class BrowserResearchAgentService
     public string ReportPath => Path.Combine(Root, "browser_research_report.json");
 
     public string MarkdownPath => Path.Combine(Root, "browser_research_report.md");
+
+    private string DebugRoot => Path.Combine(Root, "debug");
 
     public BrowserResearchRuntimeStatus CheckRuntimeStatus()
     {
@@ -171,6 +187,7 @@ public sealed class BrowserResearchAgentService
     public BrowserResearchAgentReport Run(int maxItems, bool dryRun)
     {
         Directory.CreateDirectory(Root);
+        Directory.CreateDirectory(DebugRoot);
         var now = DateTimeOffset.UtcNow;
         var runtime = CheckRuntimeStatus();
         var load = LoadRequestsEnvelope();
@@ -193,6 +210,11 @@ public sealed class BrowserResearchAgentService
                 RejectedCandidates: 0,
                 DuplicateCandidates: 0,
                 ImportedCandidates: 0,
+                OpenedSearchUrl: "-",
+                PageTitle: "-",
+                ExtractedLinksCount: 0,
+                ExtractionStatus: "dry_run_request_ready",
+                DebugArtifactPaths: [],
                 Candidates: [],
                 Rejected: [],
                 Warnings: load.Warnings.Concat(runtime.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
@@ -225,6 +247,11 @@ public sealed class BrowserResearchAgentService
                 RejectedCandidates: 0,
                 DuplicateCandidates: 0,
                 ImportedCandidates: 0,
+                OpenedSearchUrl: "-",
+                PageTitle: "-",
+                ExtractedLinksCount: 0,
+                ExtractionStatus: runtime.Status,
+                DebugArtifactPaths: [],
                 Candidates: [],
                 Rejected: [],
                 Warnings: load.Warnings.Concat(runtime.Warnings).Concat(runtime.MissingRequirements).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
@@ -250,13 +277,28 @@ public sealed class BrowserResearchAgentService
         var candidates = new List<BrowserResearchCandidate>();
         var rejected = new List<BrowserResearchCandidate>();
         var warnings = new List<string>();
+        var debugArtifacts = new List<string>();
+        var firstOpenedSearchUrl = "-";
+        var firstPageTitle = "-";
+        var firstExtractionStatus = "not_started";
+        var firstExtractedLinksCount = 0;
 
         foreach (var request in requests)
         {
-            var fetched = FetchCandidatesForRequest(request, runtime).Take(5).ToList();
+            var outcome = FetchCandidatesForRequest(request, runtime, DebugRoot, allowBrowserExecution: true);
+            debugArtifacts.AddRange(outcome.DebugArtifactPaths);
+            if (firstOpenedSearchUrl == "-")
+            {
+                firstOpenedSearchUrl = outcome.OpenedSearchUrl;
+                firstPageTitle = outcome.PageTitle;
+                firstExtractionStatus = outcome.ExtractionStatus;
+                firstExtractedLinksCount = outcome.ExtractedLinksCount;
+            }
+
+            var fetched = outcome.Candidates.Take(5).ToList();
             if (fetched.Count == 0)
             {
-                warnings.Add($"no_browser_results_for:{request.RequestId}");
+                warnings.Add($"no_browser_results_for:{request.RequestId}:{outcome.ExtractionStatus}");
             }
 
             foreach (var candidate in fetched)
@@ -302,6 +344,11 @@ public sealed class BrowserResearchAgentService
             RejectedCandidates: rejected.Count,
             DuplicateCandidates: 0,
             ImportedCandidates: dryRun ? 0 : candidates.Count,
+            OpenedSearchUrl: firstOpenedSearchUrl,
+            PageTitle: firstPageTitle,
+            ExtractedLinksCount: firstExtractedLinksCount,
+            ExtractionStatus: firstExtractionStatus,
+            DebugArtifactPaths: debugArtifacts.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             Candidates: candidates,
             Rejected: rejected,
             Warnings: runtime.Warnings.Concat(runtime.MissingRequirements).Concat(warnings).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
@@ -395,30 +442,59 @@ public sealed class BrowserResearchAgentService
         }
     }
 
-    private IEnumerable<BrowserResearchCandidate> FetchCandidatesForRequest(WebResearchSourceRequest request, BrowserResearchRuntimeStatus runtime)
+    private BrowserSearchOutcome FetchCandidatesForRequest(
+        WebResearchSourceRequest request,
+        BrowserResearchRuntimeStatus runtime,
+        string debugRoot,
+        bool allowBrowserExecution)
     {
-        var results = RunBrowserSearch(request.Query, request.RecommendedSourceDomains, 5);
+        if (!allowBrowserExecution)
+        {
+            return new BrowserSearchOutcome(
+                OpenedSearchUrl: "-",
+                PageTitle: "-",
+                ExtractedLinksCount: 0,
+                ExtractionStatus: "browser_execution_disabled",
+                DebugArtifactPaths: [],
+                Candidates: []);
+        }
+
+        var results = RunBrowserSearch(request.Query, request.RecommendedSourceDomains, 5, debugRoot, request.RequestId, runtime.ExecutablePath, runtime.RuntimeMode, runtime.BrowserChannel);
         var now = DateTimeOffset.UtcNow;
-        return results.Select(result => new BrowserResearchCandidate(
-            KnowledgeItemId: request.KnowledgeItemId,
-            Title: result.Title,
-            Url: result.Url,
-            Domain: result.Domain,
-            Snippet: result.Snippet,
-            SourceType: "browser_research_candidate",
-            HumanReviewStatus: "pending",
-            SafetyFlags: ["no_trading_execution", "human_review_required"],
-            RetrievedAtUtc: now));
+        return new BrowserSearchOutcome(
+            OpenedSearchUrl: results.OpenedSearchUrl,
+            PageTitle: results.PageTitle,
+            ExtractedLinksCount: results.ExtractedLinksCount,
+            ExtractionStatus: results.ExtractionStatus,
+            DebugArtifactPaths: results.DebugArtifactPaths,
+            Candidates: results.Links.Select(result => new BrowserResearchCandidate(
+                KnowledgeItemId: request.KnowledgeItemId,
+                Title: result.Title,
+                Url: result.Url,
+                Domain: result.Domain,
+                Snippet: result.Snippet,
+                SourceType: "browser_research_candidate",
+                HumanReviewStatus: "pending",
+                SafetyFlags: ["no_trading_execution", "human_review_required"],
+                RetrievedAtUtc: now)).ToList());
     }
 
-    private static IReadOnlyList<(string Title, string Url, string Domain, string Snippet)> RunBrowserSearch(string query, IReadOnlyList<string> allowedDomains, int maxResults)
+    private static BrowserSearchExecutionResult RunBrowserSearch(string query, IReadOnlyList<string> allowedDomains, int maxResults, string debugRoot, string requestId, string? executablePath, string? runtimeMode, string? browserChannel)
     {
-        var script = BuildBrowserScript(query, allowedDomains, maxResults);
+        Directory.CreateDirectory(debugRoot);
+        var searchUrlPath = Path.Combine(debugRoot, "search_url.txt");
+        var pageTitlePath = Path.Combine(debugRoot, "page_title.txt");
+        var pageExcerptPath = Path.Combine(debugRoot, "page_excerpt.html");
+        var screenshotPath = Path.Combine(debugRoot, $"{SanitizeFileName(requestId)}.png");
+        var browserStatePath = Path.Combine(debugRoot, $"{SanitizeFileName(requestId)}.json");
+
         var node = FindExecutable("node");
         if (node is null)
         {
-            return [];
+            return BrowserSearchExecutionResult.Blocked("node_missing", searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath);
         }
+
+        var script = BuildBrowserScript(query, allowedDomains, maxResults, searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath, executablePath, runtimeMode, browserChannel);
 
         var psi = new ProcessStartInfo
         {
@@ -436,7 +512,7 @@ public sealed class BrowserResearchAgentService
             using var process = Process.Start(psi);
             if (process is null)
             {
-                return [];
+                return BrowserSearchExecutionResult.Blocked("browser_process_start_failed", searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath);
             }
 
             var output = process.StandardOutput.ReadToEnd();
@@ -444,42 +520,363 @@ public sealed class BrowserResearchAgentService
             process.WaitForExit(15000);
             if (process.ExitCode != 0 || string.IsNullOrWhiteSpace(output))
             {
-                return [];
+                var fallback = TryBrowserDumpDomSearch(query, allowedDomains, maxResults, searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath, executablePath);
+                if (fallback is not null)
+                {
+                    return fallback;
+                }
+
+                return BrowserSearchExecutionResult.Blocked(string.IsNullOrWhiteSpace(error) ? "browser_search_failed" : error.Trim(), searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath);
             }
 
-            return JsonSerializer.Deserialize<IReadOnlyList<BrowserSearchResult>>(output, JsonDefaults.SnapshotReadOptions)
-                ?.Select(result => (result.Title ?? string.Empty, result.Url ?? string.Empty, result.Domain ?? string.Empty, result.Snippet ?? string.Empty))
-                .ToList()
-                ?? [];
+            var result = JsonSerializer.Deserialize<BrowserSearchExecutionResult>(output, JsonDefaults.SnapshotReadOptions);
+            if (result is not null && result.Links.Count > 0)
+            {
+                return result;
+            }
+
+            var fallbackResult = TryBrowserDumpDomSearch(query, allowedDomains, maxResults, searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath, executablePath);
+            return fallbackResult ?? BrowserSearchExecutionResult.Blocked("browser_search_parse_failed", searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath);
         }
         catch
         {
-            return [];
+            var fallback = TryBrowserDumpDomSearch(query, allowedDomains, maxResults, searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath, executablePath);
+            return fallback ?? BrowserSearchExecutionResult.Blocked("browser_search_exception", searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath);
         }
     }
 
-    private static string BuildBrowserScript(string query, IReadOnlyList<string> allowedDomains, int maxResults)
+    private static BrowserSearchExecutionResult? TryBrowserDumpDomSearch(
+        string query,
+        IReadOnlyList<string> allowedDomains,
+        int maxResults,
+        string searchUrlPath,
+        string pageTitlePath,
+        string pageExcerptPath,
+        string screenshotPath,
+        string browserStatePath,
+        string? executablePath)
+    {
+        var browserPath = NormalizeBrowserPath(executablePath) ?? FindBrowserBinary();
+        if (string.IsNullOrWhiteSpace(browserPath) || !File.Exists(browserPath))
+        {
+            return null;
+        }
+
+        var attempts = new[]
+        {
+            "https://html.duckduckgo.com/html/?q=" + Uri.EscapeDataString(query),
+            "https://duckduckgo.com/?q=" + Uri.EscapeDataString(query)
+        };
+
+        var lastStatus = "no_results";
+
+        foreach (var searchUrl in attempts)
+        {
+            var html = RunBrowserDumpDom(browserPath, searchUrl);
+            File.WriteAllText(searchUrlPath, searchUrl);
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                lastStatus = "empty_html";
+                continue;
+            }
+
+            var pageTitle = ExtractPageTitle(html);
+            File.WriteAllText(pageTitlePath, pageTitle);
+            File.WriteAllText(pageExcerptPath, html.Length > 100000 ? html[..100000] : html);
+            var challengeDetected = IsChallengePage(html);
+            lastStatus = challengeDetected ? "captcha_challenge_detected" : "dump_dom";
+            try
+            {
+                File.WriteAllText(browserStatePath, JsonSerializer.Serialize(new
+                {
+                    openedSearchUrl = searchUrl,
+                    pageTitle,
+                    extractionStatus = lastStatus,
+                    extractedLinksCount = 0
+                }, JsonDefaults.WriteOptions));
+            }
+            catch
+            {
+            }
+
+            var links = ExtractLinksFromHtml(html, allowedDomains, maxResults);
+            if (links.Count > 0)
+            {
+                TryCaptureScreenshot(browserPath, searchUrl, screenshotPath);
+                return new BrowserSearchExecutionResult(
+                    OpenedSearchUrl: searchUrl,
+                    PageTitle: pageTitle,
+                    ExtractedLinksCount: links.Count,
+                    ExtractionStatus: "results_extracted",
+                    DebugArtifactPaths: [searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath],
+                    Links: links);
+            }
+
+            if (challengeDetected)
+            {
+                return new BrowserSearchExecutionResult(
+                    OpenedSearchUrl: searchUrl,
+                    PageTitle: pageTitle,
+                    ExtractedLinksCount: 0,
+                    ExtractionStatus: "captcha_challenge_detected",
+                    DebugArtifactPaths: [searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath],
+                    Links: []);
+            }
+        }
+
+        return new BrowserSearchExecutionResult(
+            OpenedSearchUrl: attempts.LastOrDefault() ?? "-",
+            PageTitle: "-",
+            ExtractedLinksCount: 0,
+            ExtractionStatus: lastStatus,
+            DebugArtifactPaths: [searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath],
+            Links: []);
+    }
+
+    private static string RunBrowserDumpDom(string browserPath, string url)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = browserPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            psi.ArgumentList.Add("--headless=new");
+            psi.ArgumentList.Add("--disable-gpu");
+            psi.ArgumentList.Add("--no-first-run");
+            psi.ArgumentList.Add("--disable-extensions");
+            psi.ArgumentList.Add("--disable-background-networking");
+            psi.ArgumentList.Add("--no-default-browser-check");
+            psi.ArgumentList.Add("--dump-dom");
+            psi.ArgumentList.Add(url);
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return string.Empty;
+            }
+
+            var output = process.StandardOutput.ReadToEnd();
+            var error = process.StandardError.ReadToEnd();
+            process.WaitForExit(25000);
+            if (process.ExitCode != 0 && string.IsNullOrWhiteSpace(output))
+            {
+                return string.Empty;
+            }
+
+            return !string.IsNullOrWhiteSpace(output) ? output : error;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static IReadOnlyList<BrowserSearchResult> ExtractLinksFromHtml(string html, IReadOnlyList<string> allowedDomains, int maxResults)
+    {
+        var results = new List<BrowserSearchResult>();
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return results;
+        }
+
+        var allowed = (allowedDomains ?? []).Select(value => value.Trim().ToLowerInvariant()).Where(value => !string.IsNullOrWhiteSpace(value)).ToList();
+        var hrefMatches = Regex.Matches(html, "<a[^>]+href=[\"'](?<href>[^\"']+)[\"'][^>]*>(?<inner>.*?)</a>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        foreach (Match match in hrefMatches)
+        {
+            var href = System.Net.WebUtility.HtmlDecode(match.Groups["href"].Value).Trim();
+            if (!Uri.TryCreate(href, UriKind.Absolute, out var uri))
+            {
+                continue;
+            }
+
+            var domain = uri.Host.Replace("www.", string.Empty, StringComparison.OrdinalIgnoreCase).ToLowerInvariant();
+            if (allowed.Count > 0 && !allowed.Any(allowedDomain => domain == allowedDomain || domain.EndsWith("." + allowedDomain, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (href.Contains("duckduckgo.com", StringComparison.OrdinalIgnoreCase) && (href.Contains("/y.js", StringComparison.OrdinalIgnoreCase) || href.Contains("/l/?", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var title = CleanHtmlText(System.Net.WebUtility.HtmlDecode(match.Groups["inner"].Value));
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                continue;
+            }
+
+            var snippet = ExtractSnippetFromHtml(html, match.Index);
+            if (string.IsNullOrWhiteSpace(snippet))
+            {
+                snippet = title;
+            }
+
+            results.Add(new BrowserSearchResult(title, href, domain, snippet));
+            if (results.Count >= maxResults)
+            {
+                break;
+            }
+        }
+
+        return results;
+    }
+
+    private static string ExtractPageTitle(string html)
+    {
+        var match = Regex.Match(html, "<title>(?<title>.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (!match.Success)
+        {
+            return string.Empty;
+        }
+
+        return CleanHtmlText(System.Net.WebUtility.HtmlDecode(match.Groups["title"].Value));
+    }
+
+    private static string ExtractSnippetFromHtml(string html, int anchorIndex)
+    {
+        var start = Math.Max(0, anchorIndex - 240);
+        var length = Math.Min(500, html.Length - start);
+        if (length <= 0)
+        {
+            return string.Empty;
+        }
+
+        return CleanHtmlText(System.Net.WebUtility.HtmlDecode(html.Substring(start, length)));
+    }
+
+    private static string CleanHtmlText(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var cleaned = Regex.Replace(value, "<[^>]+>", " ");
+        cleaned = Regex.Replace(cleaned, "\\s+", " ").Trim();
+        return cleaned;
+    }
+
+    private static bool IsChallengePage(string html) =>
+        html.Contains("captcha", StringComparison.OrdinalIgnoreCase)
+        || html.Contains("suspicious", StringComparison.OrdinalIgnoreCase)
+        || html.Contains("Unfortunately, bots use DuckDuckGo too", StringComparison.OrdinalIgnoreCase)
+        || html.Contains("Your request has been flagged as being suspicious", StringComparison.OrdinalIgnoreCase);
+
+    private static void TryCaptureScreenshot(string browserPath, string url, string screenshotPath)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = browserPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            psi.ArgumentList.Add("--headless=new");
+            psi.ArgumentList.Add("--disable-gpu");
+            psi.ArgumentList.Add("--no-first-run");
+            psi.ArgumentList.Add("--disable-extensions");
+            psi.ArgumentList.Add("--disable-background-networking");
+            psi.ArgumentList.Add("--no-default-browser-check");
+            psi.ArgumentList.Add($"--screenshot={screenshotPath}");
+            psi.ArgumentList.Add(url);
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return;
+            }
+
+            process.WaitForExit(25000);
+        }
+        catch
+        {
+        }
+    }
+
+    private static string BuildBrowserScript(
+        string query,
+        IReadOnlyList<string> allowedDomains,
+        int maxResults,
+        string searchUrlPath,
+        string pageTitlePath,
+        string pageExcerptPath,
+        string screenshotPath,
+        string browserStatePath,
+        string? executablePath,
+        string? runtimeMode,
+        string? browserChannel)
     {
         var allowed = JsonSerializer.Serialize(allowedDomains ?? [], JsonDefaults.WriteOptions);
         var encodedQuery = JsonSerializer.Serialize(query, JsonDefaults.WriteOptions);
+        var encodedSearchUrlPath = JsonSerializer.Serialize(searchUrlPath, JsonDefaults.WriteOptions);
+        var encodedPageTitlePath = JsonSerializer.Serialize(pageTitlePath, JsonDefaults.WriteOptions);
+        var encodedPageExcerptPath = JsonSerializer.Serialize(pageExcerptPath, JsonDefaults.WriteOptions);
+        var encodedScreenshotPath = JsonSerializer.Serialize(screenshotPath, JsonDefaults.WriteOptions);
+        var encodedBrowserStatePath = JsonSerializer.Serialize(browserStatePath, JsonDefaults.WriteOptions);
+        var encodedExecutablePath = JsonSerializer.Serialize(executablePath ?? string.Empty, JsonDefaults.WriteOptions);
+        var encodedRuntimeMode = JsonSerializer.Serialize(runtimeMode ?? string.Empty, JsonDefaults.WriteOptions);
+        var encodedBrowserChannel = JsonSerializer.Serialize(browserChannel ?? string.Empty, JsonDefaults.WriteOptions);
         return $$"""
 const allowedDomains = {{allowed}};
 const query = {{encodedQuery}};
 const maxResults = {{maxResults}};
+const searchUrlPath = {{encodedSearchUrlPath}};
+const pageTitlePath = {{encodedPageTitlePath}};
+const pageExcerptPath = {{encodedPageExcerptPath}};
+const screenshotPath = {{encodedScreenshotPath}};
+const browserStatePath = {{encodedBrowserStatePath}};
+const executablePath = {{encodedExecutablePath}};
+const runtimeMode = {{encodedRuntimeMode}};
+const browserChannel = {{encodedBrowserChannel}};
 (async () => {
   try {
     const { chromium } = require('playwright');
-    const browser = await chromium.launch({ headless: true });
+    const launchOptions = { headless: true };
+    if (executablePath && executablePath.length > 0) {
+      launchOptions.executablePath = executablePath;
+    }
+    if (browserChannel && browserChannel.length > 0 && !launchOptions.executablePath) {
+      launchOptions.channel = browserChannel;
+    }
+    const browser = await chromium.launch(launchOptions);
     const page = await browser.newPage();
-    const url = 'https://duckduckgo.com/?q=' + encodeURIComponent(query);
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-    await page.waitForTimeout(1200);
-    const results = await page.evaluate((maxResults, allowedDomains) => {
+    const attempts = [
+      'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query),
+      'https://duckduckgo.com/?q=' + encodeURIComponent(query)
+    ];
+    let openedSearchUrl = '';
+    let pageTitle = '';
+    let pageHtml = '';
+    let extractionStatus = 'no_results';
+    let links = [];
+    for (const url of attempts) {
+      openedSearchUrl = url;
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page.waitForTimeout(2000);
+        pageTitle = await page.title();
+        pageHtml = await page.content();
+        links = await page.evaluate((maxResults, allowedDomains) => {
       const normalizeDomain = (value) => {
         try { return new URL(value).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; }
       };
       const allowed = (allowedDomains || []).map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
-      const nodes = Array.from(document.querySelectorAll('a[data-testid="result-title-a"], article a[href], h2 a[href]'));
+      const selectors = [
+        'a[data-testid="result-title-a"]',
+        '.result__title a[href]',
+        '.links_main a[href]',
+        'article a[href]',
+        'h2 a[href]',
+        'a[href]'
+      ];
+      const nodes = Array.from(new Set(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)))));
       const seen = new Set();
       const items = [];
       for (const anchor of nodes) {
@@ -489,15 +886,36 @@ const maxResults = {{maxResults}};
         if (!domain) continue;
         if (allowed.length > 0 && !allowed.some((allowedDomain) => domain === allowedDomain || domain.endsWith('.' + allowedDomain))) continue;
         const title = (anchor.innerText || anchor.textContent || '').trim();
-        const snippet = (anchor.closest('article')?.innerText || anchor.parentElement?.innerText || '').trim();
+        const containerText = anchor.closest('article')?.innerText || anchor.closest('.result')?.innerText || anchor.parentElement?.innerText || '';
+        const snippet = String(containerText || '').trim();
         seen.add(href);
         items.push({ title, url: href, domain, snippet: snippet.slice(0, 400) });
         if (items.length >= maxResults) break;
       }
       return items;
     }, maxResults, allowedDomains);
+        extractionStatus = links.length > 0 ? 'results_extracted' : 'no_results';
+        if (links.length > 0) break;
+      } catch (error) {
+        extractionStatus = String(error && error.message ? error.message : error);
+      }
+    }
+    try {
+      await require('node:fs').promises.writeFile(searchUrlPath, openedSearchUrl, 'utf8');
+      await require('node:fs').promises.writeFile(pageTitlePath, pageTitle || '', 'utf8');
+      await require('node:fs').promises.writeFile(pageExcerptPath, (pageHtml || '').slice(0, 100000), 'utf8');
+      await require('node:fs').promises.writeFile(browserStatePath, JSON.stringify({ openedSearchUrl, pageTitle, extractionStatus, extractedLinksCount: links.length }, null, 2), 'utf8');
+    } catch {}
+    try { await page.screenshot({ path: screenshotPath, fullPage: false }); } catch {}
     await browser.close();
-    process.stdout.write(JSON.stringify(results));
+    process.stdout.write(JSON.stringify({
+      openedSearchUrl,
+      pageTitle,
+      extractedLinksCount: links.length,
+      extractionStatus,
+      debugArtifactPaths: [searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath],
+      links
+    }));
   } catch (error) {
     process.stderr.write(String(error && error.stack ? error.stack : error));
     process.exit(1);
@@ -671,6 +1089,18 @@ const maxResults = {{maxResults}};
         sb.AppendLine($"- Considered Requests: {report.ConsideredRequests}");
         sb.AppendLine($"- Fetched Candidates: {report.FetchedCandidates}");
         sb.AppendLine($"- Imported Candidates: {report.ImportedCandidates}");
+        sb.AppendLine($"- Opened Search URL: {report.OpenedSearchUrl}");
+        sb.AppendLine($"- Page Title: {report.PageTitle}");
+        sb.AppendLine($"- Extracted Links Count: {report.ExtractedLinksCount}");
+        sb.AppendLine($"- Extraction Status: {report.ExtractionStatus}");
+        if (report.DebugArtifactPaths.Count > 0)
+        {
+            sb.AppendLine("- Debug Artifacts:");
+            foreach (var artifact in report.DebugArtifactPaths)
+            {
+                sb.AppendLine($"  - {artifact}");
+            }
+        }
         sb.AppendLine();
         sb.AppendLine("## Safety");
         sb.AppendLine($"- no_trading_execution: {report.NoTradingExecution}");
@@ -708,4 +1138,37 @@ const maxResults = {{maxResults}};
         int SkippedDueToStatus,
         int SkippedDueToMissingQuery,
         IReadOnlyList<string> Warnings);
+    private sealed record BrowserSearchExecutionResult(
+        string OpenedSearchUrl,
+        string PageTitle,
+        int ExtractedLinksCount,
+        string ExtractionStatus,
+        IReadOnlyList<string> DebugArtifactPaths,
+        IReadOnlyList<BrowserSearchResult> Links)
+    {
+        public static BrowserSearchExecutionResult Blocked(
+            string reason,
+            string searchUrlPath,
+            string pageTitlePath,
+            string pageExcerptPath,
+            string screenshotPath,
+            string browserStatePath) =>
+            new(
+                OpenedSearchUrl: "-",
+                PageTitle: "-",
+                ExtractedLinksCount: 0,
+                ExtractionStatus: reason,
+                DebugArtifactPaths: [searchUrlPath, pageTitlePath, pageExcerptPath, screenshotPath, browserStatePath],
+                Links: []);
+    }
+    private static string SanitizeFileName(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var builder = new StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            builder.Append(invalid.Contains(ch) ? '_' : ch);
+        }
+        return builder.ToString();
+    }
 }
