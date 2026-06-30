@@ -114,6 +114,8 @@ internal sealed class HermesCli
             "domain-aware-review-prioritization" => ShowDomainAwareReviewPrioritization(),
             "review-action-plan" => ShowReviewActionPlan(),
             "promotion-status" => ShowPromotionStatus(),
+            "knowledge-trust-promotion-status" => ShowKnowledgeTrustPromotionStatus(),
+            "knowledge-trust-promote" => RunKnowledgeTrustPromotion(),
             "knowledge-consolidation-analyzer" => ShowKnowledgeConsolidationAnalyzer(),
             "knowledge-consolidation-executor" => ShowKnowledgeConsolidationExecutor(),
             "strategy-mutation-analyzer" => ShowStrategyMutationAnalyzer(),
@@ -426,6 +428,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes domain-aware-review-prioritization Domain-aware Review Priorisierung anzeigen");
         Console.WriteLine("  hermes review-action-plan Review Action Plan anzeigen");
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
+        Console.WriteLine("  hermes knowledge-trust-promotion-status Trust-Promotion Pipeline Status anzeigen");
+        Console.WriteLine("  hermes knowledge-trust-promote [--dry-run|--apply] Trusted Knowledge promoten");
         Console.WriteLine("  hermes knowledge-consolidation-analyzer Knowledge Consolidation Analyzer anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-executor Knowledge Consolidation Kandidaten erzeugen");
         Console.WriteLine("  hermes strategy-mutation-analyzer Strategy Mutation Kandidaten anzeigen");
@@ -13967,6 +13971,40 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowKnowledgeTrustPromotionStatus()
+    {
+        WriteHeader("Hermes Knowledge Trust Promotion Pipeline");
+        var storagePaths = BuildStoragePaths();
+        var service = new KnowledgeTrustPromotionPipelineService(storagePaths);
+        var report = service.Run(apply: false);
+
+        WriteKnowledgeTrustPromotionReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunKnowledgeTrustPromotion()
+    {
+        WriteHeader("Hermes Knowledge Trust Promotion Pipeline");
+        var storagePaths = BuildStoragePaths();
+        var service = new KnowledgeTrustPromotionPipelineService(storagePaths);
+        var apply = HasArg("--apply");
+        var dryRun = HasArg("--dry-run");
+
+        if (apply && dryRun)
+        {
+            Console.WriteLine("Error: use either --dry-run or --apply, not both.");
+            return 1;
+        }
+
+        var report = service.Run(apply: apply && !dryRun);
+        WriteKnowledgeTrustPromotionReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowTrustedCandidates()
     {
         WriteHeader("Hermes Trusted Knowledge Candidates");
@@ -14022,6 +14060,60 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private void WriteKnowledgeTrustPromotionReport(KnowledgeTrustPromotionReport report, KnowledgeTrustPromotionPipelineService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Total Items", report.TotalItems.ToString());
+        WriteField("Eligible for Promotion", report.EligibleForPromotion.ToString());
+        WriteField("Promoted to Trusted", report.PromotedToTrusted.ToString());
+        WriteField("Blocked by Evidence", report.BlockedByEvidence.ToString());
+        WriteField("Blocked by Contradiction", report.BlockedByContradiction.ToString());
+        WriteField("Blocked by Score", report.BlockedByScore.ToString());
+        WriteField("Dry Run", report.DryRun.ToString().ToLowerInvariant());
+        WriteField("Applied Count", report.AppliedCount.ToString());
+        WriteField("Recommended Next Action", report.RecommendedNextAction);
+        WriteField("Quality Path", DisplayPath(report.QualityPath));
+        WriteField("Knowledge Evidence", DisplayPath(report.KnowledgeEvidencePath));
+        WriteField("Source Confirmations", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Evidence Graph", DisplayPath(report.EvidenceGraphPath));
+        WriteField("Validation Plans", DisplayPath(report.ValidationPlansPath));
+        WriteField("Validation Status", DisplayPath(report.ValidationStatusPath));
+        WriteField("Validation Execution Log", DisplayPath(report.ValidationExecutionLogPath));
+        WriteField("Validation Plans Open", report.ValidationPlansOpen.ToString());
+        WriteField("Validation Tasks Pending", report.ValidationTasksPending.ToString());
+        WriteField("Validation Trusted Candidate Count", report.ValidationTrustedCandidateCount.ToString());
+        WriteField("Validation Needs Source Check", report.ValidationItemsNeedingSourceCheck.ToString());
+        WriteField("Validation Needs OOS", report.ValidationItemsNeedingOos.ToString());
+        WriteField("Validation Routing Health", report.ValidationRoutingHealth);
+        WriteField("Contradictions", DisplayPath(report.ContradictionsPath));
+        WriteMessages("Top Blockers", report.TopBlockers.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
+        WriteMessages("Warnings", report.Warnings);
+
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            WriteSubHeader($"{candidate.Title} / {candidate.KnowledgeId}");
+            WriteField("Domain", candidate.Domain);
+            WriteField("Current Status", candidate.CurrentStatus);
+            WriteField("Recommended Status", candidate.RecommendedStatus);
+            WriteField("Promotion Outcome", candidate.PromotionOutcome);
+            WriteField("Trust Score", candidate.TrustScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Quality Score", candidate.QualityScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Validation Score", candidate.ValidationScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Source Count", candidate.SourceCount.ToString());
+            WriteField("Source Type Count", candidate.SourceTypeCount.ToString());
+            WriteField("Validation Evidence Count", candidate.ValidationEvidenceCount.ToString());
+            WriteField("Last Validated UTC", candidate.LastValidatedUtc?.ToString("O") ?? "-");
+            WriteField("Latest Validation UTC", candidate.LatestValidationExecutionUtc?.ToString("O") ?? "-");
+            WriteField("Validation Readiness", candidate.ValidationReadiness);
+            WriteField("Eligible For Promotion", candidate.EligibleForPromotion.ToString().ToLowerInvariant());
+            WriteField("Human Review Required", candidate.HumanReviewRequired.ToString().ToLowerInvariant());
+            WriteMessages("Satisfied", candidate.SatisfiedConditions);
+            WriteMessages("Missing Evidence", candidate.MissingEvidenceCategories);
+            WriteMessages("Blockers", candidate.Blockers);
+        }
     }
 
     private int ShowTrustedReviewGate()
