@@ -60,7 +60,21 @@ public sealed record ConfirmationResult(
     int ValidationEvidenceCount,
     bool HumanApproved,
     IReadOnlyList<string> EvidenceRefs,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    int CandidateSourceCount = 0,
+    string ReviewStatus = "trusted_ready",
+    IReadOnlyList<SourceCandidate>? CandidateSources = null);
+
+public sealed record SourceCandidate(
+    string Url,
+    string Domain,
+    string SourceType,
+    string ExcerptOrSummary,
+    DateTimeOffset RetrievedAtUtc,
+    string EvidenceReason,
+    string IndependenceClaim,
+    string HumanReviewStatus,
+    IReadOnlyList<string> SafetyFlags);
 
 public sealed record SourceConfirmationReport(
     string ReportVersion,
@@ -328,13 +342,16 @@ public sealed class SourceConfirmationEngine
     public SourceConfirmationReport Build()
     {
         Directory.CreateDirectory(Root);
+        var existing = LoadReport();
+        var existingById = existing?.Results.ToDictionary(result => result.KnowledgeId, StringComparer.OrdinalIgnoreCase)
+            ?? new Dictionary<string, ConfirmationResult>(StringComparer.OrdinalIgnoreCase);
         var sources = new KnowledgeSourceRegistry(_storagePaths).LoadOrCreateSources();
         var sourcesById = sources.ToDictionary(source => source.SourceId, StringComparer.OrdinalIgnoreCase);
         var catalog = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
         var validations = new KnowledgeValidationExecutor(_storagePaths).LoadResults(5000);
         var reviews = new HumanReviewEvidenceStore(_storagePaths).LoadOrCreateReport().Reviews;
         var results = catalog
-            .Select(item => BuildResult(item, sourcesById, validations, reviews))
+            .Select(item => BuildResult(item, sourcesById, validations, reviews, existingById.GetValueOrDefault(item.Id)))
             .OrderByDescending(item => item.ConfirmationScore)
             .ThenBy(item => item.Domain, StringComparer.Ordinal)
             .ThenBy(item => item.KnowledgeId, StringComparer.Ordinal)
@@ -382,7 +399,8 @@ public sealed class SourceConfirmationEngine
         KnowledgeCatalogItem item,
         IReadOnlyDictionary<string, CognitiveSource> sourcesById,
         IReadOnlyList<KnowledgeValidationExecutionResult> validations,
-        IReadOnlyList<HumanReviewEvidence> reviews)
+        IReadOnlyList<HumanReviewEvidence> reviews,
+        ConfirmationResult? existing = null)
     {
         var itemSources = item.SourceIds
             .Select(sourceId => sourcesById.TryGetValue(sourceId, out var source) ? source : null)
@@ -456,7 +474,10 @@ public sealed class SourceConfirmationEngine
             ValidationEvidenceCount: validationEvidence,
             HumanApproved: humanApproved,
             EvidenceRefs: evidenceRefs,
-            Warnings: warnings);
+            Warnings: warnings,
+            CandidateSourceCount: existing?.CandidateSourceCount ?? 0,
+            ReviewStatus: existing?.ReviewStatus ?? (sourceCount >= 2 ? "candidate_second_source" : "awaiting_human_review"),
+            CandidateSources: existing?.CandidateSources ?? []);
     }
 }
 

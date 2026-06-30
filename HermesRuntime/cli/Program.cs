@@ -213,6 +213,8 @@ internal sealed class HermesCli
             "process-research-queue" => ProcessResearchQueue(),
             "web-research-source-collector-status" => ShowWebResearchSourceCollectorStatus(),
             "web-research-source-collector-export" => RunWebResearchSourceCollectorExport(),
+            "web-research-import-status" => ShowWebResearchImportStatus(),
+            "web-research-import" => RunWebResearchImport(),
             "generate-hypotheses" => GenerateHypotheses(),
             "cognitive-insights" => ShowCognitiveInsights(),
             "planning-status" => ShowPlanningStatus(),
@@ -532,6 +534,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes process-research-queue --max-items 50 Research Queue verarbeiten");
         Console.WriteLine("  hermes web-research-source-collector-status Web Research Source Collector Status anzeigen");
         Console.WriteLine("  hermes web-research-source-collector-export [--apply] Web Research Requests exportieren");
+        Console.WriteLine("  hermes web-research-import-status Web Research Import Status anzeigen");
+        Console.WriteLine("  hermes web-research-import [--dry-run|--apply] Web Research Quellen importieren");
         Console.WriteLine("  hermes generate-hypotheses --domain trading Cross-Knowledge-Hypothesen erzeugen");
         Console.WriteLine("  hermes cognitive-insights Cognitive Insights anzeigen");
         Console.WriteLine("  hermes planning-status  Autonomous Planning Status anzeigen");
@@ -9051,6 +9055,52 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private int ShowWebResearchImportStatus()
+    {
+        WriteHeader("Hermes Web Research Import");
+        var report = new WebResearchSourceImportService(BuildStoragePaths()).Run(apply: false);
+        WriteWebResearchImportReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunWebResearchImport()
+    {
+        WriteHeader("Hermes Web Research Import");
+        var apply = HasArg("--apply") && !HasArg("--dry-run");
+        var report = new WebResearchSourceImportService(BuildStoragePaths()).Run(apply: apply);
+        WriteWebResearchImportReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private void WriteWebResearchImportReport(WebResearchImportReport report)
+    {
+        WriteField("Import Candidates", report.ImportCandidates.ToString());
+        WriteField("Accepted Candidates", report.AcceptedCandidates.ToString());
+        WriteField("Rejected Candidates", report.RejectedCandidates.ToString());
+        WriteField("Duplicate Sources", report.DuplicateSources.ToString());
+        WriteField("Blocked Same Domain", report.BlockedSameDomain.ToString());
+        WriteField("Awaiting Human Review", report.AwaitingHumanReview.ToString());
+        WriteField("Candidate Sources Added", report.CandidateSourcesAdded.ToString());
+        WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
+        WriteField("Import Example Path", DisplayPath(report.ImportExamplePath));
+        WriteField("Source Confirmations Path", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteMessages("Warnings", report.Warnings);
+        if (report.Accepted.Count > 0)
+        {
+            WriteMessages("Accepted", report.Accepted.Select(candidate => $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Url}").Take(20).ToList());
+        }
+        if (report.Rejected.Count > 0)
+        {
+            WriteMessages("Rejected", report.Rejected.Select(candidate => $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Url}").Take(20).ToList());
+        }
     }
 
     private int GenerateHypotheses()
