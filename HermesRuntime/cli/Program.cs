@@ -219,6 +219,8 @@ internal sealed class HermesCli
             "web-research-import" => RunWebResearchImport(),
             "knowledge-evidence-match-status" => ShowKnowledgeEvidenceMatchStatus(),
             "knowledge-evidence-match" => RunKnowledgeEvidenceMatch(),
+            "independent-source-resolver-status" => ShowIndependentSourceResolverStatus(),
+            "independent-source-resolver" => RunIndependentSourceResolver(),
             "automated-web-research-status" => ShowAutomatedWebResearchStatus(),
             "automated-web-research-fetch" => RunAutomatedWebResearchFetch(),
             "research-query-builder-status" => ShowResearchQueryBuilderStatus(),
@@ -551,6 +553,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes web-research-import [--dry-run|--apply] Web Research Quellen importieren");
         Console.WriteLine("  hermes knowledge-evidence-match-status Knowledge Evidence Semantic Matcher Status anzeigen");
         Console.WriteLine("  hermes knowledge-evidence-match [--dry-run|--apply] Knowledge Evidence Semantic Matcher ausfuehren");
+        Console.WriteLine("  hermes independent-source-resolver-status Independent Source Resolver Status anzeigen");
+        Console.WriteLine("  hermes independent-source-resolver [--dry-run|--apply] Independent Source Resolver ausfuehren");
         Console.WriteLine("  hermes automated-web-research-status Web Research Fetcher Status anzeigen");
         Console.WriteLine("  hermes automated-web-research-fetch --max-items 10 [--dry-run|--apply] Web Research automatisch abrufen");
         Console.WriteLine("  hermes research-query-builder-status Research Query Builder Status anzeigen");
@@ -9211,6 +9215,83 @@ internal sealed class HermesCli
             WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Status} | semantic={candidate.SemanticMatchScore:0.###} | independence={candidate.IndependenceScore:0.###} | coverage={candidate.EvidenceCoverageScore:0.###} | contradiction={candidate.ContradictionRisk:0.###}");
             WriteMessages("Matched Terms", candidate.MatchedTerms);
             WriteMessages("Evidence Refs", candidate.EvidenceRefs);
+            if (!string.IsNullOrWhiteSpace(candidate.RejectionReason))
+            {
+                WriteField("Rejection Reason", candidate.RejectionReason);
+            }
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowIndependentSourceResolverStatus()
+    {
+        WriteHeader("Hermes Independent Source Resolver");
+        var service = new IndependentSourceResolverService(BuildStoragePaths());
+        var report = service.LoadStatus();
+        WriteField("Status", report.Status);
+        WriteField("Loaded Candidates", report.LoadedCandidates.ToString());
+        WriteField("Evaluated Existing Candidate Sources", report.EvaluatedExistingCandidateSources.ToString());
+        WriteField("Duplicate Import Candidates", report.DuplicateImportCandidates.ToString());
+        WriteField("True Duplicates", report.TrueDuplicates.ToString());
+        WriteField("Same Domain Candidates", report.SameDomainCandidates.ToString());
+        WriteField("Independent Existing Candidates", report.IndependentExistingCandidates.ToString());
+        WriteField("Independent Candidates", report.IndependentCandidates.ToString());
+        WriteField("Rejected Candidates", report.RejectedCandidates.ToString());
+        WriteField("Ready For Human Review", report.ReadyForHumanReview.ToString());
+        WriteField("Affected Knowledge Items", report.AffectedKnowledgeItems.ToString());
+        WriteField("Applied Candidates", report.AppliedCandidates.ToString());
+        WriteMessages("Warnings", report.Warnings);
+        WriteField("Source Confirmations Path", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
+        WriteField("Matcher Report Path", DisplayPath(report.MatcherReportPath));
+        WriteField("Knowledge Evidence Path", DisplayPath(report.KnowledgeEvidencePath));
+        WriteField("Evidence Graph Path", DisplayPath(report.EvidenceGraphPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.RelationshipStatus} | status={candidate.SourceStatus} | sem={candidate.SemanticMatchScore:0.###} | indep={candidate.IndependenceScore:0.###} | contradiction={candidate.ContradictionRisk:0.###}");
+            WriteMessages("Matched Terms", candidate.MatchedTerms);
+            if (!string.IsNullOrWhiteSpace(candidate.RejectionReason))
+            {
+                WriteField("Rejection Reason", candidate.RejectionReason);
+            }
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunIndependentSourceResolver()
+    {
+        WriteHeader("Hermes Independent Source Resolver");
+        var apply = HasArg("--apply") && !HasArg("--dry-run");
+        var service = new IndependentSourceResolverService(BuildStoragePaths());
+        var report = service.Run(apply: apply);
+        WriteField("Status", report.Status);
+        WriteField("Loaded Candidates", report.LoadedCandidates.ToString());
+        WriteField("Evaluated Existing Candidate Sources", report.EvaluatedExistingCandidateSources.ToString());
+        WriteField("Duplicate Import Candidates", report.DuplicateImportCandidates.ToString());
+        WriteField("True Duplicates", report.TrueDuplicates.ToString());
+        WriteField("Same Domain Candidates", report.SameDomainCandidates.ToString());
+        WriteField("Independent Existing Candidates", report.IndependentExistingCandidates.ToString());
+        WriteField("Independent Candidates", report.IndependentCandidates.ToString());
+        WriteField("Rejected Candidates", report.RejectedCandidates.ToString());
+        WriteField("Ready For Human Review", report.ReadyForHumanReview.ToString());
+        WriteField("Affected Knowledge Items", report.AffectedKnowledgeItems.ToString());
+        WriteField("Applied Candidates", report.AppliedCandidates.ToString());
+        WriteField("Source Confirmations Path", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
+        WriteField("Matcher Report Path", DisplayPath(report.MatcherReportPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteMessages("Warnings", report.Warnings);
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.RelationshipStatus} | status={candidate.SourceStatus} | sem={candidate.SemanticMatchScore:0.###} | indep={candidate.IndependenceScore:0.###} | contradiction={candidate.ContradictionRisk:0.###}");
+            WriteMessages("Matched Terms", candidate.MatchedTerms);
             if (!string.IsNullOrWhiteSpace(candidate.RejectionReason))
             {
                 WriteField("Rejection Reason", candidate.RejectionReason);
