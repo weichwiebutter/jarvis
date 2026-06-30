@@ -213,9 +213,12 @@ internal sealed class HermesCli
             "process-research-queue" => ProcessResearchQueue(),
             "web-research-source-collector-status" => ShowWebResearchSourceCollectorStatus(),
             "web-research-source-collector-export" => RunWebResearchSourceCollectorExport(),
+            "trusted-source-catalog-status" => ShowTrustedSourceCatalogStatus(),
             "web-search-connector-status" => ShowWebSearchConnectorStatus(),
             "web-research-import-status" => ShowWebResearchImportStatus(),
             "web-research-import" => RunWebResearchImport(),
+            "knowledge-evidence-match-status" => ShowKnowledgeEvidenceMatchStatus(),
+            "knowledge-evidence-match" => RunKnowledgeEvidenceMatch(),
             "automated-web-research-status" => ShowAutomatedWebResearchStatus(),
             "automated-web-research-fetch" => RunAutomatedWebResearchFetch(),
             "research-query-builder-status" => ShowResearchQueryBuilderStatus(),
@@ -442,6 +445,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes confidence-review-prioritization Confidence-basierte Review Priorisierung anzeigen");
         Console.WriteLine("  hermes domain-aware-review-prioritization Domain-aware Review Priorisierung anzeigen");
         Console.WriteLine("  hermes review-action-plan Review Action Plan anzeigen");
+        Console.WriteLine("  hermes trusted-source-catalog-status Trusted Source Catalog anzeigen");
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes knowledge-trust-promotion-status Trust-Promotion Pipeline Status anzeigen");
         Console.WriteLine("  hermes knowledge-trust-promote [--dry-run|--apply] Trusted Knowledge promoten");
@@ -545,6 +549,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes web-search-connector-status Web Search Connector Status anzeigen");
         Console.WriteLine("  hermes web-research-import-status Web Research Import Status anzeigen");
         Console.WriteLine("  hermes web-research-import [--dry-run|--apply] Web Research Quellen importieren");
+        Console.WriteLine("  hermes knowledge-evidence-match-status Knowledge Evidence Semantic Matcher Status anzeigen");
+        Console.WriteLine("  hermes knowledge-evidence-match [--dry-run|--apply] Knowledge Evidence Semantic Matcher ausfuehren");
         Console.WriteLine("  hermes automated-web-research-status Web Research Fetcher Status anzeigen");
         Console.WriteLine("  hermes automated-web-research-fetch --max-items 10 [--dry-run|--apply] Web Research automatisch abrufen");
         Console.WriteLine("  hermes research-query-builder-status Research Query Builder Status anzeigen");
@@ -9073,6 +9079,34 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowTrustedSourceCatalogStatus()
+    {
+        WriteHeader("Hermes Trusted Source Catalog");
+        var service = new TrustedSourceCatalogService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadStatus();
+        WriteField("Status", report.Status);
+        WriteField("Catalog Path", DisplayPath(report.CatalogPath));
+        WriteField("Example Path", DisplayPath(report.ExamplePath));
+        WriteField("Loaded Sources", report.LoadedSources.ToString());
+        WriteField("Allowed Sources", report.AllowedSources.ToString());
+        WriteField("Blocked Sources", report.BlockedSources.ToString());
+        WriteField("Categories", report.Categories.Count == 0 ? "-" : string.Join(", ", report.Categories));
+        WriteMessages("Warnings", report.Warnings);
+        foreach (var source in report.Sources.Take(20))
+        {
+            WriteField("Source", $"{source.Domain} | {source.Category} | allowed={source.Allowed} | {source.ReliabilityHint}");
+            WriteField("Search Entry", string.IsNullOrWhiteSpace(source.SearchEntryUrl) ? "-" : source.SearchEntryUrl);
+            WriteField("Topic Patterns", source.TopicPatterns.Count == 0 ? "-" : string.Join(", ", source.TopicPatterns));
+            WriteField("Preferred Paths", source.PreferredPaths.Count == 0 ? "-" : string.Join(", ", source.PreferredPaths));
+            WriteField("Blocked Paths", source.BlockedPaths.Count == 0 ? "-" : string.Join(", ", source.BlockedPaths));
+        }
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowWebSearchConnectorStatus()
     {
         WriteHeader("Hermes Web Search Connector");
@@ -9110,6 +9144,78 @@ internal sealed class HermesCli
         var apply = HasArg("--apply") && !HasArg("--dry-run");
         var report = new WebResearchSourceImportService(BuildStoragePaths()).Run(apply: apply);
         WriteWebResearchImportReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowKnowledgeEvidenceMatchStatus()
+    {
+        WriteHeader("Hermes Knowledge Evidence Semantic Matcher");
+        var service = new KnowledgeEvidenceSemanticMatcherService(BuildStoragePaths());
+        var report = service.LoadStatus();
+        WriteField("Status", report.Status);
+        WriteField("Loaded Candidates", report.LoadedCandidates.ToString());
+        WriteField("Loaded Knowledge Items", report.LoadedKnowledgeItems.ToString());
+        WriteField("Loaded Quality Items", report.LoadedQualityItems.ToString());
+        WriteField("Loaded Evidence Items", report.LoadedEvidenceItems.ToString());
+        WriteField("Loaded Graph Nodes", report.LoadedGraphNodes.ToString());
+        WriteField("Candidate Relevant", report.CandidateRelevant.ToString());
+        WriteField("Candidate Weak", report.CandidateWeak.ToString());
+        WriteField("Candidate Rejected", report.CandidateRejected.ToString());
+        WriteField("Needs Human Review", report.NeedsHumanReview.ToString());
+        WriteField("Applied Candidates", report.AppliedCandidates.ToString());
+        WriteMessages("Warnings", report.Warnings);
+        WriteField("Source Confirmations Path", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
+        WriteField("Knowledge Quality Path", DisplayPath(report.KnowledgeQualityPath));
+        WriteField("Knowledge Evidence Path", DisplayPath(report.KnowledgeEvidencePath));
+        WriteField("Evidence Graph Path", DisplayPath(report.EvidenceGraphPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Status} | semantic={candidate.SemanticMatchScore:0.###} | independence={candidate.IndependenceScore:0.###} | coverage={candidate.EvidenceCoverageScore:0.###} | contradiction={candidate.ContradictionRisk:0.###}");
+            WriteMessages("Matched Terms", candidate.MatchedTerms);
+            WriteMessages("Evidence Refs", candidate.EvidenceRefs);
+            if (!string.IsNullOrWhiteSpace(candidate.RejectionReason))
+            {
+                WriteField("Rejection Reason", candidate.RejectionReason);
+            }
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunKnowledgeEvidenceMatch()
+    {
+        WriteHeader("Hermes Knowledge Evidence Semantic Matcher");
+        var apply = HasArg("--apply") && !HasArg("--dry-run");
+        var service = new KnowledgeEvidenceSemanticMatcherService(BuildStoragePaths());
+        var report = service.Run(apply: apply);
+        WriteField("Status", report.Status);
+        WriteField("Loaded Candidates", report.LoadedCandidates.ToString());
+        WriteField("Candidate Relevant", report.CandidateRelevant.ToString());
+        WriteField("Candidate Weak", report.CandidateWeak.ToString());
+        WriteField("Candidate Rejected", report.CandidateRejected.ToString());
+        WriteField("Needs Human Review", report.NeedsHumanReview.ToString());
+        WriteField("Applied Candidates", report.AppliedCandidates.ToString());
+        WriteField("Source Confirmations Path", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteMessages("Warnings", report.Warnings);
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Status} | semantic={candidate.SemanticMatchScore:0.###} | independence={candidate.IndependenceScore:0.###} | coverage={candidate.EvidenceCoverageScore:0.###} | contradiction={candidate.ContradictionRisk:0.###}");
+            WriteMessages("Matched Terms", candidate.MatchedTerms);
+            WriteMessages("Evidence Refs", candidate.EvidenceRefs);
+            if (!string.IsNullOrWhiteSpace(candidate.RejectionReason))
+            {
+                WriteField("Rejection Reason", candidate.RejectionReason);
+            }
+        }
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -9203,7 +9309,7 @@ internal sealed class HermesCli
     private int ShowDirectDomainResearchStatus()
     {
         WriteHeader("Hermes Direct Domain Research Fetcher");
-        var service = new DirectDomainResearchFetcherService(BuildStoragePaths());
+        var service = new DirectDomainResearchFetcherService(BuildStoragePaths(), _runtimeRoot);
         var report = service.LoadStatus();
         WriteField("Status", report.Status);
         WriteField("Requests Path", DisplayPath(report.RequestsPath));
@@ -9216,6 +9322,7 @@ internal sealed class HermesCli
         WriteField("Candidates Rejected Low Relevance", report.CandidatesRejectedLowRelevance.ToString());
         WriteField("Blocked Domains", report.BlockedDomains.ToString());
         WriteField("Generated Queries", report.GeneratedQueries.Count.ToString());
+        WriteField("Catalog Sources Used", (report.CatalogSourcesUsed?.Count ?? 0).ToString());
         WriteMessages("Top Rejection Reasons", report.TopRejectionReasons.Select(pair => $"{pair.Key}: {pair.Value}").ToList());
         WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
         WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
@@ -9235,7 +9342,7 @@ internal sealed class HermesCli
         WriteHeader("Hermes Direct Domain Research Fetcher");
         var maxItems = ReadIntOption(_args, "--max-items", fallback: 5, min: 1, max: 100);
         var dryRun = HasArg("--dry-run") || !HasArg("--apply");
-        var service = new DirectDomainResearchFetcherService(BuildStoragePaths());
+        var service = new DirectDomainResearchFetcherService(BuildStoragePaths(), _runtimeRoot);
         var report = service.Run(maxItems, dryRun);
         WriteField("Status", report.Status);
         WriteField("Loaded Requests", report.LoadedRequests.ToString());
@@ -9246,6 +9353,7 @@ internal sealed class HermesCli
         WriteField("Candidates Rejected Low Relevance", report.CandidatesRejectedLowRelevance.ToString());
         WriteField("Blocked Domains", report.BlockedDomains.ToString());
         WriteField("Generated Queries", report.GeneratedQueries.Count.ToString());
+        WriteField("Catalog Sources Used", (report.CatalogSourcesUsed?.Count ?? 0).ToString());
         WriteField("Requests Path", DisplayPath(report.RequestsPath));
         WriteField("Import Candidates Path", DisplayPath(report.CandidateOutputPath));
         WriteField("Report", DisplayPath(report.ReportPath));

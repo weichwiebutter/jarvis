@@ -74,7 +74,13 @@ public sealed record SourceCandidate(
     string EvidenceReason,
     string IndependenceClaim,
     string HumanReviewStatus,
-    IReadOnlyList<string> SafetyFlags);
+    IReadOnlyList<string> SafetyFlags,
+    double SemanticMatchScore = 0,
+    double IndependenceScore = 0,
+    double EvidenceCoverageScore = 0,
+    double ContradictionRisk = 0,
+    string EvidenceMatchStatus = "unmatched",
+    bool ReadyForHumanSourceReview = false);
 
 public sealed record SourceConfirmationReport(
     string ReportVersion,
