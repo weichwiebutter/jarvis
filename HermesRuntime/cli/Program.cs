@@ -9187,6 +9187,10 @@ internal sealed class HermesCli
         WriteField("Recommendation", runtime.Recommendation);
         WriteField("Requests Path", DisplayPath(report.RequestsPath));
         WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
+        WriteField("Loaded Requests", report.LoadedRequests.ToString());
+        WriteField("Skipped Due To Schema", report.SkippedDueToSchema.ToString());
+        WriteField("Skipped Due To Status", report.SkippedDueToStatus.ToString());
+        WriteField("Skipped Due To Missing Query", report.SkippedDueToMissingQuery.ToString());
         WriteField("Report", DisplayPath(report.ReportPath));
         WriteField("Markdown", DisplayPath(report.MarkdownPath));
         Console.WriteLine();
@@ -9206,6 +9210,10 @@ internal sealed class HermesCli
         WriteField("Considered Requests", report.ConsideredRequests.ToString());
         WriteField("Fetched Candidates", report.FetchedCandidates.ToString());
         WriteField("Imported Candidates", report.ImportedCandidates.ToString());
+        WriteField("Loaded Requests", report.LoadedRequests.ToString());
+        WriteField("Skipped Due To Schema", report.SkippedDueToSchema.ToString());
+        WriteField("Skipped Due To Status", report.SkippedDueToStatus.ToString());
+        WriteField("Skipped Due To Missing Query", report.SkippedDueToMissingQuery.ToString());
         WriteField("Requests Path", DisplayPath(report.RequestsPath));
         WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
         WriteField("Report", DisplayPath(report.ReportPath));

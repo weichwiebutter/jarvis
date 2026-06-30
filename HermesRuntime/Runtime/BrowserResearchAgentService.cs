@@ -34,6 +34,10 @@ public sealed record BrowserResearchAgentReport(
     string ReportVersion,
     DateTimeOffset UpdatedAtUtc,
     string Status,
+    int LoadedRequests,
+    int SkippedDueToSchema,
+    int SkippedDueToStatus,
+    int SkippedDueToMissingQuery,
     int TotalRequests,
     int ConsideredRequests,
     int FetchedCandidates,
@@ -169,7 +173,41 @@ public sealed class BrowserResearchAgentService
         Directory.CreateDirectory(Root);
         var now = DateTimeOffset.UtcNow;
         var runtime = CheckRuntimeStatus();
-        var requests = LoadRequests().Take(Math.Max(0, maxItems)).ToList();
+        var load = LoadRequestsEnvelope();
+        var requests = load.Requests.Take(Math.Max(0, maxItems)).ToList();
+        var considered = requests.Count;
+
+        if (dryRun)
+        {
+            var dryRunReport = new BrowserResearchAgentReport(
+                ReportVersion: "browser_research_agent_v1",
+                UpdatedAtUtc: now,
+                Status: "dry_run_request_ready",
+                LoadedRequests: load.LoadedRequests,
+                SkippedDueToSchema: load.SkippedDueToSchema,
+                SkippedDueToStatus: load.SkippedDueToStatus,
+                SkippedDueToMissingQuery: load.SkippedDueToMissingQuery,
+                TotalRequests: load.LoadedRequests,
+                ConsideredRequests: considered,
+                FetchedCandidates: 0,
+                RejectedCandidates: 0,
+                DuplicateCandidates: 0,
+                ImportedCandidates: 0,
+                Candidates: [],
+                Rejected: [],
+                Warnings: load.Warnings.Concat(runtime.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                RequestsPath: RequestsPath,
+                ImportCandidatesPath: ImportCandidatesPath,
+                ReportPath: ReportPath,
+                MarkdownPath: MarkdownPath,
+                NoTradingExecution: true,
+                NoBrokerAction: true,
+                NoAutoTrading: true,
+                HumanReviewRequired: true,
+                ResearchOnly: true);
+            WriteReport(dryRunReport);
+            return dryRunReport;
+        }
 
         if (!runtime.BrowserRuntimeAvailable)
         {
@@ -177,15 +215,19 @@ public sealed class BrowserResearchAgentService
                 ReportVersion: "browser_research_agent_v1",
                 UpdatedAtUtc: now,
                 Status: runtime.Status,
-                TotalRequests: LoadRequests().Count,
-                ConsideredRequests: requests.Count,
+                LoadedRequests: load.LoadedRequests,
+                SkippedDueToSchema: load.SkippedDueToSchema,
+                SkippedDueToStatus: load.SkippedDueToStatus,
+                SkippedDueToMissingQuery: load.SkippedDueToMissingQuery,
+                TotalRequests: load.LoadedRequests,
+                ConsideredRequests: considered,
                 FetchedCandidates: 0,
                 RejectedCandidates: 0,
                 DuplicateCandidates: 0,
                 ImportedCandidates: 0,
                 Candidates: [],
                 Rejected: [],
-                Warnings: runtime.Warnings.Concat(runtime.MissingRequirements).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                Warnings: load.Warnings.Concat(runtime.Warnings).Concat(runtime.MissingRequirements).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 RequestsPath: RequestsPath,
                 ImportCandidatesPath: ImportCandidatesPath,
                 ReportPath: ReportPath,
@@ -250,8 +292,12 @@ public sealed class BrowserResearchAgentService
             ReportVersion: "browser_research_agent_v1",
             UpdatedAtUtc: now,
             Status: runtime.Status,
-            TotalRequests: LoadRequests().Count,
-            ConsideredRequests: requests.Count,
+            LoadedRequests: load.LoadedRequests,
+            SkippedDueToSchema: load.SkippedDueToSchema,
+            SkippedDueToStatus: load.SkippedDueToStatus,
+            SkippedDueToMissingQuery: load.SkippedDueToMissingQuery,
+            TotalRequests: load.LoadedRequests,
+            ConsideredRequests: considered,
             FetchedCandidates: candidates.Count,
             RejectedCandidates: rejected.Count,
             DuplicateCandidates: 0,
@@ -273,20 +319,62 @@ public sealed class BrowserResearchAgentService
         return report;
     }
 
-    private IReadOnlyList<WebResearchSourceRequest> LoadRequests()
+    private BrowserResearchRequestsLoadResult LoadRequestsEnvelope()
     {
         if (!File.Exists(RequestsPath))
         {
-            return [];
+            return new BrowserResearchRequestsLoadResult([], 0, 0, 0, 0, ["requests_file_missing"]);
         }
 
         try
         {
-            return JsonSerializer.Deserialize<IReadOnlyList<WebResearchSourceRequest>>(File.ReadAllText(RequestsPath), JsonDefaults.SnapshotReadOptions) ?? [];
+            var text = File.ReadAllText(RequestsPath);
+            var envelope = JsonSerializer.Deserialize<WebResearchRequestsEnvelope>(text, JsonDefaults.SnapshotReadOptions);
+            if (envelope is null)
+            {
+                return new BrowserResearchRequestsLoadResult([], 0, 0, 0, 0, ["requests_envelope_empty"]);
+            }
+
+            var requests = envelope.Requests ?? [];
+            var schemaSkipped = 0;
+            var statusSkipped = 0;
+            var querySkipped = 0;
+            var validRequests = new List<WebResearchSourceRequest>();
+
+            foreach (var request in requests)
+            {
+                if (request is null)
+                {
+                    schemaSkipped++;
+                    continue;
+                }
+
+                if (!request.Status.Equals("awaiting_external_search", StringComparison.OrdinalIgnoreCase))
+                {
+                    statusSkipped++;
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(request.Query))
+                {
+                    querySkipped++;
+                    continue;
+                }
+
+                validRequests.Add(request);
+            }
+
+            return new BrowserResearchRequestsLoadResult(
+                validRequests,
+                requests.Count,
+                schemaSkipped,
+                statusSkipped,
+                querySkipped,
+                requests.Count == 0 ? ["no_requests_in_export"] : []);
         }
         catch
         {
-            return [];
+            return new BrowserResearchRequestsLoadResult([], 0, 1, 0, 0, ["requests_deserialize_failed"]);
         }
     }
 
@@ -575,6 +663,10 @@ const maxResults = {{maxResults}};
         sb.AppendLine();
         sb.AppendLine($"- Status: {report.Status}");
         sb.AppendLine($"- Updated At: {report.UpdatedAtUtc:O}");
+        sb.AppendLine($"- Loaded Requests: {report.LoadedRequests}");
+        sb.AppendLine($"- Skipped Due To Schema: {report.SkippedDueToSchema}");
+        sb.AppendLine($"- Skipped Due To Status: {report.SkippedDueToStatus}");
+        sb.AppendLine($"- Skipped Due To Missing Query: {report.SkippedDueToMissingQuery}");
         sb.AppendLine($"- Total Requests: {report.TotalRequests}");
         sb.AppendLine($"- Considered Requests: {report.ConsideredRequests}");
         sb.AppendLine($"- Fetched Candidates: {report.FetchedCandidates}");
@@ -608,4 +700,12 @@ const maxResults = {{maxResults}};
     }
 
     private sealed record BrowserSearchResult(string? Title, string? Url, string? Domain, string? Snippet);
+    private sealed record WebResearchRequestsEnvelope(IReadOnlyList<WebResearchSourceRequest> Requests);
+    private sealed record BrowserResearchRequestsLoadResult(
+        IReadOnlyList<WebResearchSourceRequest> Requests,
+        int LoadedRequests,
+        int SkippedDueToSchema,
+        int SkippedDueToStatus,
+        int SkippedDueToMissingQuery,
+        IReadOnlyList<string> Warnings);
 }
