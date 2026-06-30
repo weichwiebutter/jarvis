@@ -221,6 +221,8 @@ internal sealed class HermesCli
             "knowledge-evidence-match" => RunKnowledgeEvidenceMatch(),
             "independent-source-resolver-status" => ShowIndependentSourceResolverStatus(),
             "independent-source-resolver" => RunIndependentSourceResolver(),
+            "auto-source-review-status" => ShowAutoSourceReviewStatus(),
+            "auto-source-review" => RunAutoSourceReview(),
             "automated-web-research-status" => ShowAutomatedWebResearchStatus(),
             "automated-web-research-fetch" => RunAutomatedWebResearchFetch(),
             "research-query-builder-status" => ShowResearchQueryBuilderStatus(),
@@ -9295,6 +9297,77 @@ internal sealed class HermesCli
             if (!string.IsNullOrWhiteSpace(candidate.RejectionReason))
             {
                 WriteField("Rejection Reason", candidate.RejectionReason);
+            }
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutoSourceReviewStatus()
+    {
+        WriteHeader("Hermes Auto Source Review Policy");
+        var service = new AutoSourceReviewPolicyService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadStatus();
+        WriteField("Status", report.Status);
+        WriteField("Loaded Candidate Sources", report.LoadedCandidateSources.ToString());
+        WriteField("Evaluated Candidate Sources", report.EvaluatedCandidateSources.ToString());
+        WriteField("Auto Approved Candidates", report.AutoApprovedCandidates.ToString());
+        WriteField("Human Review Candidates", report.HumanReviewCandidates.ToString());
+        WriteField("Rejected Candidates", report.RejectedCandidates.ToString());
+        WriteField("Applied Candidates", report.AppliedCandidates.ToString());
+        WriteField("Duplicate Candidates", report.DuplicateCandidates.ToString());
+        WriteField("Policy Approved Knowledge Items", report.PolicyApprovedKnowledgeItems.ToString());
+        WriteField("Source Count Increased Knowledge Items", report.SourceCountIncreasedKnowledgeItems.ToString());
+        WriteField("Source Confirmations Path", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Matcher Report Path", DisplayPath(report.MatcherReportPath));
+        WriteField("Trusted Source Catalog Path", DisplayPath(report.TrustedSourceCatalogPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteMessages("Warnings", report.Warnings);
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.PolicyDecision} | status={candidate.SourceStatus} | review={candidate.ReviewStatus} | sem={candidate.SemanticMatchScore:0.###} | indep={candidate.IndependenceScore:0.###} | contradiction={candidate.ContradictionRisk:0.###}");
+            WriteMessages("Matched Terms", candidate.MatchedTerms);
+            if (!string.IsNullOrWhiteSpace(candidate.PolicyReason))
+            {
+                WriteField("Policy Reason", candidate.PolicyReason);
+            }
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunAutoSourceReview()
+    {
+        WriteHeader("Hermes Auto Source Review Policy");
+        var apply = HasArg("--apply") && !HasArg("--dry-run");
+        var service = new AutoSourceReviewPolicyService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run(apply: apply);
+        WriteField("Status", report.Status);
+        WriteField("Loaded Candidate Sources", report.LoadedCandidateSources.ToString());
+        WriteField("Evaluated Candidate Sources", report.EvaluatedCandidateSources.ToString());
+        WriteField("Auto Approved Candidates", report.AutoApprovedCandidates.ToString());
+        WriteField("Human Review Candidates", report.HumanReviewCandidates.ToString());
+        WriteField("Rejected Candidates", report.RejectedCandidates.ToString());
+        WriteField("Applied Candidates", report.AppliedCandidates.ToString());
+        WriteField("Duplicate Candidates", report.DuplicateCandidates.ToString());
+        WriteField("Policy Approved Knowledge Items", report.PolicyApprovedKnowledgeItems.ToString());
+        WriteField("Source Count Increased Knowledge Items", report.SourceCountIncreasedKnowledgeItems.ToString());
+        WriteField("Source Confirmations Path", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Matcher Report Path", DisplayPath(report.MatcherReportPath));
+        WriteField("Trusted Source Catalog Path", DisplayPath(report.TrustedSourceCatalogPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteMessages("Warnings", report.Warnings);
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.PolicyDecision} | status={candidate.SourceStatus} | review={candidate.ReviewStatus} | sem={candidate.SemanticMatchScore:0.###} | indep={candidate.IndependenceScore:0.###} | contradiction={candidate.ContradictionRisk:0.###}");
+            WriteMessages("Matched Terms", candidate.MatchedTerms);
+            if (!string.IsNullOrWhiteSpace(candidate.PolicyReason))
+            {
+                WriteField("Policy Reason", candidate.PolicyReason);
             }
         }
         Console.WriteLine();

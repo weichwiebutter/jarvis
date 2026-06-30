@@ -62,6 +62,8 @@ public sealed record ConfirmationResult(
     IReadOnlyList<string> EvidenceRefs,
     IReadOnlyList<string> Warnings,
     int CandidateSourceCount = 0,
+    int IndependentSourceCandidateCount = 0,
+    int PolicyApprovedSourceCount = 0,
     string ReviewStatus = "trusted_ready",
     IReadOnlyList<SourceCandidate>? CandidateSources = null);
 
@@ -80,7 +82,13 @@ public sealed record SourceCandidate(
     double EvidenceCoverageScore = 0,
     double ContradictionRisk = 0,
     string EvidenceMatchStatus = "unmatched",
-    bool ReadyForHumanSourceReview = false);
+    bool ReadyForHumanSourceReview = false,
+    int IndependentSourceCandidateCount = 0,
+    string SourceStatus = "candidate_pending_review",
+    bool AutoApprovedByPolicy = false,
+    string PolicyReviewStatus = "not_reviewed",
+    string? PolicyApprovalReason = null,
+    DateTimeOffset? PolicyReviewedAtUtc = null);
 
 public sealed record SourceConfirmationReport(
     string ReportVersion,
@@ -434,7 +442,8 @@ public sealed class SourceConfirmationEngine
             .OrderByDescending(review => review.ReviewedAtUtc)
             .FirstOrDefault()
             ?.Result.Equals("approved", StringComparison.OrdinalIgnoreCase) == true;
-        var sourceCount = item.SourceIds.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        var policyApprovedSourceCount = existing?.CandidateSources?.Count(candidate => candidate.AutoApprovedByPolicy) ?? 0;
+        var sourceCount = item.SourceIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() + policyApprovedSourceCount;
         var score = Math.Round(Math.Clamp(
             Math.Min(0.28, sourceCount * 0.09)
             + Math.Min(0.18, sourceTypes * 0.08)
@@ -482,6 +491,7 @@ public sealed class SourceConfirmationEngine
             EvidenceRefs: evidenceRefs,
             Warnings: warnings,
             CandidateSourceCount: existing?.CandidateSourceCount ?? 0,
+            PolicyApprovedSourceCount: policyApprovedSourceCount,
             ReviewStatus: existing?.ReviewStatus ?? (sourceCount >= 2 ? "candidate_second_source" : "awaiting_human_review"),
             CandidateSources: existing?.CandidateSources ?? []);
     }
