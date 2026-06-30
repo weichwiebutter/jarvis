@@ -213,6 +213,7 @@ internal sealed class HermesCli
             "process-research-queue" => ProcessResearchQueue(),
             "web-research-source-collector-status" => ShowWebResearchSourceCollectorStatus(),
             "web-research-source-collector-export" => RunWebResearchSourceCollectorExport(),
+            "web-search-connector-status" => ShowWebSearchConnectorStatus(),
             "web-research-import-status" => ShowWebResearchImportStatus(),
             "web-research-import" => RunWebResearchImport(),
             "automated-web-research-status" => ShowAutomatedWebResearchStatus(),
@@ -536,6 +537,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes process-research-queue --max-items 50 Research Queue verarbeiten");
         Console.WriteLine("  hermes web-research-source-collector-status Web Research Source Collector Status anzeigen");
         Console.WriteLine("  hermes web-research-source-collector-export [--apply] Web Research Requests exportieren");
+        Console.WriteLine("  hermes web-search-connector-status Web Search Connector Status anzeigen");
         Console.WriteLine("  hermes web-research-import-status Web Research Import Status anzeigen");
         Console.WriteLine("  hermes web-research-import [--dry-run|--apply] Web Research Quellen importieren");
         Console.WriteLine("  hermes automated-web-research-status Web Research Fetcher Status anzeigen");
@@ -9056,6 +9058,27 @@ internal sealed class HermesCli
         var apply = HasArg("--apply");
         var report = new ControlledWebResearchSourceCollectorService(BuildStoragePaths()).Run(apply: apply);
         WriteWebResearchSourceCollectorReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowWebSearchConnectorStatus()
+    {
+        WriteHeader("Hermes Web Search Connector");
+        var service = new AutomatedWebResearchFetcherService(BuildStoragePaths());
+        var status = service.CheckConnectorStatus();
+        WriteField("Status", status.Status);
+        WriteField("Connector Available", status.HasConnector.ToString().ToLowerInvariant());
+        WriteField("Provider", status.Provider);
+        WriteField("Connector Type", status.ConnectorType ?? "-");
+        WriteField("Endpoint", status.Endpoint is null ? "-" : DisplayPath(status.Endpoint));
+        WriteField("Max Results", status.MaxResults.ToString());
+        WriteField("Allowed Domains", status.AllowedDomains.Count == 0 ? "-" : string.Join(", ", status.AllowedDomains));
+        WriteField("Api Keys Detected", status.ApiKeysDetected.Count.ToString());
+        WriteField("Missing Variables", status.MissingVariables.Count == 0 ? "-" : string.Join(", ", status.MissingVariables));
+        WriteMessages("Warnings", status.Warnings);
+        WriteField("Recommendation", status.Recommendation);
         Console.WriteLine();
         WriteSafety();
         return 0;

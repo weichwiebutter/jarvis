@@ -1,14 +1,27 @@
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 
 namespace Hermes.Runtime;
+
+public sealed record WebSearchConnectorConfiguration(
+    string Provider,
+    string? Endpoint,
+    string? ApiKey,
+    int MaxResults,
+    IReadOnlyList<string> AllowedDomains,
+    IReadOnlyList<string> MissingVariables);
 
 public sealed record WebResearchFetcherConnectorStatus(
     bool HasConnector,
     string Status,
     string? ConnectorType,
     string? Endpoint,
+    string Provider,
+    int MaxResults,
+    IReadOnlyList<string> AllowedDomains,
     IReadOnlyList<string> ApiKeysDetected,
+    IReadOnlyList<string> MissingVariables,
     IReadOnlyList<string> Warnings,
     string Recommendation);
 
@@ -71,8 +84,46 @@ public sealed class AutomatedWebResearchFetcherService
 
     public string MarkdownPath => Path.Combine(Root, "automated_web_research_fetcher_report.md");
 
+    public WebSearchConnectorConfiguration LoadConnectorConfiguration()
+    {
+        var provider = (Environment.GetEnvironmentVariable("HERMES_WEB_SEARCH_PROVIDER") ?? "none").Trim();
+        var endpoint = Normalize(Environment.GetEnvironmentVariable("HERMES_WEB_SEARCH_ENDPOINT"));
+        var apiKey = Normalize(Environment.GetEnvironmentVariable("HERMES_WEB_SEARCH_API_KEY"));
+        var maxResults = ReadIntEnvironment("HERMES_WEB_SEARCH_MAX_RESULTS", fallback: 10, min: 1, max: 50);
+        var allowedDomains = NormalizeList(Environment.GetEnvironmentVariable("HERMES_WEB_SEARCH_ALLOWED_DOMAINS"));
+        var missing = new List<string>();
+
+        if (!provider.Equals("none", StringComparison.OrdinalIgnoreCase)
+            && !provider.Equals("generic_http_json", StringComparison.OrdinalIgnoreCase))
+        {
+            missing.Add("HERMES_WEB_SEARCH_PROVIDER_invalid");
+        }
+
+        if (provider.Equals("generic_http_json", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(endpoint))
+            {
+                missing.Add("HERMES_WEB_SEARCH_ENDPOINT_missing");
+            }
+
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                missing.Add("HERMES_WEB_SEARCH_API_KEY_missing");
+            }
+        }
+
+        return new WebSearchConnectorConfiguration(
+            Provider: provider,
+            Endpoint: endpoint,
+            ApiKey: apiKey,
+            MaxResults: maxResults,
+            AllowedDomains: allowedDomains,
+            MissingVariables: missing);
+    }
+
     public WebResearchFetcherConnectorStatus CheckConnectorStatus()
     {
+        var config = LoadConnectorConfiguration();
         var envKeys = new[]
         {
             "HERMES_WEB_SEARCH_API_KEY",
@@ -85,36 +136,44 @@ public sealed class AutomatedWebResearchFetcherService
 
         var detected = envKeys
             .Where(key => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var endpoint = Environment.GetEnvironmentVariable("HERMES_WEB_SEARCH_ENDPOINT")
-            ?? Environment.GetEnvironmentVariable("WEB_SEARCH_ENDPOINT")
-            ?? Environment.GetEnvironmentVariable("SEARCH_ENDPOINT");
+        var provider = config.Provider.Equals("generic_http_json", StringComparison.OrdinalIgnoreCase)
+            ? "generic_http_json"
+            : "none";
 
-        var connectorType = !string.IsNullOrWhiteSpace(endpoint)
-            ? "http_connector"
-            : detected.Count > 0
-                ? "api_key_connector"
-                : null;
-
-        if (connectorType is null)
+        if (!provider.Equals("generic_http_json", StringComparison.OrdinalIgnoreCase)
+            || config.MissingVariables.Count > 0)
         {
             return new WebResearchFetcherConnectorStatus(
                 HasConnector: false,
                 Status: "blocked_no_web_connector",
                 ConnectorType: null,
-                Endpoint: null,
+                Endpoint: config.Endpoint,
+                Provider: provider,
+                MaxResults: config.MaxResults,
+                AllowedDomains: config.AllowedDomains,
                 ApiKeysDetected: [],
-                Warnings: ["no_web_search_api_key_detected", "no_web_search_endpoint_detected"],
-                Recommendation: "Provide a controlled web-search connector, for example HERMES_WEB_SEARCH_ENDPOINT plus matching API key, or configure a dedicated search API connector. No fake sources will be generated.");
+                MissingVariables: config.MissingVariables,
+                Warnings: config.MissingVariables.Count > 0
+                    ? config.MissingVariables.ToList()
+                    : ["HERMES_WEB_SEARCH_PROVIDER_none"],
+                Recommendation: config.Provider.Equals("none", StringComparison.OrdinalIgnoreCase)
+                    ? "Set HERMES_WEB_SEARCH_PROVIDER=generic_http_json plus endpoint and API key to enable controlled web search."
+                    : "Provide missing web-search variables before automated fetching. No fake sources will be generated.");
         }
 
         return new WebResearchFetcherConnectorStatus(
             HasConnector: true,
             Status: "connector_available",
-            ConnectorType: connectorType,
-            Endpoint: endpoint,
+            ConnectorType: "generic_http_json",
+            Endpoint: config.Endpoint,
+            Provider: provider,
+            MaxResults: config.MaxResults,
+            AllowedDomains: config.AllowedDomains,
             ApiKeysDetected: detected,
+            MissingVariables: [],
             Warnings: [],
             Recommendation: "Connector detected. Fetcher can run in controlled web-research mode.");
     }
@@ -123,6 +182,7 @@ public sealed class AutomatedWebResearchFetcherService
     {
         Directory.CreateDirectory(Root);
         var now = DateTimeOffset.UtcNow;
+        var config = LoadConnectorConfiguration();
         var connector = CheckConnectorStatus();
         var requests = LoadRequests();
         var considered = requests.Take(Math.Max(0, maxItems)).ToList();
@@ -171,7 +231,7 @@ public sealed class AutomatedWebResearchFetcherService
 
         foreach (var request in considered)
         {
-            var fetched = FetchCandidatesForRequest(request, connector);
+            var fetched = FetchCandidatesForRequest(request, connector, config);
             foreach (var candidate in fetched)
             {
                 if (string.IsNullOrWhiteSpace(candidate.Url) || importedUrls.Contains(candidate.Url))
@@ -257,30 +317,156 @@ public sealed class AutomatedWebResearchFetcherService
         }
     }
 
-    private IReadOnlyList<WebResearchImportCandidateRecord> FetchCandidatesForRequest(WebResearchSourceRequest request, WebResearchFetcherConnectorStatus connector)
+    private IReadOnlyList<WebResearchImportCandidateRecord> FetchCandidatesForRequest(
+        WebResearchSourceRequest request,
+        WebResearchFetcherConnectorStatus connector,
+        WebSearchConnectorConfiguration config)
     {
-        var domain = request.RecommendedSourceDomains.FirstOrDefault() ?? request.Domain;
-        var title = request.Query.Length > 80 ? request.Query[..80] : request.Query;
-        var now = DateTimeOffset.UtcNow;
-        var url = connector.ConnectorType == "http_connector"
-            ? $"{connector.Endpoint?.TrimEnd('/') ?? "https://example.invalid"}/search?query={Uri.EscapeDataString(request.Query)}"
-            : $"https://example.invalid/{domain}/{request.RequestId}";
-
-        return new[]
+        if (!connector.HasConnector || !connector.ConnectorType!.Equals("generic_http_json", StringComparison.OrdinalIgnoreCase))
         {
-            new WebResearchImportCandidateRecord(
-                KnowledgeItemId: request.KnowledgeItemId,
-                Title: title,
-                Url: url,
-                Domain: domain,
-                SourceType: "controlled_web_fetch",
-                ExcerptOrSummary: $"Controlled web fetch request for {request.KnowledgeItemId}: {request.Reason}",
-                RetrievedAtUtc: now,
-                EvidenceReason: request.Reason,
-                IndependenceClaim: "externally_fetched_candidate",
-                HumanReviewStatus: "pending",
-                SafetyFlags: ["no_trading_execution", "human_review_required"])
-        };
+            return [];
+        }
+
+        try
+        {
+            var endpoint = new Uri($"{config.Endpoint!.TrimEnd('/')}/");
+            var requestPayload = new
+            {
+                query = request.Query,
+                max_results = config.MaxResults,
+                allowed_domains = request.RecommendedSourceDomains.Any() ? request.RecommendedSourceDomains : config.AllowedDomains,
+                request_id = request.RequestId,
+                knowledge_item_id = request.KnowledgeItemId
+            };
+
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            httpRequest.Headers.TryAddWithoutValidation("Authorization", $"Bearer {config.ApiKey}");
+            httpRequest.Content = new StringContent(JsonSerializer.Serialize(requestPayload, JsonDefaults.WriteOptions), Encoding.UTF8, "application/json");
+            using var response = _httpClient.Send(httpRequest);
+            var payload = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(payload))
+            {
+                return [];
+            }
+
+            var parsed = ParseSearchResponse(payload, request, config);
+            return parsed;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static IReadOnlyList<WebResearchImportCandidateRecord> ParseSearchResponse(string payload, WebResearchSourceRequest request, WebSearchConnectorConfiguration config)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            var results = new List<WebResearchImportCandidateRecord>();
+            var root = document.RootElement;
+            var items = root.ValueKind == JsonValueKind.Array
+                ? root.EnumerateArray().ToList()
+                : root.TryGetProperty("results", out var resultsNode) && resultsNode.ValueKind == JsonValueKind.Array
+                    ? resultsNode.EnumerateArray().ToList()
+                    : root.TryGetProperty("items", out var itemsNode) && itemsNode.ValueKind == JsonValueKind.Array
+                        ? itemsNode.EnumerateArray().ToList()
+                        : root.TryGetProperty("data", out var dataNode) && dataNode.ValueKind == JsonValueKind.Array
+                            ? dataNode.EnumerateArray().ToList()
+                            : [];
+
+            foreach (var item in items.Take(Math.Max(1, config.MaxResults)))
+            {
+                var title = ReadString(item, "title") ?? ReadString(item, "name") ?? request.Query;
+                var url = ReadString(item, "url") ?? ReadString(item, "link") ?? ReadString(item, "href");
+                var snippet = ReadString(item, "snippet") ?? ReadString(item, "summary") ?? ReadString(item, "excerpt") ?? ReadString(item, "description") ?? "";
+                var domain = ReadString(item, "domain") ?? TryGetDomain(url) ?? request.Domain;
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    continue;
+                }
+
+                if (config.AllowedDomains.Count > 0
+                    && !config.AllowedDomains.Any(allowed => DomainMatches(domain, allowed) || DomainMatches(TryGetDomain(url), allowed)))
+                {
+                    continue;
+                }
+
+                results.Add(new WebResearchImportCandidateRecord(
+                    KnowledgeItemId: request.KnowledgeItemId,
+                    Title: title ?? request.Query,
+                    Url: url,
+                    Domain: domain ?? request.Domain,
+                    SourceType: "controlled_web_fetch",
+                    ExcerptOrSummary: snippet,
+                    RetrievedAtUtc: DateTimeOffset.UtcNow,
+                    EvidenceReason: request.Reason,
+                    IndependenceClaim: "externally_fetched_candidate",
+                    HumanReviewStatus: "pending",
+                    SafetyFlags: ["no_trading_execution", "human_review_required"]));
+            }
+
+            return results;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static string? ReadString(JsonElement element, string propertyName)
+    {
+        return element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propertyName, out var value)
+            ? value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : value.ToString()
+            : null;
+    }
+
+    private static string? TryGetDomain(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        return uri.Host;
+    }
+
+    private static bool DomainMatches(string? actual, string allowed)
+    {
+        if (string.IsNullOrWhiteSpace(actual))
+        {
+            return false;
+        }
+
+        return actual.Equals(allowed, StringComparison.OrdinalIgnoreCase)
+            || actual.EndsWith($".{allowed}", StringComparison.OrdinalIgnoreCase)
+            || allowed.Equals("*", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static IReadOnlyList<string> NormalizeList(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+    private static int ReadIntEnvironment(string key, int fallback, int min, int max)
+    {
+        if (!int.TryParse(Environment.GetEnvironmentVariable(key), out var value))
+        {
+            return fallback;
+        }
+
+        return Math.Clamp(value, min, max);
     }
 
     private static WebResearchImportCandidateRecord ConvertRequestToCandidate(WebResearchSourceRequest request)
