@@ -218,6 +218,8 @@ internal sealed class HermesCli
             "web-research-import" => RunWebResearchImport(),
             "automated-web-research-status" => ShowAutomatedWebResearchStatus(),
             "automated-web-research-fetch" => RunAutomatedWebResearchFetch(),
+            "direct-domain-research-status" => ShowDirectDomainResearchStatus(),
+            "direct-domain-research-fetch" => RunDirectDomainResearchFetch(),
             "browser-research-status" => ShowBrowserResearchStatus(),
             "browser-research-fetch" => RunBrowserResearchFetch(),
             "generate-hypotheses" => GenerateHypotheses(),
@@ -544,6 +546,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes web-research-import [--dry-run|--apply] Web Research Quellen importieren");
         Console.WriteLine("  hermes automated-web-research-status Web Research Fetcher Status anzeigen");
         Console.WriteLine("  hermes automated-web-research-fetch --max-items 10 [--dry-run|--apply] Web Research automatisch abrufen");
+        Console.WriteLine("  hermes direct-domain-research-status Direct Domain Research Status anzeigen");
+        Console.WriteLine("  hermes direct-domain-research-fetch --max-items 5 [--dry-run|--apply] Direct Domain Research ausfuehren");
         Console.WriteLine("  hermes browser-research-status Browser Research Agent Status anzeigen");
         Console.WriteLine("  hermes browser-research-fetch --max-items 5 [--dry-run|--apply] Browser Research ausfuehren");
         Console.WriteLine("  hermes generate-hypotheses --domain trading Cross-Knowledge-Hypothesen erzeugen");
@@ -9160,6 +9164,63 @@ internal sealed class HermesCli
         foreach (var candidate in report.Candidates.Take(20))
         {
             WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Url}");
+        }
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowDirectDomainResearchStatus()
+    {
+        WriteHeader("Hermes Direct Domain Research Fetcher");
+        var service = new DirectDomainResearchFetcherService(BuildStoragePaths());
+        var report = service.LoadStatus();
+        WriteField("Status", report.Status);
+        WriteField("Requests Path", DisplayPath(report.RequestsPath));
+        WriteField("Import Candidates Path", DisplayPath(report.CandidateOutputPath));
+        WriteField("Loaded Requests", report.LoadedRequests.ToString());
+        WriteField("Considered Requests", report.ConsideredRequests.ToString());
+        WriteField("Fetched Pages", report.FetchedPages.ToString());
+        WriteField("Extracted Candidates", report.ExtractedCandidates.ToString());
+        WriteField("Blocked Domains", report.BlockedDomains.ToString());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunDirectDomainResearchFetch()
+    {
+        WriteHeader("Hermes Direct Domain Research Fetcher");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 5, min: 1, max: 100);
+        var dryRun = HasArg("--dry-run") || !HasArg("--apply");
+        var service = new DirectDomainResearchFetcherService(BuildStoragePaths());
+        var report = service.Run(maxItems, dryRun);
+        WriteField("Status", report.Status);
+        WriteField("Loaded Requests", report.LoadedRequests.ToString());
+        WriteField("Considered Requests", report.ConsideredRequests.ToString());
+        WriteField("Fetched Pages", report.FetchedPages.ToString());
+        WriteField("Extracted Candidates", report.ExtractedCandidates.ToString());
+        WriteField("Blocked Domains", report.BlockedDomains.ToString());
+        WriteField("Requests Path", DisplayPath(report.RequestsPath));
+        WriteField("Import Candidates Path", DisplayPath(report.CandidateOutputPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteMessages("Warnings", report.Warnings);
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Url}");
+        }
+        foreach (var result in report.RequestResults.Take(20))
+        {
+            WriteField("Request", $"{result.KnowledgeItemId} | {result.Domain} | {result.Status} | {result.SkippedReason}");
         }
         Console.WriteLine();
         WriteSafety();
