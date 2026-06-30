@@ -392,6 +392,7 @@ public sealed class KnowledgeTrustPromotionPipelineService
         }
 
         var validationReadiness = ValidationReadiness(latestValidation, validationPlan, missing);
+        var policyApprovedSecondSource = HasPolicyApprovedSecondSource(confirmation);
         if (!validationReadiness.Equals("passed", StringComparison.OrdinalIgnoreCase)
             && !validationReadiness.Equals("completed_with_missing_noncritical_evidence", StringComparison.OrdinalIgnoreCase))
         {
@@ -404,7 +405,14 @@ public sealed class KnowledgeTrustPromotionPipelineService
 
         if (latestReview is not null && latestReview.Result.Equals("needs_review", StringComparison.OrdinalIgnoreCase))
         {
-            missing.Add("human_review_pending");
+            if (policyApprovedSecondSource)
+            {
+                satisfied.Add("policy_approved_second_source");
+            }
+            else
+            {
+                missing.Add("human_review_pending");
+            }
         }
 
         var eligible = blockers.Count == 0;
@@ -439,7 +447,9 @@ public sealed class KnowledgeTrustPromotionPipelineService
             Blockers: blockers.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             PromotionOutcome: promotionOutcome,
             EligibleForPromotion: eligible,
-            HumanReviewRequired: latestReview is null || !latestReview.Result.Equals("approved", StringComparison.OrdinalIgnoreCase));
+            HumanReviewRequired: (latestReview is null && !policyApprovedSecondSource)
+                || latestReview?.Result.Equals("rejected", StringComparison.OrdinalIgnoreCase) == true
+                || (latestReview?.Result.Equals("needs_review", StringComparison.OrdinalIgnoreCase) == true && !policyApprovedSecondSource));
     }
 
     private int ApplyTrustedPromotions(IReadOnlyList<KnowledgeTrustPromotionCandidate> candidates, IReadOnlyList<KnowledgeCatalogItem> catalog, DateTimeOffset now)
@@ -664,6 +674,15 @@ public sealed class KnowledgeTrustPromotionPipelineService
         || value.Contains("historical_report_missing", StringComparison.OrdinalIgnoreCase)
         || value.Contains("cost_stress_report_missing", StringComparison.OrdinalIgnoreCase)
         || value.Contains("monte_carlo_report_missing", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasPolicyApprovedSecondSource(ConfirmationResult? confirmation) =>
+        confirmation is not null && (
+            confirmation.ReviewStatus.Equals("policy_approved_second_source", StringComparison.OrdinalIgnoreCase)
+            || confirmation.PolicyApprovedSourceCount > 0
+            || confirmation.CandidateSources?.Any(candidate =>
+                candidate.AutoApprovedByPolicy
+                || candidate.PolicyReviewStatus.Equals("approved", StringComparison.OrdinalIgnoreCase)
+                || candidate.SourceStatus.Equals("policy_approved_second_source", StringComparison.OrdinalIgnoreCase)) == true);
 
     private static string RecommendedNextAction(
         IReadOnlyList<KnowledgeTrustPromotionCandidate> eligible,
