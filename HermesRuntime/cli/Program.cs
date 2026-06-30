@@ -215,6 +215,8 @@ internal sealed class HermesCli
             "web-research-source-collector-export" => RunWebResearchSourceCollectorExport(),
             "web-research-import-status" => ShowWebResearchImportStatus(),
             "web-research-import" => RunWebResearchImport(),
+            "automated-web-research-status" => ShowAutomatedWebResearchStatus(),
+            "automated-web-research-fetch" => RunAutomatedWebResearchFetch(),
             "generate-hypotheses" => GenerateHypotheses(),
             "cognitive-insights" => ShowCognitiveInsights(),
             "planning-status" => ShowPlanningStatus(),
@@ -536,6 +538,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes web-research-source-collector-export [--apply] Web Research Requests exportieren");
         Console.WriteLine("  hermes web-research-import-status Web Research Import Status anzeigen");
         Console.WriteLine("  hermes web-research-import [--dry-run|--apply] Web Research Quellen importieren");
+        Console.WriteLine("  hermes automated-web-research-status Web Research Fetcher Status anzeigen");
+        Console.WriteLine("  hermes automated-web-research-fetch --max-items 10 [--dry-run|--apply] Web Research automatisch abrufen");
         Console.WriteLine("  hermes generate-hypotheses --domain trading Cross-Knowledge-Hypothesen erzeugen");
         Console.WriteLine("  hermes cognitive-insights Cognitive Insights anzeigen");
         Console.WriteLine("  hermes planning-status  Autonomous Planning Status anzeigen");
@@ -9073,6 +9077,55 @@ internal sealed class HermesCli
         var apply = HasArg("--apply") && !HasArg("--dry-run");
         var report = new WebResearchSourceImportService(BuildStoragePaths()).Run(apply: apply);
         WriteWebResearchImportReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutomatedWebResearchStatus()
+    {
+        WriteHeader("Hermes Automated Web Research Fetcher");
+        var service = new AutomatedWebResearchFetcherService(BuildStoragePaths());
+        var status = service.CheckConnectorStatus();
+        var report = service.Run(maxItems: 0, dryRun: true);
+        WriteField("Status", status.Status);
+        WriteField("Connector Available", status.HasConnector.ToString().ToLowerInvariant());
+        WriteField("Connector Type", status.ConnectorType ?? "-");
+        WriteField("Endpoint", status.Endpoint is null ? "-" : DisplayPath(status.Endpoint));
+        WriteField("Api Keys Detected", status.ApiKeysDetected.Count.ToString());
+        WriteMessages("Warnings", status.Warnings);
+        WriteField("Recommendation", status.Recommendation);
+        WriteField("Requests Path", DisplayPath(report.RequestsPath));
+        WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunAutomatedWebResearchFetch()
+    {
+        WriteHeader("Hermes Automated Web Research Fetcher");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 10, min: 1, max: 200);
+        var dryRun = HasArg("--dry-run") || !HasArg("--apply");
+        var service = new AutomatedWebResearchFetcherService(BuildStoragePaths());
+        var report = service.Run(maxItems, dryRun);
+        WriteField("Status", report.Status);
+        WriteField("Total Requests", report.TotalRequests.ToString());
+        WriteField("Considered Requests", report.ConsideredRequests.ToString());
+        WriteField("Fetched Candidates", report.FetchedCandidates.ToString());
+        WriteField("Blocked Requests", report.BlockedRequests.ToString());
+        WriteField("Awaiting Human Review", report.AwaitingHumanReview.ToString());
+        WriteField("Requests Path", DisplayPath(report.RequestsPath));
+        WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteMessages("Warnings", report.Warnings);
+        foreach (var candidate in report.Candidates.Take(20))
+        {
+            WriteField("Candidate", $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Url}");
+        }
         Console.WriteLine();
         WriteSafety();
         return 0;
