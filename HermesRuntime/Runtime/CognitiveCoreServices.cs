@@ -426,6 +426,46 @@ public sealed class ResearchQueueService
         return item;
     }
 
+    public int MarkItemsAwaitingExternalSearch(IReadOnlyList<string> queueItemIds, IReadOnlyList<string> notes)
+    {
+        if (queueItemIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var queue = LoadOrCreateQueue();
+        var ids = queueItemIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var now = DateTimeOffset.UtcNow;
+        var changed = 0;
+        var items = queue.Items
+            .Select(item =>
+            {
+                if (!ids.Contains(item.QueueItemId))
+                {
+                    return item;
+                }
+
+                changed++;
+                return item with
+                {
+                    Status = "awaiting_external_search",
+                    UpdatedAtUtc = now,
+                    Notes = item.Notes
+                        .Concat(notes)
+                        .Concat([
+                            "web_research_status:awaiting_external_search",
+                            $"web_research_updated_utc:{now:O}"
+                        ])
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList()
+                };
+            })
+            .ToList();
+
+        Write(items);
+        return changed;
+    }
+
     public ResearchQueue EnqueuePlannedTasks(IReadOnlyList<PlannedTask> tasks)
     {
         var queue = LoadOrCreateQueue();

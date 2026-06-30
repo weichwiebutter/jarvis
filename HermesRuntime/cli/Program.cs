@@ -211,6 +211,8 @@ internal sealed class HermesCli
             "research-queue" => ShowResearchQueue(),
             "enqueue-research" => EnqueueResearch(),
             "process-research-queue" => ProcessResearchQueue(),
+            "web-research-source-collector-status" => ShowWebResearchSourceCollectorStatus(),
+            "web-research-source-collector-export" => RunWebResearchSourceCollectorExport(),
             "generate-hypotheses" => GenerateHypotheses(),
             "cognitive-insights" => ShowCognitiveInsights(),
             "planning-status" => ShowPlanningStatus(),
@@ -528,6 +530,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes research-queue     Cognitive Research Queue anzeigen");
         Console.WriteLine("  hermes enqueue-research --domain trading --type validation Research-Item einreihen");
         Console.WriteLine("  hermes process-research-queue --max-items 50 Research Queue verarbeiten");
+        Console.WriteLine("  hermes web-research-source-collector-status Web Research Source Collector Status anzeigen");
+        Console.WriteLine("  hermes web-research-source-collector-export [--apply] Web Research Requests exportieren");
         Console.WriteLine("  hermes generate-hypotheses --domain trading Cross-Knowledge-Hypothesen erzeugen");
         Console.WriteLine("  hermes cognitive-insights Cognitive Insights anzeigen");
         Console.WriteLine("  hermes planning-status  Autonomous Planning Status anzeigen");
@@ -9008,6 +9012,8 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Process Research Queue");
         var maxItems = ReadIntOption(_args, "--max-items", fallback: 50, min: 1, max: 500);
+        var webCollector = new ControlledWebResearchSourceCollectorService(BuildStoragePaths());
+        var webReport = webCollector.Run(apply: true);
         var service = new ResearchQueueService(BuildStoragePaths());
         var before = service.LoadOrCreateQueue();
         var beforeProcessed = before.Items.Count(item => item.Status.Equals("processed", StringComparison.OrdinalIgnoreCase));
@@ -9015,9 +9021,33 @@ internal sealed class HermesCli
         var afterProcessed = queue.Items.Count(item => item.Status.Equals("processed", StringComparison.OrdinalIgnoreCase));
 
         WriteField("Queue", DisplayPath(service.QueuePath));
+        WriteField("Web Research Requests", DisplayPath(webReport.ReportPath));
+        WriteField("Web Requests Exported", webReport.ExportedSearchRequests.ToString());
+        WriteField("Awaiting External Search", webReport.AwaitingExternalSearch.ToString());
         WriteField("Processed This Run", Math.Max(0, afterProcessed - beforeProcessed).ToString());
         WriteField("Processed Total", afterProcessed.ToString());
         WriteField("Open", queue.Items.Count(item => item.Status.Equals("open", StringComparison.OrdinalIgnoreCase)).ToString());
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowWebResearchSourceCollectorStatus()
+    {
+        WriteHeader("Hermes Controlled Web Research Source Collector");
+        var report = new ControlledWebResearchSourceCollectorService(BuildStoragePaths()).Run(apply: false);
+        WriteWebResearchSourceCollectorReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunWebResearchSourceCollectorExport()
+    {
+        WriteHeader("Hermes Controlled Web Research Source Collector");
+        var apply = HasArg("--apply");
+        var report = new ControlledWebResearchSourceCollectorService(BuildStoragePaths()).Run(apply: apply);
+        WriteWebResearchSourceCollectorReport(report);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -14225,6 +14255,37 @@ internal sealed class HermesCli
                 Console.WriteLine($"    Missing: {string.Join(", ", candidate.MissingEvidenceTypes.Take(5))}");
             }
 
+            Console.WriteLine();
+        }
+    }
+
+    private void WriteWebResearchSourceCollectorReport(WebResearchSourceCollectorReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Queue", DisplayPath(report.QueuePath));
+        WriteField("Total Second Source Items", report.TotalSecondSourceItems.ToString());
+        WriteField("Exported Search Requests", report.ExportedSearchRequests.ToString());
+        WriteField("Awaiting External Search", report.AwaitingExternalSearch.ToString());
+        WriteField("Already Has Candidate Source", report.AlreadyHasCandidateSource.ToString());
+        WriteField("Blocked No Web Runtime", report.BlockedNoWebRuntime.ToString());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+
+        Console.WriteLine();
+        Console.WriteLine("Requests:");
+        foreach (var request in report.Requests.Take(20))
+        {
+            Console.WriteLine($"  {request.KnowledgeItemId} / {request.Domain}");
+            Console.WriteLine($"    Query: {request.Query}");
+            Console.WriteLine($"    Recommended Source Domains: {string.Join(", ", request.RecommendedSourceDomains)}");
+            Console.WriteLine($"    Reason: {request.Reason}");
+            Console.WriteLine($"    Current Source Count: {request.CurrentSourceCount}");
+            Console.WriteLine($"    Required Evidence: {string.Join(", ", request.RequiredEvidence)}");
+            Console.WriteLine($"    Status: {request.Status}");
             Console.WriteLine();
         }
     }
