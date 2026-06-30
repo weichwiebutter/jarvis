@@ -184,6 +184,8 @@ internal sealed class HermesCli
             "explain-validation-routing" => ExplainValidationRouting(),
             "knowledge-validation-status" => ShowKnowledgeValidationStatus(),
             "knowledge-validation-audit" => ShowKnowledgeValidationAudit(),
+            "validation-evidence-status" => ShowValidationEvidenceStatus(),
+            "validation-evidence" => RunValidationEvidence(),
             "validation-backlog-analyzer" => ShowValidationBacklogAnalyzer(),
             "validation-backlog-executor" => ShowValidationBacklogExecutor(),
             "validation-backlog-executor-status" => ShowValidationBacklogExecutorStatus(),
@@ -534,6 +536,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes validation-backlog-executor-disable Validierungsstau Executor deaktivieren");
         Console.WriteLine("  hermes validation-queue-refill Validation Queue aus offenen Plaenen auffuellen");
         Console.WriteLine("  hermes run-evidence-validation sichere Evidenz-/Validierungs-Aufgaben ausfuehren");
+        Console.WriteLine("  hermes validation-evidence-status Validation Evidence Pipeline Status anzeigen");
+        Console.WriteLine("  hermes validation-evidence [--dry-run|--apply] Validation Evidence Pipeline ausfuehren");
         Console.WriteLine("  hermes generate-improvement-queue Verbesserungs-Warteschlange aus Audit/Warnungen erzeugen");
         Console.WriteLine("  hermes improvement-queue-summary Verbesserungs-Warteschlange kompakt anzeigen");
         Console.WriteLine("  hermes improvement-work-areas Verbesserungs-Arbeitsbereiche anzeigen");
@@ -8382,6 +8386,39 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowValidationEvidenceStatus()
+    {
+        WriteHeader("Hermes Validation Evidence Pipeline");
+        var service = new ValidationEvidencePipelineService(BuildStoragePaths());
+        var report = service.LoadStatus();
+
+        WriteValidationEvidencePipelineReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunValidationEvidence()
+    {
+        WriteHeader("Hermes Validation Evidence Pipeline");
+        var service = new ValidationEvidencePipelineService(BuildStoragePaths());
+        var apply = HasArg("--apply");
+        var dryRun = HasArg("--dry-run");
+
+        if (apply && dryRun)
+        {
+            Console.WriteLine("Error: use either --dry-run or --apply, not both.");
+            WriteSafety();
+            return 1;
+        }
+
+        var report = service.Run(apply: apply && !dryRun, dryRun: dryRun || !apply);
+        WriteValidationEvidencePipelineReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowKnowledgeValidationAudit()
     {
         WriteHeader("Hermes Knowledge Validation Audit");
@@ -14775,6 +14812,72 @@ internal sealed class HermesCli
             WriteMessages("Missing Evidence", candidate.MissingEvidenceCategories);
             WriteMessages("Blockers", candidate.Blockers);
         }
+    }
+
+    private void WriteValidationEvidencePipelineReport(ValidationEvidencePipelineReport report, ValidationEvidencePipelineService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Loaded Items", report.LoadedItems.ToString());
+        WriteField("Validation Completed", report.ValidationCompleted.ToString());
+        WriteField("Validation Pending", report.ValidationPending.ToString());
+        WriteField("Waiting External Data", report.ValidationWaitingForExternalData.ToString());
+        WriteField("Waiting Human Review", report.ValidationWaitingForHumanReview.ToString());
+        WriteField("Plans Created", report.PlansCreated.ToString());
+        WriteField("Validation Executions Created", report.ValidationExecutionsCreated.ToString());
+        WriteField("Validation Plans", DisplayPath(report.ValidationPlansPath));
+        WriteField("Validation Status", DisplayPath(report.ValidationStatusPath));
+        WriteField("Knowledge Quality", DisplayPath(report.KnowledgeQualityPath));
+        WriteField("Knowledge Evidence", DisplayPath(report.KnowledgeEvidencePath));
+        WriteField("Source Confirmations", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Evidence Graph", DisplayPath(report.EvidenceGraphPath));
+        WriteField("Execution Log", DisplayPath(report.ExecutionLogPath));
+        WriteField("Dry Run", report.DryRun.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+
+        WriteSubHeader("Focus Items");
+        foreach (var item in report.FocusItems)
+        {
+            WriteField(item.KnowledgeItemId, item.Title);
+            WriteField("Domain", item.Domain);
+            WriteField("Readiness", $"{item.ValidationReadinessBefore} -> {item.ValidationReadinessAfter}");
+            WriteField("Plan Status", $"{item.PlanStatusBefore} -> {item.PlanStatusAfter}");
+            WriteField("Validation Score", $"{item.ValidationScoreBefore:0.###} -> {item.ValidationScoreAfter:0.###}");
+            WriteField("Trust Score", $"{item.TrustScoreBefore:0.###} -> {item.TrustScoreAfter:0.###}");
+            WriteField("Quality Score", $"{item.QualityScoreBefore:0.###} -> {item.QualityScoreAfter:0.###}");
+            WriteField("Source Count", item.SourceCount.ToString());
+            WriteField("Policy Approved Source Count", item.PolicyApprovedSourceCount.ToString());
+            WriteField("Remaining Blockers", string.Join(", ", item.RemainingBlockers.Take(8)));
+            WriteField("Recommended Next Action", item.RecommendedNextAction);
+            Console.WriteLine();
+        }
+
+        WriteSubHeader("Targeted Knowledge Items");
+        foreach (var id in new[] { "trading:bearish_engulfing", "trading:liquidity_sweep", "trading:inside_bar" })
+        {
+            var item = report.Items.FirstOrDefault(entry => entry.KnowledgeItemId.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (item is null)
+            {
+                WriteField(id, "not found");
+                continue;
+            }
+
+            WriteField(item.KnowledgeItemId, item.Title);
+            WriteField("Validation Score", $"{item.ValidationScoreBefore:0.###} -> {item.ValidationScoreAfter:0.###}");
+            WriteField("Trust Score", $"{item.TrustScoreBefore:0.###} -> {item.TrustScoreAfter:0.###}");
+            WriteField("Quality Score", $"{item.QualityScoreBefore:0.###} -> {item.QualityScoreAfter:0.###}");
+            WriteField("Remaining Blockers", string.Join(", ", item.RemainingBlockers.Take(10)));
+            WriteField("Recommended Next Action", item.RecommendedNextAction);
+            Console.WriteLine();
+        }
+
+        WriteMessages("Remaining Blockers", report.RemainingBlockers.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
     }
 
     private void WriteMultiSourceEvidenceReport(MultiSourceEvidencePlanReport report)
