@@ -9173,10 +9173,15 @@ internal sealed class HermesCli
         var runtime = service.CheckRuntimeStatus();
         var report = service.Run(maxItems: 0, dryRun: true);
         WriteField("Status", runtime.Status);
+        WriteField("Runtime Mode", runtime.RuntimeMode ?? "-");
+        WriteField("Browser Channel", runtime.BrowserChannel ?? "-");
         WriteField("Browser Runtime Available", runtime.BrowserRuntimeAvailable.ToString().ToLowerInvariant());
         WriteField("Runtime Kind", runtime.RuntimeKind ?? "-");
+        WriteField("Executable Path", runtime.ExecutablePath ?? "-");
+        WriteField("Executable Exists", runtime.ExecutableExists.ToString().ToLowerInvariant());
         WriteField("Browser Binary", runtime.BrowserBinary ?? "-");
         WriteField("Playwright Package", runtime.PlaywrightPackage ?? "-");
+        WriteField("Detected Broken Snap Chromium", runtime.DetectedBrokenSnapChromium.ToString().ToLowerInvariant());
         WriteField("Missing Requirements", runtime.MissingRequirements.Count == 0 ? "-" : string.Join(", ", runtime.MissingRequirements));
         WriteMessages("Warnings", runtime.Warnings);
         WriteField("Recommendation", runtime.Recommendation);

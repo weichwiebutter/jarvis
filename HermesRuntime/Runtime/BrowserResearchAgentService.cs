@@ -8,8 +8,13 @@ public sealed record BrowserResearchRuntimeStatus(
     bool BrowserRuntimeAvailable,
     string Status,
     string? RuntimeKind,
+    string? RuntimeMode,
+    string? BrowserChannel,
+    string? ExecutablePath,
+    bool ExecutableExists,
     string? BrowserBinary,
     string? PlaywrightPackage,
+    bool DetectedBrokenSnapChromium,
     IReadOnlyList<string> MissingRequirements,
     IReadOnlyList<string> Warnings,
     string Recommendation);
@@ -70,6 +75,38 @@ public sealed class BrowserResearchAgentService
     public BrowserResearchRuntimeStatus CheckRuntimeStatus()
     {
         var missing = new List<string>();
+        var explicitPath = NormalizeBrowserPath(Environment.GetEnvironmentVariable("HERMES_BROWSER_EXECUTABLE_PATH"));
+        var browserChannel = NormalizeBrowserPath(Environment.GetEnvironmentVariable("HERMES_BROWSER_CHANNEL"));
+        var explicitExists = !string.IsNullOrWhiteSpace(explicitPath) && File.Exists(explicitPath);
+        var detectedBrokenSnapChromium = false;
+
+        if (explicitExists)
+        {
+            var brokenSnap = IsBrokenSnapChromium(explicitPath);
+            detectedBrokenSnapChromium = brokenSnap;
+            if (brokenSnap)
+            {
+                missing.Add("broken_snap_chromium");
+            }
+            else
+            {
+                return new BrowserResearchRuntimeStatus(
+                    BrowserRuntimeAvailable: true,
+                    Status: "browser_runtime_available",
+                    RuntimeKind: "system_browser_path",
+                    RuntimeMode: "system_browser_path",
+                    BrowserChannel: browserChannel,
+                    ExecutablePath: explicitPath,
+                    ExecutableExists: true,
+                    BrowserBinary: explicitPath,
+                    PlaywrightPackage: "not_required",
+                    DetectedBrokenSnapChromium: false,
+                    MissingRequirements: [],
+                    Warnings: [],
+                    Recommendation: "Browser runtime is available via explicit executable path.");
+            }
+        }
+
         var node = FindExecutable("node");
         if (node is null)
         {
@@ -82,10 +119,15 @@ public sealed class BrowserResearchAgentService
             missing.Add("playwright_missing");
         }
 
-        var browserBinary = FindBrowserBinary();
+        var browserBinary = explicitExists ? explicitPath : FindBrowserBinary();
         if (browserBinary is null)
         {
             missing.Add("browser_binary_missing");
+        }
+        else if (IsBrokenSnapChromium(browserBinary))
+        {
+            detectedBrokenSnapChromium = true;
+            missing.Add("broken_snap_chromium");
         }
 
         if (missing.Count > 0)
@@ -94,8 +136,13 @@ public sealed class BrowserResearchAgentService
                 BrowserRuntimeAvailable: false,
                 Status: "blocked_browser_runtime_missing",
                 RuntimeKind: null,
+                RuntimeMode: "blocked",
+                BrowserChannel: browserChannel,
+                ExecutablePath: explicitPath,
+                ExecutableExists: explicitExists,
                 BrowserBinary: browserBinary,
                 PlaywrightPackage: playwrightCheck ? "available" : null,
+                DetectedBrokenSnapChromium: detectedBrokenSnapChromium,
                 MissingRequirements: missing.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 Warnings: ["no_local_browser_runtime_detected"],
                 Recommendation: "Install Playwright and a local browser runtime (for example Chromium). Hermes will not fake sources. Use docs/research/browser_research_agent_setup_v1.md for the exact setup steps.");
@@ -104,9 +151,14 @@ public sealed class BrowserResearchAgentService
         return new BrowserResearchRuntimeStatus(
             BrowserRuntimeAvailable: true,
             Status: "browser_runtime_available",
-            RuntimeKind: "playwright",
+            RuntimeKind: explicitExists ? "system_browser_path" : "playwright_managed",
+            RuntimeMode: explicitExists ? "system_browser_path" : "playwright_managed",
+            BrowserChannel: browserChannel,
+            ExecutablePath: explicitPath,
+            ExecutableExists: explicitExists,
             BrowserBinary: browserBinary,
             PlaywrightPackage: "available",
+            DetectedBrokenSnapChromium: detectedBrokenSnapChromium,
             MissingRequirements: [],
             Warnings: [],
             Recommendation: "Browser runtime is available for controlled browser research.");
@@ -400,6 +452,16 @@ const maxResults = {{maxResults}};
         return null;
     }
 
+    private static string? NormalizeBrowserPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        return path.Trim().Trim('"');
+    }
+
     private static bool CheckPlaywrightAvailable(string nodeExecutable)
     {
         try
@@ -430,6 +492,12 @@ const maxResults = {{maxResults}};
 
     private static string? FindBrowserBinary()
     {
+        var explicitPath = NormalizeBrowserPath(Environment.GetEnvironmentVariable("HERMES_BROWSER_EXECUTABLE_PATH"));
+        if (!string.IsNullOrWhiteSpace(explicitPath) && File.Exists(explicitPath))
+        {
+            return explicitPath;
+        }
+
         var candidates = new[] { "chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "msedge" };
         foreach (var candidate in candidates)
         {
@@ -441,6 +509,57 @@ const maxResults = {{maxResults}};
         }
 
         return null;
+    }
+
+    private static bool IsBrokenSnapChromium(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        if (path.Contains("/snap/bin/chromium", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (path.Contains("/snap/", StringComparison.OrdinalIgnoreCase))
+        {
+            return RunProcessAndMatch(path, "--version", "snap", "yaml", "internal error");
+        }
+
+        return false;
+    }
+
+    private static bool RunProcessAndMatch(string fileName, string arguments, params string[] needles)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return false;
+            }
+
+            var output = process.StandardOutput.ReadToEnd();
+            var error = process.StandardError.ReadToEnd();
+            process.WaitForExit(5000);
+            var combined = string.Concat(output, "\n", error);
+            return needles.Any(needle => combined.Contains(needle, StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void WriteReport(BrowserResearchAgentReport report)
