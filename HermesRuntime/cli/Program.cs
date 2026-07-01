@@ -14880,7 +14880,7 @@ internal sealed class HermesCli
         WriteCanonicalEvidenceAcquisitionReport(report, service);
         Console.WriteLine();
         WriteSafety();
-        return 0;
+        return report.Status.Equals("blocked_external_fetch_timeout", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
     }
 
     private int ShowTrustedCandidates()
@@ -14949,6 +14949,7 @@ internal sealed class HermesCli
         WriteField("Skipped Due To Timeout", report.SkippedDueToTimeout.ToString());
         WriteField("Fetch Duration Ms", report.FetchDurationMs.ToString());
         WriteField("Last Successful Stage", report.LastSuccessfulStage);
+        WriteMessages("Affected Items", report.AffectedItems);
         WriteField("Loaded Items", report.LoadedItems.ToString());
         WriteField("Considered Items", report.ConsideredItems.ToString());
         WriteField("Total Second Source Items", report.TotalSecondSourceItems.ToString());

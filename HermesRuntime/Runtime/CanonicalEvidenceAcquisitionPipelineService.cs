@@ -38,6 +38,7 @@ public sealed record CanonicalEvidenceAcquisitionReport(
     int SkippedDueToTimeout,
     long FetchDurationMs,
     string LastSuccessfulStage,
+    IReadOnlyList<string> AffectedItems,
     int LoadedItems,
     int ConsideredItems,
     int TotalSecondSourceItems,
@@ -129,6 +130,21 @@ public sealed class CanonicalEvidenceAcquisitionPipelineService
             out _);
         directDomainFetchWatch.Stop();
 
+        if (apply && !dryRun && directDomainReport.Status.Equals("blocked_external_fetch_timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            var timeoutReport = BuildTimeoutReport(
+                now,
+                maxItems,
+                multiSourceReport,
+                collectorReport,
+                directDomainReport,
+                sourceConfirmationEngine,
+                directDomainFetchWatch.ElapsedMilliseconds,
+                canonicalItems: []);
+            WriteReport(timeoutReport);
+            return timeoutReport;
+        }
+
         var importService = new WebResearchSourceImportService(_storagePaths);
         var importReport = importService.Run(apply: apply && !dryRun);
 
@@ -177,6 +193,7 @@ public sealed class CanonicalEvidenceAcquisitionPipelineService
             SkippedDueToTimeout: directDomainReport.SkippedDueToTimeout,
             FetchDurationMs: directDomainFetchWatch.ElapsedMilliseconds,
             LastSuccessfulStage: directDomainReport.LastSuccessfulStage,
+            AffectedItems: multiSourceReport.PrioritizedCandidates.Select(candidate => candidate.KnowledgeId).Distinct(StringComparer.OrdinalIgnoreCase).Take(Math.Max(1, maxItems)).ToList(),
             LoadedItems: initialQuality.Items.Count,
             ConsideredItems: canonicalItems.Count,
             TotalSecondSourceItems: multiSourceReport.ItemsNeedingSecondSource,
@@ -221,6 +238,77 @@ public sealed class CanonicalEvidenceAcquisitionPipelineService
 
         WriteReport(report);
         return report;
+    }
+
+    private CanonicalEvidenceAcquisitionReport BuildTimeoutReport(
+        DateTimeOffset now,
+        int maxItems,
+        MultiSourceEvidencePlanReport multiSourceReport,
+        WebResearchSourceCollectorReport collectorReport,
+        DirectDomainResearchReport directDomainReport,
+        SourceConfirmationEngine sourceConfirmationEngine,
+        long fetchDurationMs,
+        IReadOnlyList<CanonicalEvidenceAcquisitionTrace> canonicalItems)
+    {
+        var affectedItems = multiSourceReport.PrioritizedCandidates
+            .Select(candidate => candidate.KnowledgeId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(Math.Max(1, maxItems))
+            .ToList();
+
+        return new CanonicalEvidenceAcquisitionReport(
+            ReportVersion: "canonical_evidence_acquisition_v1",
+            UpdatedAtUtc: now,
+            Status: "blocked_external_fetch_timeout",
+            ExternalFetchTimeouts: directDomainReport.ExternalFetchTimeouts,
+            SkippedDueToTimeout: directDomainReport.SkippedDueToTimeout,
+            FetchDurationMs: fetchDurationMs,
+            LastSuccessfulStage: directDomainReport.LastSuccessfulStage,
+            AffectedItems: affectedItems,
+            LoadedItems: affectedItems.Count,
+            ConsideredItems: affectedItems.Count,
+            TotalSecondSourceItems: multiSourceReport.ItemsNeedingSecondSource,
+            EvidenceCandidatesFound: directDomainReport.ExtractedCandidates,
+            SemanticMatches: 0,
+            IndependentSourcesFound: 0,
+            PolicyApprovedSources: 0,
+            SourceCountIncreasedItems: 0,
+            RejectedLowRelevance: directDomainReport.CandidatesRejectedLowRelevance,
+            RejectedSameDomain: 0,
+            RejectedPolicy: 0,
+            LoadedRequests: collectorReport.TotalSecondSourceItems,
+            ExportedSearchRequests: collectorReport.ExportedSearchRequests,
+            AcceptedImportCandidates: 0,
+            RejectedImportCandidates: 0,
+            ValidationSynchronizedItems: 0,
+            TrustedPromotionEligibleItems: 0,
+            NextActions: ["retry_with_smaller_batch_or_review_fetch_source", "run_validation_state_sync", "run_knowledge_trust_promote"],
+            PerItemTrace: canonicalItems,
+            PrioritizedKnowledgeItems: affectedItems,
+            TopRejectionReasons: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["blocked_external_fetch_timeout"] = 1
+            },
+            Warnings: ["blocked_external_fetch_timeout"],
+            MultiSourceEvidencePath: Path.Combine(_storagePaths.Root, "reports", "multi_source_evidence", "multi_source_evidence_report.json"),
+            WebResearchRequestsPath: collectorReport.ReportPath,
+            DirectDomainResearchPath: directDomainReport.ReportPath,
+            ImportCandidatesPath: Path.Combine(_storagePaths.Root, "reports", "web_research_source_collector", "web_research_import_candidates.json"),
+            SemanticMatcherPath: Path.Combine(_storagePaths.Root, "reports", "knowledge_evidence_matcher", "knowledge_evidence_matcher_report.json"),
+            IndependentResolverPath: Path.Combine(_storagePaths.Root, "reports", "independent_source_resolver", "independent_source_resolver_report.json"),
+            AutoSourceReviewPath: Path.Combine(_storagePaths.Root, "reports", "auto_source_review", "auto_source_review_report.json"),
+            SourceConfirmationsPath: sourceConfirmationEngine.ReportPath,
+            ValidationStateSyncPath: Path.Combine(_storagePaths.Root, "reports", "validation_state_sync", "validation_state_sync_report.json"),
+            TrustPromotionPath: Path.Combine(_storagePaths.Root, "reports", "knowledge_trust_promotion", "knowledge_trust_promotion_report.json"),
+            ReportPath: ReportPath,
+            MarkdownPath: MarkdownPath,
+            DryRun: false,
+            Applied: false,
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true,
+            HumanReviewRequired: true,
+            ResearchOnly: true);
     }
 
     private static DirectDomainResearchReport RunDirectDomainFetchWithTimeout(
@@ -591,6 +679,14 @@ public sealed class CanonicalEvidenceAcquisitionPipelineService
         sb.AppendLine($"- Skipped Due To Timeout: {report.SkippedDueToTimeout}");
         sb.AppendLine($"- Fetch Duration Ms: {report.FetchDurationMs}");
         sb.AppendLine($"- Last Successful Stage: {report.LastSuccessfulStage}");
+        if (report.AffectedItems.Count > 0)
+        {
+            sb.AppendLine("- Affected Items:");
+            foreach (var item in report.AffectedItems.Take(20))
+            {
+                sb.AppendLine($"  - {item}");
+            }
+        }
         sb.AppendLine($"- Loaded Items: {report.LoadedItems}");
         sb.AppendLine($"- Considered Items: {report.ConsideredItems}");
         sb.AppendLine($"- Total Second Source Items: {report.TotalSecondSourceItems}");
