@@ -189,7 +189,7 @@ public sealed class KnowledgeTrustPromotionPipelineService
 
     public string PromotionLogPath => Path.Combine(_storagePaths.Root, "cognitive_core", "knowledge_trust_promotion_log.jsonl");
 
-    public KnowledgeTrustPromotionReport Run(bool apply = false, int? maxSeconds = null)
+    public KnowledgeTrustPromotionReport Run(bool apply = false, int? maxSeconds = null, bool skipRefresh = false)
     {
         Directory.CreateDirectory(Root);
 
@@ -198,7 +198,7 @@ public sealed class KnowledgeTrustPromotionPipelineService
             var timeoutSeconds = Math.Max(5, maxSeconds.Value);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             var progress = new PromotionApplyProgress();
-            var task = Task.Run(() => RunInternal(apply: true, cts.Token, progress), cts.Token);
+            var task = Task.Run(() => RunInternal(apply: true, cts.Token, progress, skipRefresh), cts.Token);
 
             if (task.Wait(TimeSpan.FromSeconds(timeoutSeconds)))
             {
@@ -211,7 +211,7 @@ public sealed class KnowledgeTrustPromotionPipelineService
             return timeoutReport;
         }
 
-        return RunInternal(apply, CancellationToken.None, new PromotionApplyProgress());
+        return RunInternal(apply, CancellationToken.None, new PromotionApplyProgress(), skipRefresh);
     }
 
     public KnowledgeTrustPromotionReport? Load()
@@ -403,7 +403,7 @@ public sealed class KnowledgeTrustPromotionPipelineService
                 || (latestReview?.Result.Equals("needs_review", StringComparison.OrdinalIgnoreCase) == true && !policyApprovedSecondSource));
     }
 
-    private KnowledgeTrustPromotionReport RunInternal(bool apply, CancellationToken cancellationToken, PromotionApplyProgress progress)
+    private KnowledgeTrustPromotionReport RunInternal(bool apply, CancellationToken cancellationToken, PromotionApplyProgress progress, bool skipRefresh)
     {
         var updatedAt = DateTimeOffset.UtcNow;
         var stageStart = DateTimeOffset.UtcNow;
@@ -469,7 +469,7 @@ public sealed class KnowledgeTrustPromotionPipelineService
         {
             stageStart = DateTimeOffset.UtcNow;
             progress.Stage("apply_promotions");
-            promoted = ApplyTrustedPromotions(eligible, catalog, updatedAt, cancellationToken, progress);
+            promoted = ApplyTrustedPromotions(eligible, catalog, updatedAt, cancellationToken, progress, skipRefresh);
             progress.CompleteStage("apply_promotions", stageStart, DateTimeOffset.UtcNow);
         }
         else
@@ -562,7 +562,8 @@ public sealed class KnowledgeTrustPromotionPipelineService
         IReadOnlyList<KnowledgeCatalogItem> catalog,
         DateTimeOffset now,
         CancellationToken cancellationToken,
-        PromotionApplyProgress progress)
+        PromotionApplyProgress progress,
+        bool skipRefresh)
     {
         if (candidates.Count == 0)
         {
@@ -603,12 +604,20 @@ public sealed class KnowledgeTrustPromotionPipelineService
             File.WriteAllText(new KnowledgeCatalog(_storagePaths).CatalogPath, serialized);
             progress.CompleteStage("persist_catalog", now, DateTimeOffset.UtcNow);
 
-            progress.Stage("persist_quality");
-            new KnowledgeQualityEngine(_storagePaths).Run();
-            new TrustedKnowledgeReviewGateService(_storagePaths).Run();
-            new KnowledgePromotionEngine(_storagePaths).BuildStatus();
-            new MasterStatusWriter(new MasterStatusService(_storagePaths, Directory.GetCurrentDirectory())).WriteSnapshot();
-            progress.CompleteStage("persist_quality", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+            if (!skipRefresh)
+            {
+                progress.Stage("persist_quality");
+                var qualityEngine = new KnowledgeQualityEngine(_storagePaths);
+                _ = qualityEngine.LoadReport() ?? qualityEngine.Run();
+                _ = new TrustedKnowledgeReviewGateService(_storagePaths).Load() ?? new TrustedKnowledgeReviewGateService(_storagePaths).Run();
+                _ = new KnowledgePromotionEngine(_storagePaths).BuildStatus();
+                _ = new MasterStatusWriter(new MasterStatusService(_storagePaths, Directory.GetCurrentDirectory())).WriteSnapshot();
+                progress.CompleteStage("persist_quality", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+            }
+            else
+            {
+                progress.CompleteStage("persist_quality", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "refresh_skipped");
+            }
         }
 
         return updated.Count;

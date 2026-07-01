@@ -467,7 +467,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes trusted-source-catalog-status Trusted Source Catalog anzeigen");
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes knowledge-trust-promotion-status Trust-Promotion Pipeline Status anzeigen");
-        Console.WriteLine("  hermes knowledge-trust-promote [--dry-run|--apply] [--max-seconds N] Trusted Knowledge promoten");
+        Console.WriteLine("  hermes knowledge-trust-promote [--dry-run|--apply] [--max-seconds N] [--skip-refresh] Trusted Knowledge promoten");
         Console.WriteLine("  hermes knowledge-state-consistency-status Knowledge State Consistency Status anzeigen");
         Console.WriteLine("  hermes knowledge-state-consistency-check Knowledge State Consistency pruefen");
         Console.WriteLine("  hermes knowledge-state-consistency-repair [--dry-run|--apply] Knowledge State Consistency reparieren");
@@ -14837,6 +14837,7 @@ internal sealed class HermesCli
         var service = new KnowledgeTrustPromotionPipelineService(storagePaths);
         var apply = HasArg("--apply");
         var dryRun = HasArg("--dry-run");
+        var skipRefresh = HasArg("--skip-refresh");
         var maxSeconds = ReadIntOption(_args, "--max-seconds", apply ? 60 : 0, 0, 3600);
         int? applyTimeout = maxSeconds > 0 ? maxSeconds : null;
 
@@ -14846,7 +14847,7 @@ internal sealed class HermesCli
             return 1;
         }
 
-        var report = service.Run(apply: apply && !dryRun, maxSeconds: applyTimeout);
+        var report = service.Run(apply: apply && !dryRun, maxSeconds: applyTimeout, skipRefresh: skipRefresh);
         WriteKnowledgeTrustPromotionReport(report, service);
         Console.WriteLine();
         WriteSafety();
