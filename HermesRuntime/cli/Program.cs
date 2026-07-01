@@ -744,17 +744,20 @@ internal sealed class HermesCli
     private int ShowMasterStatus()
     {
         WriteHeader("Hermes Master Status");
+        var maxSeconds = ReadIntOption(_args, "--max-seconds", 60, 1, 3600);
         var writer = BuildMasterStatusWriter(BuildStoragePaths());
         var snapshot = writer.LoadSnapshot();
         if (snapshot is null)
         {
-            WriteWarning("Master-Status-Snapshot fehlt. Erzeuge schnellen Snapshot aus aktueller Wahrheit.");
-            snapshot = writer.WriteSnapshot();
+            WriteWarning("Master-Status-Snapshot fehlt. Verwende keinen blockierenden Refresh im CLI-Pfad.");
+            WriteWarning("WARN stale/refresh_timeout");
+            WriteSafety();
+            return 1;
         }
         else if (!IsMasterStatusSnapshotFresh(writer.SnapshotPath))
         {
-            WriteWarning("Master-Status-Snapshot ist veraltet. Verwende Queue-Wahrheit für Review-Counts.");
-            snapshot = writer.WriteSnapshot();
+            WriteWarning($"Master-Status-Snapshot ist veraltet. Verwende Snapshot statt Refresh (max-seconds={maxSeconds}).");
+            WriteWarning("WARN stale/refresh_timeout");
         }
 
         PrintMasterStatusSnapshot(snapshot, writer.SnapshotPath);
