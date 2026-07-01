@@ -409,6 +409,24 @@ public sealed class SourceConfirmationEngine
 
     public SourceConfirmationReport LoadOrBuild() => LoadReport() ?? Build();
 
+    public static int ApprovedSourceCount(ConfirmationResult? confirmation) =>
+        confirmation is null
+            ? 0
+            : Math.Max(
+                confirmation.PolicyApprovedSourceCount,
+                confirmation.CandidateSources?.Count(candidate =>
+                    candidate.AutoApprovedByPolicy
+                    || candidate.PolicyReviewStatus.Equals("approved", StringComparison.OrdinalIgnoreCase)
+                    || candidate.SourceStatus.Equals("policy_approved_second_source", StringComparison.OrdinalIgnoreCase)) ?? 0);
+
+    public static int CanonicalSourceCount(KnowledgeCatalogItem item, ConfirmationResult? existing)
+    {
+        var baseSourceCount = item.SourceIds.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        var approvedSourceCount = ApprovedSourceCount(existing);
+        var existingSourceCount = existing?.SourceCount ?? 0;
+        return Math.Max(existingSourceCount, baseSourceCount + approvedSourceCount);
+    }
+
     private static ConfirmationResult BuildResult(
         KnowledgeCatalogItem item,
         IReadOnlyDictionary<string, CognitiveSource> sourcesById,
@@ -442,8 +460,8 @@ public sealed class SourceConfirmationEngine
             .OrderByDescending(review => review.ReviewedAtUtc)
             .FirstOrDefault()
             ?.Result.Equals("approved", StringComparison.OrdinalIgnoreCase) == true;
-        var policyApprovedSourceCount = existing?.CandidateSources?.Count(candidate => candidate.AutoApprovedByPolicy) ?? 0;
-        var sourceCount = item.SourceIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() + policyApprovedSourceCount;
+        var policyApprovedSourceCount = ApprovedSourceCount(existing);
+        var sourceCount = CanonicalSourceCount(item, existing);
         var score = Math.Round(Math.Clamp(
             Math.Min(0.28, sourceCount * 0.09)
             + Math.Min(0.18, sourceTypes * 0.08)

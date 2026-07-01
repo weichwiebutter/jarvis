@@ -472,10 +472,13 @@ public sealed class AutoSourceReviewPolicyService
                 var approvedCount = mergedSources.Count(candidate => candidate.AutoApprovedByPolicy);
                 var candidateCount = mergedSources.Count;
                 var independentCount = mergedSources.Count(candidate => candidate.AutoApprovedByPolicy || candidate.SourceStatus.Equals("policy_human_review_required", StringComparison.OrdinalIgnoreCase) || candidate.SourceStatus.Equals("independent_candidate_pending_review", StringComparison.OrdinalIgnoreCase));
+                var existingApprovedCount = SourceConfirmationEngine.ApprovedSourceCount(result);
+                var baseSourceCount = Math.Max(0, result.SourceCount - existingApprovedCount);
+                var sourceCount = Math.Max(result.SourceCount, baseSourceCount + approvedCount);
 
                 return result with
                 {
-                    SourceCount = Math.Max(result.SourceCount, approvedCount > 0 ? 2 : result.SourceCount),
+                    SourceCount = sourceCount,
                     CandidateSourceCount = candidateCount,
                     IndependentSourceCandidateCount = independentCount,
                     PolicyApprovedSourceCount = approvedCount,

@@ -116,6 +116,9 @@ internal sealed class HermesCli
             "promotion-status" => ShowPromotionStatus(),
             "knowledge-trust-promotion-status" => ShowKnowledgeTrustPromotionStatus(),
             "knowledge-trust-promote" => RunKnowledgeTrustPromotion(),
+            "knowledge-state-consistency-status" => ShowKnowledgeStateConsistencyStatus(),
+            "knowledge-state-consistency-check" => RunKnowledgeStateConsistencyCheck(),
+            "knowledge-state-consistency-repair" => RunKnowledgeStateConsistencyRepair(),
             "multi-source-evidence-status" => ShowMultiSourceEvidenceStatus(),
             "multi-source-evidence-plan" => ShowMultiSourceEvidencePlan(),
             "multi-source-evidence-apply" => RunMultiSourceEvidenceApply(),
@@ -457,6 +460,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes knowledge-trust-promotion-status Trust-Promotion Pipeline Status anzeigen");
         Console.WriteLine("  hermes knowledge-trust-promote [--dry-run|--apply] Trusted Knowledge promoten");
+        Console.WriteLine("  hermes knowledge-state-consistency-status Knowledge State Consistency Status anzeigen");
+        Console.WriteLine("  hermes knowledge-state-consistency-check Knowledge State Consistency pruefen");
+        Console.WriteLine("  hermes knowledge-state-consistency-repair [--dry-run|--apply] Knowledge State Consistency reparieren");
         Console.WriteLine("  hermes multi-source-evidence-status Multi-Source Evidence Status anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-plan Multi-Source Evidence Plan anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-apply [--dry-run|--apply] Multi-Source Evidence anwenden");
@@ -14689,6 +14695,41 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowKnowledgeStateConsistencyStatus()
+    {
+        WriteHeader("Hermes Knowledge State Consistency");
+        var service = new KnowledgeStateConsistencyService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadStatus();
+        WriteKnowledgeStateConsistencyReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunKnowledgeStateConsistencyCheck()
+    {
+        WriteHeader("Hermes Knowledge State Consistency");
+        var service = new KnowledgeStateConsistencyService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run(apply: false, dryRun: true);
+        WriteKnowledgeStateConsistencyReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunKnowledgeStateConsistencyRepair()
+    {
+        WriteHeader("Hermes Knowledge State Consistency");
+        var service = new KnowledgeStateConsistencyService(BuildStoragePaths(), _runtimeRoot);
+        var apply = HasArg("--apply") && !HasArg("--dry-run");
+        var dryRun = HasArg("--dry-run") || !HasArg("--apply");
+        var report = service.Run(apply: apply, dryRun: dryRun);
+        WriteKnowledgeStateConsistencyReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowMultiSourceEvidenceStatus()
     {
         WriteHeader("Hermes Multi-Source Evidence Ingestion");
@@ -14700,6 +14741,64 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private void WriteKnowledgeStateConsistencyReport(KnowledgeStateConsistencyReport report, KnowledgeStateConsistencyService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Loaded Catalog Items", report.LoadedCatalogItems.ToString());
+        WriteField("Loaded Quality Items", report.LoadedQualityItems.ToString());
+        WriteField("Loaded Evidence Items", report.LoadedEvidenceItems.ToString());
+        WriteField("Loaded Source Confirmations", report.LoadedSourceConfirmationItems.ToString());
+        WriteField("Loaded Validation Status", report.LoadedValidationStatusItems.ToString());
+        WriteField("Loaded Validation Plans", report.LoadedValidationPlans.ToString());
+        WriteField("Loaded Promotion Entries", report.LoadedPromotionEntries.ToString());
+        WriteField("Loaded Master Status Snapshots", report.LoadedMasterStatusSnapshots.ToString());
+        WriteField("Source Count Mismatches", report.SourceCountMismatches.ToString());
+        WriteField("Trusted Status Mismatches", report.TrustedStatusMismatches.ToString());
+        WriteField("Timestamp Mismatches", report.TimestampMismatches.ToString());
+        WriteField("Blocker Mismatches", report.BlockerMismatches.ToString());
+        WriteField("Missing Item ID Mismatches", report.MissingItemIdMismatches.ToString());
+        WriteField("Repaired Items", report.RepairedItems.ToString());
+        WriteField("Dry Run", report.DryRun.ToString().ToLowerInvariant());
+        WriteField("Applied", report.Applied.ToString().ToLowerInvariant());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Remaining Issues", report.RemainingIssues);
+        foreach (var target in new[] { "trading:bearish_engulfing", "trading:liquidity_sweep", "trading:inside_bar" })
+        {
+            var item = report.Items.FirstOrDefault(entry => entry.KnowledgeId.Equals(target, StringComparison.OrdinalIgnoreCase));
+            if (item is null)
+            {
+                WriteField(target, "not found");
+                continue;
+            }
+
+            WriteSubHeader($"{item.Title} / {item.KnowledgeId}");
+            WriteField("Source Count", $"{item.SourceCountBefore} -> {item.SourceCountExpected}");
+            WriteField("Catalog Validation Status", item.CatalogValidationStatus);
+            WriteField("Quality Lifecycle Status", item.QualityLifecycleStatus);
+            WriteField("Source Confirmation Status", item.SourceConfirmationStatus);
+            WriteField("Validation Plan Status", item.ValidationPlanStatus);
+            WriteField("Promotion Status", item.PromotionStatus);
+            WriteField("Validation Score", $"{item.ValidationScore:0.###}");
+            WriteField("Trust Score", $"{item.TrustScore:0.###}");
+            WriteField("Quality Score", $"{item.QualityScore:0.###}");
+            WriteField("Last Validated UTC", item.LastValidatedUtc?.ToString("O") ?? "-");
+            WriteField("Latest Validation UTC", item.LatestValidationExecutionUtc?.ToString("O") ?? "-");
+            WriteField("Policy Approved Second Source", item.PolicyApprovedSecondSource.ToString().ToLowerInvariant());
+            WriteField("Has Validation Executions", item.HasValidationExecutions.ToString().ToLowerInvariant());
+            WriteField("Current Blockers", string.Join(", ", item.CurrentBlockers));
+            WriteField("Expected Blockers", string.Join(", ", item.ExpectedBlockers));
+            WriteField("Recommended Next Action", item.RecommendedNextAction);
+            WriteMessages("Warnings", item.Warnings);
+        }
     }
 
     private int ShowMultiSourceEvidencePlan()
