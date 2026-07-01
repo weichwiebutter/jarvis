@@ -16,7 +16,10 @@ public sealed record KnownArticleSeedDefinition(
     IReadOnlyList<string> Synonyms,
     string Category,
     int Priority,
-    bool Allowed = true);
+    bool Allowed = true,
+    string? Reason = null,
+    string? PublisherGroup = null,
+    bool? Enabled = null);
 
 public sealed record KnownArticleSeedRequest(
     string SeedId,
@@ -24,6 +27,7 @@ public sealed record KnownArticleSeedRequest(
     string Title,
     string Domain,
     string Url,
+    string PublisherGroup,
     string Category,
     int Priority,
     IReadOnlyList<string> Keywords,
@@ -159,9 +163,11 @@ public sealed class KnownArticleSeedCatalogService
             .Where(url => !string.IsNullOrWhiteSpace(url))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var seedDefinitions = LoadSeedDefinitions();
+        var publisherGroupResolver = new PublisherGroupResolverService(_storagePaths, _runtimeRoot);
         var requests = BuildRequests(knowledgeItems, sourceConfirmations, seedDefinitions)
             .Take(Math.Max(1, maxItems))
             .ToList();
+        var finalRequests = new List<KnownArticleSeedRequest>();
         var accepted = new List<KnownArticleSeedCandidate>();
         var rejected = new List<KnownArticleSeedCandidate>();
         var warnings = new List<string>();
@@ -172,6 +178,7 @@ public sealed class KnownArticleSeedCatalogService
             var fetched = FetchSeed(request);
             if (fetched is null)
             {
+                finalRequests.Add(request with { Status = "fetch_failed", Reason = "no_html_content" });
                 rejected.Add(ConvertRejected(request, "fetch_failed", "no_html_content"));
                 warnings.Add($"fetch_failed:{request.SeedId}");
                 continue;
@@ -191,20 +198,41 @@ public sealed class KnownArticleSeedCatalogService
 
             if (string.IsNullOrWhiteSpace(candidate.Url) || existingUrls.Contains(candidate.Url))
             {
+                finalRequests.Add(request with { Status = "duplicate_url", Reason = "duplicate_url" });
                 rejected.Add(candidate with { RejectionReason = "duplicate_url", SourceRelevanceStatus = "duplicate" });
+                continue;
+            }
+
+            var publisherGroup = NormalizePublisherGroup(request.PublisherGroup);
+            if (!string.Equals(publisherGroup, string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                IsDuplicatePublisherGroup(existingCandidates, candidate, publisherGroupResolver, publisherGroup))
+            {
+                finalRequests.Add(request with { Status = "duplicate_publisher_group", Reason = "duplicate_publisher_group" });
+                rejected.Add(candidate with { RejectionReason = "duplicate_publisher_group", SourceRelevanceStatus = "duplicate_publisher_group" });
+                warnings.Add($"duplicate_publisher_group:{request.SeedId}:{publisherGroup}");
                 continue;
             }
 
             if (evaluation.Score < 0.45)
             {
+                finalRequests.Add(request with { Status = "rejected_low_relevance", Reason = evaluation.RejectionReason ?? "low_relevance" });
                 rejected.Add(candidate);
                 continue;
             }
 
+            finalRequests.Add(request with { Status = "accepted_candidate", Reason = "accepted_candidate" });
             accepted.Add(candidate);
             if (!dryRun)
             {
                 existingUrls.Add(candidate.Url);
+            }
+        }
+
+        if (finalRequests.Count < requests.Count)
+        {
+            foreach (var request in requests.Skip(finalRequests.Count))
+            {
+                finalRequests.Add(request with { Status = request.Status, Reason = request.Reason });
             }
         }
 
@@ -231,7 +259,7 @@ public sealed class KnownArticleSeedCatalogService
             RejectedCandidates: rejected.Count,
             DuplicateCandidates: rejected.Count(candidate => (candidate.RejectionReason ?? string.Empty).Contains("duplicate", StringComparison.OrdinalIgnoreCase)),
             LoadedSeeds: seedDefinitions.Select(seed => seed.SeedId).ToList(),
-            Requests: requests,
+            Requests: finalRequests.Count == requests.Count ? finalRequests : requests,
             Candidates: accepted,
             Rejected: rejected,
             Warnings: warnings.Concat(accepted.Count == 0 ? ["no_known_article_seed_candidates"] : []).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
@@ -266,7 +294,7 @@ public sealed class KnownArticleSeedCatalogService
         try
         {
             var payload = JsonSerializer.Deserialize<KnownArticleSeedCatalogFile>(File.ReadAllText(ConfigPath), JsonDefaults.SnapshotReadOptions);
-            return payload?.Seeds.Where(seed => seed.Allowed).ToList() ?? DefaultSeeds();
+            return payload?.Seeds.Where(seed => (seed.Enabled ?? seed.Allowed) && seed.Allowed).ToList() ?? DefaultSeeds();
         }
         catch
         {
@@ -296,6 +324,7 @@ public sealed class KnownArticleSeedCatalogService
         SourceConfirmationReport confirmations,
         IReadOnlyList<KnownArticleSeedDefinition> seeds)
     {
+        var publisherGroups = new PublisherGroupResolverService(_storagePaths, _runtimeRoot);
         var sourceCounts = confirmations.Results.ToDictionary(result => result.KnowledgeId, result => result.SourceCount, StringComparer.OrdinalIgnoreCase);
         var prioritized = items
             .Select(item => new
@@ -316,14 +345,21 @@ public sealed class KnownArticleSeedCatalogService
         var requests = new List<KnownArticleSeedRequest>();
         foreach (var entry in prioritized)
         {
-            foreach (var seed in seeds.Where(seed => seed.Allowed && seed.KnowledgeItemId.Equals(entry.Item.Id, StringComparison.OrdinalIgnoreCase)))
+            foreach (var seed in seeds.Where(seed => (seed.Enabled ?? seed.Allowed) && seed.Allowed && seed.KnowledgeItemId.Equals(entry.Item.Id, StringComparison.OrdinalIgnoreCase)))
             {
+                var publisherGroup = NormalizePublisherGroup(seed.PublisherGroup) switch
+                {
+                    var value when !string.IsNullOrWhiteSpace(value) => value,
+                    _ => publisherGroups.Resolve(seed.Url)
+                };
+
                 requests.Add(new KnownArticleSeedRequest(
                     SeedId: seed.SeedId,
                     KnowledgeItemId: entry.Item.Id,
                     Title: seed.Title,
                     Domain: seed.Domain,
                     Url: seed.Url,
+                    PublisherGroup: publisherGroup,
                     Category: seed.Category,
                     Priority: seed.Priority,
                     Keywords: seed.Keywords,
@@ -335,6 +371,29 @@ public sealed class KnownArticleSeedCatalogService
         }
 
         return requests;
+    }
+
+    private static bool IsDuplicatePublisherGroup(
+        IReadOnlyList<WebResearchImportCandidateRecord> existingCandidates,
+        KnownArticleSeedCandidate candidate,
+        PublisherGroupResolverService resolver,
+        string publisherGroup)
+    {
+        if (string.IsNullOrWhiteSpace(publisherGroup))
+        {
+            return false;
+        }
+
+        var candidateGroup = resolver.Resolve(candidate.Url);
+        if (!string.Equals(candidateGroup, publisherGroup, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return existingCandidates.Any(existing =>
+            !string.IsNullOrWhiteSpace(existing.Url) &&
+            string.Equals(existing.Domain, candidate.Domain, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(resolver.Resolve(existing.Url), publisherGroup, StringComparison.OrdinalIgnoreCase));
     }
 
     private static double ScoreItemPriority(KnowledgeCatalogItem item)
@@ -464,6 +523,8 @@ public sealed class KnownArticleSeedCatalogService
             RejectionReason: candidate.RejectionReason,
             SourceRelevanceStatus: candidate.SourceRelevanceStatus);
 
+    private static string NormalizePublisherGroup(string? value) => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
     private static KnownArticleSeedCandidate ConvertRejected(KnownArticleSeedRequest request, string reason, string status) =>
         new(
             KnowledgeItemId: request.KnowledgeItemId,
@@ -553,7 +614,7 @@ public sealed class KnownArticleSeedCatalogService
         sb.AppendLine("## Requests");
         foreach (var req in report.Requests.Take(20))
         {
-            sb.AppendLine($"- {req.KnowledgeItemId} | {req.Title} | {req.Domain} | {req.Url} | {req.Status}");
+            sb.AppendLine($"- {req.KnowledgeItemId} | {req.Title} | {req.Domain} | {req.PublisherGroup} | {req.Url} | {req.Status}");
         }
         sb.AppendLine();
         sb.AppendLine("## Candidates");

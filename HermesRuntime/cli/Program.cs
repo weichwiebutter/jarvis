@@ -15432,7 +15432,7 @@ internal sealed class HermesCli
         WriteMessages("Warnings", report.Warnings);
         if (report.Requests.Count > 0)
         {
-            WriteMessages("Requests", report.Requests.Take(20).Select(request => $"{request.KnowledgeItemId} | {request.Domain} | {request.Url} | {request.Status}").ToList());
+            WriteMessages("Requests", report.Requests.Take(20).Select(request => $"{request.KnowledgeItemId} | {request.Domain} | {request.PublisherGroup} | {request.Url} | {request.Status}").ToList());
         }
         if (report.Candidates.Count > 0)
         {

@@ -1,0 +1,180 @@
+{
+  "sources": [
+    {
+      "domain": "trading.de",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "trading_education",
+      "reliability_hint": "medium",
+      "search_entry_url": "https://trading.de/?s={query}",
+      "topic_patterns": ["trading", "forex", "price action", "breakout", "liquidity", "setup", "strategy"],
+      "blocked_paths": ["/download/", "/login/", "/shop/"],
+      "preferred_paths": ["/?s={query}", "/category/trading/", "/category/forex/"]
+    },
+    {
+      "domain": "babypips.com",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "trading_education",
+      "reliability_hint": "high",
+      "search_entry_url": "https://www.babypips.com/search?q={query}",
+      "topic_patterns": ["forex", "price action", "breakout", "liquidity", "engulfing", "inside bar", "strategy"],
+      "blocked_paths": ["/course/", "/account/", "/login/"],
+      "preferred_paths": ["/search?q={query}", "/learn/forex/", "/news/forex/"]
+    },
+    {
+      "domain": "investopedia.com",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "financial_reference",
+      "reliability_hint": "high",
+      "search_entry_url": "https://www.investopedia.com/search?q={query}",
+      "topic_patterns": ["trading", "forex", "risk", "setup", "liquidity", "strategy", "breakout"],
+      "blocked_paths": ["/terms/", "/advertise/", "/careers/"],
+      "preferred_paths": ["/search?q={query}", "/articles/", "/terms/"]
+    },
+    {
+      "domain": "help.ctrader.com",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "official_documentation",
+      "reliability_hint": "high",
+      "search_entry_url": "https://help.ctrader.com/search/?q={query}",
+      "topic_patterns": ["ctrader", "cbot", "robot", "automate", "paper", "cloud", "wrapper", "market context", "accessrights"],
+      "blocked_paths": ["/download/", "/pricing/", "/brokers/"],
+      "preferred_paths": ["/search/?q={query}", "/automate/", "/help/"]
+    },
+    {
+      "domain": "ctrader.com",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "official_product",
+      "reliability_hint": "high",
+      "search_entry_url": "https://ctrader.com/search/?q={query}",
+      "topic_patterns": ["ctrader", "cbot", "automate", "cloud", "paper", "robot"],
+      "blocked_paths": ["/download/", "/brokers/", "/pricing/"],
+      "preferred_paths": ["/automate/", "/copy/", "/help/"]
+    },
+    {
+      "domain": "spotware.com",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "official_vendor",
+      "reliability_hint": "high",
+      "search_entry_url": "https://spotware.com/search/?q={query}",
+      "topic_patterns": ["spotware", "ctrader", "automate", "paper", "cloud", "api"],
+      "blocked_paths": ["/login/", "/brokers/", "/pricing/"],
+      "preferred_paths": ["/products/ctrader/", "/automate/", "/company/"]
+    },
+    {
+      "domain": "learn.microsoft.com",
+      "category": "software",
+      "allowed": true,
+      "source_type": "documentation",
+      "reliability_hint": "high",
+      "search_entry_url": "https://learn.microsoft.com/en-us/search/?terms={query}",
+      "topic_patterns": ["dotnet", "c#", "api", "sdk", "documentation", "reference", "playwright"],
+      "blocked_paths": ["/support/", "/answers/"],
+      "preferred_paths": ["/en-us/search/?terms={query}", "/en-us/dotnet/", "/en-us/docs/"]
+    },
+    {
+      "domain": "docs.microsoft.com",
+      "category": "documentation",
+      "allowed": true,
+      "source_type": "documentation",
+      "reliability_hint": "high",
+      "search_entry_url": "https://learn.microsoft.com/en-us/search/?terms={query}",
+      "topic_patterns": ["documentation", "reference", "api", "sdk", "guide", "manual"],
+      "blocked_paths": ["/support/", "/answers/"],
+      "preferred_paths": ["/en-us/search/?terms={query}", "/en-us/docs/"]
+    },
+    {
+      "domain": "github.com",
+      "category": "software",
+      "allowed": true,
+      "source_type": "source_code_repository",
+      "reliability_hint": "medium",
+      "search_entry_url": "https://github.com/search?q={query}&type=code",
+      "topic_patterns": ["github", "c#", "dotnet", "sdk", "playwright", "source", "repository"],
+      "blocked_paths": ["/topics/", "/marketplace/", "/about/"],
+      "preferred_paths": ["/search?q={query}&type=code", "/search?q={query}&type=repositories", "/spotware"]
+    },
+    {
+      "domain": "github.com",
+      "category": "software",
+      "allowed": true,
+      "source_type": "source_code_repository",
+      "reliability_hint": "medium",
+      "search_entry_url": "https://github.com/spotware",
+      "topic_patterns": ["spotware", "ctrader", "automation", "robot", "cbot"],
+      "blocked_paths": ["/topics/", "/marketplace/", "/about/"],
+      "preferred_paths": ["/spotware", "/search?q={query}&type=code"]
+    },
+    {
+      "domain": "ig.com",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "trading_education",
+      "reliability_hint": "high",
+      "search_entry_url": "https://www.ig.com/en/trading-strategies",
+      "topic_patterns": ["candlestick", "support", "resistance", "breakout", "trend", "pullback", "engulfing", "doji", "hammer", "pin bar"],
+      "blocked_paths": ["/login/", "/account/"],
+      "preferred_paths": ["/en/trading-strategies/", "/en/ig-academy/"]
+    },
+    {
+      "domain": "cmcmarkets.com",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "trading_education",
+      "reliability_hint": "high",
+      "search_entry_url": "https://www.cmcmarkets.com/en-gb/technical-analysis",
+      "topic_patterns": ["candlestick", "support", "resistance", "breakout", "trend", "pullback", "engulfing", "doji", "hammer"],
+      "blocked_paths": ["/login/", "/account/"],
+      "preferred_paths": ["/en-gb/technical-analysis/", "/en-", "/technical-analysis/"]
+    },
+    {
+      "domain": "avatrade.com",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "trading_education",
+      "reliability_hint": "high",
+      "search_entry_url": "https://www.avatrade.com/education/technical-analysis-indicators-strategies",
+      "topic_patterns": ["candlestick", "support", "resistance", "breakout", "trend", "pullback", "engulfing", "doji", "hammer", "pin bar"],
+      "blocked_paths": ["/login/", "/account/"],
+      "preferred_paths": ["/education/technical-analysis-indicators-strategies/", "/education/online-trading-strategies/"]
+    },
+    {
+      "domain": "fxcm.com",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "trading_education",
+      "reliability_hint": "high",
+      "search_entry_url": "https://www.fxcm.com/markets/insights/",
+      "topic_patterns": ["candlestick", "support", "resistance", "breakout", "trend", "pullback", "engulfing", "doji", "hammer"],
+      "blocked_paths": ["/login/", "/account/"],
+      "preferred_paths": ["/markets/insights/", "/markets/help/"]
+    },
+    {
+      "domain": "fidelity.com",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "financial_education",
+      "reliability_hint": "medium",
+      "search_entry_url": "https://www.fidelity.com/learning-center/trading-investing",
+      "topic_patterns": ["support", "resistance", "trend", "pullback", "technical analysis"],
+      "blocked_paths": ["/login/", "/accounts/"],
+      "preferred_paths": ["/learning-center/trading-investing/", "/learning-center/"]
+    },
+    {
+      "domain": "schwab.com",
+      "category": "trading",
+      "allowed": true,
+      "source_type": "financial_education",
+      "reliability_hint": "medium",
+      "search_entry_url": "https://www.schwab.com/learn",
+      "topic_patterns": ["support", "resistance", "trend", "pullback", "technical analysis"],
+      "blocked_paths": ["/login/", "/accounts/"],
+      "preferred_paths": ["/learn/", "/learn/story/"]
+    }
+  ]
+}
