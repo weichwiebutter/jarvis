@@ -786,6 +786,16 @@ public sealed class KnowledgeQualityEngine
             return "rejected";
         }
 
+        if (item.ValidationStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase))
+        {
+            return "trusted";
+        }
+
+        if (item.ValidationStatus.Equals("robust", StringComparison.OrdinalIgnoreCase) && quality >= 0.72 && validation >= 0.58)
+        {
+            return "robust";
+        }
+
         if (age <= _policy.DeprecatedAgeThreshold && quality < 0.58)
         {
             return "deprecated";

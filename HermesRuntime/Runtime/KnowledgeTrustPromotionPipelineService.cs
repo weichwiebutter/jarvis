@@ -136,7 +136,7 @@ public sealed class KnowledgeTrustPromotionPipelineService
         Directory.CreateDirectory(Root);
 
         var updatedAt = DateTimeOffset.UtcNow;
-        var qualityReport = new KnowledgeQualityEngine(_storagePaths).LoadOrCreateReport();
+        var qualityReport = new KnowledgeQualityEngine(_storagePaths).Run();
         var catalog = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
         var catalogById = catalog.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
 

@@ -282,6 +282,15 @@ public sealed class KnowledgeCatalog
     public IReadOnlyList<KnowledgeCatalogItem> LoadOrCreateItems()
     {
         Directory.CreateDirectory(Root);
+        var existing = LoadItems();
+        if (existing.Count > 0)
+        {
+            return existing
+                .OrderBy(item => item.Domain, StringComparer.Ordinal)
+                .ThenBy(item => item.Id, StringComparer.Ordinal)
+                .ToList();
+        }
+
         var items = new TradingKnowledgeMapper(_storagePaths)
             .MapPatternCatalog()
             .Concat(new DomainCognitiveService(_storagePaths).LoadAllDomainKnowledgeItems())

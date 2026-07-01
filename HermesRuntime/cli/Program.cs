@@ -732,22 +732,7 @@ internal sealed class HermesCli
         else if (!IsMasterStatusSnapshotFresh(writer.SnapshotPath))
         {
             WriteWarning("Master-Status-Snapshot ist veraltet. Verwende Queue-Wahrheit für Review-Counts.");
-            var humanReview = new HumanReviewWorkflow(BuildStoragePaths()).BuildSummary();
-            snapshot = snapshot with
-            {
-                PendingReviews = humanReview.PendingReviews,
-                ApprovedReviews = humanReview.ApprovedReviews,
-                RejectedReviews = humanReview.RejectedReviews,
-                NeedsMoreEvidenceReviews = humanReview.NeedsMoreEvidenceReviews,
-                DeferredReviews = humanReview.DeferredReviews,
-                ReviewCoverage = humanReview.ReviewCoverage,
-                TopReviewPriorities = humanReview.TopReviewPriorities,
-                LastUpdatedUtc = DateTimeOffset.UtcNow,
-                Warnings = snapshot.Warnings
-                    .Append("legacy_snapshot_candidate")
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList(),
-            };
+            snapshot = writer.WriteSnapshot();
         }
 
         PrintMasterStatusSnapshot(snapshot, writer.SnapshotPath);
@@ -831,11 +816,22 @@ internal sealed class HermesCli
         }
 
         var humanReview = new HumanReviewWorkflow(BuildStoragePaths()).BuildSummary();
+        var quality = new KnowledgeQualityEngine(BuildStoragePaths()).Run();
         return snapshot.PendingReviews == humanReview.PendingReviews
             && snapshot.NeedsMoreEvidenceReviews == humanReview.NeedsMoreEvidenceReviews
             && snapshot.ApprovedReviews == humanReview.ApprovedReviews
             && snapshot.RejectedReviews == humanReview.RejectedReviews
-            && snapshot.DeferredReviews == humanReview.DeferredReviews;
+            && snapshot.DeferredReviews == humanReview.DeferredReviews
+            && snapshot.TrustedKnowledge == quality.TrustedKnowledge
+            && snapshot.WeakKnowledge == quality.WeakKnowledge
+            && snapshot.DeprecatedKnowledge == quality.DeprecatedKnowledge
+            && Math.Abs(snapshot.AverageQualityScore - quality.AverageQualityScore) < 0.0001
+            && Math.Abs(snapshot.AverageTrustScore - quality.AverageTrustScore) < 0.0001
+            && string.Equals(snapshot.KnowledgeHealth, quality.KnowledgeHealth, StringComparison.OrdinalIgnoreCase)
+            && Math.Abs(snapshot.EvidenceCoverage - quality.EvidenceCoverage) < 0.0001
+            && snapshot.ContradictionCount == quality.ContradictionCount
+            && snapshot.HumanReviewedItems == quality.HumanReviewedItems
+            && Math.Abs(snapshot.ValidationCoverage - quality.ValidationCoverage) < 0.0001;
     }
 
     private MasterStatusWriter BuildMasterStatusWriter(StoragePaths storagePaths) =>
