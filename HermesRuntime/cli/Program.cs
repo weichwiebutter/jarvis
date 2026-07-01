@@ -388,7 +388,7 @@ internal sealed class HermesCli
         Console.WriteLine();
         Console.WriteLine("Kommandos:");
         Console.WriteLine("  hermes write-master-status Master Status Snapshot schreiben");
-        Console.WriteLine("  hermes master-status-refresh [--max-seconds N] Master Status Snapshot bewusst refreshen");
+        Console.WriteLine("  hermes master-status-refresh [--knowledge-only] [--max-seconds N] Master Status Snapshot bewusst refreshen");
         Console.WriteLine("  hermes master-status      kompakten Gesamtstatus aus bestehenden Reports anzeigen");
         Console.WriteLine("  hermes runtime-health-summary kompakten Betreiberstatus anzeigen");
         Console.WriteLine("  hermes runtime-health-history Betriebs-Historie schreiben und anzeigen");
@@ -771,11 +771,12 @@ internal sealed class HermesCli
     private int RefreshMasterStatus()
     {
         WriteHeader("Hermes Master Status Refresh");
+        var knowledgeOnly = HasArg("--knowledge-only");
         var maxSeconds = ReadIntOption(_args, "--max-seconds", 120, 1, 3600);
         var storagePaths = BuildStoragePaths();
         var writer = BuildMasterStatusWriter(storagePaths);
         var timeout = TimeSpan.FromSeconds(maxSeconds);
-        var stage = "write_snapshot";
+        var stage = knowledgeOnly ? "run_knowledge_quality" : "write_snapshot";
         var refreshRoot = Path.Combine(storagePaths.Root, "reports", "master-status-refresh");
         Directory.CreateDirectory(refreshRoot);
         var refreshReportPath = Path.Combine(refreshRoot, "master_status_refresh_report.json");
@@ -784,6 +785,13 @@ internal sealed class HermesCli
 
         var runTask = Task.Run(() =>
         {
+            if (knowledgeOnly)
+            {
+                var quality = new KnowledgeQualityEngine(storagePaths).Run();
+                stage = "write_knowledge_snapshot";
+                return writer.WriteKnowledgeOnlySnapshot(quality);
+            }
+
             stage = "write_snapshot";
             return writer.WriteSnapshot();
         });
@@ -792,15 +800,18 @@ internal sealed class HermesCli
         {
             var timeoutReport = new Dictionary<string, object?>
             {
-                ["status"] = "blocked_master_status_refresh_timeout",
-                ["last_successful_stage"] = "write_snapshot",
+                ["status"] = knowledgeOnly ? "blocked_knowledge_refresh_timeout" : "blocked_master_status_refresh_timeout",
+                ["last_successful_stage"] = stage,
                 ["affected_items"] = Array.Empty<string>(),
-                ["recommended_next_action"] = "retry_master_status_refresh_with_smaller_batch_or_inspect_slow_sections",
+                ["recommended_next_action"] = knowledgeOnly
+                    ? "retry_with_smaller_batch_or_review_knowledge_quality_refresh"
+                    : "retry_master_status_refresh_with_smaller_batch_or_inspect_slow_sections",
                 ["timeout_seconds"] = maxSeconds,
                 ["started_at_utc"] = startedAt.ToString("O"),
                 ["updated_at_utc"] = DateTimeOffset.UtcNow.ToString("O"),
                 ["snapshot_path"] = writer.SnapshotPath,
-                ["report_path"] = refreshReportPath
+                ["report_path"] = refreshReportPath,
+                ["knowledge_only"] = knowledgeOnly
             };
 
             File.WriteAllText(refreshReportPath, JsonSerializer.Serialize(timeoutReport, JsonDefaults.WriteOptions));
@@ -817,6 +828,7 @@ internal sealed class HermesCli
 
         var snapshot = runTask.Result;
         WriteField("Master Status", DisplayPath(writer.SnapshotPath));
+        WriteField("Knowledge Only", knowledgeOnly ? "ja" : "nein");
         WriteField("Last Successful Stage", stage);
         Console.WriteLine();
         PrintMasterStatusSnapshot(snapshot, writer.SnapshotPath);
