@@ -32,6 +32,7 @@ internal sealed class HermesCli
         {
             "" or "help" or "--help" or "-h" => ShowHelp(),
             "write-master-status" => WriteMasterStatus(),
+            "master-status-refresh" => RefreshMasterStatus(),
             "master-status" => ShowMasterStatus(),
             "runtime-health-summary" => ShowRuntimeHealthSummary(),
             "runtime-health-history" => ShowRuntimeHealthHistory(),
@@ -387,6 +388,7 @@ internal sealed class HermesCli
         Console.WriteLine();
         Console.WriteLine("Kommandos:");
         Console.WriteLine("  hermes write-master-status Master Status Snapshot schreiben");
+        Console.WriteLine("  hermes master-status-refresh [--max-seconds N] Master Status Snapshot bewusst refreshen");
         Console.WriteLine("  hermes master-status      kompakten Gesamtstatus aus bestehenden Reports anzeigen");
         Console.WriteLine("  hermes runtime-health-summary kompakten Betreiberstatus anzeigen");
         Console.WriteLine("  hermes runtime-health-history Betriebs-Historie schreiben und anzeigen");
@@ -766,6 +768,63 @@ internal sealed class HermesCli
         return snapshot.OverallStatus.Equals("critical", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
     }
 
+    private int RefreshMasterStatus()
+    {
+        WriteHeader("Hermes Master Status Refresh");
+        var maxSeconds = ReadIntOption(_args, "--max-seconds", 120, 1, 3600);
+        var storagePaths = BuildStoragePaths();
+        var writer = BuildMasterStatusWriter(storagePaths);
+        var timeout = TimeSpan.FromSeconds(maxSeconds);
+        var stage = "write_snapshot";
+        var refreshRoot = Path.Combine(storagePaths.Root, "reports", "master-status-refresh");
+        Directory.CreateDirectory(refreshRoot);
+        var refreshReportPath = Path.Combine(refreshRoot, "master_status_refresh_report.json");
+        var refreshMarkdownPath = Path.Combine(refreshRoot, "master_status_refresh_report.md");
+        var startedAt = DateTimeOffset.UtcNow;
+
+        var runTask = Task.Run(() =>
+        {
+            stage = "write_snapshot";
+            return writer.WriteSnapshot();
+        });
+
+        if (!runTask.Wait(timeout))
+        {
+            var timeoutReport = new Dictionary<string, object?>
+            {
+                ["status"] = "blocked_master_status_refresh_timeout",
+                ["last_successful_stage"] = "write_snapshot",
+                ["affected_items"] = Array.Empty<string>(),
+                ["recommended_next_action"] = "retry_master_status_refresh_with_smaller_batch_or_inspect_slow_sections",
+                ["timeout_seconds"] = maxSeconds,
+                ["started_at_utc"] = startedAt.ToString("O"),
+                ["updated_at_utc"] = DateTimeOffset.UtcNow.ToString("O"),
+                ["snapshot_path"] = writer.SnapshotPath,
+                ["report_path"] = refreshReportPath
+            };
+
+            File.WriteAllText(refreshReportPath, JsonSerializer.Serialize(timeoutReport, JsonDefaults.WriteOptions));
+            File.WriteAllText(refreshMarkdownPath, BuildMasterStatusRefreshTimeoutMarkdown(timeoutReport));
+
+            WriteWarning($"Master-Status-Refresh timed out after {maxSeconds} seconds.");
+            WriteWarning("WARN stale/refresh_timeout");
+            WriteField("Report", DisplayPath(refreshReportPath));
+            WriteField("Markdown", DisplayPath(refreshMarkdownPath));
+            WriteField("Last Successful Stage", "write_snapshot");
+            WriteSafety();
+            return 1;
+        }
+
+        var snapshot = runTask.Result;
+        WriteField("Master Status", DisplayPath(writer.SnapshotPath));
+        WriteField("Last Successful Stage", stage);
+        Console.WriteLine();
+        PrintMasterStatusSnapshot(snapshot, writer.SnapshotPath);
+        Console.WriteLine();
+        WriteSafety();
+        return snapshot.OverallStatus.Equals("critical", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+    }
+
     private int ShowRuntimeHealthSummary()
     {
         WriteHeader("Hermes Runtime Health Summary");
@@ -880,6 +939,19 @@ internal sealed class HermesCli
                 WriteWarning($"Master Status Snapshot konnte nicht geschrieben werden: {ex.Message}");
             }
         }
+    }
+
+    private static string BuildMasterStatusRefreshTimeoutMarkdown(IReadOnlyDictionary<string, object?> report)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("# Master Status Refresh Timeout");
+        sb.AppendLine();
+        foreach (var entry in report)
+        {
+            sb.AppendLine($"- {entry.Key}: {entry.Value ?? "-"}");
+        }
+
+        return sb.ToString();
     }
 
     private void PrintMasterStatusSnapshot(MasterStatusSnapshot snapshot, string reportPath)
