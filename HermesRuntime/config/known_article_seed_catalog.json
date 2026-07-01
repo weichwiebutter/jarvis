@@ -1,0 +1,160 @@
+{
+  "seeds": [
+    {
+      "seed_id": "bullish_engulfing_babypips",
+      "knowledge_item_id": "trading:bullish_engulfing",
+      "title": "Bullish Engulfing",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/learn/forex/bullish-engulfing-candlestick-pattern",
+      "keywords": ["bullish engulfing", "engulfing pattern", "candlestick pattern"],
+      "synonyms": ["bullish engulfer", "bullish engulfing pattern"],
+      "category": "candlestick",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "bullish_engulfing_investopedia",
+      "knowledge_item_id": "trading:bullish_engulfing",
+      "title": "Bullish Engulfing",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/e/engulfingpattern.asp",
+      "keywords": ["bullish engulfing", "engulfing pattern"],
+      "synonyms": ["candlestick reversal"],
+      "category": "candlestick",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "inside_bar_babypips",
+      "knowledge_item_id": "trading:inside_bar",
+      "title": "Inside Bar",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/learn/forex/inside-bar-candlestick-pattern",
+      "keywords": ["inside bar", "inside candle", "compression"],
+      "synonyms": ["inside bar pattern"],
+      "category": "candlestick",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "inside_bar_investopedia",
+      "knowledge_item_id": "trading:inside_bar",
+      "title": "Inside Bar",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/i/inside-day.asp",
+      "keywords": ["inside bar", "inside day"],
+      "synonyms": ["compression candle"],
+      "category": "candlestick",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "inside_bar_trading_de",
+      "knowledge_item_id": "trading:inside_bar",
+      "title": "Inside Bar",
+      "domain": "trading.de",
+      "url": "https://trading.de/charts/candlestick/candlestick-pattern/",
+      "keywords": ["inside bar"],
+      "synonyms": ["candlestick pattern"],
+      "category": "candlestick",
+      "priority": 90,
+      "allowed": true
+    },
+    {
+      "seed_id": "doji_babypips",
+      "knowledge_item_id": "trading:doji",
+      "title": "Doji",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/learn/forex/doji-candlesticks",
+      "keywords": ["doji", "indecision candle"],
+      "synonyms": ["neutral candle"],
+      "category": "candlestick",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "doji_investopedia",
+      "knowledge_item_id": "trading:doji",
+      "title": "Doji",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/d/doji.asp",
+      "keywords": ["doji"],
+      "synonyms": ["indecision"],
+      "category": "candlestick",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "double_top_babypips",
+      "knowledge_item_id": "trading:double_top",
+      "title": "Double Top",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/learn/forex/double-top-chart-pattern",
+      "keywords": ["double top", "double top pattern"],
+      "synonyms": ["double top reversal"],
+      "category": "chart_pattern",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "double_top_investopedia",
+      "knowledge_item_id": "trading:double_top",
+      "title": "Double Top",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/d/doubletop.asp",
+      "keywords": ["double top"],
+      "synonyms": ["chart pattern"],
+      "category": "chart_pattern",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "double_bottom_babypips",
+      "knowledge_item_id": "trading:double_bottom",
+      "title": "Double Bottom",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/learn/forex/double-bottom-chart-pattern",
+      "keywords": ["double bottom", "double bottom pattern"],
+      "synonyms": ["double bottom reversal"],
+      "category": "chart_pattern",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "double_bottom_investopedia",
+      "knowledge_item_id": "trading:double_bottom",
+      "title": "Double Bottom",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/d/doublebottom.asp",
+      "keywords": ["double bottom"],
+      "synonyms": ["chart pattern"],
+      "category": "chart_pattern",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "hammer_babypips",
+      "knowledge_item_id": "trading:hammer",
+      "title": "Hammer",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/learn/forex/hammer-candlestick",
+      "keywords": ["hammer", "hammer candlestick"],
+      "synonyms": ["bullish rejection candle"],
+      "category": "candlestick",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "hammer_investopedia",
+      "knowledge_item_id": "trading:hammer",
+      "title": "Hammer",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/h/hammer.asp",
+      "keywords": ["hammer"],
+      "synonyms": ["wick rejection"],
+      "category": "candlestick",
+      "priority": 95,
+      "allowed": true
+    }
+  ]
+}

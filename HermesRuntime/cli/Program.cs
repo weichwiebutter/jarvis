@@ -237,6 +237,8 @@ internal sealed class HermesCli
             "research-query-builder-status" => ShowResearchQueryBuilderStatus(),
             "direct-domain-research-status" => ShowDirectDomainResearchStatus(),
             "direct-domain-research-fetch" => RunDirectDomainResearchFetch(),
+            "known-article-seed-status" => ShowKnownArticleSeedStatus(),
+            "known-article-seed-fetch" => RunKnownArticleSeedFetch(),
             "browser-research-status" => ShowBrowserResearchStatus(),
             "browser-research-fetch" => RunBrowserResearchFetch(),
             "generate-hypotheses" => GenerateHypotheses(),
@@ -580,6 +582,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes research-query-builder-status Research Query Builder Status anzeigen");
         Console.WriteLine("  hermes direct-domain-research-status Direct Domain Research Status anzeigen");
         Console.WriteLine("  hermes direct-domain-research-fetch --max-items 5 [--max-fetch-seconds N] [--dry-run|--apply] Direct Domain Research ausfuehren");
+        Console.WriteLine("  hermes known-article-seed-status Known Article Seed Catalog Status anzeigen");
+        Console.WriteLine("  hermes known-article-seed-fetch --max-items 10 [--dry-run|--apply] Known Article Seeds abrufen");
         Console.WriteLine("  hermes browser-research-status Browser Research Agent Status anzeigen");
         Console.WriteLine("  hermes browser-research-fetch --max-items 5 [--dry-run|--apply] Browser Research ausfuehren");
         Console.WriteLine("  hermes generate-hypotheses --domain trading Cross-Knowledge-Hypothesen erzeugen");
@@ -9621,6 +9625,30 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowKnownArticleSeedStatus()
+    {
+        WriteHeader("Hermes Known Article Seed Catalog");
+        var service = new KnownArticleSeedCatalogService(BuildStoragePaths());
+        var report = service.LoadStatus();
+        WriteKnownArticleSeedCatalogReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunKnownArticleSeedFetch()
+    {
+        WriteHeader("Hermes Known Article Seed Catalog");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 10, min: 1, max: 100);
+        var dryRun = HasArg("--dry-run") || !HasArg("--apply");
+        var service = new KnownArticleSeedCatalogService(BuildStoragePaths());
+        var report = service.Run(maxItems, dryRun);
+        WriteKnownArticleSeedCatalogReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowBrowserResearchStatus()
     {
         WriteHeader("Hermes Browser Research Agent");
@@ -15248,6 +15276,45 @@ internal sealed class HermesCli
             }
 
             Console.WriteLine();
+        }
+    }
+
+    private void WriteKnownArticleSeedCatalogReport(KnownArticleSeedStatusReport report)
+    {
+        WriteField("Status", report.Status);
+        WriteField("Report Version", report.ReportVersion);
+        WriteField("Updated At", report.UpdatedAtUtc.ToString("O"));
+        WriteField("Loaded Knowledge Items", report.LoadedKnowledgeItems.ToString());
+        WriteField("Considered Knowledge Items", report.ConsideredKnowledgeItems.ToString());
+        WriteField("Seed Definitions", report.SeedDefinitions.ToString());
+        WriteField("Seed Requests", report.SeedRequests.ToString());
+        WriteField("Fetched Candidates", report.FetchedCandidates.ToString());
+        WriteField("Accepted Candidates", report.AcceptedCandidates.ToString());
+        WriteField("Rejected Candidates", report.RejectedCandidates.ToString());
+        WriteField("Duplicate Candidates", report.DuplicateCandidates.ToString());
+        WriteField("Seed Catalog Path", DisplayPath(report.SeedCatalogPath));
+        WriteField("Requests Path", DisplayPath(report.RequestsPath));
+        WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Dry Run", report.DryRun.ToString().ToLowerInvariant());
+        WriteField("Applied", report.Applied.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+        if (report.Requests.Count > 0)
+        {
+            WriteMessages("Requests", report.Requests.Take(20).Select(request => $"{request.KnowledgeItemId} | {request.Domain} | {request.Url} | {request.Status}").ToList());
+        }
+        if (report.Candidates.Count > 0)
+        {
+            WriteMessages("Candidates", report.Candidates.Take(20).Select(candidate => $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Url} | score={candidate.RelevanceScore:0.###} | {candidate.SourceRelevanceStatus}").ToList());
+        }
+        if (report.Rejected.Count > 0)
+        {
+            WriteMessages("Rejected", report.Rejected.Take(20).Select(candidate => $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Url} | {candidate.RejectionReason}").ToList());
         }
     }
 
