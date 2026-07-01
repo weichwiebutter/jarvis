@@ -467,7 +467,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes trusted-source-catalog-status Trusted Source Catalog anzeigen");
         Console.WriteLine("  hermes promotion-status   Knowledge Promotion Status anzeigen");
         Console.WriteLine("  hermes knowledge-trust-promotion-status Trust-Promotion Pipeline Status anzeigen");
-        Console.WriteLine("  hermes knowledge-trust-promote [--dry-run|--apply] Trusted Knowledge promoten");
+        Console.WriteLine("  hermes knowledge-trust-promote [--dry-run|--apply] [--max-seconds N] Trusted Knowledge promoten");
         Console.WriteLine("  hermes knowledge-state-consistency-status Knowledge State Consistency Status anzeigen");
         Console.WriteLine("  hermes knowledge-state-consistency-check Knowledge State Consistency pruefen");
         Console.WriteLine("  hermes knowledge-state-consistency-repair [--dry-run|--apply] Knowledge State Consistency reparieren");
@@ -14837,6 +14837,8 @@ internal sealed class HermesCli
         var service = new KnowledgeTrustPromotionPipelineService(storagePaths);
         var apply = HasArg("--apply");
         var dryRun = HasArg("--dry-run");
+        var maxSeconds = ReadIntOption(_args, "--max-seconds", apply ? 60 : 0, 0, 3600);
+        int? applyTimeout = maxSeconds > 0 ? maxSeconds : null;
 
         if (apply && dryRun)
         {
@@ -14844,11 +14846,11 @@ internal sealed class HermesCli
             return 1;
         }
 
-        var report = service.Run(apply: apply && !dryRun);
+        var report = service.Run(apply: apply && !dryRun, maxSeconds: applyTimeout);
         WriteKnowledgeTrustPromotionReport(report, service);
         Console.WriteLine();
         WriteSafety();
-        return 0;
+        return report.Status.Equals("blocked_promotion_apply_timeout", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
     }
 
     private int ShowKnowledgeStateConsistencyStatus()
@@ -15165,6 +15167,8 @@ internal sealed class HermesCli
     {
         WriteField("Report", DisplayPath(service.ReportPath));
         WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Last Successful Stage", report.LastSuccessfulStage);
         WriteField("Total Items", report.TotalItems.ToString());
         WriteField("Eligible for Promotion", report.EligibleForPromotion.ToString());
         WriteField("Promoted to Trusted", report.PromotedToTrusted.ToString());
@@ -15188,6 +15192,8 @@ internal sealed class HermesCli
         WriteField("Validation Needs OOS", report.ValidationItemsNeedingOos.ToString());
         WriteField("Validation Routing Health", report.ValidationRoutingHealth);
         WriteField("Contradictions", DisplayPath(report.ContradictionsPath));
+        WriteMessages("Stage Trace", report.StageTrace);
+        WriteMessages("Affected Items", report.AffectedItems);
         WriteMessages("Top Blockers", report.TopBlockers.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
         WriteMessages("Warnings", report.Warnings);
 

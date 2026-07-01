@@ -28,6 +28,8 @@ public sealed record KnowledgeTrustPromotionCandidate(
 public sealed record KnowledgeTrustPromotionReport(
     string ReportVersion,
     DateTimeOffset UpdatedAtUtc,
+    string Status,
+    string LastSuccessfulStage,
     int TotalItems,
     int EligibleForPromotion,
     int PromotedToTrusted,
@@ -55,6 +57,8 @@ public sealed record KnowledgeTrustPromotionReport(
     string ReportPath,
     string MarkdownPath,
     string PromotionLogPath,
+    IReadOnlyList<string> StageTrace,
+    IReadOnlyList<string> AffectedItems,
     bool ResearchOnly,
     bool NoTradingExecution,
     bool NoBrokerAction,
@@ -74,6 +78,60 @@ public sealed record KnowledgeTrustPromotionThresholds(
         MinimumQualityScore: 0.64,
         MinimumValidationScore: 0.6,
         FreshValidationWindow: TimeSpan.FromDays(180));
+}
+
+public sealed record PromotionStageTraceEntry(
+    string Stage,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset CompletedAtUtc,
+    long DurationMs,
+    bool Completed,
+    string? Error = null);
+
+public sealed class PromotionApplyProgress
+{
+    private readonly List<PromotionStageTraceEntry> _stageTrace = new();
+    private readonly List<string> _affectedItems = new();
+
+    public IReadOnlyList<PromotionStageTraceEntry> StageTrace => _stageTrace;
+    public IReadOnlyList<string> AffectedItems => _affectedItems;
+    public string LastSuccessfulStage { get; private set; } = "load_inputs";
+    public string? CurrentStage { get; private set; }
+
+    public void Stage(string stage)
+    {
+        CurrentStage = stage;
+        var now = DateTimeOffset.UtcNow;
+        _stageTrace.Add(new PromotionStageTraceEntry(stage, now, now, 0, false));
+    }
+
+    public void CompleteStage(string stage, DateTimeOffset startedAtUtc, DateTimeOffset completedAtUtc, string? error = null)
+    {
+        CurrentStage = stage;
+        if (error is null)
+        {
+            LastSuccessfulStage = stage;
+        }
+
+        var duration = Math.Max(0, (long)(completedAtUtc - startedAtUtc).TotalMilliseconds);
+        _stageTrace.Add(new PromotionStageTraceEntry(stage, startedAtUtc, completedAtUtc, duration, error is null, error));
+    }
+
+    public void AddAffectedItems(IEnumerable<string> knowledgeIds)
+    {
+        foreach (var knowledgeId in knowledgeIds.Where(id => !string.IsNullOrWhiteSpace(id)))
+        {
+            if (!_affectedItems.Contains(knowledgeId, StringComparer.OrdinalIgnoreCase))
+            {
+                _affectedItems.Add(knowledgeId);
+            }
+        }
+    }
+
+    public void MarkTimeout(string stage)
+    {
+        CurrentStage = stage;
+    }
 }
 
 public sealed class KnowledgeTrustPromotionPipelineService
@@ -131,136 +189,29 @@ public sealed class KnowledgeTrustPromotionPipelineService
 
     public string PromotionLogPath => Path.Combine(_storagePaths.Root, "cognitive_core", "knowledge_trust_promotion_log.jsonl");
 
-    public KnowledgeTrustPromotionReport Run(bool apply = false)
+    public KnowledgeTrustPromotionReport Run(bool apply = false, int? maxSeconds = null)
     {
         Directory.CreateDirectory(Root);
 
-        var updatedAt = DateTimeOffset.UtcNow;
-        var qualityReport = new KnowledgeQualityEngine(_storagePaths).Run();
-        var catalog = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
-        var catalogById = catalog.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
-
-        var evidenceReport = LoadKnowledgeEvidence();
-        var sourceConfirmationReport = LoadSourceConfirmations();
-        var sourceConfirmationById = sourceConfirmationReport.Results
-            .ToDictionary(result => result.KnowledgeId, StringComparer.OrdinalIgnoreCase);
-        var evidenceById = evidenceReport.Evidence
-            .ToDictionary(entry => entry.KnowledgeId, StringComparer.OrdinalIgnoreCase);
-
-        var validationStrategy = new KnowledgeValidationStrategy(_storagePaths);
-        var validationPlanReport = validationStrategy.LoadPlanReport() ?? validationStrategy.GeneratePlans(50);
-        var validationStatus = validationStrategy.BuildStatus();
-        var validationExecutor = new KnowledgeValidationExecutor(_storagePaths);
-        var validationExecutions = validationExecutor.LoadResults(5000);
-        var latestValidationById = validationExecutions
-            .Where(result => !string.IsNullOrWhiteSpace(result.KnowledgeItemId))
-            .GroupBy(result => result.KnowledgeItemId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => group.OrderByDescending(result => result.CompletedAtUtc).First(),
-                StringComparer.OrdinalIgnoreCase);
-        var contradictions = new ContradictionDetector(_storagePaths).LoadOrRun();
-        var contradictionsById = contradictions.Contradictions
-            .GroupBy(item => item.KnowledgeId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
-        var humanReview = new HumanReviewEvidenceStore(_storagePaths).LoadOrCreateReport();
-        var humanReviewById = humanReview.Reviews
-            .GroupBy(item => item.KnowledgeId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.ReviewedAtUtc).First(), StringComparer.OrdinalIgnoreCase);
-
-        var candidates = qualityReport.Items
-            .OrderByDescending(item => item.TrustScore)
-            .ThenByDescending(item => item.QualityScore)
-            .ThenBy(item => item.Domain, StringComparer.Ordinal)
-            .ThenBy(item => item.KnowledgeId, StringComparer.Ordinal)
-            .Select(item => BuildCandidate(
-                item,
-                catalogById.GetValueOrDefault(item.KnowledgeId),
-                evidenceById.GetValueOrDefault(item.KnowledgeId),
-                sourceConfirmationById.GetValueOrDefault(item.KnowledgeId),
-                validationPlanReport.Plans.FirstOrDefault(plan => plan.KnowledgeItemId.Equals(item.KnowledgeId, StringComparison.OrdinalIgnoreCase)),
-                latestValidationById.GetValueOrDefault(item.KnowledgeId),
-                contradictionsById.GetValueOrDefault(item.KnowledgeId),
-                humanReviewById.GetValueOrDefault(item.KnowledgeId),
-                updatedAt))
-            .ToList();
-
-        var eligible = candidates.Where(candidate => candidate.EligibleForPromotion).ToList();
-        var promoted = apply
-            ? ApplyTrustedPromotions(eligible, catalog, updatedAt)
-            : 0;
-
-        var blockedByEvidence = candidates.Count(candidate => candidate.Blockers.Any(blocker =>
-            BlockingMissingEvidence.Contains(blocker) || blocker.Equals("domain_validation_not_passed", StringComparison.OrdinalIgnoreCase)));
-        var blockedByContradiction = candidates.Count(candidate => candidate.Blockers.Any(blocker =>
-            blocker.Equals("blocking_contradiction", StringComparison.OrdinalIgnoreCase)));
-        var blockedByScore = candidates.Count(candidate => candidate.Blockers.Any(blocker =>
-            blocker.Equals("trust_score_too_low", StringComparison.OrdinalIgnoreCase)
-            || blocker.Equals("quality_score_too_low", StringComparison.OrdinalIgnoreCase)
-            || blocker.Equals("validation_score_too_low", StringComparison.OrdinalIgnoreCase)));
-
-        var topBlockers = candidates
-            .SelectMany(candidate => candidate.Blockers.Concat(candidate.MissingEvidenceCategories))
-            .GroupBy(blocker => blocker, StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(group => group.Count())
-            .ThenBy(group => group.Key, StringComparer.Ordinal)
-            .Take(12)
-            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
-
-        var warnings = new List<string>();
-        if (qualityReport.TotalKnowledgeItems == 0)
+        if (apply && maxSeconds is not null)
         {
-            warnings.Add("knowledge_catalog_empty");
-        }
-        if (eligible.Count == 0)
-        {
-            warnings.Add("no_items_eligible_for_trusted_promotion");
-        }
-        if (validationStatus.ValidationPlansOpen > 0)
-        {
-            warnings.Add($"validation_plans_open:{validationStatus.ValidationPlansOpen}");
+            var timeoutSeconds = Math.Max(5, maxSeconds.Value);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+            var progress = new PromotionApplyProgress();
+            var task = Task.Run(() => RunInternal(apply: true, cts.Token, progress), cts.Token);
+
+            if (task.Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+            {
+                return task.Result;
+            }
+
+            cts.Cancel();
+            var timeoutReport = BuildTimeoutReport(progress, "blocked_promotion_apply_timeout");
+            WriteReport(timeoutReport);
+            return timeoutReport;
         }
 
-        var report = new KnowledgeTrustPromotionReport(
-            ReportVersion: "knowledge_trust_promotion_report_v1",
-            UpdatedAtUtc: updatedAt,
-            TotalItems: qualityReport.TotalKnowledgeItems,
-            EligibleForPromotion: eligible.Count,
-            PromotedToTrusted: promoted,
-            BlockedByEvidence: blockedByEvidence,
-            BlockedByContradiction: blockedByContradiction,
-            BlockedByScore: blockedByScore,
-            TopBlockers: topBlockers,
-            Candidates: candidates,
-            Warnings: warnings,
-            RecommendedNextAction: RecommendedNextAction(eligible, topBlockers, validationStatus),
-            QualityPath: new KnowledgeQualityEngine(_storagePaths).QualityPath,
-            KnowledgeEvidencePath: new KnowledgeQualityEngine(_storagePaths).EvidencePath,
-            SourceConfirmationsPath: new SourceConfirmationEngine(_storagePaths).ReportPath,
-            EvidenceGraphPath: new EvidenceGraphBuilder(_storagePaths).GraphPath,
-            ValidationPlansPath: validationStrategy.PlansPath,
-            ValidationStatusPath: validationStrategy.StatusPath,
-            ValidationExecutionLogPath: validationExecutor.ExecutionLogPath,
-            ValidationPlansOpen: validationStatus.ValidationPlansOpen,
-            ValidationTasksPending: validationStatus.ValidationTasksPending,
-            ValidationTrustedCandidateCount: validationStatus.TrustedCandidateCount,
-            ValidationItemsNeedingSourceCheck: validationStatus.KnowledgeItemsNeedingSourceCheck,
-            ValidationItemsNeedingOos: validationStatus.KnowledgeItemsNeedingOos,
-            ValidationRoutingHealth: validationStatus.ValidationRoutingHealth,
-            ContradictionsPath: new ContradictionDetector(_storagePaths).ContradictionsPath,
-            ReportPath: ReportPath,
-            MarkdownPath: MarkdownPath,
-            PromotionLogPath: PromotionLogPath,
-            ResearchOnly: true,
-            NoTradingExecution: true,
-            NoBrokerAction: true,
-            NoAutoTrading: true,
-            HumanReviewRequired: true,
-            DryRun: !apply,
-            AppliedCount: promoted);
-
-        WriteReport(report);
-        return report;
+        return RunInternal(apply, CancellationToken.None, new PromotionApplyProgress());
     }
 
     public KnowledgeTrustPromotionReport? Load()
@@ -452,7 +403,166 @@ public sealed class KnowledgeTrustPromotionPipelineService
                 || (latestReview?.Result.Equals("needs_review", StringComparison.OrdinalIgnoreCase) == true && !policyApprovedSecondSource));
     }
 
-    private int ApplyTrustedPromotions(IReadOnlyList<KnowledgeTrustPromotionCandidate> candidates, IReadOnlyList<KnowledgeCatalogItem> catalog, DateTimeOffset now)
+    private KnowledgeTrustPromotionReport RunInternal(bool apply, CancellationToken cancellationToken, PromotionApplyProgress progress)
+    {
+        var updatedAt = DateTimeOffset.UtcNow;
+        var stageStart = DateTimeOffset.UtcNow;
+        progress.Stage("load_inputs");
+
+        var qualityReport = new KnowledgeQualityEngine(_storagePaths).Run();
+        var catalog = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
+        var catalogById = catalog.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
+
+        var evidenceReport = LoadKnowledgeEvidence();
+        var sourceConfirmationReport = LoadSourceConfirmations();
+        var sourceConfirmationById = sourceConfirmationReport.Results
+            .ToDictionary(result => result.KnowledgeId, StringComparer.OrdinalIgnoreCase);
+        var evidenceById = evidenceReport.Evidence
+            .ToDictionary(entry => entry.KnowledgeId, StringComparer.OrdinalIgnoreCase);
+
+        var validationStrategy = new KnowledgeValidationStrategy(_storagePaths);
+        var validationPlanReport = validationStrategy.LoadPlanReport() ?? validationStrategy.GeneratePlans(50);
+        var validationStatus = validationStrategy.BuildStatus();
+        var validationExecutor = new KnowledgeValidationExecutor(_storagePaths);
+        var validationExecutions = validationExecutor.LoadResults(5000);
+        var latestValidationById = validationExecutions
+            .Where(result => !string.IsNullOrWhiteSpace(result.KnowledgeItemId))
+            .GroupBy(result => result.KnowledgeItemId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(result => result.CompletedAtUtc).First(),
+                StringComparer.OrdinalIgnoreCase);
+        var contradictions = new ContradictionDetector(_storagePaths).LoadOrRun();
+        var contradictionsById = contradictions.Contradictions
+            .GroupBy(item => item.KnowledgeId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+        var humanReview = new HumanReviewEvidenceStore(_storagePaths).LoadOrCreateReport();
+        var humanReviewById = humanReview.Reviews
+            .GroupBy(item => item.KnowledgeId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.ReviewedAtUtc).First(), StringComparer.OrdinalIgnoreCase);
+        progress.CompleteStage("load_inputs", stageStart, DateTimeOffset.UtcNow);
+
+        stageStart = DateTimeOffset.UtcNow;
+        progress.Stage("compute_candidates");
+        var candidates = qualityReport.Items
+            .OrderByDescending(item => item.TrustScore)
+            .ThenByDescending(item => item.QualityScore)
+            .ThenBy(item => item.Domain, StringComparer.Ordinal)
+            .ThenBy(item => item.KnowledgeId, StringComparer.Ordinal)
+            .Select(item => BuildCandidate(
+                item,
+                catalogById.GetValueOrDefault(item.KnowledgeId),
+                evidenceById.GetValueOrDefault(item.KnowledgeId),
+                sourceConfirmationById.GetValueOrDefault(item.KnowledgeId),
+                validationPlanReport.Plans.FirstOrDefault(plan => plan.KnowledgeItemId.Equals(item.KnowledgeId, StringComparison.OrdinalIgnoreCase)),
+                latestValidationById.GetValueOrDefault(item.KnowledgeId),
+                contradictionsById.GetValueOrDefault(item.KnowledgeId),
+                humanReviewById.GetValueOrDefault(item.KnowledgeId),
+                updatedAt))
+            .ToList();
+        progress.CompleteStage("compute_candidates", stageStart, DateTimeOffset.UtcNow);
+
+        var eligible = candidates.Where(candidate => candidate.EligibleForPromotion).ToList();
+        progress.AddAffectedItems(eligible.Select(candidate => candidate.KnowledgeId));
+        var promoted = 0;
+        if (apply && eligible.Count > 0)
+        {
+            stageStart = DateTimeOffset.UtcNow;
+            progress.Stage("apply_promotions");
+            promoted = ApplyTrustedPromotions(eligible, catalog, updatedAt, cancellationToken, progress);
+            progress.CompleteStage("apply_promotions", stageStart, DateTimeOffset.UtcNow);
+        }
+        else
+        {
+            progress.CompleteStage("apply_promotions", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, apply ? null : "dry_run_skipped");
+        }
+
+        var blockedByEvidence = candidates.Count(candidate => candidate.Blockers.Any(blocker =>
+            BlockingMissingEvidence.Contains(blocker) || blocker.Equals("domain_validation_not_passed", StringComparison.OrdinalIgnoreCase)));
+        var blockedByContradiction = candidates.Count(candidate => candidate.Blockers.Any(blocker =>
+            blocker.Equals("blocking_contradiction", StringComparison.OrdinalIgnoreCase)));
+        var blockedByScore = candidates.Count(candidate => candidate.Blockers.Any(blocker =>
+            blocker.Equals("trust_score_too_low", StringComparison.OrdinalIgnoreCase)
+            || blocker.Equals("quality_score_too_low", StringComparison.OrdinalIgnoreCase)
+            || blocker.Equals("validation_score_too_low", StringComparison.OrdinalIgnoreCase)));
+
+        var topBlockers = candidates
+            .SelectMany(candidate => candidate.Blockers.Concat(candidate.MissingEvidenceCategories))
+            .GroupBy(blocker => blocker, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(group => group.Count())
+            .ThenBy(group => group.Key, StringComparer.Ordinal)
+            .Take(12)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+
+        var warnings = new List<string>();
+        if (qualityReport.TotalKnowledgeItems == 0)
+        {
+            warnings.Add("knowledge_catalog_empty");
+        }
+        if (eligible.Count == 0)
+        {
+            warnings.Add("no_items_eligible_for_trusted_promotion");
+        }
+        if (validationStatus.ValidationPlansOpen > 0)
+        {
+            warnings.Add($"validation_plans_open:{validationStatus.ValidationPlansOpen}");
+        }
+
+        stageStart = DateTimeOffset.UtcNow;
+        progress.Stage("write_report");
+        var report = new KnowledgeTrustPromotionReport(
+            ReportVersion: "knowledge_trust_promotion_report_v1",
+            UpdatedAtUtc: updatedAt,
+            Status: apply ? (promoted > 0 ? "applied" : "apply_completed_no_changes") : "dry_run_completed",
+            LastSuccessfulStage: progress.LastSuccessfulStage,
+            TotalItems: qualityReport.TotalKnowledgeItems,
+            EligibleForPromotion: eligible.Count,
+            PromotedToTrusted: promoted,
+            BlockedByEvidence: blockedByEvidence,
+            BlockedByContradiction: blockedByContradiction,
+            BlockedByScore: blockedByScore,
+            TopBlockers: topBlockers,
+            Candidates: candidates,
+            Warnings: warnings,
+            RecommendedNextAction: RecommendedNextAction(eligible, topBlockers, validationStatus),
+            QualityPath: new KnowledgeQualityEngine(_storagePaths).QualityPath,
+            KnowledgeEvidencePath: new KnowledgeQualityEngine(_storagePaths).EvidencePath,
+            SourceConfirmationsPath: new SourceConfirmationEngine(_storagePaths).ReportPath,
+            EvidenceGraphPath: new EvidenceGraphBuilder(_storagePaths).GraphPath,
+            ValidationPlansPath: validationStrategy.PlansPath,
+            ValidationStatusPath: validationStrategy.StatusPath,
+            ValidationExecutionLogPath: validationExecutor.ExecutionLogPath,
+            ValidationPlansOpen: validationStatus.ValidationPlansOpen,
+            ValidationTasksPending: validationStatus.ValidationTasksPending,
+            ValidationTrustedCandidateCount: validationStatus.TrustedCandidateCount,
+            ValidationItemsNeedingSourceCheck: validationStatus.KnowledgeItemsNeedingSourceCheck,
+            ValidationItemsNeedingOos: validationStatus.KnowledgeItemsNeedingOos,
+            ValidationRoutingHealth: validationStatus.ValidationRoutingHealth,
+            ContradictionsPath: new ContradictionDetector(_storagePaths).ContradictionsPath,
+            ReportPath: ReportPath,
+            MarkdownPath: MarkdownPath,
+            PromotionLogPath: PromotionLogPath,
+            StageTrace: progress.StageTrace.Select(entry => $"{entry.Stage}:{(entry.Completed ? "done" : "open")}:{entry.DurationMs}ms{(string.IsNullOrWhiteSpace(entry.Error) ? string.Empty : $":{entry.Error}")}").ToList(),
+            AffectedItems: progress.AffectedItems,
+            ResearchOnly: true,
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true,
+            HumanReviewRequired: true,
+            DryRun: !apply,
+            AppliedCount: promoted);
+
+        WriteReport(report);
+        progress.CompleteStage("write_report", stageStart, DateTimeOffset.UtcNow);
+        return report;
+    }
+
+    private int ApplyTrustedPromotions(
+        IReadOnlyList<KnowledgeTrustPromotionCandidate> candidates,
+        IReadOnlyList<KnowledgeCatalogItem> catalog,
+        DateTimeOffset now,
+        CancellationToken cancellationToken,
+        PromotionApplyProgress progress)
     {
         if (candidates.Count == 0)
         {
@@ -464,6 +574,7 @@ public sealed class KnowledgeTrustPromotionPipelineService
 
         foreach (var candidate in candidates)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!byId.TryGetValue(candidate.KnowledgeId, out var item))
             {
                 continue;
@@ -481,6 +592,7 @@ public sealed class KnowledgeTrustPromotionPipelineService
 
         if (updated.Count > 0)
         {
+            progress.Stage("persist_catalog");
             var serialized = JsonSerializer.Serialize(
                 byId.Values
                     .OrderBy(item => item.Domain, StringComparer.Ordinal)
@@ -489,11 +601,14 @@ public sealed class KnowledgeTrustPromotionPipelineService
                 JsonDefaults.WriteOptions);
             Directory.CreateDirectory(Path.GetDirectoryName(new KnowledgeCatalog(_storagePaths).CatalogPath)!);
             File.WriteAllText(new KnowledgeCatalog(_storagePaths).CatalogPath, serialized);
+            progress.CompleteStage("persist_catalog", now, DateTimeOffset.UtcNow);
 
+            progress.Stage("persist_quality");
             new KnowledgeQualityEngine(_storagePaths).Run();
             new TrustedKnowledgeReviewGateService(_storagePaths).Run();
             new KnowledgePromotionEngine(_storagePaths).BuildStatus();
             new MasterStatusWriter(new MasterStatusService(_storagePaths, Directory.GetCurrentDirectory())).WriteSnapshot();
+            progress.CompleteStage("persist_quality", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         }
 
         return updated.Count;
@@ -723,6 +838,58 @@ public sealed class KnowledgeTrustPromotionPipelineService
         }
 
         return $"Top Blocker: {topBlocker.Key}; trusted promotion erneut prüfen.";
+    }
+
+    private KnowledgeTrustPromotionReport BuildTimeoutReport(PromotionApplyProgress progress, string status)
+    {
+        var updatedAt = DateTimeOffset.UtcNow;
+        var qualityReport = new KnowledgeQualityEngine(_storagePaths).LoadReport();
+        var validationStatus = new KnowledgeValidationStrategy(_storagePaths).BuildStatus();
+
+        return new KnowledgeTrustPromotionReport(
+            ReportVersion: "knowledge_trust_promotion_report_v1",
+            UpdatedAtUtc: updatedAt,
+            Status: status,
+            LastSuccessfulStage: progress.LastSuccessfulStage,
+            TotalItems: qualityReport.TotalKnowledgeItems,
+            EligibleForPromotion: 0,
+            PromotedToTrusted: 0,
+            BlockedByEvidence: 0,
+            BlockedByContradiction: 0,
+            BlockedByScore: 0,
+            TopBlockers: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                [status] = 1
+            },
+            Candidates: [],
+            Warnings: [status],
+            RecommendedNextAction: "retry_promotion_apply_or_run_consistency_repair",
+            QualityPath: new KnowledgeQualityEngine(_storagePaths).QualityPath,
+            KnowledgeEvidencePath: new KnowledgeQualityEngine(_storagePaths).EvidencePath,
+            SourceConfirmationsPath: new SourceConfirmationEngine(_storagePaths).ReportPath,
+            EvidenceGraphPath: new EvidenceGraphBuilder(_storagePaths).GraphPath,
+            ValidationPlansPath: new KnowledgeValidationStrategy(_storagePaths).PlansPath,
+            ValidationStatusPath: new KnowledgeValidationStrategy(_storagePaths).StatusPath,
+            ValidationExecutionLogPath: new KnowledgeValidationExecutor(_storagePaths).ExecutionLogPath,
+            ValidationPlansOpen: validationStatus.ValidationPlansOpen,
+            ValidationTasksPending: validationStatus.ValidationTasksPending,
+            ValidationTrustedCandidateCount: validationStatus.TrustedCandidateCount,
+            ValidationItemsNeedingSourceCheck: validationStatus.KnowledgeItemsNeedingSourceCheck,
+            ValidationItemsNeedingOos: validationStatus.KnowledgeItemsNeedingOos,
+            ValidationRoutingHealth: validationStatus.ValidationRoutingHealth,
+            ContradictionsPath: new ContradictionDetector(_storagePaths).ContradictionsPath,
+            ReportPath: ReportPath,
+            MarkdownPath: MarkdownPath,
+            PromotionLogPath: PromotionLogPath,
+            StageTrace: progress.StageTrace.Select(entry => $"{entry.Stage}:{(entry.Completed ? "done" : "open")}:{entry.DurationMs}ms{(string.IsNullOrWhiteSpace(entry.Error) ? string.Empty : $":{entry.Error}")}").ToList(),
+            AffectedItems: progress.AffectedItems,
+            ResearchOnly: true,
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true,
+            HumanReviewRequired: true,
+            DryRun: false,
+            AppliedCount: 0);
     }
 
     private void WriteReport(KnowledgeTrustPromotionReport report)
