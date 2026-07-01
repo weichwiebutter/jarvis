@@ -6,8 +6,15 @@
       "title": "Bullish Engulfing",
       "domain": "babypips.com",
       "url": "https://www.babypips.com/learn/forex/bullish-engulfing-candlestick-pattern",
-      "keywords": ["bullish engulfing", "engulfing pattern", "candlestick pattern"],
-      "synonyms": ["bullish engulfer", "bullish engulfing pattern"],
+      "keywords": [
+        "bullish engulfing",
+        "engulfing pattern",
+        "candlestick pattern"
+      ],
+      "synonyms": [
+        "bullish engulfer",
+        "bullish engulfing pattern"
+      ],
       "category": "candlestick",
       "priority": 100,
       "allowed": true
@@ -18,8 +25,13 @@
       "title": "Bullish Engulfing",
       "domain": "investopedia.com",
       "url": "https://www.investopedia.com/terms/e/engulfingpattern.asp",
-      "keywords": ["bullish engulfing", "engulfing pattern"],
-      "synonyms": ["candlestick reversal"],
+      "keywords": [
+        "bullish engulfing",
+        "engulfing pattern"
+      ],
+      "synonyms": [
+        "candlestick reversal"
+      ],
       "category": "candlestick",
       "priority": 95,
       "allowed": true
@@ -30,8 +42,14 @@
       "title": "Inside Bar",
       "domain": "babypips.com",
       "url": "https://www.babypips.com/learn/forex/inside-bar-candlestick-pattern",
-      "keywords": ["inside bar", "inside candle", "compression"],
-      "synonyms": ["inside bar pattern"],
+      "keywords": [
+        "inside bar",
+        "inside candle",
+        "compression"
+      ],
+      "synonyms": [
+        "inside bar pattern"
+      ],
       "category": "candlestick",
       "priority": 100,
       "allowed": true
@@ -42,8 +60,13 @@
       "title": "Inside Bar",
       "domain": "investopedia.com",
       "url": "https://www.investopedia.com/terms/i/inside-day.asp",
-      "keywords": ["inside bar", "inside day"],
-      "synonyms": ["compression candle"],
+      "keywords": [
+        "inside bar",
+        "inside day"
+      ],
+      "synonyms": [
+        "compression candle"
+      ],
       "category": "candlestick",
       "priority": 95,
       "allowed": true
@@ -54,8 +77,12 @@
       "title": "Inside Bar",
       "domain": "trading.de",
       "url": "https://trading.de/charts/candlestick/candlestick-pattern/",
-      "keywords": ["inside bar"],
-      "synonyms": ["candlestick pattern"],
+      "keywords": [
+        "inside bar"
+      ],
+      "synonyms": [
+        "candlestick pattern"
+      ],
       "category": "candlestick",
       "priority": 90,
       "allowed": true
@@ -66,8 +93,13 @@
       "title": "Doji",
       "domain": "babypips.com",
       "url": "https://www.babypips.com/learn/forex/doji-candlesticks",
-      "keywords": ["doji", "indecision candle"],
-      "synonyms": ["neutral candle"],
+      "keywords": [
+        "doji",
+        "indecision candle"
+      ],
+      "synonyms": [
+        "neutral candle"
+      ],
       "category": "candlestick",
       "priority": 100,
       "allowed": true
@@ -78,8 +110,12 @@
       "title": "Doji",
       "domain": "investopedia.com",
       "url": "https://www.investopedia.com/terms/d/doji.asp",
-      "keywords": ["doji"],
-      "synonyms": ["indecision"],
+      "keywords": [
+        "doji"
+      ],
+      "synonyms": [
+        "indecision"
+      ],
       "category": "candlestick",
       "priority": 95,
       "allowed": true
@@ -90,8 +126,13 @@
       "title": "Double Top",
       "domain": "babypips.com",
       "url": "https://www.babypips.com/learn/forex/double-top-chart-pattern",
-      "keywords": ["double top", "double top pattern"],
-      "synonyms": ["double top reversal"],
+      "keywords": [
+        "double top",
+        "double top pattern"
+      ],
+      "synonyms": [
+        "double top reversal"
+      ],
       "category": "chart_pattern",
       "priority": 100,
       "allowed": true
@@ -102,8 +143,12 @@
       "title": "Double Top",
       "domain": "investopedia.com",
       "url": "https://www.investopedia.com/terms/d/doubletop.asp",
-      "keywords": ["double top"],
-      "synonyms": ["chart pattern"],
+      "keywords": [
+        "double top"
+      ],
+      "synonyms": [
+        "chart pattern"
+      ],
       "category": "chart_pattern",
       "priority": 95,
       "allowed": true
@@ -114,8 +159,13 @@
       "title": "Double Bottom",
       "domain": "babypips.com",
       "url": "https://www.babypips.com/learn/forex/double-bottom-chart-pattern",
-      "keywords": ["double bottom", "double bottom pattern"],
-      "synonyms": ["double bottom reversal"],
+      "keywords": [
+        "double bottom",
+        "double bottom pattern"
+      ],
+      "synonyms": [
+        "double bottom reversal"
+      ],
       "category": "chart_pattern",
       "priority": 100,
       "allowed": true
@@ -126,8 +176,12 @@
       "title": "Double Bottom",
       "domain": "investopedia.com",
       "url": "https://www.investopedia.com/terms/d/doublebottom.asp",
-      "keywords": ["double bottom"],
-      "synonyms": ["chart pattern"],
+      "keywords": [
+        "double bottom"
+      ],
+      "synonyms": [
+        "chart pattern"
+      ],
       "category": "chart_pattern",
       "priority": 95,
       "allowed": true
@@ -138,8 +192,13 @@
       "title": "Hammer",
       "domain": "babypips.com",
       "url": "https://www.babypips.com/learn/forex/hammer-candlestick",
-      "keywords": ["hammer", "hammer candlestick"],
-      "synonyms": ["bullish rejection candle"],
+      "keywords": [
+        "hammer",
+        "hammer candlestick"
+      ],
+      "synonyms": [
+        "bullish rejection candle"
+      ],
       "category": "candlestick",
       "priority": 100,
       "allowed": true
@@ -150,9 +209,525 @@
       "title": "Hammer",
       "domain": "investopedia.com",
       "url": "https://www.investopedia.com/terms/h/hammer.asp",
-      "keywords": ["hammer"],
-      "synonyms": ["wick rejection"],
+      "keywords": [
+        "hammer"
+      ],
+      "synonyms": [
+        "wick rejection"
+      ],
       "category": "candlestick",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "bearish_engulfing_babypips",
+      "knowledge_item_id": "trading:bearish_engulfing",
+      "title": "Bearish Engulfing",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/forexpedia/bearish-engulfing-pattern",
+      "keywords": [
+        "bearish engulfing",
+        "engulfing pattern",
+        "candlestick pattern"
+      ],
+      "synonyms": [
+        "bearish engulfer",
+        "bearish engulfing pattern"
+      ],
+      "category": "candlestick",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "bearish_engulfing_investopedia",
+      "knowledge_item_id": "trading:bearish_engulfing",
+      "title": "Bearish Engulfing",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/e/engulfingpattern.asp",
+      "keywords": [
+        "bearish engulfing",
+        "engulfing pattern"
+      ],
+      "synonyms": [
+        "candlestick reversal"
+      ],
+      "category": "candlestick",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "bearish_engulfing_ig",
+      "knowledge_item_id": "trading:bearish_engulfing",
+      "title": "Bearish Engulfing",
+      "domain": "ig.com",
+      "url": "https://www.ig.com/en/trading-strategies/how-to-trade-using-bullish-and-bearish-engulfing-candlesticks-191114",
+      "keywords": [
+        "bearish engulfing",
+        "engulfing pattern"
+      ],
+      "synonyms": [
+        "bearish reversal"
+      ],
+      "category": "candlestick",
+      "priority": 92,
+      "allowed": true
+    },
+    {
+      "seed_id": "bearish_engulfing_cmc",
+      "knowledge_item_id": "trading:bearish_engulfing",
+      "title": "Bearish Engulfing",
+      "domain": "cmcmarkets.com",
+      "url": "https://www.cmcmarkets.com/en-gb/technical-analysis/bullish-and-bearish-candle-stick-patterns",
+      "keywords": [
+        "bearish engulfing"
+      ],
+      "synonyms": [
+        "candlestick pattern"
+      ],
+      "category": "candlestick",
+      "priority": 90,
+      "allowed": true
+    },
+    {
+      "seed_id": "bearish_engulfing_avatrade",
+      "knowledge_item_id": "trading:bearish_engulfing",
+      "title": "Bearish Engulfing",
+      "domain": "avatrade.com",
+      "url": "https://www.avatrade.com/education/technical-analysis-indicators-strategies/candlesticks-patterns",
+      "keywords": [
+        "bearish engulfing"
+      ],
+      "synonyms": [
+        "candlestick patterns"
+      ],
+      "category": "candlestick",
+      "priority": 88,
+      "allowed": true
+    },
+    {
+      "seed_id": "bearish_engulfing_fxcm",
+      "knowledge_item_id": "trading:bearish_engulfing",
+      "title": "Bearish Engulfing",
+      "domain": "fxcm.com",
+      "url": "https://www.fxcm.com/markets/insights/learn-forex-japanese-candlesticks/",
+      "keywords": [
+        "bearish engulfing"
+      ],
+      "synonyms": [
+        "japanese candlesticks"
+      ],
+      "category": "candlestick",
+      "priority": 86,
+      "allowed": true
+    },
+    {
+      "seed_id": "bullish_engulfing_ig",
+      "knowledge_item_id": "trading:bullish_engulfing",
+      "title": "Bullish Engulfing",
+      "domain": "ig.com",
+      "url": "https://www.ig.com/en/trading-strategies/how-to-trade-using-bullish-and-bearish-engulfing-candlesticks-191114",
+      "keywords": [
+        "bullish engulfing",
+        "engulfing pattern"
+      ],
+      "synonyms": [
+        "bullish reversal"
+      ],
+      "category": "candlestick",
+      "priority": 92,
+      "allowed": true
+    },
+    {
+      "seed_id": "bullish_engulfing_cmc",
+      "knowledge_item_id": "trading:bullish_engulfing",
+      "title": "Bullish Engulfing",
+      "domain": "cmcmarkets.com",
+      "url": "https://www.cmcmarkets.com/en-gb/technical-analysis/bullish-and-bearish-candle-stick-patterns",
+      "keywords": [
+        "bullish engulfing"
+      ],
+      "synonyms": [
+        "candlestick pattern"
+      ],
+      "category": "candlestick",
+      "priority": 90,
+      "allowed": true
+    },
+    {
+      "seed_id": "bullish_engulfing_avatrade",
+      "knowledge_item_id": "trading:bullish_engulfing",
+      "title": "Bullish Engulfing",
+      "domain": "avatrade.com",
+      "url": "https://www.avatrade.com/education/technical-analysis-indicators-strategies/candlesticks-patterns",
+      "keywords": [
+        "bullish engulfing"
+      ],
+      "synonyms": [
+        "candlestick patterns"
+      ],
+      "category": "candlestick",
+      "priority": 88,
+      "allowed": true
+    },
+    {
+      "seed_id": "bullish_engulfing_fxcm",
+      "knowledge_item_id": "trading:bullish_engulfing",
+      "title": "Bullish Engulfing",
+      "domain": "fxcm.com",
+      "url": "https://www.fxcm.com/markets/insights/learn-forex-japanese-candlesticks/",
+      "keywords": [
+        "bullish engulfing"
+      ],
+      "synonyms": [
+        "japanese candlesticks"
+      ],
+      "category": "candlestick",
+      "priority": 86,
+      "allowed": true
+    },
+    {
+      "seed_id": "doji_ig",
+      "knowledge_item_id": "trading:doji",
+      "title": "Doji",
+      "domain": "ig.com",
+      "url": "https://www.ig.com/en/trading-strategies/how-to-trade-using-the-doji-candlestick-pattern-191009",
+      "keywords": [
+        "doji"
+      ],
+      "synonyms": [
+        "candlestick pattern"
+      ],
+      "category": "candlestick",
+      "priority": 92,
+      "allowed": true
+    },
+    {
+      "seed_id": "doji_cmc",
+      "knowledge_item_id": "trading:doji",
+      "title": "Doji",
+      "domain": "cmcmarkets.com",
+      "url": "https://www.cmcmarkets.com/en-gb/technical-analysis/what-are-doji-candlestick-patterns-and-how-to-trade-them",
+      "keywords": [
+        "doji"
+      ],
+      "synonyms": [
+        "candlestick pattern"
+      ],
+      "category": "candlestick",
+      "priority": 90,
+      "allowed": true
+    },
+    {
+      "seed_id": "doji_avatrade",
+      "knowledge_item_id": "trading:doji",
+      "title": "Doji",
+      "domain": "avatrade.com",
+      "url": "https://www.avatrade.com/education/technical-analysis-indicators-strategies/candlesticks-patterns",
+      "keywords": [
+        "doji"
+      ],
+      "synonyms": [
+        "candlestick patterns"
+      ],
+      "category": "candlestick",
+      "priority": 88,
+      "allowed": true
+    },
+    {
+      "seed_id": "inside_bar_ig",
+      "knowledge_item_id": "trading:inside_bar",
+      "title": "Inside Bar",
+      "domain": "ig.com",
+      "url": "https://www.ig.com/en/trading-strategies/top-7-price-action-trading-strategies-210510",
+      "keywords": [
+        "inside bar"
+      ],
+      "synonyms": [
+        "price action"
+      ],
+      "category": "candlestick",
+      "priority": 92,
+      "allowed": true
+    },
+    {
+      "seed_id": "inside_bar_babypips_strategy",
+      "knowledge_item_id": "trading:inside_bar",
+      "title": "Inside Bar Momentum Strategy",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/trading/new-forex-system-inside-bar-momentum-strategy",
+      "keywords": [
+        "inside bar"
+      ],
+      "synonyms": [
+        "momentum strategy"
+      ],
+      "category": "candlestick",
+      "priority": 90,
+      "allowed": true
+    },
+    {
+      "seed_id": "hammer_ig",
+      "knowledge_item_id": "trading:hammer",
+      "title": "Hammer",
+      "domain": "ig.com",
+      "url": "https://www.ig.com/en/trading-strategies/16-candlestick-patterns-every-trader-should-know-180615",
+      "keywords": [
+        "hammer"
+      ],
+      "synonyms": [
+        "candlestick pattern"
+      ],
+      "category": "candlestick",
+      "priority": 92,
+      "allowed": true
+    },
+    {
+      "seed_id": "hammer_cmc",
+      "knowledge_item_id": "trading:hammer",
+      "title": "Hammer",
+      "domain": "cmcmarkets.com",
+      "url": "https://www.cmcmarkets.com/en-gb/technical-analysis/what-are-candlestick-charts",
+      "keywords": [
+        "hammer"
+      ],
+      "synonyms": [
+        "candlestick charts"
+      ],
+      "category": "candlestick",
+      "priority": 90,
+      "allowed": true
+    },
+    {
+      "seed_id": "hammer_avatrade",
+      "knowledge_item_id": "trading:hammer",
+      "title": "Hammer",
+      "domain": "avatrade.com",
+      "url": "https://www.avatrade.com/education/technical-analysis-indicators-strategies/candlesticks-patterns",
+      "keywords": [
+        "hammer"
+      ],
+      "synonyms": [
+        "candlestick patterns"
+      ],
+      "category": "candlestick",
+      "priority": 88,
+      "allowed": true
+    },
+    {
+      "seed_id": "support_resistance_babypips",
+      "knowledge_item_id": "trading:support_resistance",
+      "title": "Support and Resistance",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/forexpedia/support-resistance",
+      "keywords": [
+        "support resistance",
+        "support and resistance"
+      ],
+      "synonyms": [
+        "support",
+        "resistance"
+      ],
+      "category": "structure",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "support_resistance_investopedia",
+      "knowledge_item_id": "trading:support_resistance",
+      "title": "Support and Resistance",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/trading/support-and-resistance-basics/",
+      "keywords": [
+        "support resistance"
+      ],
+      "synonyms": [
+        "support",
+        "resistance"
+      ],
+      "category": "structure",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "support_resistance_ig",
+      "knowledge_item_id": "trading:support_resistance",
+      "title": "Support and Resistance",
+      "domain": "ig.com",
+      "url": "https://www.ig.com/en/trading-strategies/support-and-resistance-levels-explained-181219",
+      "keywords": [
+        "support resistance"
+      ],
+      "synonyms": [
+        "support",
+        "resistance"
+      ],
+      "category": "structure",
+      "priority": 92,
+      "allowed": true
+    },
+    {
+      "seed_id": "breakout_babypips",
+      "knowledge_item_id": "trading:breakout",
+      "title": "Breakout",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/forexpedia/breakout",
+      "keywords": [
+        "breakout"
+      ],
+      "synonyms": [
+        "breakout trading"
+      ],
+      "category": "chart_pattern",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "breakout_investopedia",
+      "knowledge_item_id": "trading:breakout",
+      "title": "Breakout",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/b/breakout.asp",
+      "keywords": [
+        "breakout"
+      ],
+      "synonyms": [
+        "breakout trading"
+      ],
+      "category": "chart_pattern",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "pullback_babypips",
+      "knowledge_item_id": "trading:pullback",
+      "title": "Pullback",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/forexpedia/pullback",
+      "keywords": [
+        "pullback"
+      ],
+      "synonyms": [
+        "retracement"
+      ],
+      "category": "trend_following",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "pullback_investopedia",
+      "knowledge_item_id": "trading:pullback",
+      "title": "Pullback",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/p/pullback.asp",
+      "keywords": [
+        "pullback"
+      ],
+      "synonyms": [
+        "retracement"
+      ],
+      "category": "trend_following",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "pin_bar_babypips",
+      "knowledge_item_id": "trading:pin_bar",
+      "title": "Pin Bar",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/trading/technical-analysis-for-people-who-hate-indicators-price-action-and-structure-in-3-steps",
+      "keywords": [
+        "pin bar"
+      ],
+      "synonyms": [
+        "rejection wick"
+      ],
+      "category": "candlestick",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "pin_bar_ig",
+      "knowledge_item_id": "trading:pin_bar",
+      "title": "Pin Bar",
+      "domain": "ig.com",
+      "url": "https://www.ig.com/en/trading-strategies/top-7-price-action-trading-strategies-210510",
+      "keywords": [
+        "pin bar"
+      ],
+      "synonyms": [
+        "price action"
+      ],
+      "category": "candlestick",
+      "priority": 92,
+      "allowed": true
+    },
+    {
+      "seed_id": "triangle_breakout_investopedia",
+      "knowledge_item_id": "trading:triangle_breakout",
+      "title": "Triangle Pattern",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/t/triangle.asp",
+      "keywords": [
+        "triangle breakout",
+        "triangle pattern"
+      ],
+      "synonyms": [
+        "ascending triangle",
+        "descending triangle",
+        "symmetrical triangle"
+      ],
+      "category": "chart_pattern",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "triangle_breakout_ascending_investopedia",
+      "knowledge_item_id": "trading:triangle_breakout",
+      "title": "Ascending Triangle",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/a/ascendingtriangle.asp",
+      "keywords": [
+        "triangle breakout",
+        "ascending triangle"
+      ],
+      "synonyms": [
+        "breakout"
+      ],
+      "category": "chart_pattern",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "trend_following_investopedia",
+      "knowledge_item_id": "trading:trend_following",
+      "title": "Trend",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/terms/t/trend.asp",
+      "keywords": [
+        "trend following",
+        "trend"
+      ],
+      "synonyms": [
+        "trend analysis"
+      ],
+      "category": "trend_following",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "trend_following_fidelity",
+      "knowledge_item_id": "trading:trend_following",
+      "title": "Basic Concepts of Trend",
+      "domain": "fidelity.com",
+      "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/basic-concepts-trend",
+      "keywords": [
+        "trend following",
+        "trend"
+      ],
+      "synonyms": [
+        "trend analysis"
+      ],
+      "category": "trend_following",
       "priority": 95,
       "allowed": true
     }

@@ -81,10 +81,12 @@ public sealed class KnownArticleSeedCatalogService
 {
     private readonly StoragePaths _storagePaths;
     private readonly HttpClient _httpClient;
+    private readonly string _runtimeRoot;
 
-    public KnownArticleSeedCatalogService(StoragePaths storagePaths, HttpClient? httpClient = null)
+    public KnownArticleSeedCatalogService(StoragePaths storagePaths, string? runtimeRoot = null, HttpClient? httpClient = null)
     {
         _storagePaths = storagePaths;
+        _runtimeRoot = runtimeRoot ?? Directory.GetCurrentDirectory();
         _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         if (!_httpClient.DefaultRequestHeaders.UserAgent.Any())
         {
@@ -94,9 +96,9 @@ public sealed class KnownArticleSeedCatalogService
 
     public string Root => Path.Combine(_storagePaths.Root, "reports", "known_article_seed_catalog");
 
-    public string ConfigPath => Path.Combine(_storagePaths.Root, "config", "known_article_seed_catalog.json");
+    public string ConfigPath => Path.Combine(_runtimeRoot, "config", "known_article_seed_catalog.json");
 
-    public string ExamplePath => Path.Combine(_storagePaths.Root, "config", "known_article_seed_catalog.example.json");
+    public string ExamplePath => Path.Combine(_runtimeRoot, "config", "known_article_seed_catalog.example.json");
 
     public string RequestsPath => Path.Combine(_storagePaths.Root, "reports", "known_article_seed_catalog", "known_article_seed_requests.json");
 
@@ -105,6 +107,8 @@ public sealed class KnownArticleSeedCatalogService
     public string ReportPath => Path.Combine(Root, "known_article_seed_report.json");
 
     public string MarkdownPath => Path.Combine(Root, "known_article_seed_report.md");
+
+    public IReadOnlyList<KnownArticleSeedDefinition> LoadSeeds() => LoadSeedDefinitions();
 
     public KnownArticleSeedStatusReport LoadStatus()
     {
@@ -154,7 +158,7 @@ public sealed class KnownArticleSeedCatalogService
             .Select(candidate => candidate.Url)
             .Where(url => !string.IsNullOrWhiteSpace(url))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var seedDefinitions = LoadSeeds();
+        var seedDefinitions = LoadSeedDefinitions();
         var requests = BuildRequests(knowledgeItems, sourceConfirmations, seedDefinitions)
             .Take(Math.Max(1, maxItems))
             .ToList();
@@ -250,6 +254,24 @@ public sealed class KnownArticleSeedCatalogService
         }
 
         return report;
+    }
+
+    private IReadOnlyList<KnownArticleSeedDefinition> LoadSeedDefinitions()
+    {
+        if (!File.Exists(ConfigPath))
+        {
+            return DefaultSeeds();
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<KnownArticleSeedCatalogFile>(File.ReadAllText(ConfigPath), JsonDefaults.SnapshotReadOptions);
+            return payload?.Seeds.Where(seed => seed.Allowed).ToList() ?? DefaultSeeds();
+        }
+        catch
+        {
+            return DefaultSeeds();
+        }
     }
 
     private IReadOnlyList<KnownArticleSeedDefinition> DefaultSeeds() =>
@@ -490,24 +512,6 @@ public sealed class KnownArticleSeedCatalogService
     private static string NormalizeText(string value)
     {
         return CleanText(value).ToLowerInvariant();
-    }
-
-    private IReadOnlyList<KnownArticleSeedDefinition> LoadSeeds()
-    {
-        if (!File.Exists(ConfigPath))
-        {
-            return DefaultSeeds();
-        }
-
-        try
-        {
-            var file = JsonSerializer.Deserialize<KnownArticleSeedCatalogFile>(File.ReadAllText(ConfigPath), JsonDefaults.SnapshotReadOptions);
-            return file?.Seeds.Where(seed => seed.Allowed).ToList() ?? DefaultSeeds();
-        }
-        catch
-        {
-            return DefaultSeeds();
-        }
     }
 
     private void EnsureExampleFile()

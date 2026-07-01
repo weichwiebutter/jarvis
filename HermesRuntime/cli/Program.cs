@@ -223,6 +223,8 @@ internal sealed class HermesCli
             "web-research-source-collector-status" => ShowWebResearchSourceCollectorStatus(),
             "web-research-source-collector-export" => RunWebResearchSourceCollectorExport(),
             "trusted-source-catalog-status" => ShowTrustedSourceCatalogStatus(),
+            "publisher-group-status" => ShowPublisherGroupStatus(),
+            "publisher-group-refresh" => RunPublisherGroupRefresh(),
             "web-search-connector-status" => ShowWebSearchConnectorStatus(),
             "web-research-import-status" => ShowWebResearchImportStatus(),
             "web-research-import" => RunWebResearchImport(),
@@ -239,6 +241,8 @@ internal sealed class HermesCli
             "direct-domain-research-fetch" => RunDirectDomainResearchFetch(),
             "known-article-seed-status" => ShowKnownArticleSeedStatus(),
             "known-article-seed-fetch" => RunKnownArticleSeedFetch(),
+            "multi-source-acquisition-status" => ShowMultiSourceAcquisitionStatus(),
+            "multi-source-acquisition" => RunMultiSourceAcquisition(),
             "browser-research-status" => ShowBrowserResearchStatus(),
             "browser-research-fetch" => RunBrowserResearchFetch(),
             "generate-hypotheses" => GenerateHypotheses(),
@@ -571,6 +575,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes web-research-source-collector-status Web Research Source Collector Status anzeigen");
         Console.WriteLine("  hermes web-research-source-collector-export [--apply] Web Research Requests exportieren");
         Console.WriteLine("  hermes web-search-connector-status Web Search Connector Status anzeigen");
+        Console.WriteLine("  hermes publisher-group-status Publisher Group Resolver Status anzeigen");
+        Console.WriteLine("  hermes publisher-group-refresh Publisher Group Report aktualisieren");
         Console.WriteLine("  hermes web-research-import-status Web Research Import Status anzeigen");
         Console.WriteLine("  hermes web-research-import [--dry-run|--apply] Web Research Quellen importieren");
         Console.WriteLine("  hermes knowledge-evidence-match-status Knowledge Evidence Semantic Matcher Status anzeigen");
@@ -584,6 +590,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes direct-domain-research-fetch --max-items 5 [--max-fetch-seconds N] [--dry-run|--apply] Direct Domain Research ausfuehren");
         Console.WriteLine("  hermes known-article-seed-status Known Article Seed Catalog Status anzeigen");
         Console.WriteLine("  hermes known-article-seed-fetch --max-items 10 [--dry-run|--apply] Known Article Seeds abrufen");
+        Console.WriteLine("  hermes multi-source-acquisition-status Multi Source Acquisition Status anzeigen");
+        Console.WriteLine("  hermes multi-source-acquisition --max-items 10 [--dry-run|--apply] Multi Source Acquisition ausfuehren");
         Console.WriteLine("  hermes browser-research-status Browser Research Agent Status anzeigen");
         Console.WriteLine("  hermes browser-research-fetch --max-items 5 [--dry-run|--apply] Browser Research ausfuehren");
         Console.WriteLine("  hermes generate-hypotheses --domain trading Cross-Knowledge-Hypothesen erzeugen");
@@ -9197,6 +9205,28 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowPublisherGroupStatus()
+    {
+        WriteHeader("Hermes Publisher Group Resolver");
+        var service = new PublisherGroupResolverService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadStatus();
+        WritePublisherGroupReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunPublisherGroupRefresh()
+    {
+        WriteHeader("Hermes Publisher Group Resolver");
+        var service = new PublisherGroupResolverService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadStatus();
+        WritePublisherGroupReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowWebSearchConnectorStatus()
     {
         WriteHeader("Hermes Web Search Connector");
@@ -9649,6 +9679,30 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowMultiSourceAcquisitionStatus()
+    {
+        WriteHeader("Hermes Multi Source Acquisition");
+        var service = new MultiSourceAcquisitionService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadStatus();
+        WriteMultiSourceAcquisitionReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunMultiSourceAcquisition()
+    {
+        WriteHeader("Hermes Multi Source Acquisition");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 10, min: 1, max: 200);
+        var dryRun = HasArg("--dry-run") || !HasArg("--apply");
+        var service = new MultiSourceAcquisitionService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run(maxItems, dryRun);
+        WriteMultiSourceAcquisitionReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowBrowserResearchStatus()
     {
         WriteHeader("Hermes Browser Research Agent");
@@ -9741,6 +9795,71 @@ internal sealed class HermesCli
         if (report.Rejected.Count > 0)
         {
             WriteMessages("Rejected", report.Rejected.Select(candidate => $"{candidate.KnowledgeItemId} | {candidate.Domain} | {candidate.Url}").Take(20).ToList());
+        }
+    }
+
+    private void WritePublisherGroupReport(PublisherGroupReport report)
+    {
+        WriteField("Status", report.Status);
+        WriteField("Report Version", report.ReportVersion);
+        WriteField("Updated At", report.UpdatedAtUtc.ToString("O"));
+        WriteField("Loaded Entries", report.LoadedEntries.ToString());
+        WriteField("Distinct Publisher Groups", report.DistinctPublisherGroups.ToString());
+        WriteField("Known Mappings", report.KnownMappings.ToString());
+        WriteField("Fallback Mappings", report.FallbackMappings.ToString());
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        foreach (var entry in report.Entries.Take(25))
+        {
+            WriteField("Entry", $"{entry.Input} | {entry.Domain} | {entry.PublisherGroup} | {entry.Rule}");
+        }
+    }
+
+    private void WriteMultiSourceAcquisitionReport(MultiSourceAcquisitionReport report)
+    {
+        WriteField("Status", report.Status);
+        WriteField("Report Version", report.ReportVersion);
+        WriteField("Updated At", report.UpdatedAtUtc.ToString("O"));
+        WriteField("Loaded Items", report.LoadedItems.ToString());
+        WriteField("Considered Items", report.ConsideredItems.ToString());
+        WriteField("Publisher Groups Found", report.PublisherGroupsFound.ToString());
+        WriteField("Independent Publishers Found", report.IndependentPublishersFound.ToString());
+        WriteField("Accepted Sources", report.AcceptedSources.ToString());
+        WriteField("Rejected Sources", report.RejectedSources.ToString());
+        WriteField("Duplicate Publisher Groups", report.DuplicatePublisherGroups.ToString());
+        WriteField("Policy Approved Sources", report.PolicyApprovedSources.ToString());
+        WriteField("Source Count Increased Items", report.SourceCountIncreasedItems.ToString());
+        WriteField("Source Confirmations Path", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Known Article Seed Catalog Path", DisplayPath(report.KnownArticleSeedCatalogPath));
+        WriteField("Trusted Source Catalog Path", DisplayPath(report.TrustedSourceCatalogPath));
+        WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Dry Run", report.DryRun.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Next Actions", report.NextActions);
+        foreach (var pair in report.CoverageByItem.OrderByDescending(pair => pair.Value).Take(25))
+        {
+            WriteField("Coverage", $"{pair.Key} | {pair.Value:0.##}%");
+        }
+        foreach (var trace in report.PerItemTrace.Take(25))
+        {
+            WriteField("Trace", $"{trace.KnowledgeItemId} | before={trace.SourceCountBefore} | after={trace.SourceCountAfter} | accepted={trace.AcceptedSources} | rejected={trace.RejectedSources} | coverage={trace.CoveragePercent:0.##}% | {trace.Status}");
+            WriteField("Groups", trace.PublisherGroupsAfter.Count == 0 ? "-" : string.Join(", ", trace.PublisherGroupsAfter));
+            WriteField("Matched Seeds", trace.MatchedSeedIds.Count == 0 ? "-" : string.Join(", ", trace.MatchedSeedIds));
+            WriteField("Next Action", trace.NextAction);
+            WriteMessages("Trace Warnings", trace.Warnings);
+            WriteMessages("Query Terms", trace.QueryTerms);
         }
     }
 
