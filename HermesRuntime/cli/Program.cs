@@ -122,6 +122,8 @@ internal sealed class HermesCli
             "multi-source-evidence-status" => ShowMultiSourceEvidenceStatus(),
             "multi-source-evidence-plan" => ShowMultiSourceEvidencePlan(),
             "multi-source-evidence-apply" => RunMultiSourceEvidenceApply(),
+            "canonical-evidence-status" => ShowCanonicalEvidenceStatus(),
+            "canonical-evidence-run" => RunCanonicalEvidenceRun(),
             "knowledge-consolidation-analyzer" => ShowKnowledgeConsolidationAnalyzer(),
             "knowledge-consolidation-executor" => ShowKnowledgeConsolidationExecutor(),
             "strategy-mutation-analyzer" => ShowStrategyMutationAnalyzer(),
@@ -466,6 +468,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes multi-source-evidence-status Multi-Source Evidence Status anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-plan Multi-Source Evidence Plan anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-apply [--dry-run|--apply] Multi-Source Evidence anwenden");
+        Console.WriteLine("  hermes canonical-evidence-status Canonical Evidence Acquisition Status anzeigen");
+        Console.WriteLine("  hermes canonical-evidence-run [--max-items N] [--dry-run|--apply] Canonical Evidence Acquisition ausfuehren");
         Console.WriteLine("  hermes knowledge-consolidation-analyzer Knowledge Consolidation Analyzer anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-executor Knowledge Consolidation Kandidaten erzeugen");
         Console.WriteLine("  hermes strategy-mutation-analyzer Strategy Mutation Kandidaten anzeigen");
@@ -14835,6 +14839,33 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowCanonicalEvidenceStatus()
+    {
+        WriteHeader("Hermes Canonical Evidence Acquisition");
+        var service = new CanonicalEvidenceAcquisitionPipelineService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadStatus();
+
+        WriteCanonicalEvidenceAcquisitionReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunCanonicalEvidenceRun()
+    {
+        WriteHeader("Hermes Canonical Evidence Acquisition");
+        var service = new CanonicalEvidenceAcquisitionPipelineService(BuildStoragePaths(), _runtimeRoot);
+        var apply = HasArg("--apply") && !HasArg("--dry-run");
+        var dryRun = HasArg("--dry-run") || !HasArg("--apply");
+        var maxItems = Math.Max(1, ReadIntOption(_args, "--max-items", 10, 1, 1000));
+        var report = service.Run(maxItems, apply, dryRun);
+
+        WriteCanonicalEvidenceAcquisitionReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowTrustedCandidates()
     {
         WriteHeader("Hermes Trusted Knowledge Candidates");
@@ -14890,6 +14921,75 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private void WriteCanonicalEvidenceAcquisitionReport(CanonicalEvidenceAcquisitionReport report, CanonicalEvidenceAcquisitionPipelineService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Loaded Items", report.LoadedItems.ToString());
+        WriteField("Considered Items", report.ConsideredItems.ToString());
+        WriteField("Total Second Source Items", report.TotalSecondSourceItems.ToString());
+        WriteField("Evidence Candidates Found", report.EvidenceCandidatesFound.ToString());
+        WriteField("Semantic Matches", report.SemanticMatches.ToString());
+        WriteField("Independent Sources Found", report.IndependentSourcesFound.ToString());
+        WriteField("Policy Approved Sources", report.PolicyApprovedSources.ToString());
+        WriteField("Source Count Increased Items", report.SourceCountIncreasedItems.ToString());
+        WriteField("Rejected Low Relevance", report.RejectedLowRelevance.ToString());
+        WriteField("Rejected Same Domain", report.RejectedSameDomain.ToString());
+        WriteField("Rejected Policy", report.RejectedPolicy.ToString());
+        WriteField("Loaded Requests", report.LoadedRequests.ToString());
+        WriteField("Exported Search Requests", report.ExportedSearchRequests.ToString());
+        WriteField("Accepted Import Candidates", report.AcceptedImportCandidates.ToString());
+        WriteField("Rejected Import Candidates", report.RejectedImportCandidates.ToString());
+        WriteField("Validation Synchronized Items", report.ValidationSynchronizedItems.ToString());
+        WriteField("Trusted Promotion Eligible Items", report.TrustedPromotionEligibleItems.ToString());
+        WriteField("Dry Run", report.DryRun.ToString().ToLowerInvariant());
+        WriteField("Applied", report.Applied.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteMessages("Next Actions", report.NextActions.ToList());
+        WriteMessages("Top Rejection Reasons", report.TopRejectionReasons.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
+        WriteMessages("Warnings", report.Warnings);
+
+        Console.WriteLine();
+        Console.WriteLine("Per Item Trace:");
+        foreach (var item in report.PerItemTrace.Take(20))
+        {
+            Console.WriteLine($"  {item.KnowledgeItemId} / {item.Domain}");
+            Console.WriteLine($"    Source Count: {item.SourceCountBefore} -> {item.SourceCountAfter}");
+            Console.WriteLine($"    Trust: {item.TrustScore:0.###}, Quality: {item.QualityScore:0.###}, Validation: {item.ValidationScore:0.###}");
+            Console.WriteLine($"    Query: {item.Query}");
+            Console.WriteLine($"    Recommended Domains: {string.Join(", ", item.RecommendedSourceDomains)}");
+            Console.WriteLine($"    Query Terms: {string.Join(", ", item.QueryTerms)}");
+            Console.WriteLine($"    Catalog Sources Used: {string.Join(", ", item.CatalogSourcesUsed)}");
+            Console.WriteLine($"    Requests Exported: {item.RequestsExported}");
+            Console.WriteLine($"    Pages Fetched: {item.PagesFetched}");
+            Console.WriteLine($"    Candidates Found: {item.CandidatesFound}");
+            Console.WriteLine($"    Semantic Matches: {item.SemanticMatches}");
+            Console.WriteLine($"    Independent Sources Found: {item.IndependentSourcesFound}");
+            Console.WriteLine($"    Policy Approved Sources: {item.PolicyApprovedSources}");
+            Console.WriteLine($"    Validation Sync Status: {item.ValidationSyncStatus}");
+            Console.WriteLine($"    Promotion Eligible: {item.PromotionEligible.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"    Next Action: {item.NextAction}");
+            if (item.BlockersBefore.Count > 0)
+            {
+                Console.WriteLine($"    Blockers Before: {string.Join(", ", item.BlockersBefore.Take(6))}");
+            }
+            if (item.BlockersAfter.Count > 0)
+            {
+                Console.WriteLine($"    Blockers After: {string.Join(", ", item.BlockersAfter.Take(6))}");
+            }
+            if (item.Warnings.Count > 0)
+            {
+                Console.WriteLine($"    Warnings: {string.Join(", ", item.Warnings.Take(6))}");
+            }
+            Console.WriteLine();
+        }
     }
 
     private void WriteKnowledgeTrustPromotionReport(KnowledgeTrustPromotionReport report, KnowledgeTrustPromotionPipelineService service)
