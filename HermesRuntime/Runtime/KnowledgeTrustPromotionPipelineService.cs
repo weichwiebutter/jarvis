@@ -313,9 +313,18 @@ public sealed class KnowledgeTrustPromotionPipelineService
             blockers.Add("fresh_validation_timestamp_missing");
         }
 
+        var policyApprovedSecondSource = HasPolicyApprovedSecondSource(confirmation);
+
         foreach (var missingEvidence in validationPlan?.MissingEvidence ?? [])
         {
             if (string.IsNullOrWhiteSpace(missingEvidence))
+            {
+                continue;
+            }
+
+            if (missingEvidence.Equals("second_independent_source_missing", StringComparison.OrdinalIgnoreCase)
+                && sourceCount >= 2
+                && policyApprovedSecondSource)
             {
                 continue;
             }
@@ -343,7 +352,6 @@ public sealed class KnowledgeTrustPromotionPipelineService
         }
 
         var validationReadiness = ValidationReadiness(latestValidation, validationPlan, missing);
-        var policyApprovedSecondSource = HasPolicyApprovedSecondSource(confirmation);
         if (!validationReadiness.Equals("passed", StringComparison.OrdinalIgnoreCase)
             && !validationReadiness.Equals("completed_with_missing_noncritical_evidence", StringComparison.OrdinalIgnoreCase))
         {
