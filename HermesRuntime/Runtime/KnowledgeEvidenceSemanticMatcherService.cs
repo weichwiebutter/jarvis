@@ -648,7 +648,13 @@ public sealed class KnowledgeEvidenceSemanticMatcherService
                 var merged = (result.CandidateSources ?? [])
                     .Concat(candidateSources)
                     .GroupBy(candidate => candidate.Url, StringComparer.OrdinalIgnoreCase)
-                    .Select(group => group.First())
+                    .Select(group => group
+                        .OrderByDescending(candidate => candidate.SemanticMatchScore)
+                        .ThenByDescending(candidate => candidate.IndependenceScore)
+                        .ThenByDescending(candidate => candidate.EvidenceCoverageScore)
+                        .ThenByDescending(candidate => candidate.PolicyReviewedAtUtc ?? DateTimeOffset.MinValue)
+                        .ThenByDescending(candidate => candidate.RetrievedAtUtc)
+                        .First())
                     .ToList();
 
                 return result with

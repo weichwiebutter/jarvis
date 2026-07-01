@@ -354,6 +354,11 @@ public sealed class AutoSourceReviewPolicyService
         var title = Normalize(candidate.ExcerptOrSummary);
         var blockedTerms = new[] { "navigation", "download", "broker", "bots", "bot", "pricing", "signup", "login", "account" };
 
+        if (sourceType.Equals("known_article_seed_candidate", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (blockedTerms.Any(term => sourceType.Contains(term, StringComparison.OrdinalIgnoreCase)))
         {
             return true;
