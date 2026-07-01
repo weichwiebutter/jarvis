@@ -469,7 +469,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes multi-source-evidence-plan Multi-Source Evidence Plan anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-apply [--dry-run|--apply] Multi-Source Evidence anwenden");
         Console.WriteLine("  hermes canonical-evidence-status Canonical Evidence Acquisition Status anzeigen");
-        Console.WriteLine("  hermes canonical-evidence-run [--max-items N] [--dry-run|--apply] Canonical Evidence Acquisition ausfuehren");
+        Console.WriteLine("  hermes canonical-evidence-run [--max-items N] [--max-fetch-seconds N] [--dry-run|--apply] Canonical Evidence Acquisition ausfuehren");
         Console.WriteLine("  hermes knowledge-consolidation-analyzer Knowledge Consolidation Analyzer anzeigen");
         Console.WriteLine("  hermes knowledge-consolidation-executor Knowledge Consolidation Kandidaten erzeugen");
         Console.WriteLine("  hermes strategy-mutation-analyzer Strategy Mutation Kandidaten anzeigen");
@@ -579,7 +579,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes automated-web-research-fetch --max-items 10 [--dry-run|--apply] Web Research automatisch abrufen");
         Console.WriteLine("  hermes research-query-builder-status Research Query Builder Status anzeigen");
         Console.WriteLine("  hermes direct-domain-research-status Direct Domain Research Status anzeigen");
-        Console.WriteLine("  hermes direct-domain-research-fetch --max-items 5 [--dry-run|--apply] Direct Domain Research ausfuehren");
+        Console.WriteLine("  hermes direct-domain-research-fetch --max-items 5 [--max-fetch-seconds N] [--dry-run|--apply] Direct Domain Research ausfuehren");
         Console.WriteLine("  hermes browser-research-status Browser Research Agent Status anzeigen");
         Console.WriteLine("  hermes browser-research-fetch --max-items 5 [--dry-run|--apply] Browser Research ausfuehren");
         Console.WriteLine("  hermes generate-hypotheses --domain trading Cross-Knowledge-Hypothesen erzeugen");
@@ -9575,10 +9575,15 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Direct Domain Research Fetcher");
         var maxItems = ReadIntOption(_args, "--max-items", fallback: 5, min: 1, max: 100);
+        var maxFetchSeconds = Math.Max(5, ReadIntOption(_args, "--max-fetch-seconds", 120, 5, 3600));
         var dryRun = HasArg("--dry-run") || !HasArg("--apply");
         var service = new DirectDomainResearchFetcherService(BuildStoragePaths(), _runtimeRoot);
-        var report = service.Run(maxItems, dryRun);
+        var report = service.Run(maxItems, dryRun, maxFetchSeconds);
         WriteField("Status", report.Status);
+        WriteField("External Fetch Timeouts", report.ExternalFetchTimeouts.ToString());
+        WriteField("Skipped Due To Timeout", report.SkippedDueToTimeout.ToString());
+        WriteField("Fetch Duration Ms", report.FetchDurationMs.ToString());
+        WriteField("Last Successful Stage", report.LastSuccessfulStage);
         WriteField("Loaded Requests", report.LoadedRequests.ToString());
         WriteField("Considered Requests", report.ConsideredRequests.ToString());
         WriteField("Fetched Pages", report.FetchedPages.ToString());
@@ -14858,7 +14863,19 @@ internal sealed class HermesCli
         var apply = HasArg("--apply") && !HasArg("--dry-run");
         var dryRun = HasArg("--dry-run") || !HasArg("--apply");
         var maxItems = Math.Max(1, ReadIntOption(_args, "--max-items", 10, 1, 1000));
-        var report = service.Run(maxItems, apply, dryRun);
+        var maxFetchSeconds = Math.Max(5, ReadIntOption(_args, "--max-fetch-seconds", 120, 5, 3600));
+        var timeout = TimeSpan.FromSeconds(Math.Max(30, maxFetchSeconds + 20));
+        var runTask = Task.Run(() => service.Run(maxItems, apply, dryRun, maxFetchSeconds));
+        if (!runTask.Wait(timeout))
+        {
+            Console.WriteLine($"Error: canonical-evidence-run timed out after {timeout.TotalSeconds:0} seconds.");
+            Console.WriteLine("Last successful stage is expected to be reported by the latest written pipeline report.");
+            Console.WriteLine();
+            WriteSafety();
+            return 1;
+        }
+
+        var report = runTask.Result;
 
         WriteCanonicalEvidenceAcquisitionReport(report, service);
         Console.WriteLine();
@@ -14928,6 +14945,10 @@ internal sealed class HermesCli
         WriteField("Report", DisplayPath(service.ReportPath));
         WriteField("Markdown", DisplayPath(service.MarkdownPath));
         WriteField("Status", report.Status);
+        WriteField("External Fetch Timeouts", report.ExternalFetchTimeouts.ToString());
+        WriteField("Skipped Due To Timeout", report.SkippedDueToTimeout.ToString());
+        WriteField("Fetch Duration Ms", report.FetchDurationMs.ToString());
+        WriteField("Last Successful Stage", report.LastSuccessfulStage);
         WriteField("Loaded Items", report.LoadedItems.ToString());
         WriteField("Considered Items", report.ConsideredItems.ToString());
         WriteField("Total Second Source Items", report.TotalSecondSourceItems.ToString());

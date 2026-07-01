@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -33,6 +34,10 @@ public sealed record CanonicalEvidenceAcquisitionReport(
     string ReportVersion,
     DateTimeOffset UpdatedAtUtc,
     string Status,
+    int ExternalFetchTimeouts,
+    int SkippedDueToTimeout,
+    long FetchDurationMs,
+    string LastSuccessfulStage,
     int LoadedItems,
     int ConsideredItems,
     int TotalSecondSourceItems,
@@ -90,7 +95,7 @@ public sealed class CanonicalEvidenceAcquisitionPipelineService
     public string ReportPath => Path.Combine(Root, "canonical_evidence_acquisition_report.json");
     public string MarkdownPath => Path.Combine(Root, "canonical_evidence_acquisition_report.md");
 
-    public CanonicalEvidenceAcquisitionReport Run(int maxItems, bool apply, bool dryRun)
+    public CanonicalEvidenceAcquisitionReport Run(int maxItems, bool apply, bool dryRun, int maxFetchSeconds = 120)
     {
         if (apply && dryRun)
         {
@@ -115,7 +120,14 @@ public sealed class CanonicalEvidenceAcquisitionPipelineService
         var collectorReport = collectorService.Run(apply: apply && !dryRun);
 
         var directDomainService = new DirectDomainResearchFetcherService(_storagePaths, _runtimeRoot);
-        var directDomainReport = directDomainService.Run(maxItems: Math.Max(1, maxItems), dryRun: dryRun || !apply);
+        var directDomainFetchWatch = Stopwatch.StartNew();
+        var directDomainReport = RunDirectDomainFetchWithTimeout(
+            directDomainService,
+            Math.Max(1, maxItems),
+            dryRun || !apply,
+            maxFetchSeconds,
+            out _);
+        directDomainFetchWatch.Stop();
 
         var importService = new WebResearchSourceImportService(_storagePaths);
         var importReport = importService.Run(apply: apply && !dryRun);
@@ -161,6 +173,10 @@ public sealed class CanonicalEvidenceAcquisitionPipelineService
             ReportVersion: "canonical_evidence_acquisition_v1",
             UpdatedAtUtc: now,
             Status: apply && !dryRun ? "applied" : "dry_run_ready",
+            ExternalFetchTimeouts: directDomainReport.ExternalFetchTimeouts,
+            SkippedDueToTimeout: directDomainReport.SkippedDueToTimeout,
+            FetchDurationMs: directDomainFetchWatch.ElapsedMilliseconds,
+            LastSuccessfulStage: directDomainReport.LastSuccessfulStage,
             LoadedItems: initialQuality.Items.Count,
             ConsideredItems: canonicalItems.Count,
             TotalSecondSourceItems: multiSourceReport.ItemsNeedingSecondSource,
@@ -205,6 +221,58 @@ public sealed class CanonicalEvidenceAcquisitionPipelineService
 
         WriteReport(report);
         return report;
+    }
+
+    private static DirectDomainResearchReport RunDirectDomainFetchWithTimeout(
+        DirectDomainResearchFetcherService directDomainService,
+        int maxItems,
+        bool dryRun,
+        int maxFetchSeconds,
+        out bool timedOut)
+    {
+        timedOut = false;
+        var timeout = TimeSpan.FromSeconds(Math.Max(5, maxFetchSeconds));
+        var task = Task.Run(() => directDomainService.Run(maxItems, dryRun, maxFetchSeconds));
+        if (task.Wait(timeout))
+        {
+            return task.Result;
+        }
+
+        timedOut = true;
+        return new DirectDomainResearchReport(
+            ReportVersion: "direct_domain_research_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            Status: "blocked_external_fetch_timeout",
+            ExternalFetchTimeouts: 1,
+            SkippedDueToTimeout: 1,
+            FetchDurationMs: (long)timeout.TotalMilliseconds,
+            LastSuccessfulStage: "blocked_external_fetch_timeout",
+            LoadedRequests: 0,
+            ConsideredRequests: 0,
+            FetchedPages: 0,
+            ExtractedCandidates: 0,
+            AcceptedRelevantCandidates: 0,
+            CandidatesRejectedLowRelevance: 0,
+            BlockedDomains: 0,
+            GeneratedQueries: [],
+            CatalogSourcesUsed: [],
+            RequestResults: [],
+            Candidates: [],
+            Rejected: [],
+            TopRejectionReasons: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["blocked_external_fetch_timeout"] = 1
+            },
+            Warnings: ["blocked_external_fetch_timeout"],
+            RequestsPath: directDomainService.RequestsPath,
+            CandidateOutputPath: directDomainService.CandidateOutputPath,
+            ReportPath: directDomainService.ReportPath,
+            MarkdownPath: directDomainService.MarkdownPath,
+            NoTradingExecution: true,
+            NoBrokerAction: true,
+            NoAutoTrading: true,
+            HumanReviewRequired: true,
+            ResearchOnly: true);
     }
 
     public CanonicalEvidenceAcquisitionReport LoadStatus()
@@ -471,6 +539,7 @@ public sealed class CanonicalEvidenceAcquisitionPipelineService
         {
             multiSourceReport.CreatedResearchQueueItems > 0 ? "run_web_research_source_collector" : null,
             collectorReport.ExportedSearchRequests > 0 ? "run_direct_domain_research_fetch" : null,
+            directDomainReport.ExternalFetchTimeouts > 0 ? "review_external_fetch_timeouts" : null,
             directDomainReport.ExtractedCandidates > 0 ? "run_web_research_import" : null,
             importReport.AcceptedCandidates > 0 ? "run_knowledge_evidence_match" : null,
             matcherReport.CandidateRelevant > 0 || matcherReport.CandidateWeak > 0 || matcherReport.NeedsHumanReview > 0 ? "run_independent_source_resolver" : null,
@@ -518,6 +587,10 @@ public sealed class CanonicalEvidenceAcquisitionPipelineService
         sb.AppendLine();
         sb.AppendLine($"- Status: {report.Status}");
         sb.AppendLine($"- Updated At: {report.UpdatedAtUtc:O}");
+        sb.AppendLine($"- External Fetch Timeouts: {report.ExternalFetchTimeouts}");
+        sb.AppendLine($"- Skipped Due To Timeout: {report.SkippedDueToTimeout}");
+        sb.AppendLine($"- Fetch Duration Ms: {report.FetchDurationMs}");
+        sb.AppendLine($"- Last Successful Stage: {report.LastSuccessfulStage}");
         sb.AppendLine($"- Loaded Items: {report.LoadedItems}");
         sb.AppendLine($"- Considered Items: {report.ConsideredItems}");
         sb.AppendLine($"- Total Second Source Items: {report.TotalSecondSourceItems}");
