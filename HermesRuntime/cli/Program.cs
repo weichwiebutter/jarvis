@@ -16529,8 +16529,30 @@ internal sealed class HermesCli
             WriteField("Priority", plan.Priority.ToString());
             WriteField("Selected Strategy", plan.SelectedStrategy);
             WriteField("Expected Effect", plan.ExpectedEffect);
+            WriteMessages("Publisher Groups", plan.PublisherGroups);
             WriteMessages("Blockers", plan.Blockers);
             WriteMessages("Recommended Existing Commands", plan.RecommendedExistingCommands);
+            if (plan.Trace is not null)
+            {
+                WriteField("Trace: First Failed Stage", plan.Trace.FirstFailedStage);
+                WriteField("Trace: Failure Reason", plan.Trace.FailureReason);
+                WriteField("Trace: No Source Gain Reason", plan.Trace.NoSourceGainReason);
+                WriteField("Trace: Source Count Before", plan.Trace.SourceCountBefore.ToString());
+                WriteField("Trace: Source Count After", plan.Trace.SourceCountAfter.ToString());
+                WriteMessages("Trace: Publisher Groups Before", plan.Trace.PublisherGroupsBefore);
+                WriteMessages("Trace: Publisher Groups After", plan.Trace.PublisherGroupsAfter);
+                WriteMessages("Trace: Seed Definitions", plan.Trace.SeedDefinitions);
+                WriteMessages("Trace: Seed Requests", plan.Trace.SeedRequests);
+                WriteMessages("Trace: Imported Candidates", plan.Trace.ImportedCandidates);
+                WriteMessages("Trace: Semantic Matches", plan.Trace.SemanticMatches);
+                WriteMessages("Trace: Resolver Matches", plan.Trace.ResolverMatches);
+                WriteMessages("Trace: Policy Approved Candidates", plan.Trace.PolicyApprovedCandidates);
+                WriteField("Trace: Seed Fetch Status", plan.Trace.SeedFetchStatus);
+                WriteField("Trace: Import Status", plan.Trace.ImportStatus);
+                WriteField("Trace: Semantic Match Status", plan.Trace.SemanticMatchStatus);
+                WriteField("Trace: Resolver Status", plan.Trace.ResolverStatus);
+                WriteField("Trace: Policy Status", plan.Trace.PolicyStatus);
+            }
             Console.WriteLine();
         }
     }
