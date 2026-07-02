@@ -16513,6 +16513,8 @@ internal sealed class HermesCli
         WriteMessages("Top Blockers", report.TopBlockers.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
         WriteMessages("Commands Executed", report.CommandsExecuted);
         WriteMessages("Warnings", report.Warnings);
+        var classifications = report.Classifications ?? Array.Empty<KnowledgeEvidenceAcquisitionClassification>();
+        WriteMessages("Classifications", classifications.Select(entry => $"{entry.KnowledgeItemId}::{entry.EvidenceAcquisitionClassification}::{entry.NextAction}::{entry.SeedNotApplicableReason}").ToList());
 
         Console.WriteLine();
         Console.WriteLine("Acquisition Plans:");
@@ -16552,6 +16554,15 @@ internal sealed class HermesCli
                 WriteField("Trace: Semantic Match Status", plan.Trace.SemanticMatchStatus);
                 WriteField("Trace: Resolver Status", plan.Trace.ResolverStatus);
                 WriteField("Trace: Policy Status", plan.Trace.PolicyStatus);
+            }
+            var classification = classifications.FirstOrDefault(entry => entry.KnowledgeItemId.Equals(plan.KnowledgeItemId, StringComparison.OrdinalIgnoreCase));
+            if (classification is not null)
+            {
+                WriteField("Evidence Acquisition Classification", classification.EvidenceAcquisitionClassification);
+                WriteField("Seed Not Applicable Reason", classification.SeedNotApplicableReason);
+                WriteField("Internal Validation Required", classification.InternalValidationRequired.ToString().ToLowerInvariant());
+                WriteField("Next Action", classification.NextAction);
+                WriteMessages("Recommended Commands (classification)", classification.RecommendedExistingCommands);
             }
             Console.WriteLine();
         }

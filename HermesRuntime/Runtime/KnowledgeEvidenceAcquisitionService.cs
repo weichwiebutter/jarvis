@@ -51,6 +51,16 @@ public sealed record KnowledgeEvidenceAcquisitionTrace(
     int SourceCountAfter,
     IReadOnlyList<string> PublisherGroupsAfter);
 
+public sealed record KnowledgeEvidenceAcquisitionClassification(
+    string KnowledgeItemId,
+    string Title,
+    string Domain,
+    string EvidenceAcquisitionClassification,
+    string SeedNotApplicableReason,
+    bool InternalValidationRequired,
+    string NextAction,
+    IReadOnlyList<string> RecommendedExistingCommands);
+
 public sealed record KnowledgeEvidenceAcquisitionReport(
     string ReportVersion,
     DateTimeOffset UpdatedAtUtc,
@@ -81,7 +91,8 @@ public sealed record KnowledgeEvidenceAcquisitionReport(
     bool NoTradingExecution,
     bool NoBrokerAction,
     bool NoAutoTrading,
-    bool HumanReviewRequired);
+    bool HumanReviewRequired,
+    IReadOnlyList<KnowledgeEvidenceAcquisitionClassification> Classifications);
 
 public sealed class KnowledgeEvidenceAcquisitionService
 {
@@ -321,7 +332,8 @@ public sealed class KnowledgeEvidenceAcquisitionService
             NoTradingExecution: true,
             NoBrokerAction: true,
             NoAutoTrading: true,
-            HumanReviewRequired: true);
+            HumanReviewRequired: true,
+            Classifications: selected.Select(plan => BuildClassification(plan, catalogById.GetValueOrDefault(plan.KnowledgeItemId), validationPlans, seedReport, importReport, matcherReport, resolverReport, autoReviewReport)).ToList());
 
         File.WriteAllText(ReportPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
         File.WriteAllText(MarkdownPath, BuildMarkdown(report));
@@ -383,6 +395,7 @@ public sealed class KnowledgeEvidenceAcquisitionService
             .Take(4)
             .ToList();
         var publisherGroups = BuildPublisherGroups(catalogItem, confirmation, trustedCatalog);
+        var internalValidationRequired = IsInternalValidationRequired(catalogItem?.Domain ?? quality?.Domain ?? diagnostic.CurrentStatus ?? "unknown", diagnostic.KnowledgeItemId, diagnostic.Title, validationPlan is not null, validationPlan);
         var trace = BuildTrace(
             diagnostic,
             catalogItem,
@@ -394,7 +407,8 @@ public sealed class KnowledgeEvidenceAcquisitionService
             resolverReport,
             autoReviewReport,
             publisherGroups,
-            catalogItem?.Domain ?? quality?.Domain ?? diagnostic.CurrentStatus ?? "unknown");
+            catalogItem?.Domain ?? quality?.Domain ?? diagnostic.CurrentStatus ?? "unknown",
+            internalValidationRequired);
         var expectedEffect = blockers.Any(blocker => blocker.Equals("second_independent_source_missing", StringComparison.OrdinalIgnoreCase))
             ? "increase_source_count_and_enable_policy_review"
             : blockers.Any(blocker => blocker.Equals("validation_score_too_low", StringComparison.OrdinalIgnoreCase) || blocker.Equals("quality_score_too_low", StringComparison.OrdinalIgnoreCase))
@@ -520,7 +534,8 @@ public sealed class KnowledgeEvidenceAcquisitionService
         IndependentSourceResolverReport? resolverReport,
         AutoSourceReviewReport? autoReviewReport,
         IReadOnlyList<string> publisherGroups,
-        string domain)
+        string domain,
+        bool internalValidationRequired)
     {
         var selectedSeeds = seedCatalog
             .Where(seed => seed.Allowed && seed.KnowledgeItemId.Equals(diagnostic.KnowledgeItemId, StringComparison.OrdinalIgnoreCase))
@@ -553,8 +568,15 @@ public sealed class KnowledgeEvidenceAcquisitionService
         var resolverStatus = DetermineResolverStatus(diagnostic.KnowledgeItemId, resolverMatches, resolverReport);
         var policyStatus = DeterminePolicyStatus(diagnostic.KnowledgeItemId, policyApprovedCandidates, autoReviewReport);
         var firstFailedStage = DetermineFirstFailedStage(seedFetchStatus, importStatus, semanticStatus, resolverStatus, policyStatus);
-        var failureReason = BuildFailureReason(firstFailedStage, seedFetchStatus, importStatus, semanticStatus, resolverStatus, policyStatus, importedCandidates, semanticMatches, resolverMatches, policyApprovedCandidates, confirmation, diagnostic);
-        var noSourceGainReason = BuildNoSourceGainReason(firstFailedStage, failureReason, diagnostic.SourceCount, confirmation?.SourceCount ?? diagnostic.SourceCount, policyApprovedCandidates.Count);
+        var internalArtifact = IsInternalArtifact(domain, diagnostic.KnowledgeItemId, diagnostic.Title);
+        var internalValidation = internalValidationRequired;
+        if (internalArtifact || internalValidation)
+        {
+            firstFailedStage = "internal_validation";
+        }
+
+        var failureReason = BuildFailureReason(firstFailedStage, seedFetchStatus, importStatus, semanticStatus, resolverStatus, policyStatus, importedCandidates, semanticMatches, resolverMatches, policyApprovedCandidates, confirmation, diagnostic, internalArtifact, internalValidation);
+        var noSourceGainReason = BuildNoSourceGainReason(firstFailedStage, failureReason, diagnostic.SourceCount, confirmation?.SourceCount ?? diagnostic.SourceCount, policyApprovedCandidates.Count, internalArtifact || internalValidation);
 
         return new KnowledgeEvidenceAcquisitionTrace(
             KnowledgeItemId: diagnostic.KnowledgeItemId,
@@ -578,6 +600,142 @@ public sealed class KnowledgeEvidenceAcquisitionService
             NoSourceGainReason: noSourceGainReason,
             SourceCountAfter: confirmation?.SourceCount ?? diagnostic.SourceCount,
             PublisherGroupsAfter: publisherGroups);
+    }
+
+    private KnowledgeEvidenceAcquisitionClassification BuildClassification(
+        KnowledgeEvidenceAcquisitionPlan plan,
+        KnowledgeCatalogItem? catalogItem,
+        KnowledgeValidationPlanReport validationPlans,
+        KnownArticleSeedStatusReport? seedReport,
+        WebResearchImportReport? importReport,
+        KnowledgeEvidenceSemanticMatcherReport? matcherReport,
+        IndependentSourceResolverReport? resolverReport,
+        AutoSourceReviewReport? autoReviewReport)
+    {
+        var noSeedAvailable = plan.Trace?.FirstFailedStage.Equals("no_seed_available", StringComparison.OrdinalIgnoreCase) == true;
+        var domain = (catalogItem?.Domain ?? plan.Domain ?? string.Empty).Trim().ToLowerInvariant();
+        var title = (plan.Title ?? catalogItem?.Title ?? string.Empty).Trim().ToLowerInvariant();
+        var knowledgeId = plan.KnowledgeItemId.Trim().ToLowerInvariant();
+        var isInternalArtifact = knowledgeId.StartsWith("software:", StringComparison.OrdinalIgnoreCase)
+            || knowledgeId.StartsWith("documentation:", StringComparison.OrdinalIgnoreCase)
+            || knowledgeId.StartsWith("process:", StringComparison.OrdinalIgnoreCase)
+            || IsInternalArtifact(domain, knowledgeId, title);
+        var isInternalValidation = IsInternalValidationRequired(domain, knowledgeId, title, validationPlans.Plans.Any(plan => plan.KnowledgeItemId.Equals(knowledgeId, StringComparison.OrdinalIgnoreCase)), validationPlans.Plans.FirstOrDefault(plan => plan.KnowledgeItemId.Equals(knowledgeId, StringComparison.OrdinalIgnoreCase)));
+        var evidenceAvailable = HasExternalEvidenceSignals(plan.KnowledgeItemId, seedReport, importReport, matcherReport, resolverReport, autoReviewReport);
+
+        string classification;
+        string seedReason;
+        bool internalValidationRequired;
+        string nextAction;
+        IReadOnlyList<string> commands;
+
+        if (isInternalArtifact)
+        {
+            classification = "internal_artifact";
+            seedReason = "internal Hermes/Jarvis documentation or code artifact; web seed catalog not applicable";
+            internalValidationRequired = true;
+            nextAction = "internal_validation";
+            commands = ["dotnet build ./cli/Hermes.Cli.csproj", "knowledge-validation-state-sync --apply", "knowledge-validation-state-sync --dry-run"];
+        }
+        else if (isInternalValidation)
+        {
+            classification = "requires_internal_validation";
+            seedReason = "build/test/code-reference validation needed instead of web seed";
+            internalValidationRequired = true;
+            nextAction = "internal_validation";
+            commands = ["dotnet build ./cli/Hermes.Cli.csproj", "knowledge-validation-state-sync --apply", "validation-state-sync --apply"];
+        }
+        else if (!noSeedAvailable)
+        {
+            classification = evidenceAvailable
+                ? "external_seed_candidate"
+                : "requires_human_review";
+            seedReason = classification == "external_seed_candidate"
+                ? "usable external source path exists or was partially evidenced"
+                : "evidence path unclear; human review required";
+            internalValidationRequired = false;
+            nextAction = classification == "external_seed_candidate"
+                ? "known-article-seed-fetch"
+                : "human_review";
+            commands = classification == "external_seed_candidate"
+                ? ["known-article-seed-fetch --max-items N --apply --max-fetch-seconds 60", "web-research-import --apply"]
+                : ["knowledge-validation-state-sync --apply", "knowledge-validation-state-sync --dry-run"];
+        }
+        else
+        {
+            classification = "requires_human_review";
+            seedReason = "no safe automatic seed path determined";
+            internalValidationRequired = false;
+            nextAction = "human_review";
+            commands = ["knowledge-validation-state-sync --apply", "knowledge-validation-state-sync --dry-run"];
+        }
+
+        var recommended = commands
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(4)
+            .ToList();
+
+        return new KnowledgeEvidenceAcquisitionClassification(
+            KnowledgeItemId: plan.KnowledgeItemId,
+            Title: plan.Title,
+            Domain: plan.Domain,
+            EvidenceAcquisitionClassification: classification,
+            SeedNotApplicableReason: seedReason,
+            InternalValidationRequired: internalValidationRequired,
+            NextAction: nextAction,
+            RecommendedExistingCommands: recommended);
+    }
+
+    private static bool IsInternalArtifact(string domain, string knowledgeId, string title)
+    {
+        if (domain.Equals("software", StringComparison.OrdinalIgnoreCase) || domain.Equals("documentation", StringComparison.OrdinalIgnoreCase) || domain.Equals("process", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (knowledgeId.StartsWith("software:code_module_", StringComparison.OrdinalIgnoreCase) || knowledgeId.StartsWith("documentation:doc_", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return title.Contains(".cs", StringComparison.OrdinalIgnoreCase)
+            || title.Contains(".md", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("architecture", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("roadmap", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("refactor", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("cleanup", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsInternalValidationRequired(string domain, string knowledgeId, string title, bool hasValidationPlan, KnowledgeValidationPlan? validationPlan = null)
+    {
+        if (domain.Equals("software", StringComparison.OrdinalIgnoreCase) || domain.Equals("documentation", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (hasValidationPlan || validationPlan is not null)
+        {
+            return true;
+        }
+
+        return title.Contains("validation", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("build", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("test", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasExternalEvidenceSignals(
+        string knowledgeItemId,
+        KnownArticleSeedStatusReport? seedReport,
+        WebResearchImportReport? importReport,
+        KnowledgeEvidenceSemanticMatcherReport? matcherReport,
+        IndependentSourceResolverReport? resolverReport,
+        AutoSourceReviewReport? autoReviewReport)
+    {
+        return (seedReport?.Requests.Any(request => request.KnowledgeItemId.Equals(knowledgeItemId, StringComparison.OrdinalIgnoreCase)) == true)
+            || (importReport?.Accepted.Any(candidate => candidate.KnowledgeItemId.Equals(knowledgeItemId, StringComparison.OrdinalIgnoreCase)) == true)
+            || (matcherReport?.Candidates.Any(candidate => candidate.KnowledgeItemId.Equals(knowledgeItemId, StringComparison.OrdinalIgnoreCase)) == true)
+            || (resolverReport?.Candidates.Any(candidate => candidate.KnowledgeItemId.Equals(knowledgeItemId, StringComparison.OrdinalIgnoreCase)) == true)
+            || (autoReviewReport?.Candidates.Any(candidate => candidate.KnowledgeItemId.Equals(knowledgeItemId, StringComparison.OrdinalIgnoreCase)) == true);
     }
 
     private static string DetermineSeedFetchStatus(string knowledgeItemId, IReadOnlyList<string> seedDefinitions, KnownArticleSeedStatusReport? seedReport, IReadOnlyList<string> seedRequests)
@@ -721,10 +879,14 @@ public sealed class KnowledgeEvidenceAcquisitionService
         IReadOnlyList<string> resolverMatches,
         IReadOnlyList<string> policyApprovedCandidates,
         ConfirmationResult? confirmation,
-        KnowledgeStateRepairDiagnosticItem diagnostic)
+        KnowledgeStateRepairDiagnosticItem diagnostic,
+        bool internalArtifact,
+        bool internalValidation)
     {
         return firstFailedStage switch
         {
+            "internal_validation" when internalArtifact => "internal Hermes/Jarvis documentation or code artifact; external seed catalog not applicable",
+            "internal_validation" when internalValidation => "internal validation/build/test evidence required instead of web seed acquisition",
             "no_seed_available" => "no enabled seed definition or request found for this knowledge item",
             "seed_fetch_failed" => $"seed fetch did not yield usable content; status={seedFetchStatus}",
             "duplicate_source" => "seed/import candidate duplicated an existing source or publisher group",
@@ -742,11 +904,17 @@ public sealed class KnowledgeEvidenceAcquisitionService
         string failureReason,
         int sourceCountBefore,
         int sourceCountAfter,
-        int policyApprovedCount)
+        int policyApprovedCount,
+        bool internalValidation)
     {
         if (sourceCountAfter > sourceCountBefore)
         {
             return "source_count_increased";
+        }
+
+        if (internalValidation)
+        {
+            return $"internal_validation_required; {failureReason}";
         }
 
         if (policyApprovedCount > 0 && sourceCountAfter == sourceCountBefore)
@@ -829,6 +997,14 @@ public sealed class KnowledgeEvidenceAcquisitionService
                 sb.AppendLine($"  - resolver_status: {plan.Trace.ResolverStatus}");
                 sb.AppendLine($"  - policy_status: {plan.Trace.PolicyStatus}");
             }
+        }
+        sb.AppendLine();
+        sb.AppendLine("## Classifications");
+        foreach (var classification in report.Classifications.Take(25))
+        {
+            sb.AppendLine($"- {classification.EvidenceAcquisitionClassification} | next_action={classification.NextAction} | internal_validation_required={classification.InternalValidationRequired}");
+            sb.AppendLine($"  - seed_not_applicable_reason: {classification.SeedNotApplicableReason}");
+            sb.AppendLine($"  - recommended_commands: {(classification.RecommendedExistingCommands.Count == 0 ? "-" : string.Join(", ", classification.RecommendedExistingCommands))}");
         }
 
         return sb.ToString();
