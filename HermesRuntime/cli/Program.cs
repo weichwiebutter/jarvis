@@ -109,6 +109,8 @@ internal sealed class HermesCli
             "knowledge-catalog" => ShowKnowledgeCatalog(),
             "knowledge-item" => ShowKnowledgeItem(),
             "knowledge-health" => ShowKnowledgeHealth(),
+            "knowledge-reason-status" => ShowKnowledgeReasonStatus(),
+            "knowledge-reason" => RunKnowledgeReason(),
             "knowledge-health-root-cause" => ShowKnowledgeHealthRootCause(),
             "knowledge-confidence-engine" => ShowKnowledgeConfidenceEngine(),
             "confidence-review-prioritization" => ShowConfidenceReviewPrioritization(),
@@ -463,6 +465,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-catalog  allgemeinen Cognitive Knowledge Catalog anzeigen");
         Console.WriteLine("  hermes knowledge-item --id <ID> einzelnes Knowledge Item anzeigen");
         Console.WriteLine("  hermes knowledge-health   Knowledge Trust/Quality Scores erzeugen und anzeigen");
+        Console.WriteLine("  hermes knowledge-reason --topic \"bullish engulfing\" Trusted Knowledge Reasoning anzeigen");
+        Console.WriteLine("  hermes knowledge-reason-status Trusted Knowledge Reasoning Status anzeigen");
         Console.WriteLine("  hermes knowledge-health-root-cause Knowledge Trust Root Cause Analyse anzeigen");
         Console.WriteLine("  hermes knowledge-confidence-engine Knowledge Confidence Score anzeigen");
         Console.WriteLine("  hermes confidence-review-prioritization Confidence-basierte Review Priorisierung anzeigen");
@@ -6575,6 +6579,47 @@ internal sealed class HermesCli
 
         WriteKnowledgeQualityReport(report, engine.QualityPath);
         TryWriteMasterStatusSnapshot(storagePaths);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowKnowledgeReasonStatus()
+    {
+        WriteHeader("Hermes Knowledge Reasoning");
+        var service = new KnowledgeReasoningService(BuildStoragePaths());
+        var report = service.LoadLatestReport();
+
+        if (report is null)
+        {
+            WriteWarning("No knowledge reasoning report found yet. Run: hermes knowledge-reason --topic \"...\"");
+            WriteField("Report", DisplayPath(service.ReportPath));
+            WriteField("Markdown", DisplayPath(service.MarkdownPath));
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+
+        WriteKnowledgeReasoningReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunKnowledgeReason()
+    {
+        WriteHeader("Hermes Knowledge Reasoning");
+        var topic = ReadOption(_args, "--topic");
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            Console.WriteLine("Error: --topic is required.");
+            WriteSafety();
+            return 1;
+        }
+
+        var service = new KnowledgeReasoningService(BuildStoragePaths());
+        var report = service.Run(topic!);
+        WriteKnowledgeReasoningReport(report, service);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -15416,6 +15461,91 @@ internal sealed class HermesCli
             WriteMessages("Satisfied", candidate.SatisfiedConditions);
             WriteMessages("Missing Evidence", candidate.MissingEvidenceCategories);
             WriteMessages("Blockers", candidate.Blockers);
+        }
+    }
+
+    private void WriteKnowledgeReasoningReport(KnowledgeReasoningReport report, KnowledgeReasoningService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Topic", report.Topic);
+        WriteField("Status", report.Status);
+        WriteField("Confidence", report.Confidence.ToString("0.###", CultureInfo.InvariantCulture));
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Knowledge Catalog", DisplayPath(report.KnowledgeCatalogPath));
+        WriteField("Knowledge Quality", DisplayPath(report.KnowledgeQualityPath));
+        WriteMessages("Used Knowledge IDs", report.UsedKnowledgeIds);
+        WriteMessages("Supporting Sources", report.SupportingSources);
+        WriteMessages("Reasoning Steps", report.ReasoningSteps);
+        WriteMessages("Recommendations", report.Recommendations);
+        WriteMessages("Open Uncertainties", report.OpenUncertainties);
+        WriteMessages("Warnings", report.Warnings);
+
+        WriteSubHeader("Matched Knowledge");
+        if (report.MatchedKnowledge.Count == 0)
+        {
+            WriteField("Matched Knowledge", "none");
+        }
+        else
+        {
+            foreach (var item in report.MatchedKnowledge)
+            {
+                WriteField(item.KnowledgeId, item.Title);
+                WriteField("Domain", item.Domain);
+                WriteField("Validation Status", item.ValidationStatus);
+                WriteField("Match Score", item.MatchScore.ToString("0.###", CultureInfo.InvariantCulture));
+                WriteField("Trust Score", item.TrustScore.ToString("0.###", CultureInfo.InvariantCulture));
+                WriteField("Quality Score", item.QualityScore.ToString("0.###", CultureInfo.InvariantCulture));
+                WriteField("Validation Score", item.ValidationScore.ToString("0.###", CultureInfo.InvariantCulture));
+                WriteField("Matched Terms", string.Join(", ", item.MatchedTerms));
+                WriteField("Source IDs", string.Join(", ", item.SourceIds));
+                WriteField("Match Mode", item.MatchMode);
+                WriteField("Reason", item.Reason);
+            }
+        }
+
+        WriteSubHeader("Candidate Support");
+        if (report.CandidateSupport.Count == 0)
+        {
+            WriteField("Candidate Support", "none");
+        }
+        else
+        {
+            foreach (var item in report.CandidateSupport)
+            {
+                WriteField(item.KnowledgeId, item.Title);
+                WriteField("Domain", item.Domain);
+                WriteField("Validation Status", item.ValidationStatus);
+                WriteField("Match Score", item.MatchScore.ToString("0.###", CultureInfo.InvariantCulture));
+                WriteField("Trust Score", item.TrustScore.ToString("0.###", CultureInfo.InvariantCulture));
+                WriteField("Quality Score", item.QualityScore.ToString("0.###", CultureInfo.InvariantCulture));
+                WriteField("Validation Score", item.ValidationScore.ToString("0.###", CultureInfo.InvariantCulture));
+                WriteField("Matched Terms", string.Join(", ", item.MatchedTerms));
+                WriteField("Source IDs", string.Join(", ", item.SourceIds));
+                WriteField("Match Mode", item.MatchMode);
+                WriteField("Reason", item.Reason);
+            }
+        }
+
+        WriteSubHeader("Conflicting Knowledge");
+        if (report.ConflictingKnowledge.Count == 0)
+        {
+            WriteField("Conflicting Knowledge", "none");
+        }
+        else
+        {
+            foreach (var item in report.ConflictingKnowledge)
+            {
+                WriteField(item.KnowledgeId, item.Title);
+                WriteField("Domain", item.Domain);
+                WriteField("Validation Status", item.ValidationStatus);
+                WriteField("Match Score", item.MatchScore.ToString("0.###", CultureInfo.InvariantCulture));
+                WriteField("Reason", item.Reason);
+            }
         }
     }
 
