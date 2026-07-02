@@ -132,6 +132,9 @@ internal sealed class HermesCli
             "knowledge-state-consistency-repair" => RunKnowledgeStateConsistencyRepair(),
             "knowledge-state-repair-diagnostics" => ShowKnowledgeStateRepairDiagnostics(),
             "knowledge-state-timestamp-repair" => RunKnowledgeStateTimestampRepair(),
+            "knowledge-state-reference-rebuild" => RunKnowledgeStateReferenceRebuild(),
+            "knowledge-runtime-status" => ShowKnowledgeRuntimeStatus(),
+            "knowledge-runtime" => RunKnowledgeRuntime(),
             "next-trusted-candidates-status" => ShowNextTrustedCandidatesStatus(),
             "multi-source-evidence-status" => ShowMultiSourceEvidenceStatus(),
             "multi-source-evidence-plan" => ShowMultiSourceEvidencePlan(),
@@ -499,6 +502,9 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-state-consistency-repair [--dry-run|--apply] Knowledge State Consistency reparieren");
         Console.WriteLine("  hermes knowledge-state-repair-diagnostics Knowledge State Repair Diagnostics anzeigen");
         Console.WriteLine("  hermes knowledge-state-timestamp-repair [--dry-run|--apply] Knowledge State Timestamp Repair ausführen");
+        Console.WriteLine("  hermes knowledge-state-reference-rebuild [--dry-run|--apply] fehlende Knowledge Item Referenzen wiederherstellen");
+        Console.WriteLine("  hermes knowledge-runtime-status Unified Knowledge Runtime Manager Status anzeigen");
+        Console.WriteLine("  hermes knowledge-runtime [--execute] [--max-actions N] Unified Knowledge Runtime Manager ausführen");
         Console.WriteLine("  hermes next-trusted-candidates-status Nächste Trusted-Kandidaten und Aktionsplan anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-status Multi-Source Evidence Status anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-plan Multi-Source Evidence Plan anzeigen");
@@ -15344,6 +15350,30 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunKnowledgeStateReferenceRebuild()
+    {
+        WriteHeader("Hermes Knowledge State Missing Item Reference Repair");
+        var service = new KnowledgeStateMissingItemReferenceRepairService(BuildStoragePaths());
+        var apply = HasArg("--apply") && !HasArg("--dry-run");
+        var dryRun = HasArg("--dry-run") || !HasArg("--apply");
+        var targetIds = ReadOption(_args, "--id");
+        IReadOnlyCollection<string>? ids = null;
+        if (!string.IsNullOrWhiteSpace(targetIds))
+        {
+            ids = targetIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(id => id.Trim())
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        var report = service.Run(apply: apply, dryRun: dryRun, targetIds: ids);
+        WriteKnowledgeStateMissingItemReferenceRepairReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowKnowledgeStateRepairDiagnostics()
     {
         WriteHeader("Hermes Knowledge State Repair Diagnostics");
@@ -15351,6 +15381,30 @@ internal sealed class HermesCli
         var report = service.Run();
 
         WriteKnowledgeStateRepairDiagnosticsReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowKnowledgeRuntimeStatus()
+    {
+        WriteHeader("Hermes Knowledge Runtime Manager");
+        var service = new KnowledgeRuntimeManagerService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadLatestReport() ?? service.Run(maxActions: 1, execute: false);
+        WriteKnowledgeRuntimeManagerReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunKnowledgeRuntime()
+    {
+        WriteHeader("Hermes Knowledge Runtime Manager");
+        var service = new KnowledgeRuntimeManagerService(BuildStoragePaths(), _runtimeRoot);
+        var execute = HasArg("--execute");
+        var maxActions = ReadIntOption(_args, "--max-actions", fallback: 1, min: 1, max: 5);
+        var report = service.Run(maxActions, execute);
+        WriteKnowledgeRuntimeManagerReport(report);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -15512,6 +15566,98 @@ internal sealed class HermesCli
             WriteField("Severity", item.Severity);
             WriteField("Recommended Action", item.RecommendedAction);
             WriteMessages("Warnings", item.Warnings);
+        }
+    }
+
+    private void WriteKnowledgeStateMissingItemReferenceRepairReport(KnowledgeStateMissingItemReferenceRepairReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Loaded Validation Plans", report.LoadedValidationPlans.ToString());
+        WriteField("Target Items", report.TargetItems.ToString());
+        WriteField("Repaired Items", report.RepairedItems.ToString());
+        WriteField("Skipped Items", report.SkippedItems.ToString());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Validation Plans", DisplayPath(report.ValidationPlansPath));
+        WriteField("Knowledge Catalog", DisplayPath(report.CatalogPath));
+        WriteField("Knowledge Quality", DisplayPath(report.QualityPath));
+        WriteField("Knowledge Evidence", DisplayPath(report.EvidencePath));
+        WriteField("Source Confirmations", DisplayPath(report.SourceConfirmationsPath));
+        WriteMessages("Warnings", report.Warnings);
+
+        foreach (var item in report.Items)
+        {
+            WriteSubHeader($"{item.Title} / {item.KnowledgeItemId}");
+            WriteField("Domain", item.Domain);
+            WriteField("Current Plan Status", item.CurrentPlanStatus);
+            WriteField("Current Catalog Status", item.CurrentCatalogStatus);
+            WriteField("Repair Status", item.RepairStatus);
+            WriteField("Last Validated UTC", item.LastValidatedUtc?.ToString("O") ?? "-");
+            WriteField("Source Count", item.SourceCount.ToString());
+            WriteMessages("Warnings", item.Warnings);
+        }
+    }
+
+    private void WriteKnowledgeRuntimeManagerReport(KnowledgeRuntimeManagerReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Max Actions", report.MaxActions.ToString());
+        WriteField("Diagnostics Count", report.DiagnosticsCount.ToString());
+        WriteField("Reasoning Topic", report.ReasoningTopic ?? "-");
+        WriteField("Reasoning Confidence", report.ReasoningConfidence is null ? "-" : report.ReasoningConfidence.Value.ToString("0.###", CultureInfo.InvariantCulture));
+        WriteField("Actions Executed", report.ActionsExecuted.ToString());
+        WriteField("Actions Skipped", report.ActionsSkipped.ToString());
+        WriteField("Execution Time Ms", report.ExecutionTimeMs.ToString());
+        WriteField("Safety Status", report.SafetyStatus);
+        WriteField("Next Recommended Action", report.NextRecommendedAction);
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Diagnostics Report", DisplayPath(report.DiagnosticsReportPath));
+        WriteField("Usage Audit Report", DisplayPath(report.UsageAuditReportPath));
+        WriteField("Impact Report", DisplayPath(report.ImpactReportPath));
+        WriteField("Timestamp Repair Report", DisplayPath(report.TimestampRepairReportPath));
+        WriteField("Missing Reference Repair Report", DisplayPath(report.MissingReferenceRepairReportPath));
+        WriteField("Supervisor Report", DisplayPath(report.SupervisorReportPath));
+        WriteField("Advancement Report", DisplayPath(report.AdvancementReportPath));
+        WriteField("Promotion Report", DisplayPath(report.PromotionReportPath));
+        WriteField("Master Status", DisplayPath(report.MasterStatusPath));
+        WriteMessages("Warnings", report.Warnings);
+
+        WriteSubHeader("Before");
+        WriteField("Trusted Knowledge", report.Before.TrustedKnowledge.ToString());
+        WriteField("Promising Knowledge", report.Before.PromisingKnowledge.ToString());
+        WriteField("Weak Knowledge", report.Before.WeakKnowledge.ToString());
+        WriteField("Contradiction Count", report.Before.ContradictionCount.ToString());
+        WriteField("Validation Plans Open", report.Before.ValidationPlansOpen.ToString());
+
+        WriteSubHeader("After");
+        WriteField("Trusted Knowledge", report.After.TrustedKnowledge.ToString());
+        WriteField("Promising Knowledge", report.After.PromisingKnowledge.ToString());
+        WriteField("Weak Knowledge", report.After.WeakKnowledge.ToString());
+        WriteField("Contradiction Count", report.After.ContradictionCount.ToString());
+        WriteField("Validation Plans Open", report.After.ValidationPlansOpen.ToString());
+
+        WriteSubHeader("Phases");
+        foreach (var phase in report.Phases)
+        {
+            WriteField(phase.Phase, phase.Command);
+            WriteField("Status", phase.Status);
+            WriteField("Executed", phase.Executed.ToString().ToLowerInvariant());
+            WriteField("Duration Ms", phase.DurationMs.ToString());
+            WriteField("Details", phase.Details ?? "-");
+            WriteField("Before", $"trusted={phase.Before.TrustedKnowledge}; promising={phase.Before.PromisingKnowledge}; weak={phase.Before.WeakKnowledge}; contradictions={phase.Before.ContradictionCount}; validation_plans_open={phase.Before.ValidationPlansOpen}");
+            WriteField("After", $"trusted={phase.After.TrustedKnowledge}; promising={phase.After.PromisingKnowledge}; weak={phase.After.WeakKnowledge}; contradictions={phase.After.ContradictionCount}; validation_plans_open={phase.After.ValidationPlansOpen}");
+            WriteMessages("Warnings", phase.Warnings);
         }
     }
 
