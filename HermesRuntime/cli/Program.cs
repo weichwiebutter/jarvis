@@ -111,6 +111,8 @@ internal sealed class HermesCli
             "knowledge-health" => ShowKnowledgeHealth(),
             "knowledge-reason-status" => ShowKnowledgeReasonStatus(),
             "knowledge-reason" => RunKnowledgeReason(),
+            "trusted-knowledge-usage-audit-status" => ShowTrustedKnowledgeUsageAuditStatus(),
+            "trusted-knowledge-usage-audit" => RunTrustedKnowledgeUsageAudit(),
             "knowledge-health-root-cause" => ShowKnowledgeHealthRootCause(),
             "knowledge-confidence-engine" => ShowKnowledgeConfidenceEngine(),
             "confidence-review-prioritization" => ShowConfidenceReviewPrioritization(),
@@ -467,6 +469,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-health   Knowledge Trust/Quality Scores erzeugen und anzeigen");
         Console.WriteLine("  hermes knowledge-reason --topic \"bullish engulfing\" Trusted Knowledge Reasoning anzeigen");
         Console.WriteLine("  hermes knowledge-reason-status Trusted Knowledge Reasoning Status anzeigen");
+        Console.WriteLine("  hermes trusted-knowledge-usage-audit Trusted Knowledge Usage Audit erzeugen");
+        Console.WriteLine("  hermes trusted-knowledge-usage-audit-status Trusted Knowledge Usage Audit anzeigen");
         Console.WriteLine("  hermes knowledge-health-root-cause Knowledge Trust Root Cause Analyse anzeigen");
         Console.WriteLine("  hermes knowledge-confidence-engine Knowledge Confidence Score anzeigen");
         Console.WriteLine("  hermes confidence-review-prioritization Confidence-basierte Review Priorisierung anzeigen");
@@ -6619,6 +6623,40 @@ internal sealed class HermesCli
         var service = new KnowledgeReasoningService(BuildStoragePaths());
         var report = service.Run(topic!);
         WriteKnowledgeReasoningReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowTrustedKnowledgeUsageAuditStatus()
+    {
+        WriteHeader("Hermes Trusted Knowledge Usage Audit");
+        var service = new TrustedKnowledgeUsageAuditService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadLatestReport();
+
+        if (report is null)
+        {
+            WriteWarning("No trusted knowledge usage audit report found yet. Run: hermes trusted-knowledge-usage-audit");
+            WriteField("Report", DisplayPath(service.ReportPath));
+            WriteField("Markdown", DisplayPath(service.MarkdownPath));
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+
+        WriteTrustedKnowledgeUsageAuditReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunTrustedKnowledgeUsageAudit()
+    {
+        WriteHeader("Hermes Trusted Knowledge Usage Audit");
+        var service = new TrustedKnowledgeUsageAuditService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteTrustedKnowledgeUsageAuditReport(report);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -15645,6 +15683,38 @@ internal sealed class HermesCli
                 WriteField("Match Score", item.MatchScore.ToString("0.###", CultureInfo.InvariantCulture));
                 WriteField("Reason", item.Reason);
             }
+        }
+    }
+
+    private void WriteTrustedKnowledgeUsageAuditReport(TrustedKnowledgeUsageAuditReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Read Only", report.ReadOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Commands With Context", report.CommandsWithTrustedKnowledgeContext.ToString());
+        WriteField("Commands Without Topic", report.CommandsWithoutInferredTopic.ToString());
+        WriteMessages("Used Topics", report.UsedTopics);
+        WriteMessages("Used Knowledge IDs", report.UsedKnowledgeIds);
+        WriteMessages("Warnings", report.Warnings);
+
+        WriteSubHeader("Entries");
+        foreach (var entry in report.Entries)
+        {
+            WriteField(entry.Command, entry.AnalysisLabel);
+            WriteField("Trusted Knowledge Context", entry.TrustedKnowledgeContextUsed.ToString().ToLowerInvariant());
+            WriteField("Topic Inferred", entry.TopicInferred.ToString().ToLowerInvariant());
+            WriteField("Topic", entry.Topic ?? "topic not inferred");
+            WriteField("Confidence", entry.Confidence is null ? "-" : entry.Confidence.Value.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Trusted Knowledge IDs", string.Join(", ", entry.TrustedKnowledgeIds));
+            WriteField("Missing Topic Fields", string.Join(", ", entry.MissingTopicFields));
+            WriteField("Topic Source Fields", string.Join(", ", entry.TopicSourceFields));
+            WriteField("Current State", entry.CurrentState);
+            WriteField("Notes", string.Join(" · ", entry.Notes));
+            Console.WriteLine();
         }
     }
 
