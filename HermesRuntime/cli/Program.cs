@@ -210,6 +210,8 @@ internal sealed class HermesCli
             "validation-evidence" => RunValidationEvidence(),
             "validation-state-sync-status" => ShowValidationStateSyncStatus(),
             "validation-state-sync" => RunValidationStateSync(),
+            "knowledge-validation-state-sync-status" => ShowKnowledgeValidationStateSyncStatus(),
+            "knowledge-validation-state-sync" => RunKnowledgeValidationStateSync(),
             "validation-backlog-analyzer" => ShowValidationBacklogAnalyzer(),
             "validation-backlog-executor" => ShowValidationBacklogExecutor(),
             "validation-backlog-executor-status" => ShowValidationBacklogExecutorStatus(),
@@ -593,6 +595,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes validation-evidence [--dry-run|--apply] Validation Evidence Pipeline ausfuehren");
         Console.WriteLine("  hermes validation-state-sync-status Validation State Synchronizer Status anzeigen");
         Console.WriteLine("  hermes validation-state-sync [--dry-run|--apply] Validation State Synchronizer ausfuehren");
+        Console.WriteLine("  hermes knowledge-validation-state-sync-status Knowledge Validation State Sync Status anzeigen");
+        Console.WriteLine("  hermes knowledge-validation-state-sync [--dry-run|--apply] Knowledge Validation State Sync ausfuehren");
         Console.WriteLine("  hermes generate-improvement-queue Verbesserungs-Warteschlange aus Audit/Warnungen erzeugen");
         Console.WriteLine("  hermes improvement-queue-summary Verbesserungs-Warteschlange kompakt anzeigen");
         Console.WriteLine("  hermes improvement-work-areas Verbesserungs-Arbeitsbereiche anzeigen");
@@ -8860,6 +8864,39 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowKnowledgeValidationStateSyncStatus()
+    {
+        WriteHeader("Hermes Knowledge Validation State Sync");
+        var service = new KnowledgeValidationStateSyncService(BuildStoragePaths());
+        var report = service.LoadLatestReport() ?? service.Run(apply: false, dryRun: true);
+
+        WriteKnowledgeValidationStateSyncReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunKnowledgeValidationStateSync()
+    {
+        WriteHeader("Hermes Knowledge Validation State Sync");
+        var service = new KnowledgeValidationStateSyncService(BuildStoragePaths());
+        var apply = HasArg("--apply");
+        var dryRun = HasArg("--dry-run");
+
+        if (apply && dryRun)
+        {
+            Console.WriteLine("Error: use either --dry-run or --apply, not both.");
+            WriteSafety();
+            return 1;
+        }
+
+        var report = service.Run(apply: apply && !dryRun, dryRun: dryRun || !apply);
+        WriteKnowledgeValidationStateSyncReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowKnowledgeValidationAudit()
     {
         WriteHeader("Hermes Knowledge Validation Audit");
@@ -16341,6 +16378,65 @@ internal sealed class HermesCli
             WriteField("Synchronized", item.Synchronized.ToString().ToLowerInvariant());
             WriteField("Recommended Next Action", item.RecommendedNextAction);
             WriteMessages("Remaining Blockers", item.RemainingBlockersAfter);
+            WriteMessages("Removed Blockers", item.RemovedBlockers);
+            WriteMessages("Warnings", item.Warnings);
+            Console.WriteLine();
+        }
+    }
+
+    private void WriteKnowledgeValidationStateSyncReport(KnowledgeValidationStateSyncReport report, KnowledgeValidationStateSyncService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Loaded Issues", report.LoadedIssues.ToString());
+        WriteField("Selected Issues", report.SelectedIssues.ToString());
+        WriteField("Plans Created", report.PlansCreated.ToString());
+        WriteField("Plans Synchronized", report.PlansSynchronized.ToString());
+        WriteField("Blockers Removed", report.BlockersRemoved.ToString());
+        WriteField("Blockers Normalized", report.BlockersNormalized.ToString());
+        WriteField("Skipped True Contradictions", report.SkippedTrueContradictions.ToString());
+        WriteField("Skipped Human Review Required", report.SkippedHumanReviewRequired.ToString());
+        WriteField("Before Issue Count", report.BeforeIssueCount.ToString());
+        WriteField("After Issue Count", report.AfterIssueCount.ToString());
+        WriteField("Diagnostics Path", DisplayPath(report.DiagnosticsPath));
+        WriteField("Catalog Path", DisplayPath(report.CatalogPath));
+        WriteField("Quality Path", DisplayPath(report.QualityPath));
+        WriteField("Evidence Path", DisplayPath(report.EvidencePath));
+        WriteField("Validation Plans Path", DisplayPath(report.ValidationPlansPath));
+        WriteField("Validation Status Path", DisplayPath(report.ValidationStatusPath));
+        WriteField("Source Confirmations Path", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Master Status Path", DisplayPath(report.MasterStatusPath));
+        WriteField("Dry Run", report.DryRun.ToString().ToLowerInvariant());
+        WriteField("Applied", report.Applied.ToString().ToLowerInvariant());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Before Issue Counts", report.BeforeIssueCountsByType.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
+        WriteMessages("After Issue Counts", report.AfterIssueCountsByType.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
+
+        Console.WriteLine();
+        Console.WriteLine("Targeted Knowledge Items:");
+        foreach (var item in report.Items.Take(20))
+        {
+            WriteField(item.KnowledgeItemId, item.Title);
+            WriteField("Mismatch Type", item.MismatchType);
+            WriteField("Validation Plan", $"{item.ValidationPlanStatusBefore} -> {item.ValidationPlanStatusAfter}");
+            WriteField("Validation Status", $"{item.ValidationStatusBefore} -> {item.ValidationStatusAfter}");
+            WriteField("Domain Validation", $"{item.DomainValidationStatusBefore} -> {item.DomainValidationStatusAfter}");
+            WriteField("Last Validated UTC", $"{item.LastValidatedUtcBefore?.ToString("O") ?? "-"} -> {item.LastValidatedUtcAfter?.ToString("O") ?? "-"}");
+            WriteField("Source Count", item.SourceCount.ToString());
+            WriteField("Plan Created", item.PlanCreated.ToString().ToLowerInvariant());
+            WriteField("Plan Synchronized", item.PlanSynchronized.ToString().ToLowerInvariant());
+            WriteField("Blockers Normalized", item.BlockersNormalized.ToString().ToLowerInvariant());
+            WriteField("Skipped True Contradiction", item.SkippedTrueContradiction.ToString().ToLowerInvariant());
+            WriteField("Skipped Human Review Required", item.SkippedHumanReviewRequired.ToString().ToLowerInvariant());
+            WriteField("Recommended Next Action", item.RecommendedNextAction);
+            WriteMessages("Blockers Before", item.BlockersBefore);
+            WriteMessages("Blockers After", item.BlockersAfter);
             WriteMessages("Removed Blockers", item.RemovedBlockers);
             WriteMessages("Warnings", item.Warnings);
             Console.WriteLine();
