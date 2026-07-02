@@ -111,11 +111,14 @@ public sealed class WebResearchSourceImportService
         var sourceByDomain = sources
             .GroupBy(source => source.Domain, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
-        var importedUrls = confirmations.Results
-            .SelectMany(result => result.CandidateSources ?? [])
-            .Select(candidate => candidate.Url)
-            .Where(url => !string.IsNullOrWhiteSpace(url))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var importedUrlsByKnowledgeItem = confirmations.Results
+            .ToDictionary(
+                result => result.KnowledgeId,
+                result => (result.CandidateSources ?? [])
+                    .Select(candidate => candidate.Url)
+                    .Where(url => !string.IsNullOrWhiteSpace(url))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase);
         var knownKnowledgeIds = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems()
             .Select(item => item.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -129,7 +132,7 @@ public sealed class WebResearchSourceImportService
 
         foreach (var candidate in candidates)
         {
-            var reason = ValidateCandidate(candidate, knownKnowledgeIds, confirmations, importedUrls, sourceByDomain);
+            var reason = ValidateCandidate(candidate, knownKnowledgeIds, confirmations, importedUrlsByKnowledgeItem, sourceByDomain);
             if (reason is not null)
             {
                 rejected.Add(candidate);
@@ -156,7 +159,13 @@ public sealed class WebResearchSourceImportService
                 IndependenceClaim: candidate.IndependenceClaim,
                 HumanReviewStatus: candidate.HumanReviewStatus,
                 SafetyFlags: candidate.SafetyFlags.Distinct(StringComparer.OrdinalIgnoreCase).ToList())));
-            importedUrls.Add(candidate.Url);
+            if (!importedUrlsByKnowledgeItem.TryGetValue(candidate.KnowledgeItemId, out var itemUrls))
+            {
+                itemUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                importedUrlsByKnowledgeItem[candidate.KnowledgeItemId] = itemUrls;
+            }
+
+            itemUrls.Add(candidate.Url);
         }
 
         if (apply && updates.Count > 0)
@@ -254,7 +263,7 @@ public sealed class WebResearchSourceImportService
         WebResearchImportCandidateRecord candidate,
         ISet<string> knownKnowledgeIds,
         SourceConfirmationReport confirmations,
-        ISet<string> importedUrls,
+        IReadOnlyDictionary<string, HashSet<string>> importedUrlsByKnowledgeItem,
         IReadOnlyDictionary<string, List<CognitiveSource>> sourceByDomain)
     {
         if (string.IsNullOrWhiteSpace(candidate.KnowledgeItemId))
@@ -309,7 +318,8 @@ public sealed class WebResearchSourceImportService
             return "human_review_status_not_pending";
         }
 
-        if (importedUrls.Contains(candidate.Url))
+        if (importedUrlsByKnowledgeItem.TryGetValue(candidate.KnowledgeItemId, out var itemUrls)
+            && itemUrls.Contains(candidate.Url))
         {
             return "duplicate_url";
         }
@@ -321,12 +331,6 @@ public sealed class WebResearchSourceImportService
             && candidate.Domain.Equals(primaryDomain, StringComparison.OrdinalIgnoreCase))
         {
             return "same_domain_as_primary_source";
-        }
-
-        if (sourceByDomain.TryGetValue(candidate.Domain, out var existingSources)
-            && existingSources.Any(source => source.UrlOrPath.Equals(candidate.Url, StringComparison.OrdinalIgnoreCase)))
-        {
-            return "duplicate_url";
         }
 
         return null;

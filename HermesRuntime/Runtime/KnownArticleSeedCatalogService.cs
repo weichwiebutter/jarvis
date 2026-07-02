@@ -169,10 +169,14 @@ public sealed class KnownArticleSeedCatalogService
         var knowledgeItems = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
         var sourceConfirmations = new SourceConfirmationEngine(_storagePaths).LoadOrBuild();
         var existingCandidates = LoadImportCandidates();
-        var existingUrls = existingCandidates
-            .Select(candidate => candidate.Url)
-            .Where(url => !string.IsNullOrWhiteSpace(url))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingUrlsByItem = existingCandidates
+            .GroupBy(candidate => candidate.KnowledgeItemId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(candidate => candidate.Url)
+                    .Where(url => !string.IsNullOrWhiteSpace(url))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase);
         var seedDefinitions = LoadSeedDefinitions();
         var publisherGroupResolver = new PublisherGroupResolverService(_storagePaths, _runtimeRoot);
         var requests = BuildRequests(knowledgeItems, sourceConfirmations, seedDefinitions)
@@ -238,7 +242,11 @@ public sealed class KnownArticleSeedCatalogService
                 SafetyFlags = ["no_trading_execution", "human_review_required"]
             };
 
-            if (string.IsNullOrWhiteSpace(candidate.Url) || existingUrls.Contains(candidate.Url))
+            var itemId = request.KnowledgeItemId;
+            var itemExistingUrls = existingUrlsByItem.TryGetValue(itemId, out var itemUrls)
+                ? itemUrls
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(candidate.Url) || itemExistingUrls.Contains(candidate.Url))
             {
                 finalRequests.Add(request with { Status = "duplicate_url", Reason = "duplicate_url" });
                 rejected.Add(candidate with { RejectionReason = "duplicate_url", SourceRelevanceStatus = "duplicate" });
@@ -246,8 +254,10 @@ public sealed class KnownArticleSeedCatalogService
             }
 
             var publisherGroup = NormalizePublisherGroup(request.PublisherGroup);
+
             if (!string.Equals(publisherGroup, string.Empty, StringComparison.OrdinalIgnoreCase) &&
-                IsDuplicatePublisherGroup(existingCandidates, candidate, publisherGroupResolver, publisherGroup))
+                IsDuplicatePublisherGroup(sourceConfirmations.Results.FirstOrDefault(result =>
+                    result.KnowledgeId.Equals(request.KnowledgeItemId, StringComparison.OrdinalIgnoreCase)), candidate, publisherGroupResolver, publisherGroup))
             {
                 finalRequests.Add(request with { Status = "duplicate_publisher_group", Reason = "duplicate_publisher_group" });
                 rejected.Add(candidate with { RejectionReason = "duplicate_publisher_group", SourceRelevanceStatus = "duplicate_publisher_group" });
@@ -266,7 +276,8 @@ public sealed class KnownArticleSeedCatalogService
             accepted.Add(candidate);
             if (!dryRun)
             {
-                existingUrls.Add(candidate.Url);
+                itemExistingUrls.Add(candidate.Url);
+                existingUrlsByItem[itemId] = itemExistingUrls;
             }
         }
 
@@ -420,7 +431,7 @@ public sealed class KnownArticleSeedCatalogService
     }
 
     private static bool IsDuplicatePublisherGroup(
-        IReadOnlyList<WebResearchImportCandidateRecord> existingCandidates,
+        ConfirmationResult? confirmation,
         KnownArticleSeedCandidate candidate,
         PublisherGroupResolverService resolver,
         string publisherGroup)
@@ -436,10 +447,24 @@ public sealed class KnownArticleSeedCatalogService
             return false;
         }
 
-        return existingCandidates.Any(existing =>
-            !string.IsNullOrWhiteSpace(existing.Url) &&
-            string.Equals(existing.Domain, candidate.Domain, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(resolver.Resolve(existing.Url), publisherGroup, StringComparison.OrdinalIgnoreCase));
+        var approvedSources = confirmation?.CandidateSources ?? [];
+        return approvedSources.Any(existing =>
+        {
+            if (string.IsNullOrWhiteSpace(existing.Url))
+            {
+                return false;
+            }
+
+            if (!string.Equals(resolver.Resolve(existing.Url), publisherGroup, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var isApproved = existing.AutoApprovedByPolicy
+                || existing.PolicyReviewStatus.Equals("approved", StringComparison.OrdinalIgnoreCase)
+                || existing.SourceStatus.Equals("policy_approved_second_source", StringComparison.OrdinalIgnoreCase);
+            return isApproved;
+        });
     }
 
     private static double ScoreItemPriority(KnowledgeCatalogItem item)
