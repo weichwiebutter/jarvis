@@ -6871,6 +6871,12 @@ internal sealed class HermesCli
             WriteField("Nächste Validierung", hypothesis.SuggestedNextValidation);
             WriteField("Begründung", $"{hypothesis.AgreementSummary} / {hypothesis.ContradictionSummary}");
         }
+        WriteTrustedKnowledgeContext("trading research synthesizer", ExtractKnowledgeTopic(
+            report.Comparisons.FirstOrDefault()?.PatternName,
+            report.Hypotheses.FirstOrDefault()?.Title,
+            report.Hypotheses.FirstOrDefault()?.Hypothesis,
+            string.Join(" ", report.InternalSources.Take(8)),
+            string.Join(" ", report.ExternalSources.Take(8))));
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -6897,7 +6903,12 @@ internal sealed class HermesCli
             WriteField("Parameter", string.Join(", ", plan.ParametersToValidate));
             WriteField("Backtest/OOS/Forward", $"{plan.RequiredBacktest}/{plan.RequiredOosTest}/{plan.RequiredWalkForward}/{plan.RequiredForwardObservation}");
         }
-        WriteTrustedKnowledgeContext("strategy validation", ExtractKnowledgeTopic(report.ValidationPlans.FirstOrDefault()?.StrategyPattern));
+        WriteTrustedKnowledgeContext("strategy validation", ExtractKnowledgeTopic(
+            report.ValidationPlans.FirstOrDefault()?.ValidationPlanId,
+            report.ValidationPlans.FirstOrDefault()?.StrategyPattern,
+            report.ValidationPlans.FirstOrDefault()?.Asset,
+            report.ValidationPlans.FirstOrDefault()?.Timeframe,
+            string.Join(" ", report.ValidationPlans.FirstOrDefault()?.ParametersToValidate ?? [])));
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -7874,7 +7885,13 @@ internal sealed class HermesCli
             WriteField("Fehlt", string.Join(" · ", entry.MissingEvidence));
             WriteField("Nächster Schritt", entry.NextStep);
         }
-        WriteTrustedKnowledgeContext("review decision assistant", ExtractKnowledgeTopic(report.Entries.FirstOrDefault()?.KnowledgeItemId, report.Entries.FirstOrDefault()?.Title, report.Entries.FirstOrDefault()?.Domain));
+        WriteTrustedKnowledgeContext("review decision assistant", ExtractKnowledgeTopic(
+            report.Entries.FirstOrDefault()?.KnowledgeItemId,
+            report.Entries.FirstOrDefault()?.Title,
+            report.Entries.FirstOrDefault()?.Domain,
+            report.Entries.FirstOrDefault()?.RecommendationLabel,
+            report.Entries.FirstOrDefault()?.WhyNow,
+            report.Entries.FirstOrDefault()?.NextStep));
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();
@@ -7910,46 +7927,47 @@ internal sealed class HermesCli
         var normalized = joined.Replace("_", " ", StringComparison.Ordinal)
             .Replace(":", " ", StringComparison.Ordinal)
             .Replace("/", " ", StringComparison.Ordinal)
+            .Replace("-", " ", StringComparison.Ordinal)
             .ToLowerInvariant();
-        string[] knownTopics =
-        [
-            "bullish engulfing",
-            "bearish engulfing",
-            "double top",
-            "double bottom",
-            "support resistance",
-            "inside bar",
-            "breakout",
-            "gap trading",
-            "daytrading",
-            "day trading",
-            "pullback",
-            "pin bar",
-            "hammer",
-            "doji",
-            "liquidity sweep",
-            "mean reversion"
-        ];
+        var tokenSet = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var topic in knownTopics)
+        var candidates = new List<(string Topic, string[] Aliases, int Weight)>
         {
-            if (normalized.Contains(topic, StringComparison.OrdinalIgnoreCase))
+            ("bullish engulfing", ["bullish engulfing", "bullish", "engulfing"], 100),
+            ("bearish engulfing", ["bearish engulfing", "bearish", "engulfing"], 100),
+            ("double top", ["double top", "doubletop", "top"], 96),
+            ("double bottom", ["double bottom", "doublebottom", "bottom"], 96),
+            ("support resistance", ["support resistance", "support", "resistance"], 94),
+            ("inside bar", ["inside bar", "insidebar"], 92),
+            ("breakout", ["breakout", "break outs", "break out"], 90),
+            ("gap trading", ["gap trading", "gap trade", "gap"], 88),
+            ("daytrading", ["daytrading", "day trading", "intraday"], 86),
+            ("pullback", ["pullback", "pull back"], 84),
+            ("pin bar", ["pin bar", "pinbar"], 82),
+            ("hammer", ["hammer"], 80),
+            ("doji", ["doji"], 80),
+            ("liquidity sweep", ["liquidity sweep", "liquidity", "sweep"], 78),
+            ("mean reversion", ["mean reversion", "mean revert", "reversion"], 76)
+        };
+
+        var ranked = candidates
+            .Select(candidate => new
             {
-                return topic;
-            }
-        }
+                candidate.Topic,
+                Score = candidate.Aliases.Sum(alias =>
+                    normalized.Contains(alias, StringComparison.OrdinalIgnoreCase)
+                        ? candidate.Weight
+                        : alias.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                            .Count(part => tokenSet.Contains(part)) * 12),
+                AliasHits = candidate.Aliases.Count(alias => normalized.Contains(alias, StringComparison.OrdinalIgnoreCase))
+            })
+            .OrderByDescending(item => item.Score)
+            .ThenByDescending(item => item.AliasHits)
+            .ToList();
 
-        if (normalized.Contains("bullish", StringComparison.OrdinalIgnoreCase) && normalized.Contains("engulfing", StringComparison.OrdinalIgnoreCase))
-        {
-            return "bullish engulfing";
-        }
-
-        if (normalized.Contains("bearish", StringComparison.OrdinalIgnoreCase) && normalized.Contains("engulfing", StringComparison.OrdinalIgnoreCase))
-        {
-            return "bearish engulfing";
-        }
-
-        return null;
+        var best = ranked.FirstOrDefault(item => item.Score > 0);
+        return best?.Topic;
     }
 
     private int ShowDomainAwareReviewPrioritization()
@@ -13798,7 +13816,9 @@ internal sealed class HermesCli
             inferredTopic ??= ExtractKnowledgeTopic(
                 GetString(root, "signal_type", "signalType"),
                 string.Join(" ", GetStringArray(root, "reason_codes", "reasonCodes")),
-                GetString(root, "direction"));
+                GetString(root, "direction"),
+                GetString(root, "symbol"),
+                GetString(root, "setup_name", "setupName", "pattern_name", "patternName"));
             Console.WriteLine();
         }
 
