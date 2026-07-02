@@ -1136,6 +1136,256 @@
       "allowed": true
     },
     {
+      "seed_id": "double_top_cmcmarkets",
+      "knowledge_item_id": "trading:double_top",
+      "title": "Double Top & Double Bottom Patterns Explained",
+      "domain": "cmcmarkets.com",
+      "url": "https://www.cmcmarkets.com/en-gb/technical-analysis/double-top-and-double-bottom-patterns",
+      "keywords": [
+        "double top",
+        "double top pattern"
+      ],
+      "synonyms": [
+        "double top reversal"
+      ],
+      "category": "chart_pattern",
+      "priority": 94,
+      "allowed": true
+    },
+    {
+      "seed_id": "double_bottom_cmcmarkets",
+      "knowledge_item_id": "trading:double_bottom",
+      "title": "Double Top & Double Bottom Patterns Explained",
+      "domain": "cmcmarkets.com",
+      "url": "https://www.cmcmarkets.com/en-gb/technical-analysis/double-top-and-double-bottom-patterns",
+      "keywords": [
+        "double bottom",
+        "double bottom pattern"
+      ],
+      "synonyms": [
+        "double bottom reversal"
+      ],
+      "category": "chart_pattern",
+      "priority": 94,
+      "allowed": true
+    },
+    {
+      "seed_id": "breakout_cmcmarkets",
+      "knowledge_item_id": "trading:breakout",
+      "title": "Breakout Trading Strategy",
+      "domain": "cmcmarkets.com",
+      "url": "https://www.cmcmarkets.com/en-gb/trading-strategy/price-action-trading",
+      "keywords": [
+        "breakout",
+        "breakout trading"
+      ],
+      "synonyms": [
+        "price action",
+        "breakout confirmation"
+      ],
+      "category": "chart_pattern",
+      "priority": 94,
+      "allowed": true
+    },
+    {
+      "seed_id": "inside_bar_cmcmarkets",
+      "knowledge_item_id": "trading:inside_bar",
+      "title": "Price Action Trading",
+      "domain": "cmcmarkets.com",
+      "url": "https://www.cmcmarkets.com/en-gb/trading-strategy/price-action-trading",
+      "keywords": [
+        "inside bar",
+        "price action"
+      ],
+      "synonyms": [
+        "continuation",
+        "breakout"
+      ],
+      "category": "candlestick",
+      "priority": 94,
+      "allowed": true
+    },
+    {
+      "seed_id": "gap_trading_cmcmarkets",
+      "knowledge_item_id": "trading:gap_trading",
+      "title": "Gap Trading",
+      "domain": "cmcmarkets.com",
+      "url": "https://www.cmcmarkets.com/en-gb/trading-strategy/gap-trading",
+      "keywords": [
+        "gap trading",
+        "gap"
+      ],
+      "synonyms": [
+        "price gap",
+        "market gap"
+      ],
+      "category": "market_structure",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "daytrading_cmcmarkets",
+      "knowledge_item_id": "trading:daytrading",
+      "title": "Day Trading Strategies Guide for UK Beginners",
+      "domain": "cmcmarkets.com",
+      "url": "https://www.cmcmarkets.com/en-gb/trading-strategy/learn-day-trading-strategies",
+      "keywords": [
+        "day trading",
+        "daytrading"
+      ],
+      "synonyms": [
+        "intraday trading",
+        "short-term trading"
+      ],
+      "category": "intraday",
+      "priority": 95,
+      "allowed": true
+    },
+    {
+      "seed_id": "gap_trading_babypips",
+      "knowledge_item_id": "trading:gap_trading",
+      "title": "Gap Trading",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/forexpedia/gap",
+      "keywords": [
+        "gap trading",
+        "gap"
+      ],
+      "synonyms": [
+        "price gap",
+        "market gap"
+      ],
+      "category": "market_structure",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "gap_trading_investopedia",
+      "knowledge_item_id": "trading:gap_trading",
+      "title": "Gap Trading Strategies",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/articles/trading/05/playinggaps.asp",
+      "keywords": [
+        "gap trading",
+        "gap"
+      ],
+      "synonyms": [
+        "price gap",
+        "market gap"
+      ],
+      "category": "market_structure",
+      "priority": 98,
+      "allowed": true
+    },
+    {
+      "seed_id": "gap_trading_ig",
+      "knowledge_item_id": "trading:gap_trading",
+      "title": "Gap Trading Strategy",
+      "domain": "ig.com",
+      "url": "https://www.ig.com/en/trading-strategies/how-to-trade-using-price-gap-analysis-190802",
+      "keywords": [
+        "gap trading",
+        "gap"
+      ],
+      "synonyms": [
+        "price gap",
+        "market gap"
+      ],
+      "category": "market_structure",
+      "priority": 96,
+      "allowed": true
+    },
+    {
+      "seed_id": "gap_trading_avatrade",
+      "knowledge_item_id": "trading:gap_trading",
+      "title": "Forex Trading Sessions",
+      "domain": "avatrade.com",
+      "url": "https://www.avatrade.com/education/trading-for-beginners/forex-trading-sessions",
+      "keywords": [
+        "gap trading",
+        "gap"
+      ],
+      "synonyms": [
+        "price gap",
+        "weekend gap"
+      ],
+      "category": "market_structure",
+      "priority": 92,
+      "allowed": true
+    },
+    {
+      "seed_id": "daytrading_babypips",
+      "knowledge_item_id": "trading:daytrading",
+      "title": "Day Trading",
+      "domain": "babypips.com",
+      "url": "https://www.babypips.com/trading/day-trading-how-to-navigate-short-term-market-opportunities",
+      "keywords": [
+        "day trading",
+        "daytrading"
+      ],
+      "synonyms": [
+        "intraday trading",
+        "short-term trading"
+      ],
+      "category": "intraday",
+      "priority": 100,
+      "allowed": true
+    },
+    {
+      "seed_id": "daytrading_investopedia",
+      "knowledge_item_id": "trading:daytrading",
+      "title": "Day Trading",
+      "domain": "investopedia.com",
+      "url": "https://www.investopedia.com/day-trading-4689641",
+      "keywords": [
+        "day trading",
+        "daytrading"
+      ],
+      "synonyms": [
+        "intraday trading",
+        "short-term trading"
+      ],
+      "category": "intraday",
+      "priority": 98,
+      "allowed": true
+    },
+    {
+      "seed_id": "daytrading_ig",
+      "knowledge_item_id": "trading:daytrading",
+      "title": "Day Trading Strategies",
+      "domain": "ig.com",
+      "url": "https://www.ig.com/en/trading-strategies/day-trading-tips-for-beginners-170905",
+      "keywords": [
+        "day trading",
+        "daytrading"
+      ],
+      "synonyms": [
+        "intraday trading",
+        "short-term trading"
+      ],
+      "category": "intraday",
+      "priority": 96,
+      "allowed": true
+    },
+    {
+      "seed_id": "daytrading_avatrade",
+      "knowledge_item_id": "trading:daytrading",
+      "title": "Trading for Beginners",
+      "domain": "avatrade.com",
+      "url": "https://www.avatrade.com/education/trading-for-beginners",
+      "keywords": [
+        "day trading",
+        "daytrading"
+      ],
+      "synonyms": [
+        "intraday trading",
+        "short-term trading"
+      ],
+      "category": "intraday",
+      "priority": 92,
+      "allowed": true
+    },
+    {
       "seed_id": "support_resistance_babypips_education",
       "knowledge_item_id": "trading:support_resistance",
       "title": "What is Support and Resistance?",

@@ -120,6 +120,7 @@ internal sealed class HermesCli
             "knowledge-state-consistency-status" => ShowKnowledgeStateConsistencyStatus(),
             "knowledge-state-consistency-check" => RunKnowledgeStateConsistencyCheck(),
             "knowledge-state-consistency-repair" => RunKnowledgeStateConsistencyRepair(),
+            "next-trusted-candidates-status" => ShowNextTrustedCandidatesStatus(),
             "multi-source-evidence-status" => ShowMultiSourceEvidenceStatus(),
             "multi-source-evidence-plan" => ShowMultiSourceEvidencePlan(),
             "multi-source-evidence-apply" => RunMultiSourceEvidenceApply(),
@@ -473,6 +474,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-state-consistency-status Knowledge State Consistency Status anzeigen");
         Console.WriteLine("  hermes knowledge-state-consistency-check Knowledge State Consistency pruefen");
         Console.WriteLine("  hermes knowledge-state-consistency-repair [--dry-run|--apply] Knowledge State Consistency reparieren");
+        Console.WriteLine("  hermes next-trusted-candidates-status Nächste Trusted-Kandidaten und Aktionsplan anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-status Multi-Source Evidence Status anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-plan Multi-Source Evidence Plan anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-apply [--dry-run|--apply] Multi-Source Evidence anwenden");
@@ -14977,6 +14979,17 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowNextTrustedCandidatesStatus()
+    {
+        WriteHeader("Hermes Next Trusted Candidates");
+        var service = new NextTrustedCandidatesService(BuildStoragePaths());
+        var report = service.Run();
+        WriteNextTrustedCandidatesReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowMultiSourceEvidenceStatus()
     {
         WriteHeader("Hermes Multi-Source Evidence Ingestion");
@@ -15044,6 +15057,49 @@ internal sealed class HermesCli
             WriteField("Current Blockers", string.Join(", ", item.CurrentBlockers));
             WriteField("Expected Blockers", string.Join(", ", item.ExpectedBlockers));
             WriteField("Recommended Next Action", item.RecommendedNextAction);
+            WriteMessages("Warnings", item.Warnings);
+        }
+    }
+
+    private void WriteNextTrustedCandidatesReport(NextTrustedCandidatesReport report, NextTrustedCandidatesService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Total Items", report.TotalItems.ToString());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Source Confirmations", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Knowledge Quality", DisplayPath(report.KnowledgeQualityPath));
+        WriteField("Knowledge Evidence", DisplayPath(report.KnowledgeEvidencePath));
+        WriteField("Validation Plans", DisplayPath(report.ValidationPlansPath));
+        WriteField("Promotion Report", DisplayPath(report.PromotionReportPath));
+        WriteMessages("Next Actions", report.NextActions.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
+        WriteMessages("Blocker Counts", report.BlockerCounts.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
+        WriteMessages("Warnings", report.Warnings);
+
+        foreach (var item in report.Items)
+        {
+            WriteSubHeader($"{item.Title} / {item.KnowledgeId}");
+            WriteField("Domain", item.Domain);
+            WriteField("Current Status", item.CurrentStatus);
+            WriteField("Recommended Status", item.RecommendedStatus);
+            WriteField("Promotion Outcome", item.PromotionOutcome);
+            WriteField("Eligible For Promotion", item.EligibleForPromotion.ToString().ToLowerInvariant());
+            WriteField("Source Count", item.SourceCount.ToString());
+            WriteField("Policy Approved Source Count", item.PolicyApprovedSourceCount.ToString());
+            WriteField("Trust Score", item.TrustScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Quality Score", item.QualityScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Validation Score", item.ValidationScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Validation Plan Status", item.ValidationPlanStatus);
+            WriteField("Next Action", item.NextAction);
+            WriteMessages("Best Candidate Sources", item.BestCandidateSources);
+            WriteMessages("Missing Evidence", item.MissingEvidence);
+            WriteMessages("Contradictions", item.Contradictions);
+            WriteMessages("Blockers", item.Blockers);
             WriteMessages("Warnings", item.Warnings);
         }
     }
