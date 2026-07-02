@@ -117,6 +117,8 @@ internal sealed class HermesCli
             "trusted-knowledge-impact" => RunTrustedKnowledgeImpact(),
             "autonomous-knowledge-advancement-status" => ShowAutonomousKnowledgeAdvancementStatus(),
             "autonomous-knowledge-advancement" => RunAutonomousKnowledgeAdvancement(),
+            "autonomous-knowledge-supervisor-status" => ShowAutonomousKnowledgeSupervisorStatus(),
+            "autonomous-knowledge-supervisor-step" => RunAutonomousKnowledgeSupervisorStep(),
             "knowledge-health-root-cause" => ShowKnowledgeHealthRootCause(),
             "knowledge-confidence-engine" => ShowKnowledgeConfidenceEngine(),
             "confidence-review-prioritization" => ShowConfidenceReviewPrioritization(),
@@ -479,6 +481,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes trusted-knowledge-impact-status Trusted Knowledge Impact Report anzeigen");
         Console.WriteLine("  hermes autonomous-knowledge-advancement [--execute] [--max-items N] Autonomous Knowledge Advancement ausfuehren");
         Console.WriteLine("  hermes autonomous-knowledge-advancement-status Autonomous Knowledge Advancement Status anzeigen");
+        Console.WriteLine("  hermes autonomous-knowledge-supervisor-status Autonomous Knowledge Supervisor Status anzeigen");
+        Console.WriteLine("  hermes autonomous-knowledge-supervisor-step [--max-actions N] Autonomous Knowledge Supervisor ausfuehren");
         Console.WriteLine("  hermes knowledge-health-root-cause Knowledge Trust Root Cause Analyse anzeigen");
         Console.WriteLine("  hermes knowledge-confidence-engine Knowledge Confidence Score anzeigen");
         Console.WriteLine("  hermes confidence-review-prioritization Confidence-basierte Review Priorisierung anzeigen");
@@ -6735,6 +6739,36 @@ internal sealed class HermesCli
         var report = service.Run(maxItems, execute);
 
         WriteAutonomousKnowledgeAdvancementReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutonomousKnowledgeSupervisorStatus()
+    {
+        WriteHeader("Hermes Autonomous Knowledge Supervisor");
+        var service = new AutonomousKnowledgeSupervisorService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadLatestReport();
+
+        if (report is null)
+        {
+            report = service.Run(maxActions: 1, execute: false);
+        }
+
+        WriteAutonomousKnowledgeSupervisorReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunAutonomousKnowledgeSupervisorStep()
+    {
+        WriteHeader("Hermes Autonomous Knowledge Supervisor");
+        var maxActions = ReadIntOption(_args, "--max-actions", fallback: 1, min: 1, max: 3);
+        var service = new AutonomousKnowledgeSupervisorService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run(maxActions, execute: true);
+
+        WriteAutonomousKnowledgeSupervisorReport(report);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -15866,6 +15900,66 @@ internal sealed class HermesCli
             WriteField("Blockers", string.Join(", ", plan.Blockers));
             WriteField("Reasons", string.Join(", ", plan.Reasons));
             Console.WriteLine();
+        }
+    }
+
+    private void WriteAutonomousKnowledgeSupervisorReport(AutonomousKnowledgeSupervisorReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Read Only", report.ReadOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Status", report.Status);
+        WriteField("Current Focus", report.CurrentFocus);
+        WriteField("Selected Backlog Class", report.SelectedBacklogClass);
+        WriteField("Recommendation", report.Recommendation);
+        WriteField("Initial Master Status", DisplayPath(report.InitialMasterStatusPath));
+        WriteField("Initial Master Snapshot", string.IsNullOrWhiteSpace(report.InitialMasterStatusSnapshotPath) ? "-" : DisplayPath(report.InitialMasterStatusSnapshotPath));
+        WriteField("Trusted Knowledge", $"{report.Before.TrustedKnowledge} -> {report.After.TrustedKnowledge}");
+        WriteField("Weak Knowledge", $"{report.Before.WeakKnowledge} -> {report.After.WeakKnowledge}");
+        WriteField("Contradiction Count", $"{report.Before.ContradictionCount} -> {report.After.ContradictionCount}");
+        WriteField("Validation Plans Open", $"{report.Before.ValidationPlansOpen} -> {report.After.ValidationPlansOpen}");
+        WriteField("Validation Tasks Pending", $"{report.Before.ValidationTasksPending} -> {report.After.ValidationTasksPending}");
+        WriteField("Knowledge Items Needing OOS", $"{report.Before.KnowledgeItemsNeedingOos} -> {report.After.KnowledgeItemsNeedingOos}");
+        WriteField("Invalid Validation Tasks", $"{report.Before.InvalidValidationTasks} -> {report.After.InvalidValidationTasks}");
+        WriteField("Pending Reviews", $"{report.Before.PendingReviews} -> {report.After.PendingReviews}");
+        WriteField("Documentation Validation Pending", $"{report.Before.DocumentationValidationPending} -> {report.After.DocumentationValidationPending}");
+        WriteField("Software Validation Pending", $"{report.Before.SoftwareValidationPending} -> {report.After.SoftwareValidationPending}");
+        WriteField("Process Validation Pending", $"{report.Before.ProcessValidationPending} -> {report.After.ProcessValidationPending}");
+        WriteField("Research Validation Pending", $"{report.Before.ResearchValidationPending} -> {report.After.ResearchValidationPending}");
+        WriteField("Cleanup Candidates", $"{report.Before.CleanupCandidates} -> {report.After.CleanupCandidates}");
+        WriteField("Average Quality Score", $"{report.Before.AverageQualityScore:0.###} -> {report.After.AverageQualityScore:0.###}");
+        WriteField("Average Trust Score", $"{report.Before.AverageTrustScore:0.###} -> {report.After.AverageTrustScore:0.###}");
+        WriteField("Evidence Coverage", $"{report.Before.EvidenceCoverage:0.###} -> {report.After.EvidenceCoverage:0.###}");
+        WriteField("Validation Coverage", $"{report.Before.ValidationCoverage:0.###} -> {report.After.ValidationCoverage:0.###}");
+        WriteField("Knowledge Health", $"{report.Before.KnowledgeHealth} -> {report.After.KnowledgeHealth}");
+        WriteField("Domain Validation Health", $"{report.Before.DomainValidationHealth} -> {report.After.DomainValidationHealth}");
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Metric Changes", report.MetricChanges.Select(kvp => $"{kvp.Key}:{kvp.Value:+#;-#;0}").ToList());
+
+        WriteSubHeader("Backlog Classes");
+        foreach (var item in report.BacklogClasses)
+        {
+            WriteField(item.BacklogClass, $"count={item.Count}; priority={item.Priority}; command={item.SelectedCommand}; safe={item.SafeToExecute.ToString().ToLowerInvariant()}");
+            WriteField("Reason", item.Reason);
+        }
+
+        if (report.Actions.Count > 0)
+        {
+            WriteSubHeader("Actions");
+            foreach (var action in report.Actions)
+            {
+                WriteField($"Action {action.ActionIndex}", $"{action.BacklogClass} -> {action.SelectedCommand} ({action.SelectedCommandResult})");
+                WriteField("Before", $"trusted={action.Before.TrustedKnowledge}; contradictions={action.Before.ContradictionCount}; validation_plans_open={action.Before.ValidationPlansOpen}; weak={action.Before.WeakKnowledge}; pending_reviews={action.Before.PendingReviews}");
+                WriteField("After", $"trusted={action.After.TrustedKnowledge}; contradictions={action.After.ContradictionCount}; validation_plans_open={action.After.ValidationPlansOpen}; weak={action.After.WeakKnowledge}; pending_reviews={action.After.PendingReviews}");
+                WriteField("Report Path", string.IsNullOrWhiteSpace(action.ReportPath) ? "-" : DisplayPath(action.ReportPath));
+                WriteMessages("Warnings", action.Warnings);
+                Console.WriteLine();
+            }
         }
     }
 
