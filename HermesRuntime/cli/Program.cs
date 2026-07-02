@@ -212,6 +212,8 @@ internal sealed class HermesCli
             "validation-state-sync" => RunValidationStateSync(),
             "knowledge-validation-state-sync-status" => ShowKnowledgeValidationStateSyncStatus(),
             "knowledge-validation-state-sync" => RunKnowledgeValidationStateSync(),
+            "knowledge-evidence-acquisition-status" => ShowKnowledgeEvidenceAcquisitionStatus(),
+            "knowledge-evidence-acquisition" => RunKnowledgeEvidenceAcquisition(),
             "validation-backlog-analyzer" => ShowValidationBacklogAnalyzer(),
             "validation-backlog-executor" => ShowValidationBacklogExecutor(),
             "validation-backlog-executor-status" => ShowValidationBacklogExecutorStatus(),
@@ -597,6 +599,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes validation-state-sync [--dry-run|--apply] Validation State Synchronizer ausfuehren");
         Console.WriteLine("  hermes knowledge-validation-state-sync-status Knowledge Validation State Sync Status anzeigen");
         Console.WriteLine("  hermes knowledge-validation-state-sync [--dry-run|--apply] Knowledge Validation State Sync ausfuehren");
+        Console.WriteLine("  hermes knowledge-evidence-acquisition-status Knowledge Evidence Acquisition Status anzeigen");
+        Console.WriteLine("  hermes knowledge-evidence-acquisition [--dry-run|--execute] [--max-items N] Knowledge Evidence Acquisition ausfuehren");
         Console.WriteLine("  hermes generate-improvement-queue Verbesserungs-Warteschlange aus Audit/Warnungen erzeugen");
         Console.WriteLine("  hermes improvement-queue-summary Verbesserungs-Warteschlange kompakt anzeigen");
         Console.WriteLine("  hermes improvement-work-areas Verbesserungs-Arbeitsbereiche anzeigen");
@@ -8897,6 +8901,40 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowKnowledgeEvidenceAcquisitionStatus()
+    {
+        WriteHeader("Hermes Knowledge Evidence Acquisition");
+        var service = new KnowledgeEvidenceAcquisitionService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadStatus();
+
+        WriteKnowledgeEvidenceAcquisitionReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunKnowledgeEvidenceAcquisition()
+    {
+        WriteHeader("Hermes Knowledge Evidence Acquisition");
+        var service = new KnowledgeEvidenceAcquisitionService(BuildStoragePaths(), _runtimeRoot);
+        var execute = HasArg("--execute");
+        var dryRun = HasArg("--dry-run") || !execute;
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 10, min: 1, max: 100);
+
+        if (HasArg("--execute") && HasArg("--dry-run"))
+        {
+            Console.WriteLine("Error: use either --dry-run or --execute, not both.");
+            WriteSafety();
+            return 1;
+        }
+
+        var report = service.Run(maxItems, execute: execute && !dryRun);
+        WriteKnowledgeEvidenceAcquisitionReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowKnowledgeValidationAudit()
     {
         WriteHeader("Hermes Knowledge Validation Audit");
@@ -14888,7 +14926,7 @@ internal sealed class HermesCli
         for (var index = 0; index < args.Length; index++)
         {
             var arg = args[index];
-            if (arg is "--root" or "--limit" or "--hours" or "--max-runtime-hours" or "--max-requests" or "--max-downloads" or "--sleep-seconds" or "--max-idle-iterations" or "--from" or "--to" or "--url" or "--dataset" or "--asset" or "--timeframe")
+            if (arg is "--root" or "--limit" or "--hours" or "--max-runtime-hours" or "--max-requests" or "--max-downloads" or "--sleep-seconds" or "--max-idle-iterations" or "--from" or "--to" or "--url" or "--dataset" or "--asset" or "--timeframe" or "--max-actions" or "--max-items" or "--max-seconds" or "--max-fetch-seconds")
             {
                 index++;
                 continue;
@@ -16439,6 +16477,60 @@ internal sealed class HermesCli
             WriteMessages("Blockers After", item.BlockersAfter);
             WriteMessages("Removed Blockers", item.RemovedBlockers);
             WriteMessages("Warnings", item.Warnings);
+            Console.WriteLine();
+        }
+    }
+
+    private void WriteKnowledgeEvidenceAcquisitionReport(KnowledgeEvidenceAcquisitionReport report, KnowledgeEvidenceAcquisitionService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Loaded Issues", report.LoadedIssues.ToString());
+        WriteField("Selected Items", report.SelectedItems.ToString());
+        WriteField("Skipped True Contradictions", report.SkippedTrueContradictions.ToString());
+        WriteField("Skipped Human Review Required", report.SkippedHumanReviewRequired.ToString());
+        WriteField("Dry Run", report.DryRun.ToString().ToLowerInvariant());
+        WriteField("Executed", report.Executed.ToString().ToLowerInvariant());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Before Trusted Knowledge", report.Before.TrustedKnowledge.ToString());
+        WriteField("After Trusted Knowledge", report.After.TrustedKnowledge.ToString());
+        WriteField("Before Contradiction Count", report.Before.ContradictionCount.ToString());
+        WriteField("After Contradiction Count", report.After.ContradictionCount.ToString());
+        WriteField("Before Validation Plans Open", report.Before.ValidationPlansOpen.ToString());
+        WriteField("After Validation Plans Open", report.After.ValidationPlansOpen.ToString());
+        WriteField("Before Source Check Items", report.Before.KnowledgeItemsNeedingSourceCheck.ToString());
+        WriteField("After Source Check Items", report.After.KnowledgeItemsNeedingSourceCheck.ToString());
+        WriteField("Before Average Trust Score", report.Before.AverageTrustScore.ToString("0.###", CultureInfo.InvariantCulture));
+        WriteField("After Average Trust Score", report.After.AverageTrustScore.ToString("0.###", CultureInfo.InvariantCulture));
+        WriteField("Before Average Quality Score", report.Before.AverageQualityScore.ToString("0.###", CultureInfo.InvariantCulture));
+        WriteField("After Average Quality Score", report.After.AverageQualityScore.ToString("0.###", CultureInfo.InvariantCulture));
+        WriteMessages("Selected Domains", report.SelectedDomains);
+        WriteMessages("Top Blockers", report.TopBlockers.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
+        WriteMessages("Commands Executed", report.CommandsExecuted);
+        WriteMessages("Warnings", report.Warnings);
+
+        Console.WriteLine();
+        Console.WriteLine("Acquisition Plans:");
+        foreach (var plan in report.AcquisitionPlans.Take(20))
+        {
+            WriteSubHeader(plan.Title);
+            WriteField("Knowledge ID", plan.KnowledgeItemId);
+            WriteField("Domain", plan.Domain);
+            WriteField("Current Status", plan.CurrentStatus);
+            WriteField("Trust Score", plan.TrustScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Quality Score", plan.QualityScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Validation Score", plan.ValidationScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Source Count", plan.SourceCount.ToString());
+            WriteField("Priority", plan.Priority.ToString());
+            WriteField("Selected Strategy", plan.SelectedStrategy);
+            WriteField("Expected Effect", plan.ExpectedEffect);
+            WriteMessages("Blockers", plan.Blockers);
+            WriteMessages("Recommended Existing Commands", plan.RecommendedExistingCommands);
             Console.WriteLine();
         }
     }

@@ -119,6 +119,7 @@ public sealed class KnowledgeRuntimeManagerService
         var timestampRepairService = new KnowledgeStateTimestampRepairService(_storagePaths);
         var missingReferenceRepairService = new KnowledgeStateMissingItemReferenceRepairService(_storagePaths);
         var validationStateSyncService = new KnowledgeValidationStateSyncService(_storagePaths);
+        var evidenceAcquisitionService = new KnowledgeEvidenceAcquisitionService(_storagePaths, _runtimeRoot);
         var supervisorService = new AutonomousKnowledgeSupervisorService(_storagePaths, _runtimeRoot);
         var advancementService = new AutonomousKnowledgeAdvancementEngineService(_storagePaths, _runtimeRoot);
         var promotionService = new KnowledgeTrustPromotionPipelineService(_storagePaths);
@@ -263,6 +264,21 @@ public sealed class KnowledgeRuntimeManagerService
             .Select(item => item.KnowledgeItemId)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var evidenceAcquisitionCandidates = diagnostics.Items
+            .Where(item =>
+                item.AutoRepairable
+                && !item.Blockers.Any(blocker => blocker.Equals("blocking_contradiction", StringComparison.OrdinalIgnoreCase))
+                && !item.Blockers.Any(blocker => blocker.Equals("human_review_pending", StringComparison.OrdinalIgnoreCase))
+                && !item.ValidationStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase)
+                && item.Blockers.Any(blocker =>
+                    blocker.Equals("second_independent_source_missing", StringComparison.OrdinalIgnoreCase)
+                    || blocker.Equals("trust_score_too_low", StringComparison.OrdinalIgnoreCase)
+                    || blocker.Equals("quality_score_too_low", StringComparison.OrdinalIgnoreCase)
+                    || blocker.Equals("validation_score_too_low", StringComparison.OrdinalIgnoreCase)
+                    || blocker.Equals("domain_validation_not_passed", StringComparison.OrdinalIgnoreCase)))
+            .Select(item => item.KnowledgeItemId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         RecordPhase(
             phase: "timestamp_repair",
@@ -292,6 +308,16 @@ public sealed class KnowledgeRuntimeManagerService
             {
                 var report = validationStateSyncService.Run(apply: true, dryRun: false);
                 return (report.Applied ? "applied" : "dry_run", report, report.Warnings, $"selected={report.SelectedIssues}; synced={report.PlansSynchronized}; normalized={report.BlockersNormalized}");
+            });
+
+        RecordPhase(
+            phase: "evidence_acquisition",
+            command: "knowledge-evidence-acquisition --execute",
+            shouldExecute: execute && evidenceAcquisitionCandidates.Count > 0,
+            action: () =>
+            {
+                var report = evidenceAcquisitionService.Run(maxItems: actionBudget, execute: true);
+                return (report.Executed ? "executed" : "idle", report, report.Warnings, $"{report.SelectedItems} candidates");
             });
 
         RecordPhase(
@@ -354,7 +380,8 @@ public sealed class KnowledgeRuntimeManagerService
             phases,
             lastNoEffectPhase,
             lastNoEffectExecutedPhase,
-            validationStateSyncCandidates.Count > 0);
+            validationStateSyncCandidates.Count > 0,
+            evidenceAcquisitionCandidates.Count > 0);
         var nextRecommendedAction = nextRecommendationContext.NextRecommendedAction;
         suppressedDueToDependencyNoEffect = nextRecommendationContext.SuppressedDueToDependencyNoEffect;
         noEffectDependencyChain = nextRecommendationContext.NoEffectDependencyChain;
@@ -493,7 +520,8 @@ public sealed class KnowledgeRuntimeManagerService
         IReadOnlyList<KnowledgeRuntimeManagerPhaseResult> phases,
         string? lastNoEffectPhase,
         KnowledgeRuntimeManagerPhaseResult? lastNoEffectExecutedPhase,
-        bool hasValidationStateSyncCandidates)
+        bool hasValidationStateSyncCandidates,
+        bool hasEvidenceAcquisitionCandidates)
     {
         var noEffectPhaseNames = phases
             .Where(phase => string.Equals(phase.PhaseEffect, "no_metric_change", StringComparison.OrdinalIgnoreCase) && phase.Executed)
@@ -506,14 +534,42 @@ public sealed class KnowledgeRuntimeManagerService
         var noEffectDependencySuppression = lastNoEffectExecutedPhase is not null
             && (string.Equals(lastNoEffectPhase, "supervisor_step", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(lastNoEffectPhase, "advancement_execute", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(lastNoEffectPhase, "promotion_apply", StringComparison.OrdinalIgnoreCase));
+                || string.Equals(lastNoEffectPhase, "promotion_apply", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(lastNoEffectPhase, "validation_state_sync", StringComparison.OrdinalIgnoreCase));
 
         string nextRecommendedAction;
         string nextNonBlockedPhase;
         var suppressedDueToDependencyNoEffect = false;
         var dependencyChain = string.Empty;
 
-        if (hasValidationStateSyncCandidates)
+        if (noEffectDependencySuppression && hasEvidenceAcquisitionCandidates)
+        {
+            nextRecommendedAction = "knowledge-evidence-acquisition --execute";
+            nextNonBlockedPhase = "evidence_acquisition";
+            suppressedDueToDependencyNoEffect = true;
+            dependencyChain = string.IsNullOrWhiteSpace(lastNoEffectPhase)
+                ? "no_effect_phase -> evidence_acquisition"
+                : $"{lastNoEffectPhase} -> evidence_acquisition";
+        }
+        else if (string.Equals(lastNoEffectPhase, "validation_state_sync", StringComparison.OrdinalIgnoreCase))
+        {
+            if (diagnostics.TotalIssues > 0)
+            {
+                nextRecommendedAction = "knowledge-state-repair-diagnostics";
+                nextNonBlockedPhase = "knowledge-state-repair-diagnostics";
+            }
+            else if (snapshot.ValidationPlansOpen > 0)
+            {
+                nextRecommendedAction = "validation-gap";
+                nextNonBlockedPhase = "validation_gap";
+            }
+            else
+            {
+                nextRecommendedAction = "autonomous-knowledge-advancement --execute";
+                nextNonBlockedPhase = "advancement_execute";
+            }
+        }
+        else if (hasValidationStateSyncCandidates)
         {
             nextRecommendedAction = "knowledge-validation-state-sync --apply";
             nextNonBlockedPhase = "validation_state_sync";
@@ -525,6 +581,22 @@ public sealed class KnowledgeRuntimeManagerService
                     : string.Equals(lastNoEffectPhase, "advancement_execute", StringComparison.OrdinalIgnoreCase)
                         ? "advancement_execute -> validation_state_sync"
                         : "promotion_apply -> validation_state_sync";
+            }
+        }
+        else if (hasEvidenceAcquisitionCandidates)
+        {
+            nextRecommendedAction = "knowledge-evidence-acquisition --execute";
+            nextNonBlockedPhase = "evidence_acquisition";
+            if (noEffectDependencySuppression)
+            {
+                suppressedDueToDependencyNoEffect = true;
+                dependencyChain = string.Equals(lastNoEffectPhase, "validation_state_sync", StringComparison.OrdinalIgnoreCase)
+                    ? "validation_state_sync -> evidence_acquisition"
+                    : string.Equals(lastNoEffectPhase, "supervisor_step", StringComparison.OrdinalIgnoreCase)
+                        ? "supervisor_step -> evidence_acquisition"
+                        : string.Equals(lastNoEffectPhase, "advancement_execute", StringComparison.OrdinalIgnoreCase)
+                            ? "advancement_execute -> evidence_acquisition"
+                            : "promotion_apply -> evidence_acquisition";
             }
         }
         else if (noEffectDependencySuppression)
@@ -646,6 +718,11 @@ public sealed class KnowledgeRuntimeManagerService
                 return "validation_state_sync:dependent_no_effect_suppression";
             }
 
+            if (nextRecommendedAction.StartsWith("knowledge-evidence-acquisition", StringComparison.OrdinalIgnoreCase))
+            {
+                return "evidence_acquisition:dependent_no_effect_suppression";
+            }
+
             return string.Equals(lastNoEffectPhase, "supervisor_step", StringComparison.OrdinalIgnoreCase)
                 ? "supervisor_step:dependent_no_effect_suppression"
                 : string.Equals(lastNoEffectPhase, "advancement_execute", StringComparison.OrdinalIgnoreCase)
@@ -668,6 +745,11 @@ public sealed class KnowledgeRuntimeManagerService
         if (nextRecommendedAction.StartsWith("knowledge-validation-state-sync", StringComparison.OrdinalIgnoreCase))
         {
             return "validation_state_sync_has_remaining_plan_or_blocker_mismatches";
+        }
+
+        if (nextRecommendedAction.StartsWith("knowledge-evidence-acquisition", StringComparison.OrdinalIgnoreCase))
+        {
+            return "evidence_acquisition_has_remaining_source_or_validation_gaps";
         }
 
         if (diagnostics.TotalIssues > 0)
