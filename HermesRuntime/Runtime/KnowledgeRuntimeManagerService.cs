@@ -43,6 +43,9 @@ public sealed record KnowledgeRuntimeManagerReport(
     string NextRecommendedAction,
     string SelectedNextPhaseReason,
     bool SkippedDueToRecentNoEffect,
+    bool SuppressedDueToDependencyNoEffect,
+    string NoEffectDependencyChain,
+    string NextNonBlockedPhase,
     IReadOnlyList<KnowledgeRuntimeManagerPhaseResult> Phases,
     IReadOnlyList<string> SuppressedRecommendations,
     IReadOnlyList<string> Warnings,
@@ -108,6 +111,7 @@ public sealed class KnowledgeRuntimeManagerService
         var actionTimeout = TimeSpan.FromSeconds(120);
         var latestReport = LoadLatestReport();
         var lastNoEffectPhase = latestReport?.Phases.LastOrDefault(phase => string.Equals(phase.PhaseEffect, "no_metric_change", StringComparison.OrdinalIgnoreCase) && phase.Executed)?.Phase;
+        var lastNoEffectExecutedPhase = latestReport?.Phases.LastOrDefault(phase => string.Equals(phase.PhaseEffect, "no_metric_change", StringComparison.OrdinalIgnoreCase) && phase.Executed);
 
         var diagnosticsService = new KnowledgeStateRepairDiagnosticsService(_storagePaths);
         var usageAuditService = new TrustedKnowledgeUsageAuditService(_storagePaths, _runtimeRoot);
@@ -138,6 +142,8 @@ public sealed class KnowledgeRuntimeManagerService
         var phases = new List<KnowledgeRuntimeManagerPhaseResult>();
         var warnings = new List<string>();
         var suppressedRecommendations = new List<string>();
+        var noEffectDependencyChain = string.Empty;
+        var suppressedDueToDependencyNoEffect = false;
         var actionsExecuted = 0;
         var actionsSkipped = 0;
         var halted = false;
@@ -321,13 +327,17 @@ public sealed class KnowledgeRuntimeManagerService
             ? (actionsExecuted > 0 ? "executed" : "idle")
             : "planned";
 
-        var nextRecommendedAction = DetermineNextRecommendedAction(
+        var nextRecommendationContext = BuildRecommendationContext(
             diagnostics,
             promotionReportPreview,
             supervisorService,
             afterSnapshot,
             phases,
-            lastNoEffectPhase);
+            lastNoEffectPhase,
+            lastNoEffectExecutedPhase);
+        var nextRecommendedAction = nextRecommendationContext.NextRecommendedAction;
+        suppressedDueToDependencyNoEffect = nextRecommendationContext.SuppressedDueToDependencyNoEffect;
+        noEffectDependencyChain = nextRecommendationContext.NoEffectDependencyChain;
         var report = new KnowledgeRuntimeManagerReport(
             ReportVersion: "knowledge_runtime_manager_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -343,8 +353,11 @@ public sealed class KnowledgeRuntimeManagerService
             ExecutionTimeMs: executionTimeMs,
             SafetyStatus: BuildSafetyStatus(),
             NextRecommendedAction: nextRecommendedAction,
-            SelectedNextPhaseReason: BuildSelectedNextPhaseReason(nextRecommendedAction, lastNoEffectPhase, diagnostics, promotionReportPreview),
+            SelectedNextPhaseReason: BuildSelectedNextPhaseReason(nextRecommendedAction, lastNoEffectPhase, diagnostics, promotionReportPreview, suppressedDueToDependencyNoEffect),
             SkippedDueToRecentNoEffect: !string.IsNullOrWhiteSpace(lastNoEffectPhase),
+            SuppressedDueToDependencyNoEffect: suppressedDueToDependencyNoEffect,
+            NoEffectDependencyChain: noEffectDependencyChain,
+            NextNonBlockedPhase: nextRecommendationContext.NextNonBlockedPhase,
             Phases: phases,
             SuppressedRecommendations: suppressedRecommendations.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             Warnings: CombineWarnings(diagnostics.Warnings, usageAudit.Warnings, impact.Warnings, reasoning?.Warnings ?? [], suppressedRecommendations),
@@ -446,13 +459,20 @@ public sealed class KnowledgeRuntimeManagerService
     private static string BuildSafetyStatus() =>
         "research_only=true; no_auto_trading=true; broker_orders_enabled=false; live_trading_enabled=false; human_review_required=true";
 
-    private static string DetermineNextRecommendedAction(
+    private sealed record KnowledgeRuntimeManagerRecommendationContext(
+        string NextRecommendedAction,
+        bool SuppressedDueToDependencyNoEffect,
+        string NoEffectDependencyChain,
+        string NextNonBlockedPhase);
+
+    private static KnowledgeRuntimeManagerRecommendationContext BuildRecommendationContext(
         KnowledgeStateRepairDiagnosticsReport diagnostics,
         KnowledgeTrustPromotionReport promotionReport,
         AutonomousKnowledgeSupervisorService supervisorService,
         MasterStatusSnapshot snapshot,
         IReadOnlyList<KnowledgeRuntimeManagerPhaseResult> phases,
-        string? lastNoEffectPhase)
+        string? lastNoEffectPhase,
+        KnowledgeRuntimeManagerPhaseResult? lastNoEffectExecutedPhase)
     {
         var noEffectPhaseNames = phases
             .Where(phase => string.Equals(phase.PhaseEffect, "no_metric_change", StringComparison.OrdinalIgnoreCase) && phase.Executed)
@@ -460,46 +480,123 @@ public sealed class KnowledgeRuntimeManagerService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        if (promotionReport.EligibleForPromotion > 0
-            && promotionReport.EligibleForPromotion > promotionReport.PromotedToTrusted)
-        {
-            return "knowledge-trust-promote --apply --skip-refresh";
-        }
+        var hasEligiblePromotions = promotionReport.EligibleForPromotion > 0
+            && promotionReport.EligibleForPromotion > promotionReport.PromotedToTrusted;
+        var noEffectDependencySuppression = lastNoEffectExecutedPhase is not null
+            && (string.Equals(lastNoEffectPhase, "supervisor_step", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(lastNoEffectPhase, "advancement_execute", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(lastNoEffectPhase, "promotion_apply", StringComparison.OrdinalIgnoreCase));
 
-        if (!string.IsNullOrWhiteSpace(lastNoEffectPhase) && noEffectPhaseNames.Contains(lastNoEffectPhase))
+        string nextRecommendedAction;
+        string nextNonBlockedPhase;
+        var suppressedDueToDependencyNoEffect = false;
+        var dependencyChain = string.Empty;
+
+        if (noEffectDependencySuppression)
         {
-            return diagnostics.TotalIssues > 0
+            suppressedDueToDependencyNoEffect = true;
+            dependencyChain = string.Equals(lastNoEffectPhase, "supervisor_step", StringComparison.OrdinalIgnoreCase)
+                ? "supervisor_step -> advancement_execute -> knowledge-trust-promote --apply --skip-refresh"
+                : string.Equals(lastNoEffectPhase, "advancement_execute", StringComparison.OrdinalIgnoreCase)
+                    ? "advancement_execute -> knowledge-trust-promote --apply --skip-refresh"
+                    : "promotion_apply -> dependent_followup_suppression";
+            if (diagnostics.TotalIssues > 0)
+            {
+                nextRecommendedAction = "knowledge-state-repair-diagnostics";
+                nextNonBlockedPhase = "knowledge-state-repair-diagnostics";
+            }
+            else if (snapshot.ValidationPlansOpen > 0)
+            {
+                nextRecommendedAction = "validation-gap";
+                nextNonBlockedPhase = "validation-gap";
+            }
+            else
+            {
+                nextRecommendedAction = "autonomous-knowledge-advancement --execute";
+                nextNonBlockedPhase = "advancement_execute";
+            }
+        }
+        else if (hasEligiblePromotions)
+        {
+            nextRecommendedAction = "knowledge-trust-promote --apply --skip-refresh";
+            nextNonBlockedPhase = "promotion_apply";
+        }
+        else if (!string.IsNullOrWhiteSpace(lastNoEffectPhase) && noEffectPhaseNames.Contains(lastNoEffectPhase))
+        {
+            nextRecommendedAction = diagnostics.TotalIssues > 0
                 ? "knowledge-state-repair-diagnostics"
                 : "validation-gap";
+            nextNonBlockedPhase = diagnostics.TotalIssues > 0 ? "diagnostics" : "validation_gap";
         }
-
-        if (diagnostics.TotalIssues > 0)
+        else if (diagnostics.TotalIssues > 0)
         {
             var hasTimestampIssues = diagnostics.Items.Any(item => item.MismatchType.Equals("timestamp_mismatch", StringComparison.OrdinalIgnoreCase) && item.AutoRepairable);
             if (hasTimestampIssues)
             {
-                return "knowledge-state-timestamp-repair --apply";
+                nextRecommendedAction = "knowledge-state-timestamp-repair --apply";
+                nextNonBlockedPhase = "timestamp_repair";
             }
-
-            var hasMissingRefs = snapshot.CognitiveStatus.Metrics.TryGetValue("validation_plans_open", out var plansOpen) && plansOpen is int open && open > 0;
-            if (hasMissingRefs)
+            else
             {
-                return "knowledge-state-reference-rebuild --apply";
+                var hasMissingRefs = snapshot.CognitiveStatus.Metrics.TryGetValue("validation_plans_open", out var plansOpen) && plansOpen is int open && open > 0;
+                if (hasMissingRefs)
+                {
+                    nextRecommendedAction = "knowledge-state-reference-rebuild --apply";
+                    nextNonBlockedPhase = "missing_reference_repair";
+                }
+                else
+                {
+                    nextRecommendedAction = "knowledge-state-repair-diagnostics";
+                    nextNonBlockedPhase = "diagnostics";
+                }
             }
         }
+        else
+        {
+            var supervisorRecommendation = supervisorService.LoadLatestReport()?.Recommendation;
+            nextRecommendedAction = string.IsNullOrWhiteSpace(supervisorRecommendation)
+                ? "master-status-refresh --knowledge-only"
+                : supervisorRecommendation;
+            nextNonBlockedPhase = string.IsNullOrWhiteSpace(supervisorRecommendation) ? "knowledge_snapshot" : supervisorRecommendation;
+        }
 
-        var supervisorRecommendation = supervisorService.LoadLatestReport()?.Recommendation;
-        return string.IsNullOrWhiteSpace(supervisorRecommendation)
-            ? "master-status-refresh --knowledge-only"
-            : supervisorRecommendation;
+        if (suppressedDueToDependencyNoEffect && nextRecommendedAction.StartsWith("knowledge-trust-promote", StringComparison.OrdinalIgnoreCase))
+        {
+            nextRecommendedAction = diagnostics.TotalIssues > 0
+                ? "knowledge-state-repair-diagnostics"
+                : snapshot.ValidationPlansOpen > 0
+                    ? "validation-gap"
+                    : "autonomous-knowledge-advancement --execute";
+            nextNonBlockedPhase = nextRecommendedAction.Contains("diagnostics", StringComparison.OrdinalIgnoreCase)
+                ? "knowledge-state-repair-diagnostics"
+                : nextRecommendedAction.Contains("validation-gap", StringComparison.OrdinalIgnoreCase)
+                    ? "validation_gap"
+                    : "advancement_execute";
+        }
+
+        return new KnowledgeRuntimeManagerRecommendationContext(
+            nextRecommendedAction,
+            suppressedDueToDependencyNoEffect,
+            dependencyChain,
+            nextNonBlockedPhase);
     }
 
     private static string BuildSelectedNextPhaseReason(
         string nextRecommendedAction,
         string? lastNoEffectPhase,
         KnowledgeStateRepairDiagnosticsReport diagnostics,
-        KnowledgeTrustPromotionReport promotionReport)
+        KnowledgeTrustPromotionReport promotionReport,
+        bool suppressedDueToDependencyNoEffect)
     {
+        if (suppressedDueToDependencyNoEffect)
+        {
+            return string.Equals(lastNoEffectPhase, "supervisor_step", StringComparison.OrdinalIgnoreCase)
+                ? "supervisor_step:dependent_no_effect_suppression"
+                : string.Equals(lastNoEffectPhase, "advancement_execute", StringComparison.OrdinalIgnoreCase)
+                    ? "advancement_execute:dependent_no_effect_suppression"
+                    : "promotion_apply:dependent_no_effect_suppression";
+        }
+
         if (!string.IsNullOrWhiteSpace(lastNoEffectPhase))
         {
             return $"{lastNoEffectPhase}:suppressed_due_to_recent_no_metric_change";
@@ -551,6 +648,11 @@ public sealed class KnowledgeRuntimeManagerService
         sb.AppendLine($"- execution_time_ms: {report.ExecutionTimeMs}");
         sb.AppendLine($"- safety_status: {report.SafetyStatus}");
         sb.AppendLine($"- next_recommended_action: {report.NextRecommendedAction}");
+        sb.AppendLine($"- selected_next_phase_reason: {report.SelectedNextPhaseReason}");
+        sb.AppendLine($"- skipped_due_to_recent_no_effect: {report.SkippedDueToRecentNoEffect}");
+        sb.AppendLine($"- suppressed_due_to_dependency_no_effect: {report.SuppressedDueToDependencyNoEffect}");
+        sb.AppendLine($"- no_effect_dependency_chain: {report.NoEffectDependencyChain}");
+        sb.AppendLine($"- next_non_blocked_phase: {report.NextNonBlockedPhase}");
         sb.AppendLine();
         sb.AppendLine("## Before");
         WriteMetricBlock(sb, report.Before);

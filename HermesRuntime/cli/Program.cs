@@ -15619,6 +15619,9 @@ internal sealed class HermesCli
         WriteField("Next Recommended Action", report.NextRecommendedAction);
         WriteField("Selected Next Phase Reason", report.SelectedNextPhaseReason);
         WriteField("Skipped Due To Recent No Effect", report.SkippedDueToRecentNoEffect.ToString().ToLowerInvariant());
+        WriteField("Suppressed Due To Dependency No Effect", report.SuppressedDueToDependencyNoEffect.ToString().ToLowerInvariant());
+        WriteField("No Effect Dependency Chain", string.IsNullOrWhiteSpace(report.NoEffectDependencyChain) ? "-" : report.NoEffectDependencyChain);
+        WriteField("Next Non Blocked Phase", string.IsNullOrWhiteSpace(report.NextNonBlockedPhase) ? "-" : report.NextNonBlockedPhase);
         WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
         WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
         WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
