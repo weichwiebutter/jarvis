@@ -214,6 +214,7 @@ internal sealed class HermesCli
             "knowledge-validation-state-sync" => RunKnowledgeValidationStateSync(),
             "knowledge-evidence-acquisition-status" => ShowKnowledgeEvidenceAcquisitionStatus(),
             "knowledge-evidence-acquisition" => RunKnowledgeEvidenceAcquisition(),
+            "internal-knowledge-validation" => RunInternalKnowledgeValidation(),
             "validation-backlog-analyzer" => ShowValidationBacklogAnalyzer(),
             "validation-backlog-executor" => ShowValidationBacklogExecutor(),
             "validation-backlog-executor-status" => ShowValidationBacklogExecutorStatus(),
@@ -601,6 +602,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-validation-state-sync [--dry-run|--apply] Knowledge Validation State Sync ausfuehren");
         Console.WriteLine("  hermes knowledge-evidence-acquisition-status Knowledge Evidence Acquisition Status anzeigen");
         Console.WriteLine("  hermes knowledge-evidence-acquisition [--dry-run|--execute] [--max-items N] Knowledge Evidence Acquisition ausfuehren");
+        Console.WriteLine("  hermes internal-knowledge-validation [--dry-run|--apply] [--max-items N] Internal Knowledge Validation ausfuehren");
         Console.WriteLine("  hermes generate-improvement-queue Verbesserungs-Warteschlange aus Audit/Warnungen erzeugen");
         Console.WriteLine("  hermes improvement-queue-summary Verbesserungs-Warteschlange kompakt anzeigen");
         Console.WriteLine("  hermes improvement-work-areas Verbesserungs-Arbeitsbereiche anzeigen");
@@ -8935,6 +8937,28 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunInternalKnowledgeValidation()
+    {
+        WriteHeader("Hermes Internal Knowledge Validation");
+        var service = new InternalKnowledgeValidationService(BuildStoragePaths(), _runtimeRoot);
+        var apply = HasArg("--apply");
+        var dryRun = HasArg("--dry-run") || !apply;
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 10, min: 1, max: 100);
+
+        if (HasArg("--apply") && HasArg("--dry-run"))
+        {
+            Console.WriteLine("Error: use either --dry-run or --apply, not both.");
+            WriteSafety();
+            return 1;
+        }
+
+        var report = service.Run(maxItems, apply: apply && !dryRun, dryRun: dryRun || !apply);
+        WriteInternalKnowledgeValidationReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowKnowledgeValidationAudit()
     {
         WriteHeader("Hermes Knowledge Validation Audit");
@@ -16564,6 +16588,59 @@ internal sealed class HermesCli
                 WriteField("Next Action", classification.NextAction);
                 WriteMessages("Recommended Commands (classification)", classification.RecommendedExistingCommands);
             }
+            Console.WriteLine();
+        }
+    }
+
+    private void WriteInternalKnowledgeValidationReport(InternalKnowledgeValidationReport report, InternalKnowledgeValidationService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Loaded Items", report.LoadedItems.ToString());
+        WriteField("Selected Items", report.SelectedItems.ToString());
+        WriteField("Completed Items", report.CompletedItems.ToString());
+        WriteField("Pending Items", report.PendingItems.ToString());
+        WriteField("Build Succeeded Items", report.BuildSucceededItems.ToString());
+        WriteField("Evidence Written Items", report.EvidenceWrittenItems.ToString());
+        WriteField("Dry Run", report.DryRun.ToString().ToLowerInvariant());
+        WriteField("Applied", report.Applied.ToString().ToLowerInvariant());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteMessages("Classification Counts", report.ClassificationCounts.Select(entry => $"{entry.Key}:{entry.Value}").ToList());
+        WriteMessages("Commands Executed", report.CommandsExecuted);
+        WriteMessages("Warnings", report.Warnings);
+
+        Console.WriteLine();
+        Console.WriteLine("Internal Validation Items:");
+        foreach (var item in report.Items.Take(20))
+        {
+            WriteSubHeader(item.Title);
+            WriteField("Knowledge ID", item.KnowledgeItemId);
+            WriteField("Domain", item.Domain);
+            WriteField("Classification", item.EvidenceAcquisitionClassification);
+            WriteField("Seed Not Applicable Reason", item.SeedNotApplicableReason);
+            WriteField("Internal Validation Required", item.InternalValidationRequired.ToString().ToLowerInvariant());
+            WriteField("Current Status", item.CurrentStatus);
+            WriteField("Validation Status", $"{item.ValidationStatusBefore} -> {item.ValidationStatusAfter}");
+            WriteField("Recommended Next Action", item.RecommendedNextAction);
+            WriteField("File Exists", item.FileExists.ToString().ToLowerInvariant());
+            WriteField("Build Included", item.BuildIncluded.ToString().ToLowerInvariant());
+            WriteField("CLI Command Exists", item.CliCommandExists.ToString().ToLowerInvariant());
+            WriteField("Service File Exists", item.ServiceFileExists.ToString().ToLowerInvariant());
+            WriteField("Tests Or Harness Exists", item.TestsOrHarnessExists.ToString().ToLowerInvariant());
+            WriteField("Report/Config Exists", item.ReportOrConfigExists.ToString().ToLowerInvariant());
+            WriteField("Build Succeeded", item.BuildSucceeded.ToString().ToLowerInvariant());
+            WriteField("Build Duration Ms", item.BuildDurationMs.ToString());
+            WriteField("Build Command", item.BuildCommand);
+            WriteMessages("Candidate Files", item.CandidateFiles);
+            WriteMessages("Evidence Refs", item.EvidenceRefs);
+            WriteMessages("Output Paths", item.OutputPaths);
+            WriteMessages("Warnings", item.Warnings);
+            WriteMessages("Checks", item.Checks.Select(check => $"{check.CheckId}:{(check.Passed ? "passed" : "failed")}:{check.Detail}").ToList());
             Console.WriteLine();
         }
     }
