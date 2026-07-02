@@ -131,6 +131,7 @@ internal sealed class HermesCli
             "knowledge-state-consistency-check" => RunKnowledgeStateConsistencyCheck(),
             "knowledge-state-consistency-repair" => RunKnowledgeStateConsistencyRepair(),
             "knowledge-state-repair-diagnostics" => ShowKnowledgeStateRepairDiagnostics(),
+            "knowledge-state-timestamp-repair" => RunKnowledgeStateTimestampRepair(),
             "next-trusted-candidates-status" => ShowNextTrustedCandidatesStatus(),
             "multi-source-evidence-status" => ShowMultiSourceEvidenceStatus(),
             "multi-source-evidence-plan" => ShowMultiSourceEvidencePlan(),
@@ -497,6 +498,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-state-consistency-check Knowledge State Consistency pruefen");
         Console.WriteLine("  hermes knowledge-state-consistency-repair [--dry-run|--apply] Knowledge State Consistency reparieren");
         Console.WriteLine("  hermes knowledge-state-repair-diagnostics Knowledge State Repair Diagnostics anzeigen");
+        Console.WriteLine("  hermes knowledge-state-timestamp-repair [--dry-run|--apply] Knowledge State Timestamp Repair ausführen");
         Console.WriteLine("  hermes next-trusted-candidates-status Nächste Trusted-Kandidaten und Aktionsplan anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-status Multi-Source Evidence Status anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-plan Multi-Source Evidence Plan anzeigen");
@@ -15328,6 +15330,20 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunKnowledgeStateTimestampRepair()
+    {
+        WriteHeader("Hermes Knowledge State Timestamp Repair");
+        var service = new KnowledgeStateTimestampRepairService(BuildStoragePaths());
+        var apply = HasArg("--apply") && !HasArg("--dry-run");
+        var dryRun = HasArg("--dry-run") || !HasArg("--apply");
+        var report = service.Run(apply: apply, dryRun: dryRun);
+
+        WriteKnowledgeStateTimestampRepairReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowKnowledgeStateRepairDiagnostics()
     {
         WriteHeader("Hermes Knowledge State Repair Diagnostics");
@@ -15462,6 +15478,39 @@ internal sealed class HermesCli
             WriteField("Validation Plan Status", item.ValidationPlanStatus ?? "-");
             WriteField("Master Status Hint", item.MasterStatusHint ?? "-");
             WriteMessages("Blockers", item.Blockers);
+            WriteMessages("Warnings", item.Warnings);
+        }
+    }
+
+    private void WriteKnowledgeStateTimestampRepairReport(KnowledgeStateTimestampRepairReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Loaded Issues", report.LoadedIssues.ToString());
+        WriteField("Selected Issues", report.SelectedIssues.ToString());
+        WriteField("Repaired Issues", report.RepairedIssues.ToString());
+        WriteField("Skipped Issues", report.SkippedIssues.ToString());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Diagnostics Report", DisplayPath(report.DiagnosticsPath));
+        WriteField("Knowledge Catalog", DisplayPath(report.CatalogPath));
+        WriteField("Knowledge Quality", DisplayPath(report.QualityPath));
+        WriteField("Validation Execution", DisplayPath(report.ValidationExecutionPath));
+        WriteMessages("Warnings", report.Warnings);
+
+        foreach (var item in report.Items)
+        {
+            WriteSubHeader($"{item.Title} / {item.KnowledgeItemId}");
+            WriteField("Status", item.Status);
+            WriteField("Timestamp Before", item.TimestampBefore?.ToString("O") ?? "-");
+            WriteField("Timestamp After", item.TimestampAfter?.ToString("O") ?? "-");
+            WriteField("Timestamp Source", item.TimestampSource);
+            WriteField("Severity", item.Severity);
+            WriteField("Recommended Action", item.RecommendedAction);
             WriteMessages("Warnings", item.Warnings);
         }
     }
