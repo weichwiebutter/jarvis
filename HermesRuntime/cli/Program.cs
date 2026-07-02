@@ -115,6 +115,8 @@ internal sealed class HermesCli
             "trusted-knowledge-usage-audit" => RunTrustedKnowledgeUsageAudit(),
             "trusted-knowledge-impact-status" => ShowTrustedKnowledgeImpactStatus(),
             "trusted-knowledge-impact" => RunTrustedKnowledgeImpact(),
+            "autonomous-knowledge-advancement-status" => ShowAutonomousKnowledgeAdvancementStatus(),
+            "autonomous-knowledge-advancement" => RunAutonomousKnowledgeAdvancement(),
             "knowledge-health-root-cause" => ShowKnowledgeHealthRootCause(),
             "knowledge-confidence-engine" => ShowKnowledgeConfidenceEngine(),
             "confidence-review-prioritization" => ShowConfidenceReviewPrioritization(),
@@ -475,6 +477,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes trusted-knowledge-usage-audit-status Trusted Knowledge Usage Audit anzeigen");
         Console.WriteLine("  hermes trusted-knowledge-impact Trusted Knowledge Impact Report erzeugen");
         Console.WriteLine("  hermes trusted-knowledge-impact-status Trusted Knowledge Impact Report anzeigen");
+        Console.WriteLine("  hermes autonomous-knowledge-advancement [--execute] [--max-items N] Autonomous Knowledge Advancement ausfuehren");
+        Console.WriteLine("  hermes autonomous-knowledge-advancement-status Autonomous Knowledge Advancement Status anzeigen");
         Console.WriteLine("  hermes knowledge-health-root-cause Knowledge Trust Root Cause Analyse anzeigen");
         Console.WriteLine("  hermes knowledge-confidence-engine Knowledge Confidence Score anzeigen");
         Console.WriteLine("  hermes confidence-review-prioritization Confidence-basierte Review Priorisierung anzeigen");
@@ -6695,6 +6699,42 @@ internal sealed class HermesCli
         var report = service.Run();
 
         WriteTrustedKnowledgeImpactReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowAutonomousKnowledgeAdvancementStatus()
+    {
+        WriteHeader("Hermes Autonomous Knowledge Advancement");
+        var service = new AutonomousKnowledgeAdvancementEngineService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadLatestReport();
+
+        if (report is null)
+        {
+            WriteWarning("No autonomous knowledge advancement report found yet. Run: hermes autonomous-knowledge-advancement");
+            WriteField("Report", DisplayPath(service.ReportPath));
+            WriteField("Markdown", DisplayPath(service.MarkdownPath));
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+
+        WriteAutonomousKnowledgeAdvancementReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunAutonomousKnowledgeAdvancement()
+    {
+        WriteHeader("Hermes Autonomous Knowledge Advancement");
+        var execute = HasArg("--execute");
+        var maxItems = ReadIntOption(_args, "--max-items", fallback: 12, min: 1, max: 100);
+        var service = new AutonomousKnowledgeAdvancementEngineService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run(maxItems, execute);
+
+        WriteAutonomousKnowledgeAdvancementReport(report);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -15785,6 +15825,46 @@ internal sealed class HermesCli
             WriteField("Reduced Uncertainties", string.Join(", ", entry.ReducedUncertainties));
             WriteField("Missing Trusted Knowledge", string.Join(", ", entry.MissingTrustedKnowledge));
             WriteField("Notes", string.Join(" · ", entry.Notes));
+            Console.WriteLine();
+        }
+    }
+
+    private void WriteAutonomousKnowledgeAdvancementReport(AutonomousKnowledgeAdvancementReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Read Only", report.ReadOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Status", report.Status);
+        WriteField("Loaded Items", report.LoadedItems.ToString());
+        WriteField("Candidate Support Items", report.CandidateSupportItems.ToString());
+        WriteField("Prioritized Items", report.PrioritizedItems.ToString());
+        WriteField("Plans Created", report.PlansCreated.ToString());
+        WriteMessages("Used Topics", report.UsedTopics);
+        WriteMessages("Used Knowledge IDs", report.UsedKnowledgeIds);
+        WriteMessages("Warnings", report.Warnings);
+        WriteField("Root Cause Summary", report.RootCauseSummary);
+
+        WriteSubHeader("Plans");
+        foreach (var plan in report.Plans)
+        {
+            WriteField(plan.KnowledgeId, plan.Title);
+            WriteField("Current Status", plan.CurrentStatus);
+            WriteField("Root Cause", plan.RootCause);
+            WriteField("Next Action", plan.NextAction);
+            WriteField("Followed By", string.Join(", ", plan.FollowedBy));
+            WriteField("Operator Required", plan.OperatorRequired);
+            WriteField("Source Count", plan.SourceCount.ToString());
+            WriteField("Policy Approved Source Count", plan.PolicyApprovedSourceCount.ToString());
+            WriteField("Validation Score", plan.ValidationScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Trust Score", plan.TrustScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Quality Score", plan.QualityScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Impact Score", plan.ImpactScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Blockers", string.Join(", ", plan.Blockers));
+            WriteField("Reasons", string.Join(", ", plan.Reasons));
             Console.WriteLine();
         }
     }
