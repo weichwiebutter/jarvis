@@ -15617,6 +15617,8 @@ internal sealed class HermesCli
         WriteField("Execution Time Ms", report.ExecutionTimeMs.ToString());
         WriteField("Safety Status", report.SafetyStatus);
         WriteField("Next Recommended Action", report.NextRecommendedAction);
+        WriteField("Selected Next Phase Reason", report.SelectedNextPhaseReason);
+        WriteField("Skipped Due To Recent No Effect", report.SkippedDueToRecentNoEffect.ToString().ToLowerInvariant());
         WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
         WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
         WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
@@ -15652,6 +15654,7 @@ internal sealed class HermesCli
         {
             WriteField(phase.Phase, phase.Command);
             WriteField("Status", phase.Status);
+            WriteField("Phase Effect", phase.PhaseEffect);
             WriteField("Executed", phase.Executed.ToString().ToLowerInvariant());
             WriteField("Duration Ms", phase.DurationMs.ToString());
             WriteField("Details", phase.Details ?? "-");
@@ -15659,6 +15662,8 @@ internal sealed class HermesCli
             WriteField("After", $"trusted={phase.After.TrustedKnowledge}; promising={phase.After.PromisingKnowledge}; weak={phase.After.WeakKnowledge}; contradictions={phase.After.ContradictionCount}; validation_plans_open={phase.After.ValidationPlansOpen}");
             WriteMessages("Warnings", phase.Warnings);
         }
+
+        WriteMessages("Suppressed Recommendations", report.SuppressedRecommendations);
     }
 
     private void WriteNextTrustedCandidatesReport(NextTrustedCandidatesReport report, NextTrustedCandidatesService service)

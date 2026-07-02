@@ -15,6 +15,7 @@ public sealed record KnowledgeRuntimeManagerPhaseResult(
     string Phase,
     string Command,
     string Status,
+    string PhaseEffect,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset CompletedAtUtc,
     long DurationMs,
@@ -40,7 +41,10 @@ public sealed record KnowledgeRuntimeManagerReport(
     long ExecutionTimeMs,
     string SafetyStatus,
     string NextRecommendedAction,
+    string SelectedNextPhaseReason,
+    bool SkippedDueToRecentNoEffect,
     IReadOnlyList<KnowledgeRuntimeManagerPhaseResult> Phases,
+    IReadOnlyList<string> SuppressedRecommendations,
     IReadOnlyList<string> Warnings,
     string DiagnosticsReportPath,
     string UsageAuditReportPath,
@@ -102,6 +106,8 @@ public sealed class KnowledgeRuntimeManagerService
         var startedAt = DateTimeOffset.UtcNow;
         var actionBudget = Math.Clamp(maxActions, 1, 5);
         var actionTimeout = TimeSpan.FromSeconds(120);
+        var latestReport = LoadLatestReport();
+        var lastNoEffectPhase = latestReport?.Phases.LastOrDefault(phase => string.Equals(phase.PhaseEffect, "no_metric_change", StringComparison.OrdinalIgnoreCase) && phase.Executed)?.Phase;
 
         var diagnosticsService = new KnowledgeStateRepairDiagnosticsService(_storagePaths);
         var usageAuditService = new TrustedKnowledgeUsageAuditService(_storagePaths, _runtimeRoot);
@@ -131,6 +137,7 @@ public sealed class KnowledgeRuntimeManagerService
 
         var phases = new List<KnowledgeRuntimeManagerPhaseResult>();
         var warnings = new List<string>();
+        var suppressedRecommendations = new List<string>();
         var actionsExecuted = 0;
         var actionsSkipped = 0;
         var halted = false;
@@ -154,7 +161,16 @@ public sealed class KnowledgeRuntimeManagerService
             var executed = false;
             var timedOut = false;
 
-            if (!halted && shouldExecute && actionsExecuted < actionBudget)
+            var suppressedByCooldown = !string.IsNullOrWhiteSpace(lastNoEffectPhase)
+                && phase.Equals(lastNoEffectPhase, StringComparison.OrdinalIgnoreCase);
+
+            if (suppressedByCooldown)
+            {
+                phaseWarnings.Add("skipped_due_to_recent_no_effect");
+                suppressedRecommendations.Add($"{phase}: recent no_metric_change cooldown");
+            }
+
+            if (!halted && !suppressedByCooldown && shouldExecute && actionsExecuted < actionBudget)
             {
                 executed = true;
                 actionsExecuted++;
@@ -191,7 +207,10 @@ public sealed class KnowledgeRuntimeManagerService
             else
             {
                 actionsSkipped++;
-                phaseWarnings.Add(halted ? "skipped_due_to_previous_timeout" : "skipped_by_budget_or_not_needed");
+                if (!suppressedByCooldown)
+                {
+                    phaseWarnings.Add(halted ? "skipped_due_to_previous_timeout" : "skipped_by_budget_or_not_needed");
+                }
             }
 
             if (timedOut)
@@ -199,11 +218,14 @@ public sealed class KnowledgeRuntimeManagerService
                 warnings.Add($"{phase}:timeout");
             }
 
+            var phaseEffect = BuildPhaseEffect(beforeSnapshot, afterSnapshot);
+
             var phaseCompletedAt = DateTimeOffset.UtcNow;
             phases.Add(new KnowledgeRuntimeManagerPhaseResult(
                 Phase: phase,
                 Command: command,
                 Status: status,
+                PhaseEffect: phaseEffect,
                 StartedAtUtc: phaseStartedAt,
                 CompletedAtUtc: phaseCompletedAt,
                 DurationMs: Math.Max(0, (long)(phaseCompletedAt - phaseStartedAt).TotalMilliseconds),
@@ -299,7 +321,13 @@ public sealed class KnowledgeRuntimeManagerService
             ? (actionsExecuted > 0 ? "executed" : "idle")
             : "planned";
 
-        var nextRecommendedAction = DetermineNextRecommendedAction(diagnostics, promotionReportPreview, supervisorService, afterSnapshot);
+        var nextRecommendedAction = DetermineNextRecommendedAction(
+            diagnostics,
+            promotionReportPreview,
+            supervisorService,
+            afterSnapshot,
+            phases,
+            lastNoEffectPhase);
         var report = new KnowledgeRuntimeManagerReport(
             ReportVersion: "knowledge_runtime_manager_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -315,8 +343,11 @@ public sealed class KnowledgeRuntimeManagerService
             ExecutionTimeMs: executionTimeMs,
             SafetyStatus: BuildSafetyStatus(),
             NextRecommendedAction: nextRecommendedAction,
+            SelectedNextPhaseReason: BuildSelectedNextPhaseReason(nextRecommendedAction, lastNoEffectPhase, diagnostics, promotionReportPreview),
+            SkippedDueToRecentNoEffect: !string.IsNullOrWhiteSpace(lastNoEffectPhase),
             Phases: phases,
-            Warnings: CombineWarnings(diagnostics.Warnings, usageAudit.Warnings, impact.Warnings, reasoning?.Warnings ?? []),
+            SuppressedRecommendations: suppressedRecommendations.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            Warnings: CombineWarnings(diagnostics.Warnings, usageAudit.Warnings, impact.Warnings, reasoning?.Warnings ?? [], suppressedRecommendations),
             DiagnosticsReportPath: DiagnosticsReportPath,
             UsageAuditReportPath: UsageAuditReportPath,
             ImpactReportPath: ImpactReportPath,
@@ -383,6 +414,17 @@ public sealed class KnowledgeRuntimeManagerService
         };
     }
 
+    private static string BuildPhaseEffect(KnowledgeRuntimeManagerMetricSnapshot before, KnowledgeRuntimeManagerMetricSnapshot after)
+    {
+        return before.TrustedKnowledge == after.TrustedKnowledge
+            && before.PromisingKnowledge == after.PromisingKnowledge
+            && before.WeakKnowledge == after.WeakKnowledge
+            && before.ContradictionCount == after.ContradictionCount
+            && before.ValidationPlansOpen == after.ValidationPlansOpen
+            ? "no_metric_change"
+            : "metric_change";
+    }
+
     private KnowledgeStateConsistencyReport? LoadConsistencyReport()
     {
         var path = Path.Combine(_storagePaths.Root, "reports", "knowledge_state_consistency", "knowledge_state_consistency_report.json");
@@ -408,11 +450,27 @@ public sealed class KnowledgeRuntimeManagerService
         KnowledgeStateRepairDiagnosticsReport diagnostics,
         KnowledgeTrustPromotionReport promotionReport,
         AutonomousKnowledgeSupervisorService supervisorService,
-        MasterStatusSnapshot snapshot)
+        MasterStatusSnapshot snapshot,
+        IReadOnlyList<KnowledgeRuntimeManagerPhaseResult> phases,
+        string? lastNoEffectPhase)
     {
-        if (promotionReport.EligibleForPromotion > 0)
+        var noEffectPhaseNames = phases
+            .Where(phase => string.Equals(phase.PhaseEffect, "no_metric_change", StringComparison.OrdinalIgnoreCase) && phase.Executed)
+            .Select(phase => phase.Phase)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (promotionReport.EligibleForPromotion > 0
+            && promotionReport.EligibleForPromotion > promotionReport.PromotedToTrusted)
         {
             return "knowledge-trust-promote --apply --skip-refresh";
+        }
+
+        if (!string.IsNullOrWhiteSpace(lastNoEffectPhase) && noEffectPhaseNames.Contains(lastNoEffectPhase))
+        {
+            return diagnostics.TotalIssues > 0
+                ? "knowledge-state-repair-diagnostics"
+                : "validation-gap";
         }
 
         if (diagnostics.TotalIssues > 0)
@@ -430,7 +488,36 @@ public sealed class KnowledgeRuntimeManagerService
             }
         }
 
-        return supervisorService.LoadLatestReport()?.Recommendation ?? "master-status-refresh --knowledge-only";
+        var supervisorRecommendation = supervisorService.LoadLatestReport()?.Recommendation;
+        return string.IsNullOrWhiteSpace(supervisorRecommendation)
+            ? "master-status-refresh --knowledge-only"
+            : supervisorRecommendation;
+    }
+
+    private static string BuildSelectedNextPhaseReason(
+        string nextRecommendedAction,
+        string? lastNoEffectPhase,
+        KnowledgeStateRepairDiagnosticsReport diagnostics,
+        KnowledgeTrustPromotionReport promotionReport)
+    {
+        if (!string.IsNullOrWhiteSpace(lastNoEffectPhase))
+        {
+            return $"{lastNoEffectPhase}:suppressed_due_to_recent_no_metric_change";
+        }
+
+        if (nextRecommendedAction.StartsWith("knowledge-trust-promote", StringComparison.OrdinalIgnoreCase))
+        {
+            return promotionReport.EligibleForPromotion > promotionReport.PromotedToTrusted
+                ? "promotion_has_new_eligible_candidates"
+                : "promotion_candidate_count_exceeds_trusted_count";
+        }
+
+        if (diagnostics.TotalIssues > 0)
+        {
+            return "diagnostics_has_remaining_issues";
+        }
+
+        return "snapshot_or_followup_phase";
     }
 
     private static IReadOnlyList<string> CombineWarnings(params IEnumerable<string>[] groups)
