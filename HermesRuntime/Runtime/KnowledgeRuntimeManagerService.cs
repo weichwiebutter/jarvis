@@ -264,12 +264,15 @@ public sealed class KnowledgeRuntimeManagerService
             .Select(item => item.KnowledgeItemId)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var internalValidationClassificationIds = LoadInternalValidationClassificationIds();
+
         var evidenceAcquisitionCandidates = diagnostics.Items
             .Where(item =>
                 item.AutoRepairable
                 && !item.Blockers.Any(blocker => blocker.Equals("blocking_contradiction", StringComparison.OrdinalIgnoreCase))
                 && !item.Blockers.Any(blocker => blocker.Equals("human_review_pending", StringComparison.OrdinalIgnoreCase))
                 && !item.ValidationStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase)
+                && !internalValidationClassificationIds.Contains(item.KnowledgeItemId)
                 && item.Blockers.Any(blocker =>
                     blocker.Equals("second_independent_source_missing", StringComparison.OrdinalIgnoreCase)
                     || blocker.Equals("trust_score_too_low", StringComparison.OrdinalIgnoreCase)
@@ -428,6 +431,30 @@ public sealed class KnowledgeRuntimeManagerService
 
         WriteReport(report);
         return report;
+    }
+
+    private IReadOnlySet<string> LoadInternalValidationClassificationIds()
+    {
+        var path = Path.Combine(_storagePaths.Root, "reports", "knowledge_evidence_acquisition", "knowledge_evidence_acquisition_report.json");
+        if (!File.Exists(path))
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            var report = JsonSerializer.Deserialize<KnowledgeEvidenceAcquisitionReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
+            var ids = report?.Classifications
+                .Where(item => item.EvidenceAcquisitionClassification.Equals("internal_artifact", StringComparison.OrdinalIgnoreCase)
+                    || item.EvidenceAcquisitionClassification.Equals("requires_internal_validation", StringComparison.OrdinalIgnoreCase))
+                .Select(item => item.KnowledgeItemId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return ids ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     public KnowledgeRuntimeManagerReport? LoadLatestReport()

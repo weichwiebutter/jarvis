@@ -244,6 +244,22 @@ public sealed class KnowledgeTrustPromotionPipelineService
         HumanReviewEvidence? latestReview,
         DateTimeOffset now)
     {
+        var isInternalKnowledge = IsInternalKnowledge(qualityItem.Domain, qualityItem.KnowledgeId, catalogItem);
+        var internalValidation = LoadInternalValidationItem(qualityItem.KnowledgeId);
+        var internalValidationPassing = isInternalKnowledge
+            && internalValidation is not null
+            && internalValidation.BuildSucceeded
+            && internalValidation.FileExists
+            && internalValidation.CliCommandExists
+            && internalValidation.ServiceFileExists
+            && internalValidation.TestsOrHarnessExists
+            && internalValidation.ReportOrConfigExists
+            && !internalValidation.Warnings.Any(warning =>
+                warning.Equals("referenced_file_missing", StringComparison.OrdinalIgnoreCase)
+                || warning.Equals("internal_cli_command_missing", StringComparison.OrdinalIgnoreCase)
+                || warning.Equals("report_or_config_missing", StringComparison.OrdinalIgnoreCase)
+                || warning.Equals("test_or_harness_missing", StringComparison.OrdinalIgnoreCase));
+
         var sourceCount = confirmation?.SourceCount
             ?? evidenceEntry?.SourceIds.Count
             ?? catalogItem?.SourceIds.Count
@@ -261,46 +277,55 @@ public sealed class KnowledgeTrustPromotionPipelineService
         var blockers = new List<string>();
         var contradictionsCount = contradictions?.Count ?? 0;
 
-        if (qualityItem.TrustScore >= _thresholds.MinimumTrustScore)
+        if (isInternalKnowledge && internalValidationPassing)
         {
-            satisfied.Add("trust_score_sufficient");
+            satisfied.Add("internal_validation_evidence_present");
+            satisfied.Add("implementation_verified");
+            satisfied.Add("internal_trusted");
         }
         else
         {
-            blockers.Add("trust_score_too_low");
-        }
+            if (qualityItem.TrustScore >= _thresholds.MinimumTrustScore)
+            {
+                satisfied.Add("trust_score_sufficient");
+            }
+            else
+            {
+                blockers.Add("trust_score_too_low");
+            }
 
-        if (qualityItem.QualityScore >= _thresholds.MinimumQualityScore)
-        {
-            satisfied.Add("quality_score_sufficient");
-        }
-        else
-        {
-            blockers.Add("quality_score_too_low");
-        }
+            if (qualityItem.QualityScore >= _thresholds.MinimumQualityScore)
+            {
+                satisfied.Add("quality_score_sufficient");
+            }
+            else
+            {
+                blockers.Add("quality_score_too_low");
+            }
 
-        if (qualityItem.ValidationScore >= _thresholds.MinimumValidationScore)
-        {
-            satisfied.Add("validation_score_sufficient");
-        }
-        else
-        {
-            blockers.Add("validation_score_too_low");
-        }
+            if (qualityItem.ValidationScore >= _thresholds.MinimumValidationScore)
+            {
+                satisfied.Add("validation_score_sufficient");
+            }
+            else
+            {
+                blockers.Add("validation_score_too_low");
+            }
 
-        if (sourceCount >= 2)
-        {
-            satisfied.Add("two_independent_sources_available");
-        }
-        else if (sourceCount == 0)
-        {
-            missing.Add("source_metadata_missing");
-            blockers.Add("source_metadata_missing");
-        }
-        else
-        {
-            missing.Add("second_independent_source_missing");
-            blockers.Add("second_independent_source_missing");
+            if (sourceCount >= 2)
+            {
+                satisfied.Add("two_independent_sources_available");
+            }
+            else if (sourceCount == 0)
+            {
+                missing.Add("source_metadata_missing");
+                blockers.Add("source_metadata_missing");
+            }
+            else
+            {
+                missing.Add("second_independent_source_missing");
+                blockers.Add("second_independent_source_missing");
+            }
         }
 
         if (freshValidation)
@@ -323,8 +348,8 @@ public sealed class KnowledgeTrustPromotionPipelineService
             }
 
             if (missingEvidence.Equals("second_independent_source_missing", StringComparison.OrdinalIgnoreCase)
-                && sourceCount >= 2
-                && policyApprovedSecondSource)
+                && ((sourceCount >= 2 && policyApprovedSecondSource)
+                    || (isInternalKnowledge && internalValidationPassing)))
             {
                 continue;
             }
@@ -355,14 +380,17 @@ public sealed class KnowledgeTrustPromotionPipelineService
         if (!validationReadiness.Equals("passed", StringComparison.OrdinalIgnoreCase)
             && !validationReadiness.Equals("completed_with_missing_noncritical_evidence", StringComparison.OrdinalIgnoreCase))
         {
-            blockers.Add("domain_validation_not_passed");
+            if (!(isInternalKnowledge && internalValidationPassing))
+            {
+                blockers.Add("domain_validation_not_passed");
+            }
         }
         else
         {
             satisfied.Add(validationReadiness);
         }
 
-        if (latestReview is not null && latestReview.Result.Equals("needs_review", StringComparison.OrdinalIgnoreCase))
+        if (!isInternalKnowledge && latestReview is not null && latestReview.Result.Equals("needs_review", StringComparison.OrdinalIgnoreCase))
         {
             if (policyApprovedSecondSource)
             {
@@ -374,12 +402,30 @@ public sealed class KnowledgeTrustPromotionPipelineService
             }
         }
 
-        var eligible = blockers.Count == 0;
-        var recommendedStatus = eligible
-            ? "trusted"
-            : qualityItem.LifecycleStatus;
-        var promotionOutcome = eligible
-            ? "eligible_for_promotion"
+        if (isInternalKnowledge && internalValidationPassing)
+        {
+            blockers.Remove("trust_score_too_low");
+            blockers.Remove("quality_score_too_low");
+            blockers.Remove("validation_score_too_low");
+            blockers.Remove("second_independent_source_missing");
+            blockers.Remove("source_metadata_missing");
+            blockers.Remove("domain_validation_not_passed");
+        }
+
+        var alreadyTrusted = qualityItem.LifecycleStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase)
+            || qualityItem.LifecycleStatus.Equals("internal_trusted", StringComparison.OrdinalIgnoreCase)
+            || qualityItem.LifecycleStatus.Equals("implementation_verified", StringComparison.OrdinalIgnoreCase);
+
+        var eligible = !alreadyTrusted && blockers.Count == 0 && (!isInternalKnowledge || internalValidationPassing);
+        var recommendedStatus = alreadyTrusted
+            ? qualityItem.LifecycleStatus
+            : eligible
+                ? (isInternalKnowledge && internalValidationPassing ? "internal_trusted" : "trusted")
+                : qualityItem.LifecycleStatus;
+        var promotionOutcome = alreadyTrusted
+            ? "already_trusted"
+            : eligible
+                ? (isInternalKnowledge && internalValidationPassing ? "eligible_for_internal_promotion" : "eligible_for_promotion")
             : contradictionsCount > 0
                 ? "blocked_by_contradiction"
                 : blockers.Any(blocker => blocker is "source_metadata_missing" or "second_independent_source_missing" or "fresh_validation_timestamp_missing" or "domain_validation_not_passed")
@@ -406,7 +452,9 @@ public sealed class KnowledgeTrustPromotionPipelineService
             Blockers: blockers.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             PromotionOutcome: promotionOutcome,
             EligibleForPromotion: eligible,
-            HumanReviewRequired: (latestReview is null && !policyApprovedSecondSource)
+            HumanReviewRequired: isInternalKnowledge && internalValidationPassing
+                ? false
+                : (latestReview is null && !policyApprovedSecondSource)
                 || latestReview?.Result.Equals("rejected", StringComparison.OrdinalIgnoreCase) == true
                 || (latestReview?.Result.Equals("needs_review", StringComparison.OrdinalIgnoreCase) == true && !policyApprovedSecondSource));
     }
@@ -589,14 +637,20 @@ public sealed class KnowledgeTrustPromotionPipelineService
                 continue;
             }
 
+            var targetStatus = candidate.RecommendedStatus;
+            if (string.IsNullOrWhiteSpace(targetStatus))
+            {
+                targetStatus = "trusted";
+            }
+
             var updatedItem = item with
             {
-                ValidationStatus = "trusted",
+                ValidationStatus = targetStatus,
                 LastValidatedUtc = now
             };
             byId[candidate.KnowledgeId] = updatedItem;
             updated.Add(updatedItem);
-            AppendPromotionLog(candidate, now, "trusted");
+            AppendPromotionLog(candidate, now, targetStatus);
         }
 
         if (updated.Count > 0)
@@ -815,6 +869,51 @@ public sealed class KnowledgeTrustPromotionPipelineService
                 candidate.AutoApprovedByPolicy
                 || candidate.PolicyReviewStatus.Equals("approved", StringComparison.OrdinalIgnoreCase)
                 || candidate.SourceStatus.Equals("policy_approved_second_source", StringComparison.OrdinalIgnoreCase)) == true);
+
+    private static bool IsInternalKnowledge(string domain, string knowledgeId, KnowledgeCatalogItem? catalogItem)
+    {
+        if (domain.Equals("software", StringComparison.OrdinalIgnoreCase)
+            || domain.Equals("documentation", StringComparison.OrdinalIgnoreCase)
+            || domain.Equals("process", StringComparison.OrdinalIgnoreCase)
+            || domain.Equals("research", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (knowledgeId.StartsWith("software:", StringComparison.OrdinalIgnoreCase)
+            || knowledgeId.StartsWith("documentation:", StringComparison.OrdinalIgnoreCase)
+            || knowledgeId.StartsWith("process:", StringComparison.OrdinalIgnoreCase)
+            || knowledgeId.StartsWith("research:", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return catalogItem?.Title.Contains(".cs", StringComparison.OrdinalIgnoreCase) == true
+            || catalogItem?.Title.Contains(".md", StringComparison.OrdinalIgnoreCase) == true
+            || catalogItem?.Title.Contains("architecture", StringComparison.OrdinalIgnoreCase) == true
+            || catalogItem?.Title.Contains("roadmap", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private InternalKnowledgeValidationItem? LoadInternalValidationItem(string knowledgeId)
+    {
+        var path = Path.Combine(_storagePaths.Root, "reports", "internal_knowledge_validation", "internal_knowledge_validation_report.json");
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            var report = JsonSerializer.Deserialize<InternalKnowledgeValidationReport>(
+                File.ReadAllText(path),
+                JsonDefaults.SnapshotReadOptions);
+            return report?.Items.FirstOrDefault(item => item.KnowledgeItemId.Equals(knowledgeId, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
 
     private static string RecommendedNextAction(
         IReadOnlyList<KnowledgeTrustPromotionCandidate> eligible,
