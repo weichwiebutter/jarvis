@@ -168,7 +168,8 @@
       ],
       "category": "chart_pattern",
       "priority": 96,
-      "allowed": true
+      "allowed": false,
+      "reason": "disabled_duplicate_publisher_group"
     },
     {
       "seed_id": "breakout_investopedia_trading_breakouts",
@@ -184,8 +185,7 @@
       ],
       "category": "chart_pattern",
       "priority": 96,
-      "allowed": false,
-      "reason": "disabled_duplicate_publisher_group"
+      "allowed": true
     },
     {
       "seed_id": "breakout_investopedia",
@@ -207,7 +207,7 @@
     {
       "seed_id": "breakout_trading_de",
       "knowledge_item_id": "trading:breakout",
-      "title": "Breakout Trading einfach erkl\u00e4rt",
+      "title": "Breakout Trading einfach erklärt",
       "domain": "trading.de",
       "url": "https://trading.de/lernen/strategien/breakout-trading/",
       "keywords": [
@@ -427,8 +427,7 @@
       ],
       "category": "intraday",
       "priority": 100,
-      "allowed": false,
-      "reason": "disabled_duplicate_publisher_group"
+      "allowed": true
     },
     {
       "seed_id": "daytrading_investopedia",
@@ -761,7 +760,7 @@
     {
       "seed_id": "double_bottom_trading_de",
       "knowledge_item_id": "trading:double_bottom",
-      "title": "Doppeltop & Doppelboden erkl\u00e4rt",
+      "title": "Doppeltop & Doppelboden erklärt",
       "domain": "trading.de",
       "url": "https://trading.de/charts/pattern/doppeltop-und-doppelboden/",
       "keywords": [
@@ -808,8 +807,7 @@
       ],
       "category": "chart_pattern",
       "priority": 100,
-      "allowed": false,
-      "reason": "disabled_duplicate_publisher_group"
+      "allowed": true
     },
     {
       "seed_id": "double_top_babypips_verified",
@@ -826,8 +824,7 @@
       ],
       "category": "chart_pattern",
       "priority": 99,
-      "allowed": false,
-      "reason": "disabled_duplicate_publisher_group"
+      "allowed": true
     },
     {
       "seed_id": "double_top_babypips_education",
@@ -878,13 +875,12 @@
       ],
       "category": "chart_pattern",
       "priority": 95,
-      "allowed": false,
-      "reason": "disabled_duplicate_publisher_group"
+      "allowed": true
     },
     {
       "seed_id": "double_top_trading_de",
       "knowledge_item_id": "trading:double_top",
-      "title": "Doppeltop & Doppelboden erkl\u00e4rt",
+      "title": "Doppeltop & Doppelboden erklärt",
       "domain": "trading.de",
       "url": "https://trading.de/charts/pattern/doppeltop-und-doppelboden/",
       "keywords": [
@@ -1190,8 +1186,7 @@
       ],
       "category": "candlestick",
       "priority": 100,
-      "allowed": false,
-      "reason": "disabled_duplicate_publisher_group"
+      "allowed": true
     },
     {
       "seed_id": "inside_bar_babypips_verified",
@@ -1209,8 +1204,7 @@
       ],
       "category": "candlestick",
       "priority": 99,
-      "allowed": false,
-      "reason": "disabled_duplicate_publisher_group"
+      "allowed": true
     },
     {
       "seed_id": "inside_bar_babypips_strategy_verified",
@@ -1263,8 +1257,7 @@
       ],
       "category": "candlestick",
       "priority": 95,
-      "allowed": false,
-      "reason": "disabled_duplicate_publisher_group"
+      "allowed": true
     },
     {
       "seed_id": "inside_bar_cmcmarkets",
@@ -1532,7 +1525,7 @@
     {
       "seed_id": "pullback_trading_de",
       "knowledge_item_id": "trading:pullback",
-      "title": "Pullback Trading einfach erkl\u00e4rt",
+      "title": "Pullback Trading einfach erklärt",
       "domain": "trading.de",
       "url": "https://trading.de/lernen/strategien/pullback-trading/",
       "keywords": [
@@ -1617,7 +1610,7 @@
     {
       "seed_id": "support_resistance_trading_de",
       "knowledge_item_id": "trading:support_resistance",
-      "title": "Support and Resistance Trading Strategie einfach erkl\u00e4rt",
+      "title": "Support and Resistance Trading Strategie einfach erklärt",
       "domain": "trading.de",
       "url": "https://trading.de/lernen/strategien/support-and-resistance/",
       "keywords": [
@@ -1820,7 +1813,7 @@
     {
       "seed_id": "trend_following_trading_de",
       "knowledge_item_id": "trading:trend_following",
-      "title": "Trendfolge-Strategien erkl\u00e4rt",
+      "title": "Trendfolge-Strategien erklärt",
       "domain": "trading.de",
       "url": "https://trading.de/lernen/strategien/trendfolgestrategien/",
       "keywords": [
