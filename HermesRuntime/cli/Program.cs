@@ -243,6 +243,7 @@ internal sealed class HermesCli
             "direct-domain-research-fetch" => RunDirectDomainResearchFetch(),
             "known-article-seed-status" => ShowKnownArticleSeedStatus(),
             "known-article-seed-fetch" => RunKnownArticleSeedFetch(),
+            "seed-to-policy-trace-status" => ShowSeedToPolicyTraceStatus(),
             "multi-source-acquisition-status" => ShowMultiSourceAcquisitionStatus(),
             "multi-source-acquisition" => RunMultiSourceAcquisition(),
             "browser-research-status" => ShowBrowserResearchStatus(),
@@ -594,6 +595,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes direct-domain-research-fetch --max-items 5 [--max-fetch-seconds N] [--dry-run|--apply] Direct Domain Research ausfuehren");
         Console.WriteLine("  hermes known-article-seed-status Known Article Seed Catalog Status anzeigen");
         Console.WriteLine("  hermes known-article-seed-fetch --max-items 10 [--max-fetch-seconds N] [--dry-run|--apply] Known Article Seeds abrufen");
+        Console.WriteLine("  hermes seed-to-policy-trace-status Seed-to-Policy Trace Diagnostics anzeigen");
         Console.WriteLine("  hermes multi-source-acquisition-status Multi Source Acquisition Status anzeigen");
         Console.WriteLine("  hermes multi-source-acquisition --max-items 10 [--dry-run|--apply] Multi Source Acquisition ausfuehren");
         Console.WriteLine("  hermes browser-research-status Browser Research Agent Status anzeigen");
@@ -9764,6 +9766,57 @@ internal sealed class HermesCli
         var service = new KnownArticleSeedCatalogService(BuildStoragePaths());
         var report = service.Run(maxItems, dryRun, maxFetchSeconds);
         WriteKnownArticleSeedCatalogReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowSeedToPolicyTraceStatus()
+    {
+        WriteHeader("Hermes Seed To Policy Trace Diagnostics");
+        var service = new SeedToPolicyTraceDiagnosticsService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadStatus();
+        WriteField("Status", report.Status);
+        WriteField("Loaded Seed Definitions", report.LoadedSeedDefinitions.ToString());
+        WriteField("Loaded Import Candidates", report.LoadedImportCandidates.ToString());
+        WriteField("Loaded Source Confirmations", report.LoadedSourceConfirmations.ToString());
+        WriteField("Loaded Semantic Candidates", report.LoadedSemanticCandidates.ToString());
+        WriteField("Loaded Resolver Candidates", report.LoadedResolverCandidates.ToString());
+        WriteField("Loaded Policy Candidates", report.LoadedPolicyCandidates.ToString());
+        WriteField("Loaded Quality Items", report.LoadedQualityItems.ToString());
+        WriteField("Considered Knowledge Items", report.ConsideredKnowledgeItems.ToString());
+        WriteField("Considered Seeds", report.ConsideredSeeds.ToString());
+        WriteField("Successful Seeds", report.SuccessfulSeeds.ToString());
+        WriteField("Failed Seeds", report.FailedSeeds.ToString());
+        WriteField("Source Count Recalc Candidates", report.SourceCountRecalcCandidates.ToString());
+        WriteMessages("Warnings", report.Warnings);
+        WriteField("Seed Catalog Path", DisplayPath(report.SeedCatalogPath));
+        WriteField("Requests Path", DisplayPath(report.RequestsPath));
+        WriteField("Import Candidates Path", DisplayPath(report.ImportCandidatesPath));
+        WriteField("Source Confirmations Path", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Matcher Report Path", DisplayPath(report.MatcherReportPath));
+        WriteField("Resolver Report Path", DisplayPath(report.ResolverReportPath));
+        WriteField("Auto Review Report Path", DisplayPath(report.AutoReviewReportPath));
+        WriteField("Knowledge Quality Path", DisplayPath(report.KnowledgeQualityPath));
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteMessages("First Failed Stage Counts", report.FirstFailedStageCounts.Select(pair => $"{pair.Key}: {pair.Value}").ToList());
+        foreach (var item in report.Items)
+        {
+            WriteField("Item", $"{item.KnowledgeItemId} | {item.Title} | primary={item.PrimarySourceDomain} | source_count={item.SourceCountBeforeAfter} | first_failed={item.FirstFailedStage} | next={item.RecommendedNextAction}");
+            WriteMessages("Existing Publisher Groups", item.ExistingPublisherGroups);
+            WriteField("Policy Approved Source Count", item.PolicyApprovedSourceCount.ToString());
+            WriteField("Failure Reason", item.FailureReason);
+            foreach (var seed in item.Seeds)
+            {
+                WriteField("Seed", $"{seed.SeedId} | {seed.CandidatePublisherGroup} | {seed.SeedUrl} | fetch={seed.FetchStatus} | import={seed.ImportStatus} | semantic={seed.SemanticScore:0.###} | indep={seed.IndependenceScore:0.###} | contradiction={seed.ContradictionRisk:0.###} | resolver={seed.ResolverStatus} | policy={seed.PolicyStatus} | failed={seed.FirstFailedStage}");
+                WriteField("  Source Count Before/After", seed.SourceCountBeforeAfter);
+                WriteField("  Failure Reason", seed.FailureReason);
+                WriteField("  Recommended Next Action", seed.RecommendedNextAction);
+                WriteMessages("  Matched Terms", seed.MatchedTerms);
+            }
+            Console.WriteLine();
+        }
         Console.WriteLine();
         WriteSafety();
         return 0;
