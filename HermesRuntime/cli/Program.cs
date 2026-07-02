@@ -1774,7 +1774,6 @@ internal sealed class HermesCli
         var file = files[^1];
         Console.WriteLine($"Quelle: {DisplayPath(file)}");
         Console.WriteLine();
-
         foreach (var line in ReadRecentJsonlLines(file, limit))
         {
             if (!TryParseJsonLine(line, out var root))
@@ -6898,6 +6897,7 @@ internal sealed class HermesCli
             WriteField("Parameter", string.Join(", ", plan.ParametersToValidate));
             WriteField("Backtest/OOS/Forward", $"{plan.RequiredBacktest}/{plan.RequiredOosTest}/{plan.RequiredWalkForward}/{plan.RequiredForwardObservation}");
         }
+        WriteTrustedKnowledgeContext("strategy validation", ExtractKnowledgeTopic(report.ValidationPlans.FirstOrDefault()?.StrategyPattern));
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -7874,10 +7874,82 @@ internal sealed class HermesCli
             WriteField("Fehlt", string.Join(" · ", entry.MissingEvidence));
             WriteField("Nächster Schritt", entry.NextStep);
         }
+        WriteTrustedKnowledgeContext("review decision assistant", ExtractKnowledgeTopic(report.Entries.FirstOrDefault()?.KnowledgeItemId, report.Entries.FirstOrDefault()?.Title, report.Entries.FirstOrDefault()?.Domain));
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private void WriteTrustedKnowledgeContext(string analysisLabel, string? topic)
+    {
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            WriteField($"{analysisLabel} Trusted Knowledge", "topic not inferred");
+            return;
+        }
+
+        var reasoning = new KnowledgeReasoningService(BuildStoragePaths()).Run(topic);
+        WriteSubHeader($"{analysisLabel} Trusted Knowledge");
+        WriteField("Topic", reasoning.Topic);
+        WriteField("Confidence", reasoning.Confidence.ToString("0.###", CultureInfo.InvariantCulture));
+        WriteMessages("Trusted Knowledge IDs", reasoning.UsedKnowledgeIds);
+        WriteMessages("Reasoning Steps", reasoning.ReasoningSteps);
+        WriteMessages("Recommendations", reasoning.Recommendations);
+        WriteMessages("Open Uncertainties", reasoning.OpenUncertainties);
+    }
+
+    private static string? ExtractKnowledgeTopic(params string?[] values)
+    {
+        var joined = string.Join(" ", values.Where(value => !string.IsNullOrWhiteSpace(value)));
+        if (string.IsNullOrWhiteSpace(joined))
+        {
+            return null;
+        }
+
+        var normalized = joined.Replace("_", " ", StringComparison.Ordinal)
+            .Replace(":", " ", StringComparison.Ordinal)
+            .Replace("/", " ", StringComparison.Ordinal)
+            .ToLowerInvariant();
+        string[] knownTopics =
+        [
+            "bullish engulfing",
+            "bearish engulfing",
+            "double top",
+            "double bottom",
+            "support resistance",
+            "inside bar",
+            "breakout",
+            "gap trading",
+            "daytrading",
+            "day trading",
+            "pullback",
+            "pin bar",
+            "hammer",
+            "doji",
+            "liquidity sweep",
+            "mean reversion"
+        ];
+
+        foreach (var topic in knownTopics)
+        {
+            if (normalized.Contains(topic, StringComparison.OrdinalIgnoreCase))
+            {
+                return topic;
+            }
+        }
+
+        if (normalized.Contains("bullish", StringComparison.OrdinalIgnoreCase) && normalized.Contains("engulfing", StringComparison.OrdinalIgnoreCase))
+        {
+            return "bullish engulfing";
+        }
+
+        if (normalized.Contains("bearish", StringComparison.OrdinalIgnoreCase) && normalized.Contains("engulfing", StringComparison.OrdinalIgnoreCase))
+        {
+            return "bearish engulfing";
+        }
+
+        return null;
     }
 
     private int ShowDomainAwareReviewPrioritization()
@@ -13704,6 +13776,7 @@ internal sealed class HermesCli
         var file = files[^1];
         Console.WriteLine($"Quelle: {DisplayPath(file)}");
         Console.WriteLine();
+        string? inferredTopic = null;
 
         foreach (var line in ReadRecentJsonlLines(file, limit))
         {
@@ -13722,8 +13795,14 @@ internal sealed class HermesCli
             WriteField("Theoretical Stop", $"{GetDouble(root, "theoretical_stop", "theoreticalStop"):0.#####}");
             WriteField("Theoretical Target", $"{GetDouble(root, "theoretical_target", "theoreticalTarget"):0.#####}");
             WriteField("Reason Codes", string.Join(", ", GetStringArray(root, "reason_codes", "reasonCodes")));
+            inferredTopic ??= ExtractKnowledgeTopic(
+                GetString(root, "signal_type", "signalType"),
+                string.Join(" ", GetStringArray(root, "reason_codes", "reasonCodes")),
+                GetString(root, "direction"));
             Console.WriteLine();
         }
+
+        WriteTrustedKnowledgeContext("signal explanation", inferredTopic);
 
         WriteSafety();
         return 0;
