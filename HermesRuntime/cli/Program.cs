@@ -130,6 +130,7 @@ internal sealed class HermesCli
             "knowledge-state-consistency-status" => ShowKnowledgeStateConsistencyStatus(),
             "knowledge-state-consistency-check" => RunKnowledgeStateConsistencyCheck(),
             "knowledge-state-consistency-repair" => RunKnowledgeStateConsistencyRepair(),
+            "knowledge-state-repair-diagnostics" => ShowKnowledgeStateRepairDiagnostics(),
             "next-trusted-candidates-status" => ShowNextTrustedCandidatesStatus(),
             "multi-source-evidence-status" => ShowMultiSourceEvidenceStatus(),
             "multi-source-evidence-plan" => ShowMultiSourceEvidencePlan(),
@@ -495,6 +496,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-state-consistency-status Knowledge State Consistency Status anzeigen");
         Console.WriteLine("  hermes knowledge-state-consistency-check Knowledge State Consistency pruefen");
         Console.WriteLine("  hermes knowledge-state-consistency-repair [--dry-run|--apply] Knowledge State Consistency reparieren");
+        Console.WriteLine("  hermes knowledge-state-repair-diagnostics Knowledge State Repair Diagnostics anzeigen");
         Console.WriteLine("  hermes next-trusted-candidates-status Nächste Trusted-Kandidaten und Aktionsplan anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-status Multi-Source Evidence Status anzeigen");
         Console.WriteLine("  hermes multi-source-evidence-plan Multi-Source Evidence Plan anzeigen");
@@ -15326,6 +15328,18 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowKnowledgeStateRepairDiagnostics()
+    {
+        WriteHeader("Hermes Knowledge State Repair Diagnostics");
+        var service = new KnowledgeStateRepairDiagnosticsService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteKnowledgeStateRepairDiagnosticsReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowNextTrustedCandidatesStatus()
     {
         WriteHeader("Hermes Next Trusted Candidates");
@@ -15404,6 +15418,50 @@ internal sealed class HermesCli
             WriteField("Current Blockers", string.Join(", ", item.CurrentBlockers));
             WriteField("Expected Blockers", string.Join(", ", item.ExpectedBlockers));
             WriteField("Recommended Next Action", item.RecommendedNextAction);
+            WriteMessages("Warnings", item.Warnings);
+        }
+    }
+
+    private void WriteKnowledgeStateRepairDiagnosticsReport(KnowledgeStateRepairDiagnosticsReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Total Issues", report.TotalIssues.ToString());
+        WriteField("Auto Repairable", report.AutoRepairableCount.ToString());
+        WriteField("Human Review Required", report.HumanReviewRequiredCount.ToString());
+        WriteField("Next Best Repair Action", report.NextBestRepairAction);
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+        WriteField("Consistency Report", DisplayPath(report.ConsistencyReportPath));
+        WriteField("Knowledge Catalog", DisplayPath(report.CatalogPath));
+        WriteField("Knowledge Quality", DisplayPath(report.QualityPath));
+        WriteField("Knowledge Evidence", DisplayPath(report.EvidencePath));
+        WriteField("Source Confirmations", DisplayPath(report.SourceConfirmationsPath));
+        WriteField("Validation Plans", DisplayPath(report.ValidationPlansPath));
+        WriteField("Master Status", DisplayPath(report.MasterStatusPath));
+
+        foreach (var item in report.Items)
+        {
+            WriteSubHeader($"{item.Title} / {item.KnowledgeItemId}");
+            WriteField("Mismatch Type", item.MismatchType);
+            WriteField("Current Status", item.CurrentStatus);
+            WriteField("Validation Status", item.ValidationStatus);
+            WriteField("Trust Score", item.TrustScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Quality Score", item.QualityScore.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Source Count", item.SourceCount.ToString());
+            WriteField("Auto Repairable", item.AutoRepairable.ToString().ToLowerInvariant());
+            WriteField("Recommended Action", item.RecommendedAction);
+            WriteField("Expected Effect", item.ExpectedEffect);
+            WriteField("Severity", item.Severity);
+            WriteField("Source Confirmation Status", item.SourceConfirmationStatus ?? "-");
+            WriteField("Validation Plan Status", item.ValidationPlanStatus ?? "-");
+            WriteField("Master Status Hint", item.MasterStatusHint ?? "-");
+            WriteMessages("Blockers", item.Blockers);
             WriteMessages("Warnings", item.Warnings);
         }
     }
