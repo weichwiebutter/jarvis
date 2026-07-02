@@ -113,6 +113,8 @@ internal sealed class HermesCli
             "knowledge-reason" => RunKnowledgeReason(),
             "trusted-knowledge-usage-audit-status" => ShowTrustedKnowledgeUsageAuditStatus(),
             "trusted-knowledge-usage-audit" => RunTrustedKnowledgeUsageAudit(),
+            "trusted-knowledge-impact-status" => ShowTrustedKnowledgeImpactStatus(),
+            "trusted-knowledge-impact" => RunTrustedKnowledgeImpact(),
             "knowledge-health-root-cause" => ShowKnowledgeHealthRootCause(),
             "knowledge-confidence-engine" => ShowKnowledgeConfidenceEngine(),
             "confidence-review-prioritization" => ShowConfidenceReviewPrioritization(),
@@ -471,6 +473,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes knowledge-reason-status Trusted Knowledge Reasoning Status anzeigen");
         Console.WriteLine("  hermes trusted-knowledge-usage-audit Trusted Knowledge Usage Audit erzeugen");
         Console.WriteLine("  hermes trusted-knowledge-usage-audit-status Trusted Knowledge Usage Audit anzeigen");
+        Console.WriteLine("  hermes trusted-knowledge-impact Trusted Knowledge Impact Report erzeugen");
+        Console.WriteLine("  hermes trusted-knowledge-impact-status Trusted Knowledge Impact Report anzeigen");
         Console.WriteLine("  hermes knowledge-health-root-cause Knowledge Trust Root Cause Analyse anzeigen");
         Console.WriteLine("  hermes knowledge-confidence-engine Knowledge Confidence Score anzeigen");
         Console.WriteLine("  hermes confidence-review-prioritization Confidence-basierte Review Priorisierung anzeigen");
@@ -6657,6 +6661,40 @@ internal sealed class HermesCli
         var report = service.Run();
 
         WriteTrustedKnowledgeUsageAuditReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowTrustedKnowledgeImpactStatus()
+    {
+        WriteHeader("Hermes Trusted Knowledge Impact Report");
+        var service = new TrustedKnowledgeImpactService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadLatestReport();
+
+        if (report is null)
+        {
+            WriteWarning("No trusted knowledge impact report found yet. Run: hermes trusted-knowledge-impact");
+            WriteField("Report", DisplayPath(service.ReportPath));
+            WriteField("Markdown", DisplayPath(service.MarkdownPath));
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+
+        WriteTrustedKnowledgeImpactReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunTrustedKnowledgeImpact()
+    {
+        WriteHeader("Hermes Trusted Knowledge Impact Report");
+        var service = new TrustedKnowledgeImpactService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteTrustedKnowledgeImpactReport(report);
         Console.WriteLine();
         WriteSafety();
         return 0;
@@ -15713,6 +15751,39 @@ internal sealed class HermesCli
             WriteField("Missing Topic Fields", string.Join(", ", entry.MissingTopicFields));
             WriteField("Topic Source Fields", string.Join(", ", entry.TopicSourceFields));
             WriteField("Current State", entry.CurrentState);
+            WriteField("Notes", string.Join(" · ", entry.Notes));
+            Console.WriteLine();
+        }
+    }
+
+    private void WriteTrustedKnowledgeImpactReport(TrustedKnowledgeImpactReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Read Only", report.ReadOnly.ToString().ToLowerInvariant());
+        WriteField("No Trading Execution", report.NoTradingExecution.ToString().ToLowerInvariant());
+        WriteField("No Broker Action", report.NoBrokerAction.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteMessages("Commands With Trust Impact", report.CommandsWithTrustImpact);
+        WriteMessages("Commands Without Topic", report.CommandsWithoutTopic);
+        WriteMessages("Topics", report.Topics);
+        WriteMessages("Trusted Knowledge IDs", report.TrustedKnowledgeIds);
+        WriteMessages("Warnings", report.Warnings);
+
+        WriteSubHeader("Entries");
+        foreach (var entry in report.Entries)
+        {
+            WriteField(entry.Command, entry.AnalysisLabel);
+            WriteField("Trusted Knowledge Used", entry.TrustedKnowledgeUsed.ToString().ToLowerInvariant());
+            WriteField("Topic Inferred", entry.TopicInferred.ToString().ToLowerInvariant());
+            WriteField("Topic", entry.Topic ?? "topic not inferred");
+            WriteField("Confidence", entry.Confidence is null ? "-" : entry.Confidence.Value.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Supported Recommendation", entry.SupportedRecommendation);
+            WriteField("Trusted Knowledge IDs", string.Join(", ", entry.TrustedKnowledgeIds));
+            WriteField("Candidate Support Not Used", string.Join(", ", entry.CandidateSupportNotUsed));
+            WriteField("Reduced Uncertainties", string.Join(", ", entry.ReducedUncertainties));
+            WriteField("Missing Trusted Knowledge", string.Join(", ", entry.MissingTrustedKnowledge));
             WriteField("Notes", string.Join(" · ", entry.Notes));
             Console.WriteLine();
         }
