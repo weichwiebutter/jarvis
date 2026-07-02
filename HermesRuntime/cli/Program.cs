@@ -591,7 +591,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes direct-domain-research-status Direct Domain Research Status anzeigen");
         Console.WriteLine("  hermes direct-domain-research-fetch --max-items 5 [--max-fetch-seconds N] [--dry-run|--apply] Direct Domain Research ausfuehren");
         Console.WriteLine("  hermes known-article-seed-status Known Article Seed Catalog Status anzeigen");
-        Console.WriteLine("  hermes known-article-seed-fetch --max-items 10 [--dry-run|--apply] Known Article Seeds abrufen");
+        Console.WriteLine("  hermes known-article-seed-fetch --max-items 10 [--max-fetch-seconds N] [--dry-run|--apply] Known Article Seeds abrufen");
         Console.WriteLine("  hermes multi-source-acquisition-status Multi Source Acquisition Status anzeigen");
         Console.WriteLine("  hermes multi-source-acquisition --max-items 10 [--dry-run|--apply] Multi Source Acquisition ausfuehren");
         Console.WriteLine("  hermes browser-research-status Browser Research Agent Status anzeigen");
@@ -9757,9 +9757,10 @@ internal sealed class HermesCli
     {
         WriteHeader("Hermes Known Article Seed Catalog");
         var maxItems = ReadIntOption(_args, "--max-items", fallback: 10, min: 1, max: 100);
+        var maxFetchSeconds = Math.Max(5, ReadIntOption(_args, "--max-fetch-seconds", 60, 5, 3600));
         var dryRun = HasArg("--dry-run") || !HasArg("--apply");
         var service = new KnownArticleSeedCatalogService(BuildStoragePaths());
-        var report = service.Run(maxItems, dryRun);
+        var report = service.Run(maxItems, dryRun, maxFetchSeconds);
         WriteKnownArticleSeedCatalogReport(report);
         Console.WriteLine();
         WriteSafety();

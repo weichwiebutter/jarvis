@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http;
 using System.Net;
 using System.Text;
@@ -64,6 +65,10 @@ public sealed record KnownArticleSeedStatusReport(
     int AcceptedCandidates,
     int RejectedCandidates,
     int DuplicateCandidates,
+    int FetchDurationMs,
+    IReadOnlyList<string> TimedOutSeeds,
+    string? LastSuccessfulSeed,
+    int SkippedDueToTimeout,
     IReadOnlyList<string> LoadedSeeds,
     IReadOnlyList<KnownArticleSeedRequest> Requests,
     IReadOnlyList<KnownArticleSeedCandidate> Candidates,
@@ -86,12 +91,13 @@ public sealed class KnownArticleSeedCatalogService
     private readonly StoragePaths _storagePaths;
     private readonly HttpClient _httpClient;
     private readonly string _runtimeRoot;
+    private string _lastFetchStatus = string.Empty;
 
     public KnownArticleSeedCatalogService(StoragePaths storagePaths, string? runtimeRoot = null, HttpClient? httpClient = null)
     {
         _storagePaths = storagePaths;
         _runtimeRoot = runtimeRoot ?? Directory.GetCurrentDirectory();
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
         if (!_httpClient.DefaultRequestHeaders.UserAgent.Any())
         {
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("HermesRuntime/1.0");
@@ -130,6 +136,10 @@ public sealed class KnownArticleSeedCatalogService
             AcceptedCandidates: 0,
             RejectedCandidates: 0,
             DuplicateCandidates: 0,
+            FetchDurationMs: 0,
+            TimedOutSeeds: [],
+            LastSuccessfulSeed: null,
+            SkippedDueToTimeout: 0,
             LoadedSeeds: seeds.Select(seed => seed.SeedId).ToList(),
             Requests: [],
             Candidates: [],
@@ -150,11 +160,12 @@ public sealed class KnownArticleSeedCatalogService
         return report;
     }
 
-    public KnownArticleSeedStatusReport Run(int maxItems, bool dryRun)
+    public KnownArticleSeedStatusReport Run(int maxItems, bool dryRun, int maxFetchSeconds = 60)
     {
         Directory.CreateDirectory(Root);
         EnsureExampleFile();
         var now = DateTimeOffset.UtcNow;
+        var runWatch = Stopwatch.StartNew();
         var knowledgeItems = new KnowledgeCatalog(_storagePaths).LoadOrCreateItems();
         var sourceConfirmations = new SourceConfirmationEngine(_storagePaths).LoadOrBuild();
         var existingCandidates = LoadImportCandidates();
@@ -173,16 +184,47 @@ public sealed class KnownArticleSeedCatalogService
         var warnings = new List<string>();
 
         var fetchedCandidates = 0;
+        var timedOutSeeds = new List<string>();
+        string? lastSuccessfulSeed = null;
+        var skippedDueToTimeout = 0;
+        var runBudget = TimeSpan.FromSeconds(Math.Max(5, maxFetchSeconds));
         foreach (var request in requests)
         {
-            var fetched = FetchSeed(request);
-            if (fetched is null)
+            if (runWatch.Elapsed >= runBudget)
             {
-                finalRequests.Add(request with { Status = "fetch_failed", Reason = "no_html_content" });
-                rejected.Add(ConvertRejected(request, "fetch_failed", "no_html_content"));
-                warnings.Add($"fetch_failed:{request.SeedId}");
+                finalRequests.Add(request with { Status = "blocked_seed_fetch_timeout", Reason = "run_budget_exhausted" });
+                rejected.Add(ConvertRejected(request, "blocked_seed_fetch_timeout", "blocked_seed_fetch_timeout"));
+                timedOutSeeds.Add(request.Url);
+                skippedDueToTimeout++;
+                warnings.Add($"blocked_seed_fetch_timeout:{request.SeedId}");
                 continue;
             }
+
+            var remaining = runBudget - runWatch.Elapsed;
+            var perSeedTimeout = remaining > TimeSpan.Zero
+                ? TimeSpan.FromMilliseconds(Math.Min(10000, remaining.TotalMilliseconds))
+                : TimeSpan.FromMilliseconds(1000);
+            var fetched = FetchSeedWithTimeout(request, perSeedTimeout);
+            if (fetched is null)
+            {
+                var lastError = _lastFetchStatus == "timeout" ? "blocked_seed_fetch_timeout" : "no_html_content";
+                finalRequests.Add(request with { Status = lastError, Reason = lastError });
+                rejected.Add(ConvertRejected(request, lastError, lastError));
+                if (_lastFetchStatus == "timeout")
+                {
+                    timedOutSeeds.Add(request.Url);
+                    skippedDueToTimeout++;
+                    warnings.Add($"blocked_seed_fetch_timeout:{request.SeedId}");
+                }
+                else
+                {
+                    warnings.Add($"fetch_failed:{request.SeedId}");
+                }
+                continue;
+            }
+
+            lastSuccessfulSeed = request.Url;
+            fetchedCandidates++;
 
             fetchedCandidates++;
             var evaluation = ScoreCandidate(request, fetched);
@@ -246,10 +288,15 @@ public sealed class KnownArticleSeedCatalogService
             File.WriteAllText(ImportCandidatesPath, JsonSerializer.Serialize(merged, JsonDefaults.WriteOptions));
         }
 
+        if (!dryRun)
+        {
+            File.WriteAllText(RequestsPath, JsonSerializer.Serialize(finalRequests.Count == requests.Count ? finalRequests : requests, JsonDefaults.WriteOptions));
+        }
+
         var report = new KnownArticleSeedStatusReport(
             ReportVersion: "known_article_seed_catalog_v1",
             UpdatedAtUtc: now,
-            Status: accepted.Count > 0 ? "seed_candidates_ready" : "no_seed_candidates",
+            Status: timedOutSeeds.Count > 0 ? "blocked_seed_fetch_timeout" : accepted.Count > 0 ? "seed_candidates_ready" : "no_seed_candidates",
             LoadedKnowledgeItems: knowledgeItems.Count,
             ConsideredKnowledgeItems: requests.Count,
             SeedDefinitions: seedDefinitions.Count,
@@ -258,6 +305,10 @@ public sealed class KnownArticleSeedCatalogService
             AcceptedCandidates: accepted.Count,
             RejectedCandidates: rejected.Count,
             DuplicateCandidates: rejected.Count(candidate => (candidate.RejectionReason ?? string.Empty).Contains("duplicate", StringComparison.OrdinalIgnoreCase)),
+            FetchDurationMs: (int)runWatch.ElapsedMilliseconds,
+            TimedOutSeeds: timedOutSeeds.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            LastSuccessfulSeed: lastSuccessfulSeed,
+            SkippedDueToTimeout: skippedDueToTimeout,
             LoadedSeeds: seedDefinitions.Select(seed => seed.SeedId).ToList(),
             Requests: finalRequests.Count == requests.Count ? finalRequests : requests,
             Candidates: accepted,
@@ -276,11 +327,6 @@ public sealed class KnownArticleSeedCatalogService
             HumanReviewRequired: true);
 
         WriteReport(report);
-        if (!dryRun)
-        {
-            File.WriteAllText(RequestsPath, JsonSerializer.Serialize(requests, JsonDefaults.WriteOptions));
-        }
-
         return report;
     }
 
@@ -412,33 +458,51 @@ public sealed class KnownArticleSeedCatalogService
         return score;
     }
 
-    private KnownArticleSeedCandidate? FetchSeed(KnownArticleSeedRequest request)
+    private KnownArticleSeedCandidate? FetchSeedWithTimeout(KnownArticleSeedRequest request, TimeSpan timeout)
+    {
+        var fetchTask = Task.Run(() => FetchSeed(request, timeout));
+        if (!fetchTask.Wait(timeout))
+        {
+            _lastFetchStatus = "timeout";
+            return null;
+        }
+
+        return fetchTask.Result;
+    }
+
+    private KnownArticleSeedCandidate? FetchSeed(KnownArticleSeedRequest request, TimeSpan timeout)
     {
         try
         {
+            _lastFetchStatus = string.Empty;
             using var httpRequest = new HttpRequestMessage(HttpMethod.Get, request.Url);
             httpRequest.Headers.TryAddWithoutValidation("User-Agent", "HermesRuntime/1.0");
             httpRequest.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml");
-            using var response = _httpClient.Send(httpRequest);
+            using var cts = new CancellationTokenSource(timeout);
+            using var response = _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
             {
+                _lastFetchStatus = "http_error";
                 return null;
             }
 
             var contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
             if (!contentType.Contains("html", StringComparison.OrdinalIgnoreCase) && !contentType.Contains("text", StringComparison.OrdinalIgnoreCase))
             {
+                _lastFetchStatus = "non_html";
                 return null;
             }
 
-            var html = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            var html = response.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
             if (string.IsNullOrWhiteSpace(html))
             {
+                _lastFetchStatus = "empty_html";
                 return null;
             }
 
             var title = ExtractTitle(html) ?? request.Title;
             var snippet = ExtractSnippet(html);
+            _lastFetchStatus = "fetched";
             return new KnownArticleSeedCandidate(
                 KnowledgeItemId: request.KnowledgeItemId,
                 SeedId: request.SeedId,
@@ -451,8 +515,14 @@ public sealed class KnownArticleSeedCatalogService
                 SafetyFlags: ["no_trading_execution", "human_review_required"],
                 RetrievedAtUtc: DateTimeOffset.UtcNow);
         }
+        catch (OperationCanceledException)
+        {
+            _lastFetchStatus = "timeout";
+            return null;
+        }
         catch
         {
+            _lastFetchStatus = "fetch_failed";
             return null;
         }
     }
@@ -610,6 +680,10 @@ public sealed class KnownArticleSeedCatalogService
         sb.AppendLine($"- Accepted Candidates: {report.AcceptedCandidates}");
         sb.AppendLine($"- Rejected Candidates: {report.RejectedCandidates}");
         sb.AppendLine($"- Duplicate Candidates: {report.DuplicateCandidates}");
+        sb.AppendLine($"- Fetch Duration Ms: {report.FetchDurationMs}");
+        sb.AppendLine($"- Timed Out Seeds: {report.TimedOutSeeds.Count}");
+        sb.AppendLine($"- Last Successful Seed: {(string.IsNullOrWhiteSpace(report.LastSuccessfulSeed) ? "-" : report.LastSuccessfulSeed)}");
+        sb.AppendLine($"- Skipped Due To Timeout: {report.SkippedDueToTimeout}");
         sb.AppendLine();
         sb.AppendLine("## Requests");
         foreach (var req in report.Requests.Take(20))
