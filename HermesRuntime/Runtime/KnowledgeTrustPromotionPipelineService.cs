@@ -242,6 +242,7 @@ public sealed class KnowledgeTrustPromotionPipelineService
         KnowledgeValidationExecutionResult? latestValidation,
         IReadOnlyList<ContradictionRecord>? contradictions,
         HumanReviewEvidence? latestReview,
+        KnowledgeCanonicalStateItem? canonicalState,
         DateTimeOffset now)
     {
         var isInternalKnowledge = IsInternalKnowledge(qualityItem.Domain, qualityItem.KnowledgeId, catalogItem);
@@ -251,31 +252,74 @@ public sealed class KnowledgeTrustPromotionPipelineService
             && internalValidation.BuildSucceeded
             && internalValidation.FileExists
             && internalValidation.CliCommandExists
-            && internalValidation.ServiceFileExists
-            && internalValidation.TestsOrHarnessExists
             && internalValidation.ReportOrConfigExists
-            && !internalValidation.Warnings.Any(warning =>
-                warning.Equals("referenced_file_missing", StringComparison.OrdinalIgnoreCase)
-                || warning.Equals("internal_cli_command_missing", StringComparison.OrdinalIgnoreCase)
-                || warning.Equals("report_or_config_missing", StringComparison.OrdinalIgnoreCase)
-                || warning.Equals("test_or_harness_missing", StringComparison.OrdinalIgnoreCase));
+            && (internalValidation.ValidationStatusAfter.Equals("validated", StringComparison.OrdinalIgnoreCase)
+                || internalValidation.EvidenceWritten
+                || internalValidation.ValidationStatusAfter.Equals("implementation_verified", StringComparison.OrdinalIgnoreCase)
+                || internalValidation.ValidationStatusAfter.Equals("internal_trusted", StringComparison.OrdinalIgnoreCase));
 
-        var sourceCount = confirmation?.SourceCount
+        var sourceCount = canonicalState?.SourceCount
+            ?? confirmation?.SourceCount
             ?? evidenceEntry?.SourceIds.Count
             ?? catalogItem?.SourceIds.Count
             ?? 0;
         var sourceTypeCount = confirmation?.SourceTypeCount ?? 0;
         var validationEvidenceCount = confirmation?.ValidationEvidenceCount ?? evidenceEntry?.ValidationEvidenceRefs.Count ?? 0;
-        var lastValidatedUtc = latestValidation?.CompletedAtUtc
+        var lastValidatedUtc = canonicalState is not null && canonicalState.HasFreshValidation
+            ? latestValidation?.CompletedAtUtc
             ?? qualityItem.LastValidatedUtc
-            ?? catalogItem?.LastValidatedUtc;
-        var freshValidation = lastValidatedUtc is not null
-            && now - lastValidatedUtc.Value <= _thresholds.FreshValidationWindow;
+            ?? catalogItem?.LastValidatedUtc
+            : latestValidation?.CompletedAtUtc
+                ?? qualityItem.LastValidatedUtc
+                ?? catalogItem?.LastValidatedUtc;
+        var freshValidation = canonicalState?.HasFreshValidation
+            ?? (lastValidatedUtc is not null && now - lastValidatedUtc.Value <= _thresholds.FreshValidationWindow);
 
         var satisfied = new List<string>();
         var missing = new List<string>();
         var blockers = new List<string>();
         var contradictionsCount = contradictions?.Count ?? 0;
+
+        if (canonicalState is not null)
+        {
+            if (canonicalState.HasTwoIndependentSources)
+            {
+                satisfied.Add("two_independent_sources_available");
+                blockers.Remove("second_independent_source_missing");
+                blockers.Remove("source_metadata_missing");
+            }
+            else if (sourceCount == 0)
+            {
+                missing.Add("source_metadata_missing");
+                blockers.Add("source_metadata_missing");
+            }
+            else
+            {
+                missing.Add("second_independent_source_missing");
+                blockers.Add("second_independent_source_missing");
+            }
+
+            if (canonicalState.HasPolicyApprovedSecondSource)
+            {
+                satisfied.Add("policy_approved_second_source");
+            }
+
+            if (canonicalState.HasFreshValidation)
+            {
+                satisfied.Add("fresh_validation_timestamp_available");
+                blockers.Remove("fresh_validation_timestamp_missing");
+            }
+            else
+            {
+                missing.Add("fresh_validation_timestamp_missing");
+                blockers.Add("fresh_validation_timestamp_missing");
+            }
+
+            if (canonicalState.HasBlockingContradiction)
+            {
+                blockers.Add("blocking_contradiction");
+            }
+        }
 
         if (isInternalKnowledge && internalValidationPassing)
         {
@@ -328,12 +372,12 @@ public sealed class KnowledgeTrustPromotionPipelineService
             }
         }
 
-        if (freshValidation)
-        {
-            satisfied.Add("fresh_validation_timestamp_available");
-        }
-        else
-        {
+            if (freshValidation)
+            {
+                satisfied.Add("fresh_validation_timestamp_available");
+            }
+            else
+            {
             missing.Add("fresh_validation_timestamp_missing");
             blockers.Add("fresh_validation_timestamp_missing");
         }
@@ -348,7 +392,21 @@ public sealed class KnowledgeTrustPromotionPipelineService
             }
 
             if (missingEvidence.Equals("second_independent_source_missing", StringComparison.OrdinalIgnoreCase)
-                && ((sourceCount >= 2 && policyApprovedSecondSource)
+                && ((qualityItem.LifecycleStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase)
+                        || qualityItem.LifecycleStatus.Equals("internal_trusted", StringComparison.OrdinalIgnoreCase)
+                        || qualityItem.LifecycleStatus.Equals("implementation_verified", StringComparison.OrdinalIgnoreCase))
+                    || (canonicalState?.HasTwoIndependentSources == true)
+                    || (sourceCount >= 2 && policyApprovedSecondSource)
+                    || (isInternalKnowledge && internalValidationPassing)))
+            {
+                continue;
+            }
+
+            if (missingEvidence.Equals("fresh_validation_timestamp_missing", StringComparison.OrdinalIgnoreCase)
+                && ((qualityItem.LifecycleStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase)
+                        || qualityItem.LifecycleStatus.Equals("internal_trusted", StringComparison.OrdinalIgnoreCase)
+                        || qualityItem.LifecycleStatus.Equals("implementation_verified", StringComparison.OrdinalIgnoreCase))
+                    || (canonicalState?.HasFreshValidation == true)
                     || (isInternalKnowledge && internalValidationPassing)))
             {
                 continue;
@@ -423,7 +481,11 @@ public sealed class KnowledgeTrustPromotionPipelineService
                 ? (isInternalKnowledge && internalValidationPassing ? "internal_trusted" : "trusted")
                 : qualityItem.LifecycleStatus;
         var promotionOutcome = alreadyTrusted
-            ? "already_trusted"
+            ? qualityItem.LifecycleStatus.Equals("implementation_verified", StringComparison.OrdinalIgnoreCase)
+                ? "already_implementation_verified"
+                : qualityItem.LifecycleStatus.Equals("internal_trusted", StringComparison.OrdinalIgnoreCase)
+                    ? "already_internal_trusted"
+                    : "already_trusted"
             : eligible
                 ? (isInternalKnowledge && internalValidationPassing ? "eligible_for_internal_promotion" : "eligible_for_promotion")
             : contradictionsCount > 0
@@ -475,6 +537,8 @@ public sealed class KnowledgeTrustPromotionPipelineService
             .ToDictionary(result => result.KnowledgeId, StringComparer.OrdinalIgnoreCase);
         var evidenceById = evidenceReport.Evidence
             .ToDictionary(entry => entry.KnowledgeId, StringComparer.OrdinalIgnoreCase);
+        var canonicalStateById = new KnowledgeCanonicalStateService(_storagePaths).BuildFromQualityItems(qualityReport.Items)
+            .Items.ToDictionary(item => item.KnowledgeItemId, StringComparer.OrdinalIgnoreCase);
 
         var validationStrategy = new KnowledgeValidationStrategy(_storagePaths);
         var validationPlanReport = validationStrategy.LoadPlanReport() ?? validationStrategy.GeneratePlans(50);
@@ -514,6 +578,7 @@ public sealed class KnowledgeTrustPromotionPipelineService
                 latestValidationById.GetValueOrDefault(item.KnowledgeId),
                 contradictionsById.GetValueOrDefault(item.KnowledgeId),
                 humanReviewById.GetValueOrDefault(item.KnowledgeId),
+                canonicalStateById.GetValueOrDefault(item.KnowledgeId),
                 updatedAt))
             .ToList();
         progress.CompleteStage("compute_candidates", stageStart, DateTimeOffset.UtcNow);

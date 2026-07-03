@@ -80,7 +80,12 @@ public sealed record KnowledgeQualityReport(
     int NeedsMoreEvidenceReviews = 0,
     int DeferredReviews = 0,
     double ReviewCoverage = 0,
-    IReadOnlyList<string>? TopReviewPriorities = null);
+    IReadOnlyList<string>? TopReviewPriorities = null,
+    int ExternalTrustedKnowledge = 0,
+    int InternalTrustedKnowledge = 0,
+    int ImplementationVerifiedKnowledge = 0,
+    int TrustedKnowledgeTotal = 0,
+    string CanonicalStatePath = "");
 
 public sealed record KnowledgeEvidenceEntry(
     string KnowledgeId,
@@ -195,6 +200,7 @@ public sealed class KnowledgeQualityEngine
             .ThenBy(item => item.Domain, StringComparer.Ordinal)
             .ThenBy(item => item.KnowledgeId, StringComparer.Ordinal)
             .ToList();
+        var canonicalState = new KnowledgeCanonicalStateService(_storagePaths).BuildFromQualityItems(items);
 
         if (items.Count == 0)
         {
@@ -203,7 +209,7 @@ public sealed class KnowledgeQualityEngine
 
         var averageQuality = Average(items, item => item.QualityScore);
         var averageTrust = Average(items, item => item.TrustScore);
-        var trusted = items.Count(item => item.LifecycleStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase));
+        var trusted = canonicalState.TrustedKnowledgeTotal;
         var weak = items.Count(item => item.QualityScore < _policy.WeakQualityThreshold
             || item.LifecycleStatus is "untested" or "experimental" or "rejected");
         var deprecated = items.Count(item => item.LifecycleStatus.Equals("deprecated", StringComparison.OrdinalIgnoreCase)
@@ -267,7 +273,12 @@ public sealed class KnowledgeQualityEngine
             NeedsMoreEvidenceReviews: reviewSummary.NeedsMoreEvidenceReviews,
             DeferredReviews: reviewSummary.DeferredReviews,
             ReviewCoverage: reviewSummary.ReviewCoverage,
-            TopReviewPriorities: reviewSummary.TopReviewPriorities);
+            TopReviewPriorities: reviewSummary.TopReviewPriorities,
+            ExternalTrustedKnowledge: canonicalState.TrustedKnowledgeExternal,
+            InternalTrustedKnowledge: canonicalState.TrustedKnowledgeInternal,
+            ImplementationVerifiedKnowledge: canonicalState.ImplementationVerifiedKnowledge,
+            TrustedKnowledgeTotal: canonicalState.TrustedKnowledgeTotal,
+            CanonicalStatePath: canonicalState.ReportPath);
 
         var evidence = new KnowledgeEvidenceReport(
             ReportVersion: "knowledge_evidence_v1",

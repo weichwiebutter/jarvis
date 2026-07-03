@@ -93,6 +93,7 @@ public sealed class MasterStatusService
         var xauusdQuality = marketDataService.BuildQuality(ScalpingResearchService.DefaultAsset);
         var knowledgeQualityEngine = new KnowledgeQualityEngine(_storagePaths);
         var knowledgeQuality = Measure("knowledge_quality", knowledgeQualityEngine.LoadReport);
+        var canonicalState = new KnowledgeCanonicalStateService(_storagePaths).BuildFromQualityItems(knowledgeQuality.Items);
         var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
         var domainValidation = SafeBuildDomainValidation(statusBuildWarnings);
         var humanReview = SafeBuildHumanReview(statusBuildWarnings);
@@ -537,6 +538,10 @@ public sealed class MasterStatusService
                     ["sources"] = GetInt(cognitiveStatus, "source_count", "sourceCount"),
                     ["knowledge_items"] = GetInt(cognitiveStatus, "knowledge_item_count", "knowledgeItemCount"),
                     ["trusted_knowledge"] = knowledgeQuality.TrustedKnowledge,
+                    ["trusted_knowledge_external"] = canonicalState.TrustedKnowledgeExternal,
+                    ["trusted_knowledge_internal"] = canonicalState.TrustedKnowledgeInternal,
+                    ["implementation_verified_knowledge"] = canonicalState.ImplementationVerifiedKnowledge,
+                    ["trusted_knowledge_total"] = canonicalState.TrustedKnowledgeTotal,
                     ["weak_knowledge"] = knowledgeQuality.WeakKnowledge,
                     ["deprecated_knowledge"] = knowledgeQuality.DeprecatedKnowledge,
                     ["promising_knowledge"] = promotionStatus.PromisingKnowledge,

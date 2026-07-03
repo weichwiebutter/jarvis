@@ -1039,6 +1039,13 @@ internal sealed class HermesCli
         WriteField("robust_strategies", snapshot.RobustStrategies.ToString());
         WriteField("demo_bot_candidates", snapshot.DemoBotCandidates.ToString());
         WriteField("trusted_knowledge", snapshot.TrustedKnowledge.ToString());
+        if (snapshot.CognitiveStatus?.Metrics is not null)
+        {
+            WriteField("trusted_knowledge_external", snapshot.CognitiveStatus.Metrics.TryGetValue("trusted_knowledge_external", out var trustedExternal) ? trustedExternal?.ToString() ?? "-" : "-");
+            WriteField("trusted_knowledge_internal", snapshot.CognitiveStatus.Metrics.TryGetValue("trusted_knowledge_internal", out var trustedInternal) ? trustedInternal?.ToString() ?? "-" : "-");
+            WriteField("implementation_verified_knowledge", snapshot.CognitiveStatus.Metrics.TryGetValue("implementation_verified_knowledge", out var implementationVerified) ? implementationVerified?.ToString() ?? "-" : "-");
+            WriteField("trusted_knowledge_total", snapshot.CognitiveStatus.Metrics.TryGetValue("trusted_knowledge_total", out var trustedTotal) ? trustedTotal?.ToString() ?? "-" : "-");
+        }
         WriteField("weak_knowledge", snapshot.WeakKnowledge.ToString());
         WriteField("deprecated_knowledge", snapshot.DeprecatedKnowledge.ToString());
         WriteField("average_quality_score", $"{snapshot.AverageQualityScore:0.####}");

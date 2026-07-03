@@ -88,9 +88,14 @@ public sealed class MasterStatusWriter
 
     private static MasterStatusSnapshot ApplyKnowledgeOnlyUpdate(MasterStatusSnapshot snapshot, KnowledgeQualityReport qualityReport)
     {
+        var canonicalState = new KnowledgeCanonicalStateService(BuildStoragePaths(snapshot.DataRoot)).BuildFromQualityItems(qualityReport.Items);
         var metrics = new Dictionary<string, object?>(snapshot.CognitiveStatus.Metrics, StringComparer.OrdinalIgnoreCase)
         {
             ["trusted_knowledge"] = qualityReport.TrustedKnowledge,
+            ["trusted_knowledge_external"] = canonicalState.TrustedKnowledgeExternal,
+            ["trusted_knowledge_internal"] = canonicalState.TrustedKnowledgeInternal,
+            ["implementation_verified_knowledge"] = canonicalState.ImplementationVerifiedKnowledge,
+            ["trusted_knowledge_total"] = canonicalState.TrustedKnowledgeTotal,
             ["weak_knowledge"] = qualityReport.WeakKnowledge,
             ["deprecated_knowledge"] = qualityReport.DeprecatedKnowledge,
             ["average_quality_score"] = qualityReport.AverageQualityScore,
@@ -138,6 +143,19 @@ public sealed class MasterStatusWriter
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList()
         };
+    }
+
+    private static StoragePaths BuildStoragePaths(string root)
+    {
+        var normalizedRoot = Path.GetFullPath(root);
+        return new StoragePaths(
+            normalizedRoot,
+            Path.Combine(normalizedRoot, "events"),
+            Path.Combine(normalizedRoot, "snapshots"),
+            Path.Combine(normalizedRoot, "logs"),
+            Path.Combine(normalizedRoot, "cache"),
+            Path.Combine(normalizedRoot, "jobs"),
+            Path.Combine(normalizedRoot, "archive"));
     }
 
 }
