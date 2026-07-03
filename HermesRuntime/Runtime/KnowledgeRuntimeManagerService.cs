@@ -46,9 +46,13 @@ public sealed record KnowledgeRuntimeManagerReport(
     bool SuppressedDueToDependencyNoEffect,
     string NoEffectDependencyChain,
     string NextNonBlockedPhase,
+    bool CooldownActive,
+    double SelectedPhaseScore,
+    bool SkippedDueToEffectivenessMemory,
     IReadOnlyList<KnowledgeRuntimeManagerPhaseResult> Phases,
     IReadOnlyList<string> SuppressedRecommendations,
-    IReadOnlyList<string> Warnings,
+    IReadOnlyList<KnowledgeRuntimeManagerPhaseMemory> PhaseEffectiveness,
+        IReadOnlyList<string> Warnings,
     string DiagnosticsReportPath,
     string UsageAuditReportPath,
     string ImpactReportPath,
@@ -67,6 +71,16 @@ public sealed record KnowledgeRuntimeManagerReport(
     bool HumanReviewRequired,
     bool Executed);
 
+public sealed record KnowledgeRuntimeManagerPhaseMemory(
+    string Phase,
+    DateTimeOffset LastRunUtc,
+    string LastEffect,
+    int SuccessCount,
+    int NoEffectCount,
+    DateTimeOffset? CooldownUntilRunUtc,
+    int CooldownRunsRemaining,
+    IReadOnlyDictionary<string, int> LastMetricDeltas);
+
 public sealed class KnowledgeRuntimeManagerService
 {
     private readonly StoragePaths _storagePaths;
@@ -83,6 +97,8 @@ public sealed class KnowledgeRuntimeManagerService
     public string ReportPath => Path.Combine(Root, "knowledge_runtime_manager_report.json");
 
     public string MarkdownPath => Path.Combine(Root, "knowledge_runtime_manager_report.md");
+
+    public string PhaseEffectivenessPath => Path.Combine(Root, "knowledge_runtime_manager_phase_effectiveness.json");
 
     public string DiagnosticsReportPath => Path.Combine(_storagePaths.Root, "reports", "knowledge_state_repair_diagnostics", "knowledge_state_repair_diagnostics_report.json");
 
@@ -110,8 +126,16 @@ public sealed class KnowledgeRuntimeManagerService
         var actionBudget = Math.Clamp(maxActions, 1, 5);
         var actionTimeout = TimeSpan.FromSeconds(120);
         var latestReport = LoadLatestReport();
-        var lastNoEffectPhase = latestReport?.Phases.LastOrDefault(phase => string.Equals(phase.PhaseEffect, "no_metric_change", StringComparison.OrdinalIgnoreCase) && phase.Executed)?.Phase;
-        var lastNoEffectExecutedPhase = latestReport?.Phases.LastOrDefault(phase => string.Equals(phase.PhaseEffect, "no_metric_change", StringComparison.OrdinalIgnoreCase) && phase.Executed);
+        var phaseMemory = new Dictionary<string, KnowledgeRuntimeManagerPhaseMemory>(
+            LoadPhaseEffectiveness(),
+            StringComparer.OrdinalIgnoreCase);
+        var lastNoEffectPhase = phaseMemory.Values
+            .OrderByDescending(item => item.LastRunUtc)
+            .FirstOrDefault(item => item.LastEffect.Equals("no_metric_change", StringComparison.OrdinalIgnoreCase)
+                && item.NoEffectCount > 0)
+            ?.Phase;
+        var lastNoEffectExecutedPhase = latestReport?.Phases
+            .LastOrDefault(phase => string.Equals(phase.PhaseEffect, "no_metric_change", StringComparison.OrdinalIgnoreCase) && phase.Executed);
 
         var diagnosticsService = new KnowledgeStateRepairDiagnosticsService(_storagePaths);
         var usageAuditService = new TrustedKnowledgeUsageAuditService(_storagePaths, _runtimeRoot);
@@ -160,6 +184,9 @@ public sealed class KnowledgeRuntimeManagerService
             var phaseStartedAt = DateTimeOffset.UtcNow;
             var beforeMasterSnapshot = currentMasterSnapshot;
             var beforeSnapshot = BuildSnapshot(beforeMasterSnapshot);
+            var priorMemory = phaseMemory.TryGetValue(phase, out var memoryEntry)
+                ? memoryEntry
+                : new KnowledgeRuntimeManagerPhaseMemory(phase, phaseStartedAt, "idle", 0, 0, null, 0, new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase));
 
             var status = "skipped";
             var details = (string?)null;
@@ -169,8 +196,7 @@ public sealed class KnowledgeRuntimeManagerService
             var executed = false;
             var timedOut = false;
 
-            var suppressedByCooldown = !string.IsNullOrWhiteSpace(lastNoEffectPhase)
-                && phase.Equals(lastNoEffectPhase, StringComparison.OrdinalIgnoreCase);
+            var suppressedByCooldown = IsPhaseOnCooldown(priorMemory);
 
             if (suppressedByCooldown)
             {
@@ -226,9 +252,12 @@ public sealed class KnowledgeRuntimeManagerService
                 warnings.Add($"{phase}:timeout");
             }
 
-            var phaseEffect = BuildPhaseEffect(beforeSnapshot, afterSnapshot);
-
             var phaseCompletedAt = DateTimeOffset.UtcNow;
+            var phaseEffect = BuildPhaseEffect(beforeSnapshot, afterSnapshot);
+            var metricChanges = BuildMetricChanges(beforeSnapshot, afterSnapshot);
+            var updatedMemory = UpdatePhaseMemory(priorMemory, phaseEffect, phaseCompletedAt, metricChanges);
+            phaseMemory[phase] = updatedMemory;
+
             phases.Add(new KnowledgeRuntimeManagerPhaseResult(
                 Phase: phase,
                 Command: command,
@@ -240,7 +269,7 @@ public sealed class KnowledgeRuntimeManagerService
                 Executed: executed,
                 Before: beforeSnapshot,
                 After: afterSnapshot,
-                MetricChanges: BuildMetricChanges(beforeSnapshot, afterSnapshot),
+                MetricChanges: metricChanges,
                 Warnings: phaseWarnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 Details: details));
         }
@@ -368,6 +397,8 @@ public sealed class KnowledgeRuntimeManagerService
             },
             afterOverride: () => currentMasterSnapshot);
 
+        phaseMemory = SavePhaseEffectivenessAfterRun(phaseMemory);
+
         var afterSnapshot = currentMasterSnapshot;
         var after = BuildSnapshot(afterSnapshot);
         var executionTimeMs = Math.Max(0, (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
@@ -388,6 +419,12 @@ public sealed class KnowledgeRuntimeManagerService
         var nextRecommendedAction = nextRecommendationContext.NextRecommendedAction;
         suppressedDueToDependencyNoEffect = nextRecommendationContext.SuppressedDueToDependencyNoEffect;
         noEffectDependencyChain = nextRecommendationContext.NoEffectDependencyChain;
+        var cooldownActive = phaseMemory.Values.Any(item => item.CooldownRunsRemaining > 0 || (item.CooldownUntilRunUtc is not null && item.CooldownUntilRunUtc > DateTimeOffset.UtcNow));
+        var selectedPhaseScore = nextRecommendationContext.SuppressedDueToDependencyNoEffect
+            ? 0d
+            : 1d;
+        var skippedDueToEffectivenessMemory = phases.Any(phase => phase.Warnings.Any(warning => warning.Equals("skipped_due_to_recent_no_effect", StringComparison.OrdinalIgnoreCase)))
+            || nextRecommendationContext.SuppressedDueToDependencyNoEffect;
         var report = new KnowledgeRuntimeManagerReport(
             ReportVersion: "knowledge_runtime_manager_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -408,8 +445,12 @@ public sealed class KnowledgeRuntimeManagerService
             SuppressedDueToDependencyNoEffect: suppressedDueToDependencyNoEffect,
             NoEffectDependencyChain: noEffectDependencyChain,
             NextNonBlockedPhase: nextRecommendationContext.NextNonBlockedPhase,
+            CooldownActive: cooldownActive,
+            SelectedPhaseScore: selectedPhaseScore,
+            SkippedDueToEffectivenessMemory: skippedDueToEffectivenessMemory,
             Phases: phases,
             SuppressedRecommendations: suppressedRecommendations.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            PhaseEffectiveness: phaseMemory.Values.OrderBy(item => item.Phase, StringComparer.OrdinalIgnoreCase).ToList(),
             Warnings: CombineWarnings(diagnostics.Warnings, usageAudit.Warnings, impact.Warnings, reasoning?.Warnings ?? [], suppressedRecommendations),
             DiagnosticsReportPath: DiagnosticsReportPath,
             UsageAuditReportPath: UsageAuditReportPath,
@@ -503,13 +544,116 @@ public sealed class KnowledgeRuntimeManagerService
 
     private static string BuildPhaseEffect(KnowledgeRuntimeManagerMetricSnapshot before, KnowledgeRuntimeManagerMetricSnapshot after)
     {
-        return before.TrustedKnowledge == after.TrustedKnowledge
-            && before.PromisingKnowledge == after.PromisingKnowledge
-            && before.WeakKnowledge == after.WeakKnowledge
-            && before.ContradictionCount == after.ContradictionCount
-            && before.ValidationPlansOpen == after.ValidationPlansOpen
-            ? "no_metric_change"
-            : "metric_change";
+        var trustedDelta = after.TrustedKnowledge - before.TrustedKnowledge;
+        var promisingDelta = after.PromisingKnowledge - before.PromisingKnowledge;
+        var weakDelta = after.WeakKnowledge - before.WeakKnowledge;
+        var contradictionDelta = after.ContradictionCount - before.ContradictionCount;
+        var validationPlansDelta = after.ValidationPlansOpen - before.ValidationPlansOpen;
+
+        if (trustedDelta == 0
+            && promisingDelta == 0
+            && weakDelta == 0
+            && contradictionDelta == 0
+            && validationPlansDelta == 0)
+        {
+            return "no_metric_change";
+        }
+
+        if (trustedDelta != 0)
+        {
+            return "trust_change";
+        }
+
+        if (contradictionDelta != 0)
+        {
+            return "contradiction_change";
+        }
+
+        if (validationPlansDelta != 0)
+        {
+            return "validation_change";
+        }
+
+        if (promisingDelta != 0 || weakDelta != 0)
+        {
+            return "source_change";
+        }
+
+        return "structural_change";
+    }
+
+    private static bool IsPhaseOnCooldown(KnowledgeRuntimeManagerPhaseMemory memory)
+    {
+        return memory.CooldownRunsRemaining > 0;
+    }
+
+    private static KnowledgeRuntimeManagerPhaseMemory UpdatePhaseMemory(
+        KnowledgeRuntimeManagerPhaseMemory priorMemory,
+        string phaseEffect,
+        DateTimeOffset completedAtUtc,
+        IReadOnlyDictionary<string, int> metricChanges)
+    {
+        var successCount = priorMemory.SuccessCount + (phaseEffect == "no_metric_change" ? 0 : 1);
+        var noEffectCount = priorMemory.NoEffectCount + (phaseEffect == "no_metric_change" ? 1 : 0);
+        var cooldownUntilRunUtc = phaseEffect == "no_metric_change"
+            ? completedAtUtc.AddDays(2)
+            : priorMemory.CooldownUntilRunUtc;
+        var cooldownRunsRemaining = phaseEffect == "no_metric_change"
+            ? 3
+            : priorMemory.CooldownRunsRemaining;
+        return new KnowledgeRuntimeManagerPhaseMemory(
+            Phase: priorMemory.Phase,
+            LastRunUtc: completedAtUtc,
+            LastEffect: phaseEffect,
+            SuccessCount: successCount,
+            NoEffectCount: noEffectCount,
+            CooldownUntilRunUtc: cooldownUntilRunUtc,
+            CooldownRunsRemaining: cooldownRunsRemaining,
+            LastMetricDeltas: new Dictionary<string, int>(metricChanges, StringComparer.OrdinalIgnoreCase));
+    }
+
+    private IReadOnlyDictionary<string, KnowledgeRuntimeManagerPhaseMemory> LoadPhaseEffectiveness()
+    {
+        if (!File.Exists(PhaseEffectivenessPath))
+        {
+            return new Dictionary<string, KnowledgeRuntimeManagerPhaseMemory>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            var records = JsonSerializer.Deserialize<List<KnowledgeRuntimeManagerPhaseMemory>>(File.ReadAllText(PhaseEffectivenessPath), JsonDefaults.SnapshotReadOptions)
+                ?? [];
+            return records
+                .GroupBy(item => item.Phase, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.LastRunUtc).First(), StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return new Dictionary<string, KnowledgeRuntimeManagerPhaseMemory>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private Dictionary<string, KnowledgeRuntimeManagerPhaseMemory> SavePhaseEffectivenessAfterRun(
+        IReadOnlyDictionary<string, KnowledgeRuntimeManagerPhaseMemory> phaseMemory)
+    {
+        var updated = phaseMemory.Values
+            .Select(item => item.CooldownRunsRemaining > 0
+                ? item with { CooldownRunsRemaining = item.CooldownRunsRemaining - 1 }
+                : item)
+            .ToList();
+
+        try
+        {
+            File.WriteAllText(
+                PhaseEffectivenessPath,
+                JsonSerializer.Serialize(updated, JsonDefaults.WriteOptions));
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            // Best-effort only.
+        }
+
+        return updated.ToDictionary(item => item.Phase, StringComparer.OrdinalIgnoreCase);
     }
 
     private KnowledgeStateConsistencyReport? LoadConsistencyReport()
@@ -823,6 +967,9 @@ public sealed class KnowledgeRuntimeManagerService
         sb.AppendLine($"- suppressed_due_to_dependency_no_effect: {report.SuppressedDueToDependencyNoEffect}");
         sb.AppendLine($"- no_effect_dependency_chain: {report.NoEffectDependencyChain}");
         sb.AppendLine($"- next_non_blocked_phase: {report.NextNonBlockedPhase}");
+        sb.AppendLine($"- cooldown_active: {report.CooldownActive}");
+        sb.AppendLine($"- selected_phase_score: {report.SelectedPhaseScore:0.###}");
+        sb.AppendLine($"- skipped_due_to_effectiveness_memory: {report.SkippedDueToEffectivenessMemory}");
         sb.AppendLine();
         sb.AppendLine("## Before");
         WriteMetricBlock(sb, report.Before);
@@ -844,6 +991,17 @@ public sealed class KnowledgeRuntimeManagerService
             if (phase.Warnings.Count > 0)
             {
                 sb.AppendLine($"- warnings: {string.Join(", ", phase.Warnings)}");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("## Phase Effectiveness");
+        foreach (var phase in report.PhaseEffectiveness)
+        {
+            sb.AppendLine($"- {phase.Phase}: last_run={phase.LastRunUtc:O}, last_effect={phase.LastEffect}, success_count={phase.SuccessCount}, no_effect_count={phase.NoEffectCount}, cooldown_runs_remaining={phase.CooldownRunsRemaining}, cooldown_until_run={phase.CooldownUntilRunUtc?.ToString("O") ?? "-"}");
+            if (phase.LastMetricDeltas.Count > 0)
+            {
+                sb.AppendLine($"  - metric_deltas: {string.Join(", ", phase.LastMetricDeltas.Select(kvp => $"{kvp.Key}={kvp.Value}"))}");
             }
         }
 
