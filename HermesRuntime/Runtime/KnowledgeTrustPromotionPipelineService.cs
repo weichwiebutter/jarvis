@@ -7,6 +7,8 @@ public sealed record KnowledgeTrustPromotionCandidate(
     string KnowledgeId,
     string Domain,
     string Title,
+    string CanonicalStatus,
+    string TrustClass,
     string CurrentStatus,
     string RecommendedStatus,
     double TrustScore,
@@ -21,6 +23,7 @@ public sealed record KnowledgeTrustPromotionCandidate(
     IReadOnlyList<string> SatisfiedConditions,
     IReadOnlyList<string> MissingEvidenceCategories,
     IReadOnlyList<string> Blockers,
+    IReadOnlyList<string> CanonicalBlockers,
     string PromotionOutcome,
     bool EligibleForPromotion,
     bool HumanReviewRequired);
@@ -247,6 +250,14 @@ public sealed class KnowledgeTrustPromotionPipelineService
     {
         var isInternalKnowledge = IsInternalKnowledge(qualityItem.Domain, qualityItem.KnowledgeId, catalogItem);
         var internalValidation = LoadInternalValidationItem(qualityItem.KnowledgeId);
+        var canonicalStatus = canonicalState?.CanonicalStatus ?? qualityItem.LifecycleStatus;
+        var trustClass = canonicalState?.TrustClass ?? (qualityItem.LifecycleStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase)
+            ? "external_trusted"
+            : qualityItem.LifecycleStatus.Equals("internal_trusted", StringComparison.OrdinalIgnoreCase)
+                ? "internal_trusted"
+                : qualityItem.LifecycleStatus.Equals("implementation_verified", StringComparison.OrdinalIgnoreCase)
+                    ? "internal_trusted"
+                    : "candidate");
         var internalValidationPassing = isInternalKnowledge
             && internalValidation is not null
             && internalValidation.BuildSucceeded
@@ -473,14 +484,41 @@ public sealed class KnowledgeTrustPromotionPipelineService
         var alreadyTrusted = qualityItem.LifecycleStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase)
             || qualityItem.LifecycleStatus.Equals("internal_trusted", StringComparison.OrdinalIgnoreCase)
             || qualityItem.LifecycleStatus.Equals("implementation_verified", StringComparison.OrdinalIgnoreCase);
+        var trustedLike = alreadyTrusted
+            || canonicalStatus.Equals("trusted", StringComparison.OrdinalIgnoreCase)
+            || canonicalStatus.Equals("internal_trusted", StringComparison.OrdinalIgnoreCase)
+            || canonicalStatus.Equals("implementation_verified", StringComparison.OrdinalIgnoreCase);
 
-        var eligible = !alreadyTrusted && blockers.Count == 0 && (!isInternalKnowledge || internalValidationPassing);
-        var recommendedStatus = alreadyTrusted
+        if (trustedLike)
+        {
+            missing.RemoveAll(value =>
+                value.Equals("second_independent_source_missing", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("fresh_validation_timestamp_missing", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("human_review_pending", StringComparison.OrdinalIgnoreCase));
+
+            blockers.RemoveAll(value =>
+                value.Equals("second_independent_source_missing", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("fresh_validation_timestamp_missing", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("human_review_pending", StringComparison.OrdinalIgnoreCase));
+
+            if (canonicalStatus.Equals("internal_trusted", StringComparison.OrdinalIgnoreCase)
+                || canonicalStatus.Equals("implementation_verified", StringComparison.OrdinalIgnoreCase))
+            {
+                blockers.RemoveAll(value =>
+                    value.Equals("trust_score_too_low", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("quality_score_too_low", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("validation_score_too_low", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("domain_validation_not_passed", StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        var eligible = !trustedLike && blockers.Count == 0 && (!isInternalKnowledge || internalValidationPassing);
+        var recommendedStatus = trustedLike
             ? qualityItem.LifecycleStatus
             : eligible
                 ? (isInternalKnowledge && internalValidationPassing ? "internal_trusted" : "trusted")
                 : qualityItem.LifecycleStatus;
-        var promotionOutcome = alreadyTrusted
+        var promotionOutcome = trustedLike
             ? qualityItem.LifecycleStatus.Equals("implementation_verified", StringComparison.OrdinalIgnoreCase)
                 ? "already_implementation_verified"
                 : qualityItem.LifecycleStatus.Equals("internal_trusted", StringComparison.OrdinalIgnoreCase)
@@ -498,6 +536,8 @@ public sealed class KnowledgeTrustPromotionPipelineService
             KnowledgeId: qualityItem.KnowledgeId,
             Domain: qualityItem.Domain,
             Title: qualityItem.Title,
+            CanonicalStatus: canonicalStatus,
+            TrustClass: trustClass,
             CurrentStatus: qualityItem.LifecycleStatus,
             RecommendedStatus: recommendedStatus,
             TrustScore: qualityItem.TrustScore,
@@ -512,13 +552,16 @@ public sealed class KnowledgeTrustPromotionPipelineService
             SatisfiedConditions: satisfied.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MissingEvidenceCategories: missing.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             Blockers: blockers.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            CanonicalBlockers: canonicalState?.CanonicalBlockers ?? Array.Empty<string>(),
             PromotionOutcome: promotionOutcome,
             EligibleForPromotion: eligible,
-            HumanReviewRequired: isInternalKnowledge && internalValidationPassing
+            HumanReviewRequired: trustedLike
                 ? false
-                : (latestReview is null && !policyApprovedSecondSource)
-                || latestReview?.Result.Equals("rejected", StringComparison.OrdinalIgnoreCase) == true
-                || (latestReview?.Result.Equals("needs_review", StringComparison.OrdinalIgnoreCase) == true && !policyApprovedSecondSource));
+                : isInternalKnowledge && internalValidationPassing
+                    ? false
+                    : (latestReview is null && !policyApprovedSecondSource)
+                    || latestReview?.Result.Equals("rejected", StringComparison.OrdinalIgnoreCase) == true
+                    || (latestReview?.Result.Equals("needs_review", StringComparison.OrdinalIgnoreCase) == true && !policyApprovedSecondSource));
     }
 
     private KnowledgeTrustPromotionReport RunInternal(bool apply, CancellationToken cancellationToken, PromotionApplyProgress progress, bool skipRefresh)
@@ -1131,10 +1174,15 @@ public sealed class KnowledgeTrustPromotionPipelineService
         foreach (var candidate in report.Candidates.Take(20))
         {
             sb.AppendLine($"- {candidate.KnowledgeId} [{candidate.Domain}] {candidate.CurrentStatus} -> {candidate.RecommendedStatus}");
+            sb.AppendLine($"  - canonical_status={candidate.CanonicalStatus} trust_class={candidate.TrustClass}");
             sb.AppendLine($"  - trust={candidate.TrustScore:0.###} quality={candidate.QualityScore:0.###} validation={candidate.ValidationScore:0.###}");
             sb.AppendLine($"  - sources={candidate.SourceCount} validationEvidence={candidate.ValidationEvidenceCount} readiness={candidate.ValidationReadiness}");
             sb.AppendLine($"  - blockers={string.Join(", ", candidate.Blockers)}");
             sb.AppendLine($"  - missing={string.Join(", ", candidate.MissingEvidenceCategories)}");
+            if (candidate.CanonicalBlockers.Count > 0)
+            {
+                sb.AppendLine($"  - canonical_blockers={string.Join(", ", candidate.CanonicalBlockers)}");
+            }
         }
 
         sb.AppendLine();
