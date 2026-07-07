@@ -1,5 +1,4 @@
 using System.IO;
-using System.Linq;
 using System.Text.Json;
 using HermesPaperBot.Models;
 using HermesPaperBot.Services;
@@ -45,11 +44,6 @@ public sealed class HermesPaperBot
     private readonly SignalPackageReader _signalPackageReader = new();
 
     /// <summary>
-    /// Embedded chart annotation spec reader for cloud runtime.
-    /// </summary>
-    private readonly EmbeddedChartAnnotationSpecReader _chartAnnotationSpecReader = new();
-
-    /// <summary>
     /// Last runtime configuration kept in memory only.
     /// </summary>
     private BotConfiguration? _lastConfiguration;
@@ -68,11 +62,6 @@ public sealed class HermesPaperBot
     /// Parsed signal candidates kept in memory only.
     /// </summary>
     private SignalCandidate[] _signalCandidates = [];
-
-    /// <summary>
-    /// Parsed embedded chart annotations kept in memory only.
-    /// </summary>
-    private ChartAnnotationSpec[] _embeddedChartAnnotations = [];
 
     /// <summary>
     /// Virtual paper portfolio kept in memory only.
@@ -119,7 +108,7 @@ public sealed class HermesPaperBot
     /// </summary>
     public void OnStart()
     {
-        PreparePaperRuntime();
+        StartPaperRuntime();
     }
 
     /// <summary>
@@ -137,19 +126,9 @@ public sealed class HermesPaperBot
     /// broker_action=none
     /// no order API
     ///
-    /// Prepares runtime state without executing a paper step.
+    /// Starts the paper runtime from a supplied configuration or the cloud bootstrap.
     /// </summary>
-    public bool PreparePaperRuntime()
-        => PreparePaperRuntime(null, null);
-
-    /// <summary>
-    /// paper_only
-    /// broker_action=none
-    /// no order API
-    ///
-    /// Prepares runtime state from a supplied configuration or the cloud bootstrap.
-    /// </summary>
-    public bool PreparePaperRuntime(BotConfiguration? configuration, RuntimeMarketContext? context = null)
+    public bool StartPaperRuntime(BotConfiguration? configuration, RuntimeMarketContext? context = null)
     {
         try
         {
@@ -195,34 +174,7 @@ public sealed class HermesPaperBot
                 ? _paperPortfolioState.ActiveTrades[0]
                 : null;
             _signalCandidates = _paperDecisionEngine.ParseSignalCandidates(currentConfiguration.CloudEmbeddedReleasePackage, out var signalWarnings);
-            _embeddedChartAnnotations = _chartAnnotationSpecReader.Read(currentConfiguration.CloudEmbeddedReleasePackage, out var chartWarnings);
-            var combinedWarnings = signalWarnings.Concat(chartWarnings).ToArray();
-            _lastRuntimeStepResult = CreatePreparedResult(context ?? new RuntimeMarketContext(), combinedWarnings);
-            return true;
-        }
-        catch
-        {
-            _lastRuntimeStepResult = CreateBlockedResult("cloud_start_failed");
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// paper_only
-    /// broker_action=none
-    /// no order API
-    ///
-    /// Starts the paper runtime from a supplied configuration or the cloud bootstrap.
-    /// </summary>
-    public bool StartPaperRuntime(BotConfiguration? configuration, RuntimeMarketContext? context = null)
-    {
-        try
-        {
-            if (!PreparePaperRuntime(configuration, context))
-            {
-                return false;
-            }
-            _lastRuntimeStepResult = ExecutePaperRuntimeStep(context ?? new RuntimeMarketContext(), []);
+            _lastRuntimeStepResult = ExecutePaperRuntimeStep(context ?? new RuntimeMarketContext(), signalWarnings);
             return _lastRuntimeStepResult.Success;
         }
         catch
@@ -295,12 +247,6 @@ public sealed class HermesPaperBot
     public void OnBar()
     {
     }
-
-    /// <summary>
-    /// Returns embedded chart annotations from the cloud manifest only.
-    /// </summary>
-    public ChartAnnotationSpec[] GetEmbeddedChartAnnotations()
-        => _embeddedChartAnnotations.ToArray();
 
     /// <summary>
     /// paper_only
@@ -426,6 +372,13 @@ public sealed class HermesPaperBot
             PaperTr\u0061deResult = tradeResult,
             MarketContext = context,
             MarketContextSeen = true,
+            PackageLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
+            SignalPackageLoaded = HasEmbeddedSignalPackage(),
+            SignalCount = GetEmbeddedSignalCount(),
+            SignalPackageJsonLength = GetEmbeddedSignalPackageJsonLength(),
+            SignalPackageParseStatus = GetEmbeddedSignalParseStatus(),
+            FirstSignalId = GetFirstEmbeddedSignalId(),
+            ChartAnnotationLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
         };
 
         _paperPortfolioState = combinedResult.PaperPortfolioState ?? _paperPortfolioState;
@@ -433,47 +386,6 @@ public sealed class HermesPaperBot
         PersistPaperStateSnapshot(_paperPortfolioState, persisted);
         return persisted;
     }
-
-    private RuntimeStepResult CreatePreparedResult(RuntimeMarketContext context, string[] warnings)
-        => new()
-        {
-            Success = true,
-            State = "paper_runtime_prepared",
-            ConfigValid = true,
-            ImportAttempted = false,
-            ImportValid = true,
-            BundleValid = true,
-            ChecksumValid = true,
-            SafetyAllowed = true,
-            DriftAllowed = true,
-            KillSwitchActive = false,
-            FallbackPossible = false,
-            DisabledUntilValidBundle = false,
-            PaperDecision = "would_wait",
-            BrokerAction = "none",
-            Reasons = warnings,
-            PaperWarnings = warnings,
-            SignalSeen = false,
-            SignalDirection = "flat",
-            SignalConfidence = null,
-            SignalExpired = false,
-            SignalCandidates = _signalCandidates,
-            PaperPortfolioState = _paperPortfolioState,
-            PaperPositionOpen = false,
-            PaperPositionStatus = "none",
-            PaperExitReason = "none",
-            RMultiple = null,
-            PositionId = string.Empty,
-            MarketContext = context,
-            MarketContextSeen = true,
-            PackageLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
-            SignalPackageLoaded = HasEmbeddedSignalPackage(),
-            SignalCount = GetEmbeddedSignalCount(),
-            SignalPackageJsonLength = GetEmbeddedSignalPackageJsonLength(),
-            SignalPackageParseStatus = GetEmbeddedSignalParseStatus(),
-            FirstSignalId = GetFirstEmbeddedSignalId(),
-            ChartAnnotationLoaded = _embeddedChartAnnotations.Length > 0,
-        };
 
     private RuntimeStepResult BuildSignalRuntimeResult(
         RuntimeStepResult validationResult,
@@ -561,6 +473,13 @@ public sealed class HermesPaperBot
             PositionId = string.Empty,
             MarketContext = context,
             MarketContextSeen = true,
+            PackageLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
+            SignalPackageLoaded = HasEmbeddedSignalPackage(),
+            SignalCount = GetEmbeddedSignalCount(),
+            SignalPackageJsonLength = GetEmbeddedSignalPackageJsonLength(),
+            SignalPackageParseStatus = GetEmbeddedSignalParseStatus(),
+            FirstSignalId = GetFirstEmbeddedSignalId(),
+            ChartAnnotationLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
         };
     }
 
@@ -631,7 +550,7 @@ public sealed class HermesPaperBot
             SignalPackageJsonLength = GetEmbeddedSignalPackageJsonLength(),
             SignalPackageParseStatus = GetEmbeddedSignalParseStatus(),
             FirstSignalId = GetFirstEmbeddedSignalId(),
-            ChartAnnotationLoaded = _embeddedChartAnnotations.Length > 0,
+            ChartAnnotationLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
         };
     }
 
@@ -741,11 +660,7 @@ public sealed class HermesPaperBot
                 MarketContextSeen = runtimeResult.MarketContextSeen,
                 PackageLoaded = runtimeResult.PackageLoaded || _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
                 SignalPackageLoaded = runtimeResult.SignalPackageLoaded || _signalCandidates.Length > 0,
-                SignalCount = runtimeResult.SignalCount > 0 ? runtimeResult.SignalCount : GetEmbeddedSignalCount(),
-                SignalPackageJsonLength = runtimeResult.SignalPackageJsonLength != "0" ? runtimeResult.SignalPackageJsonLength : GetEmbeddedSignalPackageJsonLength(),
-                SignalPackageParseStatus = runtimeResult.SignalPackageParseStatus == "unknown" ? GetEmbeddedSignalParseStatus() : runtimeResult.SignalPackageParseStatus,
-                FirstSignalId = string.IsNullOrWhiteSpace(runtimeResult.FirstSignalId) ? GetFirstEmbeddedSignalId() : runtimeResult.FirstSignalId,
-                ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded || _embeddedChartAnnotations.Length > 0,
+                ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded || _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
             };
         }
 
@@ -784,11 +699,7 @@ public sealed class HermesPaperBot
             MarketContextSeen = runtimeResult.MarketContextSeen,
             PackageLoaded = runtimeResult.PackageLoaded || _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
             SignalPackageLoaded = runtimeResult.SignalPackageLoaded || _signalCandidates.Length > 0,
-            SignalCount = runtimeResult.SignalCount > 0 ? runtimeResult.SignalCount : GetEmbeddedSignalCount(),
-            SignalPackageJsonLength = runtimeResult.SignalPackageJsonLength != "0" ? runtimeResult.SignalPackageJsonLength : GetEmbeddedSignalPackageJsonLength(),
-            SignalPackageParseStatus = runtimeResult.SignalPackageParseStatus == "unknown" ? GetEmbeddedSignalParseStatus() : runtimeResult.SignalPackageParseStatus,
-            FirstSignalId = string.IsNullOrWhiteSpace(runtimeResult.FirstSignalId) ? GetFirstEmbeddedSignalId() : runtimeResult.FirstSignalId,
-            ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded || _embeddedChartAnnotations.Length > 0,
+            ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded || _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
         };
     }
 
@@ -832,13 +743,6 @@ public sealed class HermesPaperBot
                 PaperPortfolioState = runtimeResult.PaperPortfolioState,
                 PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
                 MarketContext = runtimeResult.MarketContext,
-                PackageLoaded = runtimeResult.PackageLoaded || _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
-                SignalPackageLoaded = runtimeResult.SignalPackageLoaded || _signalCandidates.Length > 0,
-                SignalCount = runtimeResult.SignalCount > 0 ? runtimeResult.SignalCount : GetEmbeddedSignalCount(),
-                SignalPackageJsonLength = runtimeResult.SignalPackageJsonLength != "0" ? runtimeResult.SignalPackageJsonLength : GetEmbeddedSignalPackageJsonLength(),
-                SignalPackageParseStatus = runtimeResult.SignalPackageParseStatus == "unknown" ? GetEmbeddedSignalParseStatus() : runtimeResult.SignalPackageParseStatus,
-                FirstSignalId = string.IsNullOrWhiteSpace(runtimeResult.FirstSignalId) ? GetFirstEmbeddedSignalId() : runtimeResult.FirstSignalId,
-                ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded || _embeddedChartAnnotations.Length > 0,
             };
         }
     }
@@ -1114,7 +1018,7 @@ public sealed class HermesPaperBot
             SignalPackageJsonLength = GetEmbeddedSignalPackageJsonLength(),
             SignalPackageParseStatus = GetEmbeddedSignalParseStatus(),
             FirstSignalId = GetFirstEmbeddedSignalId(),
-        ChartAnnotationLoaded = _embeddedChartAnnotations.Length > 0,
+        ChartAnnotationLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
     };
 
     private RuntimeStepResult CreateCloudRuntimeFailureResult(string stage, Exception ex, RuntimeMarketContext context) => new()
@@ -1157,7 +1061,7 @@ public sealed class HermesPaperBot
             SignalPackageJsonLength = GetEmbeddedSignalPackageJsonLength(),
             SignalPackageParseStatus = GetEmbeddedSignalParseStatus(),
             FirstSignalId = GetFirstEmbeddedSignalId(),
-        ChartAnnotationLoaded = _embeddedChartAnnotations.Length > 0,
+        ChartAnnotationLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
     };
 
     private static string ResolvePaperStateSnapshotPath(BotConfiguration configuration)
