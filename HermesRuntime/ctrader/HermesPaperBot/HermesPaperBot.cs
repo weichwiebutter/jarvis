@@ -682,9 +682,10 @@ public sealed class HermesPaperBot
         var logger = new PaperLogger();
         var summaryWriter = new RuntimeSummaryWriter();
         var loggingOk = logger.Write(logsPath, runtimeResult);
+        var timerLoggingOk = logger.WriteTimer(logsPath, runtimeResult);
         var summaryOk = summaryWriter.Write(logsPath, runtimeResult, _lastConfiguration ?? new BotConfiguration());
 
-        if (!loggingOk || !summaryOk)
+        if (!loggingOk || !timerLoggingOk || !summaryOk)
         {
             var loggingReasons = new List<string>(runtimeResult.Reasons)
             {

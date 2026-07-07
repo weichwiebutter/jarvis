@@ -2,6 +2,7 @@ namespace HermesPaperBot.Services;
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using HermesPaperBot.Models;
 
@@ -14,6 +15,9 @@ public sealed class PaperLogger
     {
         WriteIndented = false,
     };
+
+    private static readonly object InMemoryLock = new();
+    private static readonly Dictionary<string, List<string>> InMemoryTimerEntries = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Writes a paper runtime step entry and decision log.
@@ -164,6 +168,98 @@ public sealed class PaperLogger
         catch
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Writes a compact per-timer entry and falls back to memory if file IO is not available.
+    /// </summary>
+    public bool WriteTimer(string logsPath, RuntimeStepResult result)
+    {
+        try
+        {
+            var entry = new
+            {
+                entry_type = "timer",
+                timestamp_utc = DateTime.UtcNow.ToString("O"),
+                symbol = result.MarketContext?.Symbol ?? string.Empty,
+                timeframe = result.MarketContext?.Timeframe ?? string.Empty,
+                decision = result.PaperDecision,
+                state = result.State,
+                signal_count = result.SignalCount,
+                open_positions = result.PaperPortfolioState?.ActiveTrades.Length ?? 0,
+                closed_trades = result.PaperPortfolioState?.ClosedTrades.Length ?? 0,
+                net_r = ComputeNetR(result),
+                safety_status = BuildSafetyStatus(result),
+                broker_action = result.BrokerAction,
+            };
+
+            var line = JsonSerializer.Serialize(entry, JsonOptions);
+            if (string.IsNullOrWhiteSpace(logsPath))
+            {
+                AppendInMemory("paper_runtime_step_log.jsonl", line);
+                return true;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(logsPath);
+                var timerLogPath = Path.Combine(logsPath, "paper_runtime_step_log.jsonl");
+                File.AppendAllText(timerLogPath, line + Environment.NewLine);
+                return true;
+            }
+            catch
+            {
+                AppendInMemory(logsPath, line);
+                return true;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static decimal ComputeNetR(RuntimeStepResult result)
+    {
+        var closedTrades = result.PaperPortfolioState?.ClosedTrades;
+        if (closedTrades is null || closedTrades.Length == 0)
+        {
+            return 0m;
+        }
+
+        return Math.Round(closedTrades.Sum(position => position.RMultiple != 0m
+            ? position.RMultiple
+            : ComputeFallbackR(position)), 4);
+    }
+
+    private static decimal ComputeFallbackR(PaperPosition position)
+    {
+        var risk = Math.Max(Math.Abs(position.EntryPrice - position.StopLossPrice), 0.0001m);
+        return string.Equals(position.Direction, "short", StringComparison.OrdinalIgnoreCase)
+            ? (position.EntryPrice - position.ExitPrice) / risk
+            : (position.ExitPrice - position.EntryPrice) / risk;
+    }
+
+    private static string BuildSafetyStatus(RuntimeStepResult result)
+        => result.KillSwitchActive
+            ? "blocked"
+            : result.SafetyAllowed && string.Equals(result.BrokerAction, "none", StringComparison.OrdinalIgnoreCase)
+                ? "safe"
+                : "partial";
+
+    private static void AppendInMemory(string logsPath, string line)
+    {
+        lock (InMemoryLock)
+        {
+            var key = string.IsNullOrWhiteSpace(logsPath) ? "paper_runtime_step_log.jsonl" : logsPath;
+            if (!InMemoryTimerEntries.TryGetValue(key, out var entries))
+            {
+                entries = [];
+                InMemoryTimerEntries[key] = entries;
+            }
+
+            entries.Add(line);
         }
     }
 }
