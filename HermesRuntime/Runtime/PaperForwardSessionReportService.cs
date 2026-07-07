@@ -55,7 +55,7 @@ public sealed class PaperForwardSessionReportService
         var historyReport = historyService.LoadLatestReport() ?? historyService.Run();
         var snapshotPath = ResolveSnapshotPath(stepReport, historyReport, warnings);
 
-        var (sessionStart, lastTimerSeen, timerTicks) = LoadTimerTimeline(stepService.LogsPath, warnings);
+        var (sessionStart, lastTimerSeen, timerTicks) = LoadTimerTimeline(stepReport, warnings);
         var report = new PaperForwardSessionReport(
             ReportVersion: "paper_forward_session_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
@@ -116,9 +116,9 @@ public sealed class PaperForwardSessionReportService
         return null;
     }
 
-    private static (DateTimeOffset? sessionStart, DateTimeOffset? lastTimerSeen, int timerTicks) LoadTimerTimeline(string logsPath, List<string> warnings)
+    private static (DateTimeOffset? sessionStart, DateTimeOffset? lastTimerSeen, int timerTicks) LoadTimerTimeline(PaperRuntimeStepReport stepReport, List<string> warnings)
     {
-        var logFile = Path.Combine(logsPath, "paper_runtime_step_log.jsonl");
+        var logFile = Path.Combine(stepReport.LogsPath, "paper_runtime_step_log.jsonl");
         if (!File.Exists(logFile))
         {
             warnings.Add("timer_log_missing");
@@ -136,6 +136,12 @@ public sealed class PaperForwardSessionReportService
                 }
 
                 using var document = JsonDocument.Parse(line);
+                if (!document.RootElement.TryGetProperty("entry_type", out var entryType)
+                    || !string.Equals(entryType.GetString(), "timer", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 if (document.RootElement.TryGetProperty("timestamp_utc", out var timestamp) && DateTimeOffset.TryParse(timestamp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
                 {
                     timestamps.Add(parsed);
@@ -150,7 +156,7 @@ public sealed class PaperForwardSessionReportService
 
         if (timestamps.Count == 0)
         {
-            warnings.Add("timer_log_empty");
+            warnings.Add("timer_log_no_timer_entries");
             return (null, null, 0);
         }
 
