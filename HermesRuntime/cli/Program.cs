@@ -363,6 +363,7 @@ internal sealed class HermesCli
             "paper-closed-trade-harness" => ShowPaperClosedTradeHarness(),
             "paper-trade-summary" => ShowPaperTradeSummary(),
             "paper-trade-history" => ShowPaperTradeHistory(),
+            "paper-forward-session-report" => ShowPaperForwardSessionReport(),
             "ctrader-upload-readiness" => ShowCTraderUploadReadiness(),
             "ctrader-export" => RunCTraderBotExport(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
@@ -749,6 +750,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes paper-exit-harness PaperBot Exit-Harness ausfuehren");
         Console.WriteLine("  hermes paper-trade-summary PaperBot Trade Summary anzeigen");
         Console.WriteLine("  hermes paper-trade-history PaperBot Trade History anzeigen");
+        Console.WriteLine("  hermes paper-forward-session-report PaperBot Forward Session Report anzeigen");
         Console.WriteLine("  hermes ctrader-upload-readiness cTrader Upload Readiness anzeigen");
         Console.WriteLine("  hermes ctrader-export cTrader Bot Export nach D:\\Bot");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
@@ -6023,6 +6025,36 @@ internal sealed class HermesCli
             }
         }
 
+        WriteMessages("Warnings", report.Warnings);
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPaperForwardSessionReport()
+    {
+        WriteHeader("Hermes Paper Forward Session Report");
+        var service = new PaperForwardSessionReportService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Session Start", report.SessionStart?.ToString("O") ?? "-");
+        WriteField("Last Timer Seen", report.LastTimerSeen?.ToString("O") ?? "-");
+        WriteField("Timer Ticks", report.TimerTicks.ToString(CultureInfo.InvariantCulture));
+        WriteField("Signal Count", report.SignalCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Open Positions", report.OpenPositions.ToString(CultureInfo.InvariantCulture));
+        WriteField("Closed Trades", report.ClosedTrades.ToString(CultureInfo.InvariantCulture));
+        WriteField("Net R", report.NetR.ToString("0.####", CultureInfo.InvariantCulture));
+        WriteField("Last Decision", report.LastDecision);
+        WriteField("Safety Status", report.SafetyStatus);
+        WriteField("Broker Action", report.BrokerAction);
+        WriteField("Paper Runtime Step Report", DisplayPath(report.PaperRuntimeStepReportPath ?? string.Empty));
+        WriteField("Paper Trade Summary Report", DisplayPath(report.PaperTradeSummaryReportPath ?? string.Empty));
+        WriteField("Paper Trade History Report", DisplayPath(report.PaperTradeHistoryReportPath ?? string.Empty));
+        WriteField("Paper State Snapshot", DisplayPath(report.PaperStateSnapshotPath ?? string.Empty));
         WriteMessages("Warnings", report.Warnings);
 
         Console.WriteLine();
