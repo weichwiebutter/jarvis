@@ -353,6 +353,7 @@ internal sealed class HermesCli
             "paper-trigger-harness" => ShowPaperTriggerHarness(),
             "paper-exit-harness" => ShowPaperExitHarness(),
             "paper-trade-summary" => ShowPaperTradeSummary(),
+            "ctrader-upload-readiness" => ShowCTraderUploadReadiness(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
             "cloud-embedded-release-package" => ShowCloudEmbeddedReleasePackage(),
@@ -730,6 +731,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes paper-trigger-harness PaperBot Trigger-Harness ausfuehren");
         Console.WriteLine("  hermes paper-exit-harness PaperBot Exit-Harness ausfuehren");
         Console.WriteLine("  hermes paper-trade-summary PaperBot Trade Summary anzeigen");
+        Console.WriteLine("  hermes ctrader-upload-readiness cTrader Upload Readiness anzeigen");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
         Console.WriteLine("  hermes cloud-embedded-release-package Cloud-kompatibles Embedded Release Package erzeugen");
@@ -5770,6 +5772,32 @@ internal sealed class HermesCli
         WriteField("Broker Action", report.BrokerActionNone ? "none" : "not_none");
         WriteField("Paper Only", report.PaperOnly.ToString().ToLowerInvariant());
         WriteMessages("Warnings", report.Warnings);
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCTraderUploadReadiness()
+    {
+        WriteHeader("Hermes cTrader Upload Readiness");
+        var service = new CTraderUploadReadinessService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Algo Exists", report.AlgoExists.ToString().ToLowerInvariant());
+        WriteField("Algo Metadata Exists", report.AlgoMetadataExists.ToString().ToLowerInvariant());
+        WriteField("Algo Project Build PASS", report.AlgoProjectBuildPass.ToString().ToLowerInvariant());
+        WriteField("Embedded Package Present", report.EmbeddedPackagePresent.ToString().ToLowerInvariant());
+        WriteField("Runtime Self Check Ready", report.RuntimeSelfCheckReady.ToString().ToLowerInvariant());
+        WriteField("Paper Runtime Wired", report.PaperRuntimeWired.ToString().ToLowerInvariant());
+        WriteField("Timer Loop Wired", report.TimerLoopWired.ToString().ToLowerInvariant());
+        WriteField("Broker Action None", report.BrokerActionNone.ToString().ToLowerInvariant());
+        WriteField("Paper Only", report.PaperOnly.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Recommendations", report.Recommendations);
 
         Console.WriteLine();
         WriteSafety();
