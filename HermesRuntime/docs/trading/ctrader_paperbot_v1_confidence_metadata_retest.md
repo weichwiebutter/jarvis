@@ -13,6 +13,17 @@ Verifizieren, dass der exportierte cTrader PaperBot nach dem Confidence-Metadata
 
 ## Beobachtungen
 
+### OnTimer / Runtime Status
+
+Der aktuelle PaperBot-Runtime-Status ist bereit und sicher:
+
+- `signal_count=3`
+- `package_loaded=true`
+- `signal_package_loaded=true`
+- `chart_annotation_spec_loaded=true`
+- `broker_action=none`
+- `kill_switch_active=false` *(nicht als eigenes Feld im aktuellen JSON ausgegeben; aus dem sicheren Runtime-Status und `broker_action=none` konsistent)*
+
 ### PaperBot Runtime Self Check
 
 Letzter Runtime-Selbsttest ist grün:
@@ -34,6 +45,8 @@ Der EURUSD-Signalpfad zeigt jetzt keine fehlenden Confidence-Metadaten mehr:
 - `confidence_threshold=0.6`
 - `missing_confidence_fields=[]`
 - `confidence_blockers=["paper_entry_disabled"]`
+- `decision_reason=paper_entry_disabled`
+- `lifecycle_state=invalidated`
 
 ### Paper Runtime Step
 
