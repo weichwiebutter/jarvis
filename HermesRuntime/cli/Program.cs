@@ -354,6 +354,7 @@ internal sealed class HermesCli
             "paper-exit-harness" => ShowPaperExitHarness(),
             "paper-trade-summary" => ShowPaperTradeSummary(),
             "ctrader-upload-readiness" => ShowCTraderUploadReadiness(),
+            "ctrader-export" => RunCTraderBotExport(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
             "cloud-embedded-release-package" => ShowCloudEmbeddedReleasePackage(),
@@ -732,6 +733,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes paper-exit-harness PaperBot Exit-Harness ausfuehren");
         Console.WriteLine("  hermes paper-trade-summary PaperBot Trade Summary anzeigen");
         Console.WriteLine("  hermes ctrader-upload-readiness cTrader Upload Readiness anzeigen");
+        Console.WriteLine("  hermes ctrader-export cTrader Bot Export nach D:\\Bot");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
         Console.WriteLine("  hermes cloud-embedded-release-package Cloud-kompatibles Embedded Release Package erzeugen");
@@ -5798,6 +5800,37 @@ internal sealed class HermesCli
         WriteField("Paper Only", report.PaperOnly.ToString().ToLowerInvariant());
         WriteMessages("Warnings", report.Warnings);
         WriteMessages("Recommendations", report.Recommendations);
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunCTraderBotExport()
+    {
+        WriteHeader("Hermes cTrader Bot Export");
+        var service = new CTraderBotExportService(_runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Export Root", report.ExportRoot);
+        WriteField("Algo Source Path", DisplayPath(report.AlgoSourcePath));
+        WriteField("Algo Metadata Source Path", DisplayPath(report.AlgoMetadataSourcePath));
+        WriteField("Readiness JSON Source Path", DisplayPath(report.ReadinessJsonSourcePath));
+        WriteField("Readiness Markdown Source Path", DisplayPath(report.ReadinessMarkdownSourcePath));
+        WriteField("Algo Target Path", report.AlgoTargetPath);
+        WriteField("Algo Metadata Target Path", report.AlgoMetadataTargetPath);
+        WriteField("Readiness JSON Target Path", report.ReadinessJsonTargetPath);
+        WriteField("Readiness Markdown Target Path", report.ReadinessMarkdownTargetPath);
+        WriteField("Export Root Created", report.ExportRootCreated.ToString().ToLowerInvariant());
+        WriteField("Algo Copied", report.AlgoCopied.ToString().ToLowerInvariant());
+        WriteField("Algo Metadata Copied", report.AlgoMetadataCopied.ToString().ToLowerInvariant());
+        WriteField("Readiness JSON Copied", report.ReadinessJsonCopied.ToString().ToLowerInvariant());
+        WriteField("Readiness Markdown Copied", report.ReadinessMarkdownCopied.ToString().ToLowerInvariant());
+        WriteMessages("Missing Sources", report.MissingSources);
+        WriteMessages("Warnings", report.Warnings);
 
         Console.WriteLine();
         WriteSafety();
