@@ -216,6 +216,7 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         var chartFallbacks = chartAnnotations
             .GroupBy(annotation => annotation.Symbol, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        const double paperEntryConfidenceThreshold = 0.6d;
 
         var snapshot = new
         {
@@ -228,6 +229,7 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
             {
                 if (!IsPlaceholderAsset(asset))
                 {
+                    var directPaperEntryEnabled = DeterminePaperEntryEnabled((double)asset.ConfidenceBaseline, null, paperEntryConfidenceThreshold);
                     return new
                     {
                         asset = asset.Asset,
@@ -238,11 +240,18 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
                         primary_candidate = asset.PrimaryCandidate,
                         backup_candidates = asset.BackupCandidates,
                         confidence_baseline = asset.ConfidenceBaseline,
+                        paper_entry_enabled = directPaperEntryEnabled,
                         signal_frequency = asset.SignalFrequency,
                         entry_logic = asset.EntryLogic,
                         exit_logic = asset.ExitLogic,
                         stop_loss_logic = asset.StopLossLogic,
                         take_profit_logic = asset.TakeProfitLogic,
+                        entry_price = (double?)null,
+                        stop_loss_price = (double?)null,
+                        take_profit_1 = (double?)null,
+                        take_profit_2 = (double?)null,
+                        invalidation_level = (double?)null,
+                        risk_reward = (double?)null,
                         invalidation_logic = asset.InvalidationLogic,
                         market_regime_tags = asset.MarketRegimeTags,
                         session_tags = asset.SessionTags,
@@ -257,6 +266,7 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
 
                 var fallback = chartFallbacks.TryGetValue(asset.Asset, out var chartAnnotation) ? chartAnnotation : null;
                 var fallbackConfidence = fallback is null ? asset.ConfidenceBaseline : TryParseConfidenceLabel(fallback.Labels) ?? asset.ConfidenceBaseline;
+                var paperEntryEnabled = DeterminePaperEntryEnabled(fallbackConfidence, fallback, paperEntryConfidenceThreshold);
                 return new
                 {
                     asset = asset.Asset,
@@ -267,11 +277,18 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
                     primary_candidate = fallback is null ? asset.PrimaryCandidate : $"chart_annotation:{fallback.SignalId}",
                     backup_candidates = asset.BackupCandidates,
                     confidence_baseline = fallbackConfidence > 0 ? fallbackConfidence : asset.ConfidenceBaseline,
+                    paper_entry_enabled = paperEntryEnabled,
                     signal_frequency = asset.SignalFrequency,
                     entry_logic = asset.EntryLogic,
                     exit_logic = asset.ExitLogic,
                     stop_loss_logic = asset.StopLossLogic,
                     take_profit_logic = asset.TakeProfitLogic,
+                    entry_price = fallback?.EntryPrice,
+                    stop_loss_price = fallback?.StopLoss,
+                    take_profit_1 = fallback?.TakeProfit1,
+                    take_profit_2 = fallback?.TakeProfit2,
+                    invalidation_level = fallback?.InvalidationLevel,
+                    risk_reward = fallback?.RiskReward,
                     invalidation_logic = asset.InvalidationLogic,
                     market_regime_tags = asset.MarketRegimeTags,
                     session_tags = asset.SessionTags,
@@ -293,6 +310,24 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         };
 
         return JsonSerializer.Serialize(snapshot, JsonDefaults.WriteOptions);
+    }
+
+    private static bool DeterminePaperEntryEnabled(
+        double confidenceBaseline,
+        ChartAnnotation? fallbackAnnotation,
+        double confidenceThreshold)
+    {
+        if (fallbackAnnotation is null)
+        {
+            return false;
+        }
+
+        if (confidenceBaseline < confidenceThreshold)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private PaperSignalEvaluationReport BuildEmbeddedSignalEvaluation(
