@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using HermesPaperBot.Models;
 
 namespace Hermes.Runtime;
 
@@ -75,7 +76,6 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         var packagePath = Path.Combine(sourceDirectory, "ensemble_signal_agent_package.json");
         var schemaPath = Path.Combine(sourceDirectory, "ensemble_signal_agent_package.schema.json");
         var contractPath = Path.Combine(sourceDirectory, "system_b_signal_agent_export_contract.md");
-        var signalEvaluation = new PaperSignalEvaluationService(_storagePaths, _runtimeRoot).LoadLatestReport();
 
         if (!File.Exists(manifestPath) || !File.Exists(packagePath) || !File.Exists(schemaPath))
         {
@@ -100,10 +100,12 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         }
 
         var embeddedManifestJson = BuildEmbeddedManifestJson(bundleManifest, sourcePackage, File.Exists(contractPath) ? File.ReadAllText(contractPath) : string.Empty);
-        var embeddedStrategyJson = BuildEmbeddedStrategySnapshotJson(bundleManifest, sourcePackage);
         var embeddedChartAnnotationSpecJson = BuildEmbeddedChartAnnotationSpecJson(sourcePackage);
-        var signalPackageJson = BuildEmbeddedSignalPackageJson(signalEvaluation);
+        var chartAnnotationSpec = TryReadEmbeddedChartAnnotationSpec(embeddedChartAnnotationSpecJson);
+        var embeddedStrategyJson = BuildEmbeddedStrategySnapshotJson(bundleManifest, sourcePackage, chartAnnotationSpec);
         var embeddedSchemaJson = File.ReadAllText(schemaPath);
+        var signalEvaluation = BuildEmbeddedSignalEvaluation(sourcePackage, embeddedManifestJson, embeddedStrategyJson, embeddedChartAnnotationSpecJson, embeddedSchemaJson);
+        var signalPackageJson = BuildEmbeddedSignalPackageJson(signalEvaluation);
         var embeddedChecksum = ComputeChecksum(embeddedManifestJson, embeddedStrategyJson, embeddedChartAnnotationSpecJson, embeddedSchemaJson, signalPackageJson);
 
         var payload = new
@@ -206,15 +208,81 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         return JsonSerializer.Serialize(manifest, JsonDefaults.WriteOptions);
     }
 
-    private static string BuildEmbeddedStrategySnapshotJson(SystemBHandoffBundleManifest bundleManifest, EnsembleSignalAgentPortfolioPackage sourcePackage)
+    private static string BuildEmbeddedStrategySnapshotJson(
+        SystemBHandoffBundleManifest bundleManifest,
+        EnsembleSignalAgentPortfolioPackage sourcePackage,
+        IReadOnlyList<ChartAnnotation> chartAnnotations)
     {
+        var chartFallbacks = chartAnnotations
+            .GroupBy(annotation => annotation.Symbol, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
         var snapshot = new
         {
+            release_mode = "paper_only",
             package_id = sourcePackage.PackageId,
             package_version = sourcePackage.PackageVersion,
             source_system = sourcePackage.SourceSystem,
             status = sourcePackage.Status,
-            assets = sourcePackage.Assets,
+            assets = sourcePackage.Assets.Select(asset =>
+            {
+                if (!IsPlaceholderAsset(asset))
+                {
+                    return new
+                    {
+                        asset = asset.Asset,
+                        setup_id = asset.SetupId,
+                        setup_name = asset.SetupName,
+                        timeframe = asset.Timeframe,
+                        direction = asset.Direction,
+                        primary_candidate = asset.PrimaryCandidate,
+                        backup_candidates = asset.BackupCandidates,
+                        confidence_baseline = asset.ConfidenceBaseline,
+                        signal_frequency = asset.SignalFrequency,
+                        entry_logic = asset.EntryLogic,
+                        exit_logic = asset.ExitLogic,
+                        stop_loss_logic = asset.StopLossLogic,
+                        take_profit_logic = asset.TakeProfitLogic,
+                        invalidation_logic = asset.InvalidationLogic,
+                        market_regime_tags = asset.MarketRegimeTags,
+                        session_tags = asset.SessionTags,
+                        risk_notes = asset.RiskNotes,
+                        readiness = asset.Readiness,
+                        human_review_required = asset.HumanReviewRequired,
+                        no_auto_trading = asset.NoAutoTrading,
+                        broker_orders_enabled = asset.BrokerOrdersEnabled,
+                        live_trading_enabled = asset.LiveTradingEnabled,
+                    };
+                }
+
+                var fallback = chartFallbacks.TryGetValue(asset.Asset, out var chartAnnotation) ? chartAnnotation : null;
+                var fallbackConfidence = fallback is null ? asset.ConfidenceBaseline : TryParseConfidenceLabel(fallback.Labels) ?? asset.ConfidenceBaseline;
+                return new
+                {
+                    asset = asset.Asset,
+                    setup_id = fallback?.SetupId ?? asset.SetupId,
+                    setup_name = fallback?.SetupId ?? asset.SetupName,
+                    timeframe = fallback?.Timeframe ?? asset.Timeframe,
+                    direction = asset.Direction,
+                    primary_candidate = fallback is null ? asset.PrimaryCandidate : $"chart_annotation:{fallback.SignalId}",
+                    backup_candidates = asset.BackupCandidates,
+                    confidence_baseline = fallbackConfidence > 0 ? fallbackConfidence : asset.ConfidenceBaseline,
+                    signal_frequency = asset.SignalFrequency,
+                    entry_logic = asset.EntryLogic,
+                    exit_logic = asset.ExitLogic,
+                    stop_loss_logic = asset.StopLossLogic,
+                    take_profit_logic = asset.TakeProfitLogic,
+                    invalidation_logic = asset.InvalidationLogic,
+                    market_regime_tags = asset.MarketRegimeTags,
+                    session_tags = asset.SessionTags,
+                    risk_notes = asset.RiskNotes,
+                    readiness = asset.Readiness,
+                    human_review_required = asset.HumanReviewRequired,
+                    no_auto_trading = asset.NoAutoTrading,
+                    broker_orders_enabled = asset.BrokerOrdersEnabled,
+                    live_trading_enabled = asset.LiveTradingEnabled,
+                };
+            }).ToList(),
             safety_flags = sourcePackage.SafetyFlags,
             no_auto_trading = sourcePackage.NoAutoTrading,
             human_review_required = sourcePackage.HumanReviewRequired,
@@ -226,6 +294,143 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
 
         return JsonSerializer.Serialize(snapshot, JsonDefaults.WriteOptions);
     }
+
+    private PaperSignalEvaluationReport BuildEmbeddedSignalEvaluation(
+        EnsembleSignalAgentPortfolioPackage sourcePackage,
+        string embeddedManifestJson,
+        string embeddedStrategyJson,
+        string embeddedChartAnnotationSpecJson,
+        string embeddedSchemaJson)
+    {
+        var package = new CloudEmbeddedReleasePackage
+        {
+            BotReleaseId = sourcePackage.PackageId,
+            BotVersion = sourcePackage.PackageVersion,
+            StrategyPackageVersion = sourcePackage.PackageVersion,
+            SchemaVersion = "ensemble_signal_agent_package.schema_v1",
+            ReleaseMode = ReleaseMode.PaperOnly,
+            SafetyFlags = new SafetyFlags
+            {
+                NoAutoTrading = true,
+                HumanReviewRequired = true,
+                BrokerTradingEnabled = false,
+                LiveTradingEnabled = false,
+                OrderApiEnabled = false,
+                PaperMode = true,
+                BrokerAction = "none",
+            },
+            ForbiddenCapabilities = new ForbiddenCapabilities
+            {
+                MarketOrderExecutionForbidden = true,
+                LimitOrderPlacementForbidden = true,
+                StopOrderPlacementForbidden = true,
+                PositionModificationForbidden = true,
+                PositionClosingForbidden = true,
+                PendingOrderCancellationForbidden = true,
+                ExternalNetworkAccessForbidden = true,
+            },
+            EmbeddedManifestJson = embeddedManifestJson,
+            EmbeddedStrategyJson = embeddedStrategyJson,
+            ChartAnnotationSpecJson = embeddedChartAnnotationSpecJson,
+            PackageJson = string.Empty,
+            SignalPackageJson = string.Empty,
+            EmbeddedChecksum = string.Empty,
+        };
+        var config = new BotConfiguration
+        {
+            RuntimeMode = RuntimeMode.CloudEmbeddedBundle,
+            CloudEmbeddedReleasePackage = package,
+            NoAutoTrading = true,
+            HumanReviewRequired = true,
+            BrokerTradingEnabled = false,
+            LiveTradingEnabled = false,
+            OrderApiEnabled = false,
+            PaperMode = true,
+        };
+
+        return new PaperSignalEvaluationService(_storagePaths, _runtimeRoot).Run(config, null);
+    }
+
+    private static IReadOnlyList<ChartAnnotation> TryReadEmbeddedChartAnnotationSpec(string? embeddedChartAnnotationSpecJson)
+    {
+        if (string.IsNullOrWhiteSpace(embeddedChartAnnotationSpecJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(embeddedChartAnnotationSpecJson);
+            var root = document.RootElement;
+            var annotationsElement = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("annotations", out var nested) && nested.ValueKind == JsonValueKind.Array
+                ? nested
+                : root.ValueKind == JsonValueKind.Array
+                    ? root
+                    : default;
+            if (annotationsElement.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            var annotations = new List<ChartAnnotation>();
+            foreach (var annotation in annotationsElement.EnumerateArray())
+            {
+                if (annotation.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var signalId = annotation.TryGetProperty("signal_id", out var signalIdElement) ? signalIdElement.GetString() ?? string.Empty : string.Empty;
+                var symbol = annotation.TryGetProperty("symbol", out var symbolElement) ? symbolElement.GetString() ?? string.Empty : string.Empty;
+                var timeframe = annotation.TryGetProperty("timeframe", out var timeframeElement) ? timeframeElement.GetString() ?? string.Empty : string.Empty;
+                var setupId = annotation.TryGetProperty("setup_id", out var setupIdElement) ? setupIdElement.GetString() ?? string.Empty : string.Empty;
+                var direction = annotation.TryGetProperty("direction", out var directionElement) ? directionElement.GetString() ?? string.Empty : string.Empty;
+                var entryPrice = annotation.TryGetProperty("entry_price", out var entryPriceElement) && entryPriceElement.TryGetDouble(out var entryValue) ? entryValue : 0d;
+                var stopLoss = annotation.TryGetProperty("stop_loss", out var stopLossElement) && stopLossElement.TryGetDouble(out var stopLossValue) ? stopLossValue : 0d;
+                var takeProfit1 = annotation.TryGetProperty("take_profit_1", out var takeProfit1Element) && takeProfit1Element.TryGetDouble(out var takeProfit1Value) ? takeProfit1Value : 0d;
+                double? takeProfit2 = annotation.TryGetProperty("take_profit_2", out var takeProfit2Element) && takeProfit2Element.TryGetDouble(out var takeProfit2Value) ? takeProfit2Value : (double?)null;
+                var invalidationLevel = annotation.TryGetProperty("invalidation_level", out var invalidationElement) && invalidationElement.TryGetDouble(out var invalidationValue) ? invalidationValue : 0d;
+                var riskReward = annotation.TryGetProperty("risk_reward", out var riskRewardElement) && riskRewardElement.TryGetDouble(out var riskRewardValue) ? riskRewardValue : 0d;
+                var labels = annotation.TryGetProperty("labels", out var labelsElement) && labelsElement.ValueKind == JsonValueKind.Array
+                    ? labelsElement.EnumerateArray().Select(item => item.GetString() ?? string.Empty).Where(item => !string.IsNullOrWhiteSpace(item)).ToList()
+                    : [];
+                var createdAtUtc = annotation.TryGetProperty("created_at_utc", out var createdAtElement) && createdAtElement.TryGetDateTimeOffset(out var createdValue)
+                    ? createdValue
+                    : DateTimeOffset.UtcNow;
+                var signalStatus = annotation.TryGetProperty("signal_status", out var signalStatusElement) ? signalStatusElement.GetString() ?? string.Empty : string.Empty;
+
+                annotations.Add(new ChartAnnotation(signalId, symbol, timeframe, setupId, direction, entryPrice, stopLoss, takeProfit1, takeProfit2, invalidationLevel, riskReward, annotation.TryGetProperty("annotation_style", out var styleElement) ? styleElement.GetString() ?? string.Empty : string.Empty, labels, createdAtUtc, signalStatus));
+            }
+
+            return annotations;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static double? TryParseConfidenceLabel(IReadOnlyList<string> labels)
+    {
+        foreach (var label in labels)
+        {
+            if (!label.StartsWith("confidence:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var valuePart = label["confidence:".Length..];
+            if (double.TryParse(valuePart, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsPlaceholderAsset(EnsembleSignalAgentPackageEntry asset)
+        => string.IsNullOrWhiteSpace(asset.SetupId) || asset.SetupId == "-" || asset.ConfidenceBaseline <= 0;
 
     private static string ComputeChecksum(string embeddedManifestJson, string embeddedStrategyJson, string embeddedChartAnnotationSpecJson, string embeddedSchemaJson, string signalPackageJson)
     {
