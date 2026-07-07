@@ -119,6 +119,22 @@ function reportByKey(operatorState, key) {
   return operatorState.reports.find((report) => report.key === key);
 }
 
+const BRIDGE_RUNTIME_COMMANDS = {
+  start: 'cd ~/jarvis/HermesRuntime && dotnet run --project ./cli/Hermes.Cli.csproj -- bridge-start',
+  stop: 'cd ~/jarvis/HermesRuntime && dotnet run --project ./cli/Hermes.Cli.csproj -- bridge-stop',
+  restart: 'cd ~/jarvis/HermesRuntime && dotnet run --project ./cli/Hermes.Cli.csproj -- bridge-restart',
+  refresh: 'cd ~/jarvis/HermesRuntime && dotnet run --project ./cli/Hermes.Cli.csproj -- bridge-diagnostics',
+};
+
+async function copyBridgeCommand(command) {
+  if (!navigator?.clipboard?.writeText) {
+    throw new Error('Clipboard nicht verfuegbar.');
+  }
+
+  await navigator.clipboard.writeText(command);
+  return command;
+}
+
 function portfolioEntries(operatorState) {
   const portfolioReport = reportByKey(operatorState, 'ensemblePortfolioStatus')?.raw || {};
   if (Array.isArray(portfolioReport.entries) && portfolioReport.entries.length) {
@@ -1416,6 +1432,14 @@ function buildModules(operatorState) {
       meta: operatorState.resource.action,
     },
     {
+      id: 'open_bridge',
+      title: 'Bridge',
+      value: operatorState.bridgeAvailable ? 'online' : 'offline',
+      detail: operatorState.bridgeDashboardWarning || 'Read-only Bridge Status',
+      tone: operatorState.bridgeAvailable ? 'good' : 'danger',
+      meta: operatorState.bridgeUrl || 'http://127.0.0.1:8787/bridge/health',
+    },
+    {
       id: 'open_safety',
       title: 'Sicherheit',
       value: 'gesperrt',
@@ -2164,6 +2188,171 @@ function CommandCenterStatusBar({ operatorState }) {
         {operatorState.timeControl?.status_label || 'Außerhalb des Arbeitsfensters'}
       </StatusPill>
     </div>
+  );
+}
+
+function BridgeRuntimeControl({ operatorState }) {
+  const [bridgeState, setBridgeState] = useState({
+    status: operatorState.bridgeAvailable ? 'online' : 'offline',
+    process_running: Boolean(operatorState.bridgeAvailable),
+    configured_host: '127.0.0.1',
+    configured_port: 8787,
+    health_endpoint: `${__HERMES_READONLY_BRIDGE_URL__}/bridge/health`,
+    failure_count: operatorState.bridgeAvailable ? 0 : 1,
+    last_successful_heartbeat_utc: null,
+    last_failure: operatorState.bridgeDashboardWarning || (operatorState.bridgeAvailable ? '' : 'Bridge offline'),
+    recommended_action: operatorState.bridgeAvailable ? 'bridge-health' : 'bridge-start',
+    loading: false,
+  });
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [workingAction, setWorkingAction] = useState('');
+
+  const refreshBridgeState = async () => {
+    setLoadingState(true);
+    setError('');
+    try {
+      const response = await fetch(`${__HERMES_READONLY_BRIDGE_URL__}/bridge/diagnostics`);
+      const payload = await response.json().catch(() => ({}));
+      const data = payload?.data || payload;
+      const warnings = payload?.warnings || data?.warnings || [];
+      setBridgeState({
+        status: data?.status || 'unknown',
+        process_running: Boolean(data?.process_running ?? data?.processRunning),
+        configured_host: data?.configured_host || data?.configuredHost || '127.0.0.1',
+        configured_port: Number(data?.configured_port || data?.configuredPort || 8787),
+        health_endpoint: data?.health_endpoint || data?.healthEndpoint || `${__HERMES_READONLY_BRIDGE_URL__}/bridge/health`,
+        failure_count: Number(data?.failure_count || data?.failureCount || 0),
+        last_successful_heartbeat_utc: data?.last_successful_heartbeat_utc || data?.lastSuccessfulHeartbeatUtc || null,
+        last_failure: data?.last_failure || data?.lastFailure || warnings[0] || '',
+        recommended_action: data?.recommended_action || data?.recommendedAction || 'bridge-health',
+        loading: false,
+      });
+    } catch (refreshError) {
+      setBridgeState((current) => ({
+        ...current,
+        status: operatorState.bridgeAvailable ? 'online' : 'offline',
+        loading: false,
+      }));
+      setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+    }
+  };
+
+  const setLoadingState = (isLoading) => {
+    setBridgeState((current) => ({ ...current, loading: isLoading }));
+    setWorkingAction(isLoading ? 'working' : '');
+  };
+
+  useEffect(() => {
+    void refreshBridgeState();
+  }, [operatorState.bridgeAvailable, operatorState.bridgeDashboardWarning]);
+
+  const handleAction = async (action) => {
+    setLoadingState(true);
+    setMessage('');
+    setError('');
+    try {
+      await copyBridgeCommand(action.command);
+      setMessage(`Command kopiert: ${action.command}`);
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : String(copyError));
+    } finally {
+      await refreshBridgeState();
+      setLoadingState(false);
+    }
+  };
+
+  const isOnline = String(bridgeState.status || '').toLowerCase() === 'available' || String(bridgeState.status || '').toLowerCase() === 'online';
+  const canStart = !isOnline && !bridgeState.loading;
+  const canStop = isOnline && !bridgeState.loading;
+  const canRestart = !bridgeState.loading;
+
+  const actions = [
+    {
+      key: 'start',
+      label: 'Start',
+      command: BRIDGE_RUNTIME_COMMANDS.start,
+      disabled: !canStart,
+    },
+    {
+      key: 'stop',
+      label: 'Stop',
+      command: BRIDGE_RUNTIME_COMMANDS.stop,
+      disabled: !canStop,
+    },
+    {
+      key: 'restart',
+      label: 'Restart',
+      command: BRIDGE_RUNTIME_COMMANDS.restart,
+      disabled: !canRestart,
+    },
+    {
+      key: 'refresh',
+      label: 'Refresh',
+      command: BRIDGE_RUNTIME_COMMANDS.refresh,
+      disabled: bridgeState.loading,
+    },
+  ];
+
+  return (
+    <section className="bridge-runtime-control panel">
+      <div className="panel-header">
+        <div>
+          <p className="eyebrow">Bridge Runtime</p>
+          <h2>Bridge Runtime Control</h2>
+        </div>
+        <StatusPill tone={isOnline ? 'good' : 'danger'}>{bridgeState.loading ? 'working' : isOnline ? 'online' : 'offline'}</StatusPill>
+      </div>
+
+      <div className="metric-grid">
+        <Metric label="Status" value={bridgeState.status || 'unknown'} tone={isOnline ? 'good' : 'warn'} />
+        <Metric label="Host/Port" value={`${bridgeState.configured_host}:${bridgeState.configured_port}`} tone="info" />
+        <Metric label="Health Endpoint" value={bridgeState.health_endpoint || '-'} tone="info" />
+        <Metric label="Failure Count" value={formatNumber(bridgeState.failure_count || 0)} tone={bridgeState.failure_count > 0 ? 'warn' : 'good'} />
+        <Metric label="Recommended Action" value={bridgeState.recommended_action || '-'} tone="info" />
+        <Metric label="Letzter Heartbeat" value={shortDateTime(bridgeState.last_successful_heartbeat_utc)} tone="info" />
+        <Metric label="Letzter Fehler" value={bridgeState.last_failure || '-'} tone={bridgeState.last_failure ? 'warn' : 'good'} />
+      </div>
+
+      <div className="time-control-actions bridge-runtime-actions">
+        {actions.map((action) => (
+          <button
+            key={action.key}
+            disabled={action.disabled}
+            type="button"
+            onClick={() => handleAction(action)}
+          >
+            {bridgeState.loading ? 'working...' : action.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="bridge-runtime-command-list">
+        {actions.map((action) => (
+          <article className="bridge-runtime-command-card" key={`${action.key}-command`}>
+            <div className="research-section-head">
+              <strong>{action.label}</strong>
+              <StatusPill tone={action.disabled ? 'warn' : 'good'}>{action.disabled ? 'deaktiviert' : 'bereit'}</StatusPill>
+            </div>
+            <code>{action.command}</code>
+          </article>
+        ))}
+      </div>
+
+      <div className="operator-safety-flags">
+        <StatusPill tone="good">research_only=true</StatusPill>
+        <StatusPill tone="good">no_auto_trading=true</StatusPill>
+        <StatusPill tone="good">broker_orders_enabled=false</StatusPill>
+        <StatusPill tone="good">live_trading_enabled=false</StatusPill>
+        <StatusPill tone="good">broker_action=none</StatusPill>
+      </div>
+
+      {message ? <p className="control-view-note">{message}</p> : null}
+      {error ? <p className="control-view-note is-danger">Bridge Runtime Control Fehler: {error}</p> : null}
+      <p className="control-view-note">
+        Hinweis: In der aktuellen Browser-Variante werden die Commands bereitgestellt und in die Zwischenablage kopiert. Eine echte lokale Command-Ausführung benötigt einen vorhandenen Desktop-/Backend-Runner.
+      </p>
+    </section>
   );
 }
 
@@ -3570,6 +3759,14 @@ function DetailOverlay({ moduleId, modules, operatorState, onRefresh, onClose })
             </>
           ) : null}
 
+          {moduleId === 'open_bridge' ? (
+            <>
+              <Metric label="Status" value={operatorState.bridgeAvailable ? 'online' : 'offline'} tone={operatorState.bridgeAvailable ? 'good' : 'danger'} />
+              <Metric label="Bridge URL" value={operatorState.bridgeUrl || 'http://127.0.0.1:8787/bridge/health'} tone="info" />
+              <Metric label="Meldung" value={operatorState.bridgeDashboardWarning || '-'} tone={operatorState.bridgeDashboardWarning ? 'warn' : 'good'} />
+            </>
+          ) : null}
+
           {moduleId === 'open_safety' ? (
             <>
               <Metric label="Auto-Trading" value="deaktiviert" tone="warn" />
@@ -3695,6 +3892,8 @@ export function CockpitShell() {
           Bridge ist nicht aktiv. Starte: cd ~/jarvis/HermesRuntime && dotnet run --project ./cli/Hermes.Cli.csproj -- readonly-bridge
         </p>
       ) : null}
+
+      <BridgeRuntimeControl operatorState={operatorState} />
 
       <FrankActionCenter operatorState={operatorState} onOpen={setActiveModule} />
 

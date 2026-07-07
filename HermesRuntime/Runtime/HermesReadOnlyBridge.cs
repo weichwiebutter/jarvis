@@ -119,6 +119,8 @@ public sealed class HermesReadOnlyBridge
     private readonly StoragePaths _storagePaths;
     private readonly string _runtimeRoot;
     private readonly DateTimeOffset _startedAtUtc = DateTimeOffset.UtcNow;
+    private string _configuredHost = "127.0.0.1";
+    private int _configuredPort = 8787;
 
     public HermesReadOnlyBridge(StoragePaths storagePaths, string runtimeRoot)
     {
@@ -129,6 +131,11 @@ public sealed class HermesReadOnlyBridge
     public async Task RunAsync(string urlPrefix, CancellationToken cancellationToken)
     {
         var normalizedPrefix = NormalizePrefix(urlPrefix);
+        if (Uri.TryCreate(normalizedPrefix, UriKind.Absolute, out var configuredUri))
+        {
+            _configuredHost = configuredUri.Host;
+            _configuredPort = configuredUri.Port;
+        }
         using var listener = new HttpListener();
         listener.Prefixes.Add(normalizedPrefix);
         listener.Start();
@@ -189,6 +196,31 @@ public sealed class HermesReadOnlyBridge
                 .ToArray());
 
         return Ok(health);
+    }
+
+    public BridgeResponseModel CreateDiagnosticsResponse()
+    {
+        var health = CreateHealthResponse();
+        var reportRoot = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "bridge_diagnostics");
+        return Ok(new BridgeDiagnosticsReport(
+            BridgeName: "Hermes Read-only Bridge",
+            ProcessExpected: $"dotnet run --project ./cli/Hermes.Cli.csproj -- readonly-bridge --url http://{_configuredHost}:{_configuredPort}/",
+            ProcessRunning: true,
+            ProcessId: Environment.ProcessId,
+            ConfiguredHost: _configuredHost,
+            ConfiguredPort: _configuredPort,
+            HealthEndpoint: $"http://{_configuredHost}:{_configuredPort}/bridge/health",
+            LastSuccessfulHeartbeatUtc: _startedAtUtc,
+            LastFailure: null,
+            FailureCount: 0,
+            RecommendedAction: "bridge-health",
+            CanStart: false,
+            CanStop: true,
+            CanRestart: true,
+            Status: "available",
+            ReportPath: Path.Combine(reportRoot, "bridge_diagnostics.json"),
+            MarkdownPath: Path.Combine(reportRoot, "bridge_diagnostics.md"),
+            Warnings: health.Warnings));
     }
 
     private async Task HandleRequestAsync(HttpListenerContext context)
@@ -258,6 +290,7 @@ public sealed class HermesReadOnlyBridge
             var response = path switch
             {
                 "/bridge/health" => CreateHealthResponse(),
+                "/bridge/diagnostics" => CreateDiagnosticsResponse(),
                 "/reports" => Ok(BuildReportIndex()),
                 "/operator/dashboard" => BuildOperatorDashboardResponse(),
                 "/reports/time-control" => BuildTimeControlResponse(),
