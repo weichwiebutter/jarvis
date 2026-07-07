@@ -362,6 +362,7 @@ internal sealed class HermesCli
             "paper-exit-harness" => ShowPaperExitHarness(),
             "paper-closed-trade-harness" => ShowPaperClosedTradeHarness(),
             "paper-trade-summary" => ShowPaperTradeSummary(),
+            "paper-trade-history" => ShowPaperTradeHistory(),
             "ctrader-upload-readiness" => ShowCTraderUploadReadiness(),
             "ctrader-export" => RunCTraderBotExport(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
@@ -747,6 +748,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes paper-trigger-harness PaperBot Trigger-Harness ausfuehren");
         Console.WriteLine("  hermes paper-exit-harness PaperBot Exit-Harness ausfuehren");
         Console.WriteLine("  hermes paper-trade-summary PaperBot Trade Summary anzeigen");
+        Console.WriteLine("  hermes paper-trade-history PaperBot Trade History anzeigen");
         Console.WriteLine("  hermes ctrader-upload-readiness cTrader Upload Readiness anzeigen");
         Console.WriteLine("  hermes ctrader-export cTrader Bot Export nach D:\\Bot");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
@@ -5982,6 +5984,45 @@ internal sealed class HermesCli
         WriteField("Average R Multiple", report.AverageRMultiple.ToString("0.####", CultureInfo.InvariantCulture));
         WriteField("Broker Action", report.BrokerActionNone ? "none" : "not_none");
         WriteField("Paper Only", report.PaperOnly.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPaperTradeHistory()
+    {
+        WriteHeader("Hermes Paper Trade History");
+        var service = new PaperTradeHistoryService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Closed Trade Count", report.ClosedTradeCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Paper State Snapshot Path", report.PaperStateSnapshotPath ?? "-");
+
+        if (report.ClosedTrades.Count > 0)
+        {
+            Console.WriteLine("Closed Trades:");
+            foreach (var trade in report.ClosedTrades)
+            {
+                Console.WriteLine($"  - signal_id: {trade.SignalId}");
+                Console.WriteLine($"    asset: {trade.Asset}");
+                Console.WriteLine($"    direction: {trade.Direction}");
+                Console.WriteLine($"    entry_price: {trade.EntryPrice.ToString("0.#####", CultureInfo.InvariantCulture)}");
+                Console.WriteLine($"    exit_price: {trade.ExitPrice.ToString("0.#####", CultureInfo.InvariantCulture)}");
+                Console.WriteLine($"    stop_loss_price: {trade.StopLossPrice.ToString("0.#####", CultureInfo.InvariantCulture)}");
+                Console.WriteLine($"    take_profit_price: {trade.TakeProfitPrice.ToString("0.#####", CultureInfo.InvariantCulture)}");
+                Console.WriteLine($"    opened_at: {trade.OpenedAtUtc:O}");
+                Console.WriteLine($"    closed_at: {trade.ClosedAtUtc?.ToString("O") ?? "-"}");
+                Console.WriteLine($"    outcome: {trade.Outcome}");
+                Console.WriteLine($"    result_points: {trade.ResultPoints:0.####}");
+                Console.WriteLine($"    r_multiple: {trade.RMultiple:0.####}");
+            }
+        }
+
         WriteMessages("Warnings", report.Warnings);
 
         Console.WriteLine();
