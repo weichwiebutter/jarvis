@@ -7,6 +7,10 @@ public sealed record PaperSignalExplainItem(
     string SignalId,
     decimal Confidence,
     decimal ConfidenceThreshold,
+    string ConfidenceSource,
+    IReadOnlyList<string> MissingConfidenceFields,
+    IReadOnlyList<string> ConfidenceBlockers,
+    string NextAction,
     bool SessionAllowed,
     bool SpreadAllowed,
     string Direction,
@@ -109,12 +113,19 @@ public sealed class PaperSignalExplainService
             || string.Equals(item.SignalLifecycleStatus, "would_trigger", StringComparison.OrdinalIgnoreCase);
         var stopLossReady = item.Warnings.All(warning => !warning.Contains("stop_loss_missing", StringComparison.OrdinalIgnoreCase));
         var takeProfitReady = item.Warnings.All(warning => !warning.Contains("take_profit_missing", StringComparison.OrdinalIgnoreCase));
+        var confidenceSource = DetermineConfidenceSource(item);
+        var missingConfidenceFields = DetermineMissingConfidenceFields(item, confidence);
+        var confidenceBlockers = DetermineConfidenceBlockers(item, confidence, confidenceThreshold, missingConfidenceFields);
 
         var decisionReason = DetermineDecisionReason(item, confidence, confidenceThreshold, entryConditionMet);
         return new PaperSignalExplainItem(
             SignalId: item.SignalId,
             Confidence: confidence,
             ConfidenceThreshold: confidenceThreshold,
+            ConfidenceSource: confidenceSource,
+            MissingConfidenceFields: missingConfidenceFields,
+            ConfidenceBlockers: confidenceBlockers,
+            NextAction: DetermineNextAction(item, confidence, confidenceThreshold, confidenceBlockers),
             SessionAllowed: item.SessionAllowed,
             SpreadAllowed: item.SpreadAllowed,
             Direction: item.Direction,
@@ -123,6 +134,119 @@ public sealed class PaperSignalExplainService
             TakeProfitReady: takeProfitReady,
             DecisionReason: decisionReason,
             LifecycleState: item.SignalLifecycleStatus);
+    }
+
+    private static string DetermineConfidenceSource(PaperSignalEvaluationItem item)
+    {
+        if (item.ConfidenceBaseline > 0m)
+        {
+            return "embedded_confidence_baseline";
+        }
+
+        return "embedded_confidence_default";
+    }
+
+    private static IReadOnlyList<string> DetermineMissingConfidenceFields(PaperSignalEvaluationItem item, decimal confidence)
+    {
+        var fields = new List<string>();
+        if (confidence <= 0m)
+        {
+            fields.Add("confidence_baseline");
+        }
+
+        foreach (var warning in item.Warnings)
+        {
+            if (warning.Contains("signal_direction_missing", StringComparison.OrdinalIgnoreCase))
+            {
+                fields.Add("direction");
+            }
+            else if (warning.Contains("signal_setup_id_missing", StringComparison.OrdinalIgnoreCase))
+            {
+                fields.Add("setup_id");
+            }
+            else if (warning.Contains("signal_setup_name_missing", StringComparison.OrdinalIgnoreCase))
+            {
+                fields.Add("setup_name");
+            }
+            else if (warning.Contains("signal_primary_candidate_missing", StringComparison.OrdinalIgnoreCase))
+            {
+                fields.Add("primary_candidate");
+            }
+            else if (warning.Contains("signal_readiness_missing", StringComparison.OrdinalIgnoreCase))
+            {
+                fields.Add("readiness");
+            }
+        }
+
+        return fields.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static IReadOnlyList<string> DetermineConfidenceBlockers(
+        PaperSignalEvaluationItem item,
+        decimal confidence,
+        decimal confidenceThreshold,
+        IReadOnlyList<string> missingConfidenceFields)
+    {
+        var blockers = new List<string>();
+        if (confidence < confidenceThreshold)
+        {
+            blockers.Add("confidence_below_minimum");
+        }
+
+        foreach (var field in missingConfidenceFields)
+        {
+            blockers.Add($"missing_{field}");
+        }
+
+        foreach (var warning in item.Warnings)
+        {
+            if (warning.Contains("market_context_incompatible", StringComparison.OrdinalIgnoreCase))
+            {
+                blockers.Add("market_context_incompatible");
+            }
+            else if (warning.Contains("paper_entry_disabled", StringComparison.OrdinalIgnoreCase))
+            {
+                blockers.Add("paper_entry_disabled");
+            }
+        }
+
+        return blockers.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static string DetermineNextAction(
+        PaperSignalEvaluationItem item,
+        decimal confidence,
+        decimal confidenceThreshold,
+        IReadOnlyList<string> confidenceBlockers)
+    {
+        if (item.SignalInvalidated)
+        {
+            return "review_invalidated_signal";
+        }
+
+        if (item.SignalExpired)
+        {
+            return "replace_with_fresh_signal";
+        }
+
+        if (confidence < confidenceThreshold)
+        {
+            return confidenceBlockers.Contains("market_context_incompatible", StringComparer.OrdinalIgnoreCase)
+                ? "provide_matching_market_context"
+                : "improve_signal_confidence_baseline";
+        }
+
+        if (!item.SessionAllowed)
+        {
+            return "wait_for_allowed_session";
+        }
+
+        if (!item.SpreadAllowed)
+        {
+            return "wait_for_spread_to_normalize";
+        }
+
+        return "monitor_for_trigger";
     }
 
     private static string DetermineDecisionReason(PaperSignalEvaluationItem item, decimal confidence, decimal confidenceThreshold, bool entryConditionMet)
@@ -183,7 +307,15 @@ public sealed class PaperSignalExplainService
         sb.AppendLine("## Signals");
         foreach (var signal in report.Signals)
         {
-            sb.AppendLine($"- {signal.SignalId}: lifecycle={signal.LifecycleState}; decision_reason={signal.DecisionReason}; confidence={signal.Confidence:0.###}; threshold={signal.ConfidenceThreshold:0.###}; session_allowed={signal.SessionAllowed}; spread_allowed={signal.SpreadAllowed}; direction={signal.Direction}; entry_condition_met={signal.EntryConditionMet}; stop_loss_ready={signal.StopLossReady}; take_profit_ready={signal.TakeProfitReady}");
+            sb.AppendLine($"- {signal.SignalId}: lifecycle={signal.LifecycleState}; decision_reason={signal.DecisionReason}; confidence={signal.Confidence:0.###}; threshold={signal.ConfidenceThreshold:0.###}; confidence_source={signal.ConfidenceSource}; session_allowed={signal.SessionAllowed}; spread_allowed={signal.SpreadAllowed}; direction={signal.Direction}; entry_condition_met={signal.EntryConditionMet}; stop_loss_ready={signal.StopLossReady}; take_profit_ready={signal.TakeProfitReady}; next_action={signal.NextAction}");
+            if (signal.MissingConfidenceFields.Count > 0)
+            {
+                sb.AppendLine($"  - missing_confidence_fields: {string.Join(", ", signal.MissingConfidenceFields)}");
+            }
+            if (signal.ConfidenceBlockers.Count > 0)
+            {
+                sb.AppendLine($"  - confidence_blockers: {string.Join(", ", signal.ConfidenceBlockers)}");
+            }
         }
 
         if (report.Signals.Count == 0)

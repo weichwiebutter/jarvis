@@ -5953,6 +5953,10 @@ internal sealed class HermesCli
             WriteSubHeader(signal.SignalId);
             WriteField("Confidence", signal.Confidence.ToString("0.###", CultureInfo.InvariantCulture));
             WriteField("Confidence Threshold", signal.ConfidenceThreshold.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Confidence Source", signal.ConfidenceSource);
+            WriteMessages("Missing Confidence Fields", signal.MissingConfidenceFields);
+            WriteMessages("Confidence Blockers", signal.ConfidenceBlockers);
+            WriteField("Next Action", signal.NextAction);
             WriteField("Session Allowed", signal.SessionAllowed.ToString().ToLowerInvariant());
             WriteField("Spread Allowed", signal.SpreadAllowed.ToString().ToLowerInvariant());
             WriteField("Direction", signal.Direction);
