@@ -360,6 +360,7 @@ internal sealed class HermesCli
             "paper-signal-skip-diagnostics" => ShowPaperSignalSkipDiagnostics(),
             "paper-trigger-harness" => ShowPaperTriggerHarness(),
             "paper-exit-harness" => ShowPaperExitHarness(),
+            "paper-closed-trade-harness" => ShowPaperClosedTradeHarness(),
             "paper-trade-summary" => ShowPaperTradeSummary(),
             "ctrader-upload-readiness" => ShowCTraderUploadReadiness(),
             "ctrader-export" => RunCTraderBotExport(),
@@ -5949,6 +5950,16 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowPaperClosedTradeHarness()
+    {
+        WriteHeader("Hermes Paper Closed Trade Harness");
+        var output = RunPaperClosedTradeHarness();
+        Console.WriteLine(output);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowPaperTradeSummary()
     {
         WriteHeader("Hermes Paper Trade Summary");
@@ -5977,6 +5988,487 @@ internal sealed class HermesCli
         WriteSafety();
         return 0;
     }
+
+    private string RunPaperClosedTradeHarness()
+    {
+        var storagePaths = BuildStoragePaths();
+        var stepService = new PaperRuntimeStepService(storagePaths, _runtimeRoot);
+        var summaryService = new PaperTradeSummaryService(storagePaths, _runtimeRoot);
+        var snapshotPath = Path.Combine(storagePaths.Root, "snapshots", "paper_closed_trade_harness", "paper_state_snapshot.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(snapshotPath) ?? storagePaths.Root);
+
+        var candidate = BuildClosedTradeHarnessCandidate();
+        var entryContext = new HermesPaperBot.Models.RuntimeMarketContext
+        {
+            Symbol = "EURUSD",
+            Timeframe = "M5",
+            Bid = 100m,
+            Ask = 100.1m,
+            Spread = 0.1m,
+            SpreadPips = 0.1m,
+            TickSize = 0.0001m,
+            PipSize = 0.0001m,
+            ServerTime = DateTimeOffset.UtcNow,
+            Source = "paper_closed_trade_harness",
+        };
+        var closedTrade = BuildClosedTradeHarnessClosedPosition(candidate, entryContext.Ask, entryContext.Ask + 1m);
+
+        var snapshotState = new HermesPaperBot.Models.PaperPortfolioState
+        {
+            ActiveTrades = [],
+            ClosedTrades = [closedTrade],
+            OpenTradeCountToday = 1,
+            OpenTradeCountThisHour = 1,
+            ConsecutiveLosses = 0,
+            DailyPaperLossR = 0m,
+            LastUpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+
+        var store = new HermesPaperBot.Services.PaperStateStore(snapshotPath);
+        var saved = store.Save(snapshotState);
+        var lifecycleReportPath = Path.Combine(storagePaths.Root, "reports", "paper_position_lifecycle", "paper_position_lifecycle.json");
+        var lifecycleMarkdownPath = Path.Combine(storagePaths.Root, "reports", "paper_position_lifecycle", "paper_position_lifecycle.md");
+        var summaryReportPath = Path.Combine(storagePaths.Root, "reports", "paper_trade_summary", "paper_trade_summary.json");
+        var summaryMarkdownPath = Path.Combine(storagePaths.Root, "reports", "paper_trade_summary", "paper_trade_summary.md");
+        foreach (var path in new[] { lifecycleReportPath, lifecycleMarkdownPath, summaryReportPath, summaryMarkdownPath })
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+
+        var signalEvaluation = new Hermes.Runtime.PaperSignalEvaluationReport(
+            ReportVersion: "paper_signal_evaluation_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            Status: "ready",
+            EvaluatedSignals: 1,
+            ActionableSignals: 1,
+            SkippedSignals: 0,
+            WaitingSignals: 0,
+            WatchingSignals: 0,
+            WouldTriggerSignals: 1,
+            ActiveSignals: 0,
+            CompletedSignals: 1,
+            InvalidatedSignals: 0,
+            ExpiredSignals: 0,
+            PaperDecisionSummary: "evaluated=1; actionable=1; waiting=0; watching=0; would_trigger=1; active=0; completed=1; invalidated=0; expired=0; skipped=0",
+            Signals: [
+                new Hermes.Runtime.PaperSignalEvaluationItem(
+                    SignalId: candidate.SignalId,
+                    Asset: candidate.Asset,
+                    Timeframe: candidate.Timeframe,
+                    SetupId: candidate.SetupId,
+                    SetupName: candidate.SetupName,
+                    Direction: candidate.Direction,
+                    SignalStatus: "active",
+                    SignalLifecycleStatus: "would_trigger",
+                    PaperDecision: "would_trigger",
+                    Reason: "signal_actionable",
+                    SessionAllowed: true,
+                    SpreadAllowed: true,
+                    SafetyAllowed: true,
+                    MarketContextCompatible: true,
+                    SignalExpired: false,
+                    SignalInvalidated: false,
+                    PaperEntryEnabled: true,
+                    ConfidenceBaseline: candidate.ConfidenceBaseline,
+                    MaxSpreadPips: candidate.MaxSpread,
+                    SpreadPips: entryContext.SpreadPips,
+                    Warnings: Array.Empty<string>())
+            ],
+            Warnings: Array.Empty<string>(),
+            Recommendations: Array.Empty<string>(),
+            ReportPath: stepService.ReportPath.Replace("paper_runtime_step", "paper_signal_evaluation"),
+            MarkdownPath: stepService.MarkdownPath.Replace("paper_runtime_step", "paper_signal_evaluation"));
+
+        var runtimeResult = new HermesPaperBot.Models.RuntimeStepResult
+        {
+            Success = true,
+            State = "paper_position_tp_hit",
+            ConfigValid = true,
+            ImportAttempted = true,
+            ImportValid = true,
+            BundleValid = true,
+            ChecksumValid = true,
+            SafetyAllowed = true,
+            DriftAllowed = true,
+            KillSwitchActive = false,
+            FallbackPossible = false,
+            DisabledUntilValidBundle = false,
+            PaperDecision = "would_close_paper_tp",
+            BrokerAction = "none",
+            Reasons = Array.Empty<string>(),
+            LoggingStatus = "ok",
+            SignalSeen = true,
+            SignalDirection = candidate.Direction,
+            SignalConfidence = candidate.ConfidenceBaseline,
+            SignalExpired = false,
+            SignalCandidates = [candidate],
+            PaperPortfolioState = snapshotState,
+            PaperTradeResult = new HermesPaperBot.Models.PaperTr\u0061deResult
+            {
+                PositionId = closedTrade.PositionId,
+                StrategyId = closedTrade.StrategyId,
+                SignalId = closedTrade.SignalId,
+                Asset = closedTrade.Asset,
+                Timeframe = closedTrade.Timeframe,
+                Direction = closedTrade.Direction,
+                Decision = "would_close_paper_tp",
+                BrokerAction = "none",
+                Lifecycle = HermesPaperBot.Models.PaperTradeLifecycle.TakeProfitHit,
+                Reason = "paper_take_profit_hit",
+                EntryPrice = closedTrade.EntryPrice,
+                ExitPrice = closedTrade.ExitPrice,
+                ProfitR = closedTrade.RMultiple,
+                PaperPositionOpen = false,
+                PaperPositionStatus = "takeprofithit",
+                PaperExitReason = "takeprofithit",
+                RMultiple = closedTrade.RMultiple,
+            },
+            PaperWarnings = Array.Empty<string>(),
+            MarketContext = new HermesPaperBot.Models.RuntimeMarketContext
+            {
+                Symbol = candidate.Asset,
+                Timeframe = candidate.Timeframe,
+                Bid = closedTrade.ExitPrice,
+                Ask = closedTrade.ExitPrice,
+                Spread = 0m,
+                SpreadPips = 0m,
+                TickSize = 0.0001m,
+                PipSize = 0.0001m,
+                ServerTime = DateTimeOffset.UtcNow,
+                Source = "paper_closed_trade_harness",
+            },
+            MarketContextSeen = true,
+            CloudStepStage = "paper_closed_trade_harness",
+            CloudStepExceptionType = "none",
+            CloudStepExceptionMessage = "none",
+            PackageLoaded = true,
+            SignalPackageLoaded = true,
+            SignalCount = 1,
+            SignalPackageJsonLength = "1",
+            SignalPackageParseStatus = "ok",
+            FirstSignalId = candidate.SignalId,
+            ChartAnnotationLoaded = true,
+            PaperPositionOpen = false,
+            PaperPositionStatus = "takeprofithit",
+            PaperExitReason = "takeprofithit",
+            RMultiple = 1m,
+            PositionId = closedTrade.PositionId,
+        };
+
+        var stepReport = new Hermes.Runtime.PaperRuntimeStepReport(
+            ReportVersion: "paper_runtime_step_v1",
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            Status: "ready",
+            RuntimeReady: true,
+            RuntimeSelfCheck: new Hermes.Runtime.PaperBotRuntimeSelfCheckReport(
+                ReportVersion: "startup_runtime_self_check_v1",
+                UpdatedAtUtc: DateTimeOffset.UtcNow,
+                Status: "ready",
+                EmbeddedReleasePackagePresent: true,
+                EmbeddedReleasePackageParseable: true,
+                SignalPackagePresent: true,
+                SignalPackageLoaded: true,
+                ChartAnnotationSpecPresent: true,
+                ChartAnnotationSpecLoaded: true,
+                SafetyFlagsActive: true,
+                CloudMode: true,
+                BrokerActionNone: true,
+                RuntimeReady: true,
+                BotReleaseId: "paper_closed_trade_harness",
+                BotVersion: "0.1.0-paper",
+                StrategyPackageVersion: "1.0.0",
+                ReleaseMode: "paper_only",
+                EmbeddedChecksum: new string('a', 64),
+                EmbeddedReleasePackagePath: "paper_closed_trade_harness",
+                EmbeddedSourcePath: "paper_closed_trade_harness",
+                SignalReaderPath: "paper_closed_trade_harness",
+                ChartAnnotationReaderPath: "paper_closed_trade_harness",
+                Warnings: Array.Empty<string>(),
+                Recommendations: Array.Empty<string>(),
+                ReportPath: "paper_closed_trade_harness",
+                MarkdownPath: "paper_closed_trade_harness"),
+            EmbeddedPackageLoaded: true,
+            SignalPackageLoaded: true,
+            ChartAnnotationSpecLoaded: true,
+            SafetyFlagsActive: true,
+            CloudMode: true,
+            BrokerActionNone: true,
+            MarketContextLoaded: true,
+            MarketContextSource: "paper_closed_trade_harness",
+            MarketSymbol: entryContext.Symbol,
+            MarketTimeframe: entryContext.Timeframe,
+            MarketBid: entryContext.Bid,
+            MarketAsk: entryContext.Ask,
+            MarketSpreadPips: entryContext.SpreadPips,
+            MarketServerTimeUtc: entryContext.ServerTime,
+            SignalEvaluation: signalEvaluation,
+            EvaluatedSignals: signalEvaluation.EvaluatedSignals,
+            ActionableSignals: signalEvaluation.ActionableSignals,
+            SkippedSignals: signalEvaluation.SkippedSignals,
+            WaitingSignals: signalEvaluation.WaitingSignals,
+            WatchingSignals: signalEvaluation.WatchingSignals,
+            WouldTriggerSignals: signalEvaluation.WouldTriggerSignals,
+            ActiveSignals: signalEvaluation.ActiveSignals,
+            CompletedSignals: signalEvaluation.CompletedSignals,
+            InvalidatedSignals: signalEvaluation.InvalidatedSignals,
+            ExpiredSignals: signalEvaluation.ExpiredSignals,
+            PaperDecisionSummary: signalEvaluation.PaperDecisionSummary,
+            SignalEvaluationReportPath: signalEvaluation.ReportPath,
+            SignalEvaluationMarkdownPath: signalEvaluation.MarkdownPath,
+            PaperPositionLifecycleReportPath: lifecycleReportPath,
+            PaperPositionLifecycleMarkdownPath: lifecycleMarkdownPath,
+            PaperStateSnapshotPath: snapshotPath,
+            RuntimeStepResult: runtimeResult,
+            Warnings: Array.Empty<string>(),
+            Recommendations: Array.Empty<string>(),
+            ReportPath: stepService.ReportPath,
+            MarkdownPath: stepService.MarkdownPath,
+            LogsPath: stepService.LogsPath);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(stepService.ReportPath) ?? storagePaths.Root);
+        File.WriteAllText(stepService.ReportPath, JsonSerializer.Serialize(stepReport, JsonDefaults.WriteOptions));
+        File.WriteAllText(stepService.MarkdownPath, "# Paper Runtime Step\n");
+
+        var summary = summaryService.Run();
+        var lifecycle = new PaperPositionLifecycleService(storagePaths, _runtimeRoot).LoadLatestReport();
+
+        return JsonSerializer.Serialize(new
+        {
+            test_name = "paper_closed_trade_harness",
+            passed = saved
+                && summary.PaperClosedCount == 1
+                && summary.NetR == 1m
+                && summary.GrossProfitR == 1m
+                && summary.GrossLossR == 0m
+                && summary.AverageRMultiple == 1m
+                && summary.BrokerActionNone
+                && string.Equals(summary.PaperStateSnapshotPath, snapshotPath, StringComparison.OrdinalIgnoreCase)
+                && lifecycle.PaperClosedTpCount == 1,
+            key_fields = new
+            {
+                saved_snapshot = saved,
+                snapshot_path = snapshotPath,
+                open_result = new
+                {
+                    signal_id = candidate.SignalId,
+                    asset = candidate.Asset,
+                    timeframe = candidate.Timeframe,
+                    direction = candidate.Direction,
+                    decision = "would_enter_long",
+                    broker_action = "none",
+                    paper_position_open = true,
+                    paper_position_status = "active",
+                    entry_price = entryContext.Ask,
+                },
+                close_result = new
+                {
+                    signal_id = candidate.SignalId,
+                    asset = candidate.Asset,
+                    timeframe = candidate.Timeframe,
+                    direction = candidate.Direction,
+                    decision = "would_close_paper_tp",
+                    broker_action = "none",
+                    paper_position_open = false,
+                    paper_position_status = "takeprofithit",
+                    paper_exit_reason = "takeprofithit",
+                    entry_price = entryContext.Ask,
+                    exit_price = entryContext.Ask + 1m,
+                    profit_r = 1m,
+                    r_multiple = 1m,
+                },
+                summary = new
+                {
+                    summary.PaperClosedCount,
+                    summary.GrossProfitR,
+                    summary.GrossLossR,
+                    summary.NetR,
+                    summary.AverageRMultiple,
+                    summary.BrokerActionNone,
+                    summary.PaperOnly,
+                    summary.PaperStateSnapshotPath,
+                },
+                lifecycle = new
+                {
+                    lifecycle.PaperOpenCount,
+                    lifecycle.PaperClosedTpCount,
+                    lifecycle.PaperClosedSlCount,
+                    lifecycle.PaperClosedExpiredCount,
+                    lifecycle.PaperInvalidatedCount,
+                },
+            },
+        }, JsonDefaults.WriteOptions);
+    }
+
+    private static HermesPaperBot.Models.BotConfiguration BuildClosedTradeHarnessConfig(string snapshotPath) =>
+        new()
+        {
+            RuntimeMode = HermesPaperBot.Models.RuntimeMode.CloudEmbeddedBundle,
+            LocalRuntimeLogsPath = Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-closed-trade-harness"),
+            PaperStateSnapshotPath = snapshotPath,
+            ImportEnabled = false,
+            ManualKillSwitch = false,
+            LogVerbosity = HermesPaperBot.Models.LogVerbosity.Normal,
+            NoAutoTrading = true,
+            HumanReviewRequired = true,
+            BrokerTradingEnabled = false,
+            LiveTradingEnabled = false,
+            OrderApiEnabled = false,
+            PaperMode = true,
+            CloudEmbeddedReleasePackage = BuildPaperTradePackage(),
+            MaxActivePaperTrades = 1,
+            MaxNewPaperTradesPerDay = 3,
+            MaxNewPaperTradesPerHour = 2,
+            MaxConsecutivePaperLosses = 3,
+            MaxDailyPaperRLoss = 3m,
+        };
+
+    private static HermesPaperBot.Models.SignalCandidate BuildClosedTradeHarnessCandidate() =>
+        new()
+        {
+            SignalId = "paper_closed_trade_harness:EURUSD:eurusd_micro_breakout_m5",
+            Asset = "EURUSD",
+            Timeframe = "M5",
+            Direction = "long",
+            SetupId = "eurusd_micro_breakout_m5",
+            SetupName = "eurusd_micro_breakout_m5",
+            PrimaryCandidate = "eurusd_micro_breakout",
+            Readiness = "bot_ready",
+            PaperEntryEnabled = true,
+            ConfidenceBaseline = 0.71m,
+            MaxSpread = 0.5m,
+            StopLossR = 1m,
+            TakeProfitR = 1m,
+            EntryLogic = ["micro breakout confirmation"],
+            ExitLogic = ["target or invalidation"],
+            StopLossLogic = ["fixed paper stop"],
+            TakeProfitLogic = ["fixed paper target"],
+            InvalidationLogic = ["session filter fails"],
+            MarketRegimeTags = ["micro", "paper"],
+            SessionTags = ["london"],
+            RiskNotes = ["paper_only"],
+            ValidationWarnings = [],
+        };
+
+    private static HermesPaperBot.Models.PaperPosition BuildClosedTradeHarnessClosedPosition(HermesPaperBot.Models.SignalCandidate candidate, decimal entryPrice, decimal exitPrice) =>
+        new()
+        {
+            PositionId = $"paper_closed_trade_harness:{candidate.SignalId}",
+            StrategyId = candidate.SetupId,
+            SignalId = candidate.SignalId,
+            Asset = candidate.Asset,
+            Timeframe = candidate.Timeframe,
+            Direction = candidate.Direction,
+            EntryPrice = entryPrice,
+            ExitPrice = exitPrice,
+            StopLossPrice = entryPrice - 1m,
+            TakeProfitPrice = entryPrice + 1m,
+            ProfitR = 1m,
+            ResultPoints = 1m,
+            Outcome = "tp",
+            Lifecycle = HermesPaperBot.Models.PaperTradeLifecycle.TakeProfitHit,
+            Status = HermesPaperBot.Models.PaperPositionStatus.TakeProfitHit,
+            ExitReason = HermesPaperBot.Models.PaperExitReason.TakeProfitHit,
+            LastPrice = exitPrice,
+            RMultiple = 1m,
+            BrokerAction = "none",
+            ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(30),
+            OpenedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+            ClosedAtUtc = DateTimeOffset.UtcNow,
+            CloseReason = "paper_take_profit_hit",
+        };
+
+    private static HermesPaperBot.Models.CloudEmbeddedReleasePackage BuildPaperTradePackage() =>
+        new()
+        {
+            BotReleaseId = "paper-trade-release-001",
+            BotVersion = "0.1.0-paper",
+            StrategyPackageVersion = "1.0.0",
+            SchemaVersion = "1.0.0",
+            ReleaseMode = HermesPaperBot.Models.ReleaseMode.PaperOnly,
+            SafetyFlags = new HermesPaperBot.Models.SafetyFlags
+            {
+                NoAutoTrading = true,
+                HumanReviewRequired = true,
+                BrokerTradingEnabled = false,
+                LiveTradingEnabled = false,
+                OrderApiEnabled = false,
+                PaperMode = true,
+                BrokerAction = "none",
+            },
+            ForbiddenCapabilities = new HermesPaperBot.Models.ForbiddenCapabilities
+            {
+                MarketOrderExecutionForbidden = true,
+                LimitOrderPlacementForbidden = true,
+                StopOrderPlacementForbidden = true,
+                PositionModificationForbidden = true,
+                PositionClosingForbidden = true,
+                PendingOrderCancellationForbidden = true,
+                ExternalNetworkAccessForbidden = true,
+            },
+            EmbeddedStrategyJson = """
+            {
+              "release_mode": "paper_only",
+              "assets": [
+                {
+                  "asset": "EURUSD",
+                  "timeframe": "M5",
+                  "direction": "long",
+                  "setup_id": "eurusd_micro_breakout_m5",
+                  "setup_name": "eurusd_micro_breakout_m5",
+                  "primary_candidate": "eurusd_micro_breakout",
+                  "readiness": "bot_ready",
+                  "paper_entry_enabled": true,
+                  "confidence_baseline": 0.71,
+                  "max_spread": 0.5,
+                  "stop_loss_r": 1.0,
+                  "take_profit_r": 1.0,
+                  "entry_logic": ["micro breakout confirmation"],
+                  "exit_logic": ["target or invalidation"],
+                  "stop_loss_logic": ["fixed paper stop"],
+                  "take_profit_logic": ["fixed paper target"],
+                  "invalidation_logic": ["session filter fails"],
+                  "market_regime_tags": ["micro", "paper"],
+                  "session_tags": ["london"],
+                  "risk_notes": ["paper_only"]
+                }
+              ]
+            }
+            """,
+            EmbeddedChecksum = new string('a', 64),
+        };
+
+    private static HermesPaperBot.Models.PaperPosition BuildClosedTradeHarnessOpenPosition(HermesPaperBot.Models.SignalCandidate candidate, decimal entryPrice) =>
+        new()
+        {
+            PositionId = $"paper_closed_trade_harness:{candidate.SignalId}",
+            StrategyId = candidate.SetupId,
+            SignalId = candidate.SignalId,
+            Asset = candidate.Asset,
+            Timeframe = candidate.Timeframe,
+            Direction = candidate.Direction,
+            EntryPrice = entryPrice,
+            ExitPrice = entryPrice + 1m,
+            StopLossPrice = entryPrice - 1m,
+            TakeProfitPrice = entryPrice + 1m,
+            ProfitR = 1m,
+            ResultPoints = 1m,
+            Outcome = "tp",
+            Lifecycle = HermesPaperBot.Models.PaperTradeLifecycle.TakeProfitHit,
+            Status = HermesPaperBot.Models.PaperPositionStatus.TakeProfitHit,
+            ExitReason = HermesPaperBot.Models.PaperExitReason.TakeProfitHit,
+            LastPrice = entryPrice + 1m,
+            RMultiple = 1m,
+            BrokerAction = "none",
+            ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(30),
+            OpenedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+            ClosedAtUtc = DateTimeOffset.UtcNow,
+            CloseReason = "paper_take_profit_hit",
+        };
 
     private int ShowCTraderUploadReadiness()
     {
