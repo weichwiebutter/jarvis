@@ -352,6 +352,7 @@ internal sealed class HermesCli
             "paper-signal-skip-diagnostics" => ShowPaperSignalSkipDiagnostics(),
             "paper-trigger-harness" => ShowPaperTriggerHarness(),
             "paper-exit-harness" => ShowPaperExitHarness(),
+            "paper-trade-summary" => ShowPaperTradeSummary(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
             "cloud-embedded-release-package" => ShowCloudEmbeddedReleasePackage(),
@@ -728,6 +729,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes paper-runtime-step PaperBot Runtime Step ausfuehren");
         Console.WriteLine("  hermes paper-trigger-harness PaperBot Trigger-Harness ausfuehren");
         Console.WriteLine("  hermes paper-exit-harness PaperBot Exit-Harness ausfuehren");
+        Console.WriteLine("  hermes paper-trade-summary PaperBot Trade Summary anzeigen");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
         Console.WriteLine("  hermes cloud-embedded-release-package Cloud-kompatibles Embedded Release Package erzeugen");
@@ -5745,6 +5747,30 @@ internal sealed class HermesCli
         WriteHeader("Hermes Paper Exit Harness");
         var output = PaperRuntimeOrchestratorHarness.RunPaperExitHarness();
         Console.WriteLine(output);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPaperTradeSummary()
+    {
+        WriteHeader("Hermes Paper Trade Summary");
+        var service = new PaperTradeSummaryService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Evaluated Signals", report.EvaluatedSignals.ToString(CultureInfo.InvariantCulture));
+        WriteField("Would Trigger Signals", report.WouldTriggerSignals.ToString(CultureInfo.InvariantCulture));
+        WriteField("Paper Open Count", report.PaperOpenCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Paper Closed TP Count", report.PaperClosedTpCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Paper Closed SL Count", report.PaperClosedSlCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Paper Invalidated Count", report.PaperInvalidatedCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Broker Action", report.BrokerActionNone ? "none" : "not_none");
+        WriteField("Paper Only", report.PaperOnly.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+
         Console.WriteLine();
         WriteSafety();
         return 0;

@@ -16,5 +16,6 @@ public sealed class CloudEmbeddedReleasePackage
     public string? PackageJson { get; init; }
     public string? EmbeddedManifestJson { get; init; }
     public string? EmbeddedStrategyJson { get; init; }
+    public string? ChartAnnotationSpecJson { get; init; }
     public string? EmbeddedChecksum { get; init; }
 }

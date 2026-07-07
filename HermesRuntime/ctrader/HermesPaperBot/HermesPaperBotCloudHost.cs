@@ -52,7 +52,7 @@ public sealed class HermesPaperBotCloudHost
     /// </summary>
     public void OnStart()
     {
-        _bot.StartPaperRuntime(null, _marketContextProvider.Read());
+        _bot.PreparePaperRuntime(null, _marketContextProvider.Read());
     }
 
     /// <summary>

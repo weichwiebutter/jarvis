@@ -118,7 +118,7 @@ public sealed class HermesPaperBot
     /// </summary>
     public void OnStart()
     {
-        StartPaperRuntime();
+        PreparePaperRuntime();
     }
 
     /// <summary>
@@ -136,9 +136,19 @@ public sealed class HermesPaperBot
     /// broker_action=none
     /// no order API
     ///
-    /// Starts the paper runtime from a supplied configuration or the cloud bootstrap.
+    /// Prepares runtime state without executing a paper step.
     /// </summary>
-    public bool StartPaperRuntime(BotConfiguration? configuration, RuntimeMarketContext? context = null)
+    public bool PreparePaperRuntime()
+        => PreparePaperRuntime(null, null);
+
+    /// <summary>
+    /// paper_only
+    /// broker_action=none
+    /// no order API
+    ///
+    /// Prepares runtime state from a supplied configuration or the cloud bootstrap.
+    /// </summary>
+    public bool PreparePaperRuntime(BotConfiguration? configuration, RuntimeMarketContext? context = null)
     {
         try
         {
@@ -186,7 +196,32 @@ public sealed class HermesPaperBot
             _signalCandidates = _paperDecisionEngine.ParseSignalCandidates(currentConfiguration.CloudEmbeddedReleasePackage, out var signalWarnings);
             _embeddedChartAnnotations = _chartAnnotationSpecReader.Read(currentConfiguration.CloudEmbeddedReleasePackage, out var chartWarnings);
             var combinedWarnings = signalWarnings.Concat(chartWarnings).ToArray();
-            _lastRuntimeStepResult = ExecutePaperRuntimeStep(context ?? new RuntimeMarketContext(), combinedWarnings);
+            _lastRuntimeStepResult = CreatePreparedResult(context ?? new RuntimeMarketContext(), combinedWarnings);
+            return true;
+        }
+        catch
+        {
+            _lastRuntimeStepResult = CreateBlockedResult("cloud_start_failed");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// paper_only
+    /// broker_action=none
+    /// no order API
+    ///
+    /// Starts the paper runtime from a supplied configuration or the cloud bootstrap.
+    /// </summary>
+    public bool StartPaperRuntime(BotConfiguration? configuration, RuntimeMarketContext? context = null)
+    {
+        try
+        {
+            if (!PreparePaperRuntime(configuration, context))
+            {
+                return false;
+            }
+            _lastRuntimeStepResult = ExecutePaperRuntimeStep(context ?? new RuntimeMarketContext(), []);
             return _lastRuntimeStepResult.Success;
         }
         catch
@@ -397,6 +432,40 @@ public sealed class HermesPaperBot
         PersistPaperStateSnapshot(_paperPortfolioState, persisted);
         return persisted;
     }
+
+    private RuntimeStepResult CreatePreparedResult(RuntimeMarketContext context, string[] warnings)
+        => new()
+        {
+            Success = true,
+            State = "paper_runtime_prepared",
+            ConfigValid = true,
+            ImportAttempted = false,
+            ImportValid = true,
+            BundleValid = true,
+            ChecksumValid = true,
+            SafetyAllowed = true,
+            DriftAllowed = true,
+            KillSwitchActive = false,
+            FallbackPossible = false,
+            DisabledUntilValidBundle = false,
+            PaperDecision = "would_wait",
+            BrokerAction = "none",
+            Reasons = warnings,
+            PaperWarnings = warnings,
+            SignalSeen = false,
+            SignalDirection = "flat",
+            SignalConfidence = null,
+            SignalExpired = false,
+            SignalCandidates = _signalCandidates,
+            PaperPortfolioState = _paperPortfolioState,
+            PaperPositionOpen = false,
+            PaperPositionStatus = "none",
+            PaperExitReason = "none",
+            RMultiple = null,
+            PositionId = string.Empty,
+            MarketContext = context,
+            MarketContextSeen = true,
+        };
 
     private RuntimeStepResult BuildSignalRuntimeResult(
         RuntimeStepResult validationResult,
