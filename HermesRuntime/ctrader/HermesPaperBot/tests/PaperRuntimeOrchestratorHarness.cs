@@ -55,6 +55,8 @@ public static class PaperRuntimeOrchestratorHarness
             results.Add(RunEmbeddedExpiredSignalCase());
             results.Add(RunEmbeddedLowConfidenceCase());
             results.Add(RunMissingSignalCase());
+            results.Add(RunPaperTriggerHarnessCase());
+            results.Add(RunPaperExitHarnessCase());
             results.Add(RunLongSignalOpensPaperPositionCase());
             results.Add(RunShortSignalOpensPaperPositionCase());
             results.Add(RunLongTakeProfitClosesPositionCase());
@@ -638,6 +640,166 @@ public static class PaperRuntimeOrchestratorHarness
             var started = bot.StartPaperRuntime(config, BuildMarketContext("EURUSD", "M5", 100m, 100.2m, DateTimeOffset.UtcNow));
             var result = bot.GetLastRuntimeStepResult() ?? new RuntimeStepResult();
             return BuildReport("missing_signal", result, started && result.PaperDecision == "would_wait" && !result.SignalSeen && result.BrokerAction == "none");
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, true);
+            }
+        }
+    }
+
+    public static string RunPaperTriggerHarness()
+        => JsonSerializer.Serialize(RunPaperTriggerHarnessCase(), JsonOptions);
+
+    public static string RunPaperExitHarness()
+        => JsonSerializer.Serialize(RunPaperExitHarnessCase(), JsonOptions);
+
+    private static object RunPaperExitHarnessCase()
+    {
+        var cases = new List<object>
+        {
+            RunLongTakeProfitClosesPositionCase(),
+            RunLongStopLossClosesPositionCase(),
+            RunInvalidationHitPaperInvalidatedCase(),
+        };
+
+        return new
+        {
+            test_name = "paper_exit_harness",
+            passed = cases.All(item => GetPassedFlag(item)),
+            key_fields = new
+            {
+                cases,
+            },
+        };
+    }
+
+    private static object RunInvalidationHitPaperInvalidatedCase()
+    {
+        var engine = new PaperDecisionEngine();
+        var config = BuildPaperTradeConfig();
+        var candidate = BuildSignalCandidate("long", maxSpread: 0.5m);
+        var entryContext = BuildMarketContext("EURUSD", "M5", 100m, 100.1m);
+        var openResult = engine.EvaluatePaperTrade([candidate], new PaperPortfolioState(), entryContext, config, out var openPortfolio, out _);
+        var activeTrade = BuildOpenPaperPosition(candidate, 100.1m);
+        var invalidationContext = BuildMarketContext("EURUSD", "M5", 98.8m, 98.9m);
+        var closePortfolioSeed = new PaperPortfolioState
+        {
+            ActiveTrades = [activeTrade],
+            OpenTradeCountToday = 1,
+            OpenTradeCountThisHour = 1,
+            ConsecutiveLosses = 0,
+            DailyPaperLossR = 0m,
+        };
+        var closeResult = engine.EvaluatePaperTrade([candidate], closePortfolioSeed, invalidationContext, config, out var closePortfolio, out var warnings);
+
+        var passed = openResult.Decision == "would_enter_long"
+            && closeResult.Decision == "would_invalidate"
+            && closeResult.Lifecycle == PaperTradeLifecycle.StopLossHit
+            && closeResult.BrokerAction == "none"
+            && closePortfolio.ActiveTrades.Length == 0;
+
+        return new
+        {
+            test_name = "invalidation_hit_paper_invalidated",
+            passed,
+            key_fields = new
+            {
+                open_result = BuildPaperTradeFields(openResult, openPortfolio, Array.Empty<string>()),
+                close_result = BuildPaperTradeFields(closeResult, closePortfolio, warnings),
+                paper_position_status = "paper_invalidated",
+            },
+        };
+    }
+
+    private static object RunPaperTriggerHarnessCase()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-trigger-harness", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            var logsDir = Path.Combine(tempRoot, "logs_trigger_harness");
+            var storagePaths = new StoragePaths(
+                tempRoot,
+                Path.Combine(tempRoot, "events"),
+                Path.Combine(tempRoot, "snapshots"),
+                Path.Combine(tempRoot, "logs"),
+                Path.Combine(tempRoot, "cache"),
+                Path.Combine(tempRoot, "jobs"),
+                Path.Combine(tempRoot, "archive"));
+
+            foreach (var directory in storagePaths.AllDirectories)
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var strategyPackage = BuildTriggerHarnessStrategyPackage();
+            var signalEvaluationConfig = BuildCloudConfig(logsDir, strategyPackage);
+            var signalContext = BuildMarketContext("EURUSD", "M5", 100m, 100.2m, DateTimeOffset.UtcNow);
+
+            var signalEvaluation = new PaperSignalEvaluationService(storagePaths, tempRoot).Run(signalEvaluationConfig, signalContext);
+            var signalWouldTrigger = signalEvaluation.WouldTriggerSignals > 0
+                && signalEvaluation.ActionableSignals > 0
+                && signalEvaluation.Signals.Count > 0
+                && string.Equals(signalEvaluation.Signals[0].SignalLifecycleStatus, "would_trigger", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(signalEvaluation.Signals[0].PaperDecision, "would_trigger", StringComparison.OrdinalIgnoreCase);
+
+            var cloudPackage = BuildCloudPackageWithSignal(
+                SignalDirection.Long,
+                0.85m,
+                DateTimeOffset.UtcNow.AddMinutes(-1),
+                DateTimeOffset.UtcNow.AddMinutes(30),
+                "paper_trigger_harness",
+                includeRiskBounds: true,
+                stopLossPrice: 99m,
+                takeProfitPrice: 101m,
+                maxHoldingSeconds: 30,
+                riskR: 1m);
+
+            var bot = new HermesPaperBot();
+            var started = bot.StartPaperRuntime(BuildCloudConfig(logsDir, cloudPackage), signalContext);
+            var positionResult = bot.GetLastRuntimeStepResult() ?? new RuntimeStepResult();
+
+            var passed = started
+                && signalWouldTrigger
+                && string.Equals(positionResult.PaperDecision, "would_enter_long_paper", StringComparison.OrdinalIgnoreCase)
+                && positionResult.PaperPositionOpen
+                && string.Equals(positionResult.PaperPositionStatus, "active", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(positionResult.BrokerAction, "none", StringComparison.OrdinalIgnoreCase)
+                && positionResult.MarketContextSeen;
+
+            return new
+            {
+                test_name = "paper_trigger_harness",
+                passed,
+                key_fields = new
+                {
+                    started,
+                    signal_evaluation = new
+                    {
+                        signal_evaluation_status = signalEvaluation.Status,
+                        signal_decision = signalEvaluation.PaperDecisionSummary,
+                        waiting_signals = signalEvaluation.WaitingSignals,
+                        watching_signals = signalEvaluation.WatchingSignals,
+                        would_trigger_signals = signalEvaluation.WouldTriggerSignals,
+                        actionable_signals = signalEvaluation.ActionableSignals,
+                        first_signal = signalEvaluation.Signals.Count > 0
+                            ? new
+                            {
+                                signalEvaluation.Signals[0].SignalId,
+                                signalEvaluation.Signals[0].SignalStatus,
+                                signalEvaluation.Signals[0].SignalLifecycleStatus,
+                                signalEvaluation.Signals[0].PaperDecision,
+                                signalEvaluation.Signals[0].Reason,
+                            }
+                            : null,
+                    },
+                    position_result = BuildPaperPositionResultFields(positionResult),
+                },
+            };
         }
         finally
         {
@@ -2054,6 +2216,13 @@ timestamp,open,high,low,close,spread
             warnings,
         };
 
+    private static bool GetPassedFlag(object item)
+    {
+        var type = item.GetType();
+        var property = type.GetProperty("passed");
+        return property?.GetValue(item) is bool passed && passed;
+    }
+
     private static BotConfiguration BuildPaperTradeConfig() =>
         BuildPaperTradeConfig(Path.Combine(Path.GetTempPath(), "ctrader-paper-bot-paper-trades", "paper_state_snapshot.json"));
 
@@ -2657,6 +2826,88 @@ timestamp,open,high,low,close,spread
             EmbeddedStrategyJson = "{\"strategy\":\"paper\"}",
             EmbeddedChecksum = new string('b', 64),
             PackageJson = JsonSerializer.Serialize(payload, JsonOptions),
+        };
+    }
+
+    private static CloudEmbeddedReleasePackage BuildTriggerHarnessStrategyPackage()
+    {
+        var triggerStrategy = new
+        {
+            package_id = "paper_trigger_harness_package",
+            package_version = "1.0.0",
+            source_system = "HermesRuntime",
+            status = "paper_only",
+            assets = new[]
+            {
+                new
+                {
+                    asset = "EURUSD",
+                    setup_id = "paper_trigger_setup",
+                    setup_name = "paper_trigger_setup",
+                    timeframe = "M5",
+                    direction = "long",
+                    primary_candidate = "paper_trigger_candidate",
+                    backup_candidates = Array.Empty<string>(),
+                    confidence_baseline = 0.91m,
+                    signal_frequency = "1 signal/session",
+                    entry_logic = new[] { "trigger on paper runtime context" },
+                    exit_logic = new[] { "paper exit on SL or TP" },
+                    stop_loss_logic = new[] { "fixed paper stop" },
+                    take_profit_logic = new[] { "fixed paper target" },
+                    invalidation_logic = new[] { "paper runtime invalidation" },
+                    market_regime_tags = new[] { "paper", "trigger" },
+                    session_tags = Array.Empty<string>(),
+                    risk_notes = new[] { "paper_only", "human_review_required", "no_auto_trading", "bot_ready" },
+                    readiness = "bot_ready",
+                    human_review_required = true,
+                    no_auto_trading = true,
+                    broker_orders_enabled = false,
+                    live_trading_enabled = false,
+                    paper_entry_enabled = true,
+                    max_spread = 1m,
+                    stop_loss_r = 1m,
+                    take_profit_r = 1.5m,
+                },
+            },
+            safety_flags = new[] { "no_auto_trading=true", "human_review_required=true", "broker_orders_enabled=false", "live_trading_enabled=false", "research_only=true" },
+            no_auto_trading = true,
+            human_review_required = true,
+            broker_orders_enabled = false,
+            live_trading_enabled = false,
+            research_only = true,
+        };
+
+        return new CloudEmbeddedReleasePackage
+        {
+            BotReleaseId = "paper-trigger-harness-release",
+            BotVersion = "0.1.0-paper",
+            StrategyPackageVersion = "1.0.0",
+            SchemaVersion = "1.0.0",
+            ReleaseMode = ReleaseMode.PaperOnly,
+            SafetyFlags = new SafetyFlags
+            {
+                NoAutoTrading = true,
+                HumanReviewRequired = true,
+                BrokerTradingEnabled = false,
+                LiveTradingEnabled = false,
+                OrderApiEnabled = false,
+                PaperMode = true,
+                BrokerAction = "none",
+            },
+            ForbiddenCapabilities = new ForbiddenCapabilities
+            {
+                MarketOrderExecutionForbidden = true,
+                LimitOrderPlacementForbidden = true,
+                StopOrderPlacementForbidden = true,
+                PositionModificationForbidden = true,
+                PositionClosingForbidden = true,
+                PendingOrderCancellationForbidden = true,
+                ExternalNetworkAccessForbidden = true,
+            },
+            EmbeddedManifestJson = "{\"paper_mode\":true}",
+            EmbeddedStrategyJson = JsonSerializer.Serialize(triggerStrategy, JsonOptions),
+            EmbeddedChecksum = new string('c', 64),
+            PackageJson = "{}",
         };
     }
 

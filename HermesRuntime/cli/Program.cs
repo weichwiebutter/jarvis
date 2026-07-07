@@ -1,4 +1,5 @@
 using Hermes.Runtime;
+using HermesPaperBot.Tests;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
@@ -349,6 +350,8 @@ internal sealed class HermesCli
             "paperbot-runtime-self-check" => ShowPaperBotRuntimeSelfCheck(),
             "paper-runtime-step" => ShowPaperRuntimeStep(),
             "paper-signal-skip-diagnostics" => ShowPaperSignalSkipDiagnostics(),
+            "paper-trigger-harness" => ShowPaperTriggerHarness(),
+            "paper-exit-harness" => ShowPaperExitHarness(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
             "cloud-embedded-release-package" => ShowCloudEmbeddedReleasePackage(),
@@ -723,6 +726,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes cbot-build-handoff-diagnostics cTrader Build-/Export-Diagnose anzeigen");
         Console.WriteLine("  hermes paperbot-runtime-self-check PaperBot Runtime Selbsttest anzeigen");
         Console.WriteLine("  hermes paper-runtime-step PaperBot Runtime Step ausfuehren");
+        Console.WriteLine("  hermes paper-trigger-harness PaperBot Trigger-Harness ausfuehren");
+        Console.WriteLine("  hermes paper-exit-harness PaperBot Exit-Harness ausfuehren");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
         Console.WriteLine("  hermes cloud-embedded-release-package Cloud-kompatibles Embedded Release Package erzeugen");
@@ -5720,6 +5725,26 @@ internal sealed class HermesCli
             WriteMessages("Warnings", signal.Warnings);
         }
 
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPaperTriggerHarness()
+    {
+        WriteHeader("Hermes Paper Trigger Harness");
+        var output = PaperRuntimeOrchestratorHarness.RunPaperTriggerHarness();
+        Console.WriteLine(output);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPaperExitHarness()
+    {
+        WriteHeader("Hermes Paper Exit Harness");
+        var output = PaperRuntimeOrchestratorHarness.RunPaperExitHarness();
+        Console.WriteLine(output);
         Console.WriteLine();
         WriteSafety();
         return 0;
