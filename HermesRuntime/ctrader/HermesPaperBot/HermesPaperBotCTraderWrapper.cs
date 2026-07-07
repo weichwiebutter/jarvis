@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using HermesPaperBot.Models;
 using HermesPaperBot.Services;
 
@@ -63,7 +64,9 @@ public class HermesPaperBotCTraderWrapper : Robot
         _host?.OnTimer();
         var result = _host?.GetLastRuntimeStepResult();
         var currentContext = result?.MarketContext ?? context;
-        Print($"HermesPaperBot OnTimer; paper_mode=true; broker_action={result?.BrokerAction ?? "none"}; market_context_seen={result?.MarketContextSeen ?? true}; state={result?.State ?? "unknown"}; decision={result?.PaperDecision ?? "unknown"}; symbol={currentContext.CurrentSymbol}; timeframe={currentContext.CurrentTimeframe}; spread={currentContext.Spread}; kill_switch_active={result?.KillSwitchActive ?? true}");
+        var marketContextSeen = result?.MarketContextSeen ?? HasReadableMarketContext(currentContext);
+        var safetyBlockReason = GetSafetyBlockReason(result);
+        Print($"HermesPaperBot OnTimer; paper_mode=true; broker_action={result?.BrokerAction ?? "none"}; market_context_seen={marketContextSeen}; state={result?.State ?? "unknown"}; decision={result?.PaperDecision ?? "unknown"}; symbol={currentContext.CurrentSymbol}; timeframe={currentContext.CurrentTimeframe}; spread={currentContext.Spread}; kill_switch_active={result?.KillSwitchActive ?? true}; safety_block_reason={safetyBlockReason}");
     }
 
     /// <summary>
@@ -118,6 +121,30 @@ public class HermesPaperBotCTraderWrapper : Robot
             ServerTime = Server.Time,
             Source = "ctrader_wrapper",
         };
+    }
+
+    /// <summary>
+    /// Determines whether the wrapper captured a readable market context.
+    /// </summary>
+    private static bool HasReadableMarketContext(RuntimeMarketContext context)
+        => context is not null
+            && !string.IsNullOrWhiteSpace(context.Symbol)
+            && context.Bid > 0m
+            && context.Ask > 0m
+            && context.ServerTime != default;
+
+    /// <summary>
+    /// Extracts the most relevant safety block reason from the latest runtime result.
+    /// </summary>
+    private static string GetSafetyBlockReason(RuntimeStepResult? result)
+    {
+        if (result is null)
+        {
+            return "runtime_result_missing";
+        }
+
+        var reason = result.Reasons?.FirstOrDefault(entry => !string.IsNullOrWhiteSpace(entry)) ?? string.Empty;
+        return string.IsNullOrWhiteSpace(reason) ? "none" : reason;
     }
 }
 #else
