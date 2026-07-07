@@ -5964,6 +5964,11 @@ internal sealed class HermesCli
         WriteField("Paper Closed TP Count", report.PaperClosedTpCount.ToString(CultureInfo.InvariantCulture));
         WriteField("Paper Closed SL Count", report.PaperClosedSlCount.ToString(CultureInfo.InvariantCulture));
         WriteField("Paper Invalidated Count", report.PaperInvalidatedCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Paper Closed Count", report.PaperClosedCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("Gross Profit R", report.GrossProfitR.ToString("0.####", CultureInfo.InvariantCulture));
+        WriteField("Gross Loss R", report.GrossLossR.ToString("0.####", CultureInfo.InvariantCulture));
+        WriteField("Net R", report.NetR.ToString("0.####", CultureInfo.InvariantCulture));
+        WriteField("Average R Multiple", report.AverageRMultiple.ToString("0.####", CultureInfo.InvariantCulture));
         WriteField("Broker Action", report.BrokerActionNone ? "none" : "not_none");
         WriteField("Paper Only", report.PaperOnly.ToString().ToLowerInvariant());
         WriteMessages("Warnings", report.Warnings);

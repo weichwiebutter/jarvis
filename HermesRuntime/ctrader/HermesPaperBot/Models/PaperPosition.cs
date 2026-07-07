@@ -12,9 +12,12 @@ public sealed class PaperPosition
     public string Timeframe { get; init; } = string.Empty;
     public string Direction { get; init; } = string.Empty;
     public decimal EntryPrice { get; init; } = 0m;
+    public decimal ExitPrice { get; init; } = 0m;
     public decimal StopLossPrice { get; init; } = 0m;
     public decimal TakeProfitPrice { get; init; } = 0m;
     public decimal ProfitR { get; init; } = 0m;
+    public decimal ResultPoints { get; init; } = 0m;
+    public string Outcome { get; init; } = string.Empty;
     public PaperTradeLifecycle Lifecycle { get; init; } = PaperTradeLifecycle.Open;
     public PaperPositionStatus Status { get; init; } = PaperPositionStatus.Open;
     public PaperExitReason ExitReason { get; init; } = PaperExitReason.None;

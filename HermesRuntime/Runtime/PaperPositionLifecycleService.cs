@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using HermesPaperBot.Models;
@@ -14,6 +16,11 @@ public sealed record PaperPositionLifecycleItem(
     string Entry,
     string Sl,
     string Tp,
+    decimal EntryPrice,
+    decimal ExitPrice,
+    decimal ResultPoints,
+    decimal RMultiple,
+    string Outcome,
     DateTimeOffset? OpenedAtUtc,
     DateTimeOffset? ClosedAtUtc,
     string? PaperResult,
@@ -60,25 +67,7 @@ public sealed class PaperPositionLifecycleService
             warnings.Add("paper_runtime_step_not_ready");
         }
 
-        var positions = new List<PaperPositionLifecycleItem>();
-        foreach (var signal in stepReport.SignalEvaluation.Signals)
-        {
-            var status = MapStatus(signal.SignalLifecycleStatus, signal.PaperDecision, signal.SignalStatus);
-            var paperResult = MapPaperResult(status);
-            positions.Add(new PaperPositionLifecycleItem(
-                SignalId: signal.SignalId,
-                Asset: signal.Asset,
-                Timeframe: signal.Timeframe,
-                Direction: signal.Direction,
-                Status: status,
-                Entry: signal.PaperDecision == "would_trigger" ? "signal_entry" : "n/a",
-                Sl: signal.SignalStatus is "active" or "completed" ? "set" : "n/a",
-                Tp: signal.SignalStatus is "active" or "completed" ? "set" : "n/a",
-                OpenedAtUtc: signal.SignalStatus is "active" or "completed" ? stepReport.UpdatedAtUtc : null,
-                ClosedAtUtc: signal.SignalStatus is "completed" or "expired" or "invalidated" ? stepReport.UpdatedAtUtc : null,
-                PaperResult: paperResult,
-                Reason: signal.Reason));
-        }
+        var positions = LoadPositions(stepReport, warnings);
 
         var report = new PaperPositionLifecycleReport(
             ReportVersion: "paper_position_lifecycle_v1",
@@ -129,6 +118,133 @@ public sealed class PaperPositionLifecycleService
             _ => "none",
         };
 
+    private IReadOnlyList<PaperPositionLifecycleItem> LoadPositions(PaperRuntimeStepReport stepReport, List<string> warnings)
+    {
+        var snapshotPath = stepReport.PaperStateSnapshotPath;
+        if (!string.IsNullOrWhiteSpace(snapshotPath))
+        {
+            try
+            {
+                var restore = new HermesPaperBot.Services.PaperStateStore(snapshotPath).Load();
+                var portfolio = restore.PaperPortfolioState;
+                if (portfolio is not null)
+                {
+                    var items = new List<PaperPositionLifecycleItem>();
+                    foreach (var position in portfolio.ActiveTrades.Concat(portfolio.ClosedTrades))
+                    {
+                        items.Add(BuildPositionItem(position));
+                    }
+
+                    if (items.Count > 0)
+                    {
+                        return items;
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
+            {
+                warnings.Add($"paper_state_snapshot_read_failed:{ex.GetType().Name}");
+            }
+        }
+
+        return BuildFallbackPositions(stepReport);
+    }
+
+    private static IReadOnlyList<PaperPositionLifecycleItem> BuildFallbackPositions(PaperRuntimeStepReport stepReport)
+    {
+        var positions = new List<PaperPositionLifecycleItem>();
+        foreach (var signal in stepReport.SignalEvaluation.Signals)
+        {
+            var status = MapStatus(signal.SignalLifecycleStatus, signal.PaperDecision, signal.SignalStatus);
+            var paperResult = MapPaperResult(status);
+            positions.Add(new PaperPositionLifecycleItem(
+                SignalId: signal.SignalId,
+                Asset: signal.Asset,
+                Timeframe: signal.Timeframe,
+                Direction: signal.Direction,
+                Status: status,
+                Entry: signal.PaperDecision == "would_trigger" ? "signal_entry" : "n/a",
+                Sl: signal.SignalStatus is "active" or "completed" ? "set" : "n/a",
+                Tp: signal.SignalStatus is "active" or "completed" ? "set" : "n/a",
+                EntryPrice: 0m,
+                ExitPrice: 0m,
+                ResultPoints: 0m,
+                RMultiple: 0m,
+                Outcome: paperResult ?? "n/a",
+                OpenedAtUtc: signal.SignalStatus is "active" or "completed" ? stepReport.UpdatedAtUtc : null,
+                ClosedAtUtc: signal.SignalStatus is "completed" or "expired" or "invalidated" ? stepReport.UpdatedAtUtc : null,
+                PaperResult: paperResult,
+                Reason: signal.Reason));
+        }
+
+        return positions;
+    }
+
+    private static PaperPositionLifecycleItem BuildPositionItem(HermesPaperBot.Models.PaperPosition position)
+    {
+        var resultPoints = position.ResultPoints != 0m
+            ? position.ResultPoints
+            : string.Equals(position.Direction, "short", StringComparison.OrdinalIgnoreCase)
+                ? position.EntryPrice - position.ExitPrice
+                : position.ExitPrice - position.EntryPrice;
+
+        var rMultiple = position.RMultiple != 0m
+            ? position.RMultiple
+            : ComputeRMultiple(position.EntryPrice, position.StopLossPrice, position.ExitPrice, position.Direction);
+
+        var status = MapPositionStatus(position.Status, position.ExitReason, position.Lifecycle);
+        return new PaperPositionLifecycleItem(
+            SignalId: position.SignalId,
+            Asset: position.Asset,
+            Timeframe: position.Timeframe,
+            Direction: position.Direction,
+            Status: status,
+            Entry: position.EntryPrice.ToString("0.#####"),
+            Sl: position.StopLossPrice.ToString("0.#####"),
+            Tp: position.TakeProfitPrice.ToString("0.#####"),
+            EntryPrice: position.EntryPrice,
+            ExitPrice: position.ExitPrice,
+            ResultPoints: Math.Round(resultPoints, 4),
+            RMultiple: Math.Round(rMultiple, 4),
+            Outcome: MapOutcome(position.ExitReason, position.Status),
+            OpenedAtUtc: position.OpenedAtUtc,
+            ClosedAtUtc: position.ClosedAtUtc,
+            PaperResult: MapPaperResult(status),
+            Reason: position.CloseReason);
+    }
+
+    private static string MapPositionStatus(HermesPaperBot.Models.PaperPositionStatus status, HermesPaperBot.Models.PaperExitReason exitReason, HermesPaperBot.Models.PaperTradeLifecycle lifecycle)
+        => status switch
+        {
+            HermesPaperBot.Models.PaperPositionStatus.TakeProfitHit => "paper_closed_tp",
+            HermesPaperBot.Models.PaperPositionStatus.StopLossHit => "paper_closed_sl",
+            HermesPaperBot.Models.PaperPositionStatus.Expired => "paper_closed_expired",
+            HermesPaperBot.Models.PaperPositionStatus.Invalidated => "paper_invalidated",
+            HermesPaperBot.Models.PaperPositionStatus.Active or HermesPaperBot.Models.PaperPositionStatus.Open => "paper_open",
+            HermesPaperBot.Models.PaperPositionStatus.Closed when lifecycle == HermesPaperBot.Models.PaperTradeLifecycle.Open => "paper_open",
+            _ => !string.Equals(exitReason.ToString(), "none", StringComparison.OrdinalIgnoreCase)
+                ? $"paper_closed_{exitReason.ToString().ToLowerInvariant()}"
+                : "none",
+        };
+
+    private static decimal ComputeRMultiple(decimal entryPrice, decimal stopLossPrice, decimal exitPrice, string direction)
+    {
+        var risk = Math.Max(Math.Abs(entryPrice - stopLossPrice), 0.0001m);
+        return string.Equals(direction, "short", StringComparison.OrdinalIgnoreCase)
+            ? (entryPrice - exitPrice) / risk
+            : (exitPrice - entryPrice) / risk;
+    }
+
+    private static string MapOutcome(HermesPaperBot.Models.PaperExitReason exitReason, HermesPaperBot.Models.PaperPositionStatus status)
+        => exitReason switch
+        {
+            HermesPaperBot.Models.PaperExitReason.TakeProfitHit => "tp",
+            HermesPaperBot.Models.PaperExitReason.StopLossHit => "sl",
+            HermesPaperBot.Models.PaperExitReason.Expired => "expired",
+            HermesPaperBot.Models.PaperExitReason.Invalidated => "invalidated",
+            _ => status == HermesPaperBot.Models.PaperPositionStatus.Active ? "active" : "unknown",
+        };
+
     private static string? MapPaperResult(string status)
         => status switch
         {
@@ -164,7 +280,7 @@ public sealed class PaperPositionLifecycleService
         sb.AppendLine("## Positions");
         foreach (var position in report.Positions)
         {
-            sb.AppendLine($"- {position.SignalId}: status={position.Status}; asset={position.Asset}; timeframe={position.Timeframe}; direction={position.Direction}; entry={position.Entry}; sl={position.Sl}; tp={position.Tp}; result={position.PaperResult ?? "n/a"}; opened_at={position.OpenedAtUtc:O}; closed_at={(position.ClosedAtUtc.HasValue ? position.ClosedAtUtc.Value.ToString("O") : "n/a")}");
+            sb.AppendLine($"- {position.SignalId}: status={position.Status}; asset={position.Asset}; timeframe={position.Timeframe}; direction={position.Direction}; entry={position.Entry}; sl={position.Sl}; tp={position.Tp}; entry_price={position.EntryPrice:0.#####}; exit_price={position.ExitPrice:0.#####}; result_points={position.ResultPoints:0.####}; r_multiple={position.RMultiple:0.####}; outcome={position.Outcome}; result={position.PaperResult ?? "n/a"}; opened_at={position.OpenedAtUtc:O}; closed_at={(position.ClosedAtUtc.HasValue ? position.ClosedAtUtc.Value.ToString("O") : "n/a")}");
         }
         if (report.Positions.Count == 0)
         {

@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 
@@ -13,10 +15,16 @@ public sealed record PaperTradeSummaryReport(
     int PaperClosedTpCount,
     int PaperClosedSlCount,
     int PaperInvalidatedCount,
+    int PaperClosedCount,
+    decimal GrossProfitR,
+    decimal GrossLossR,
+    decimal NetR,
+    decimal AverageRMultiple,
     bool BrokerActionNone,
     bool PaperOnly,
     string PaperRuntimeStepReportPath,
     string PaperPositionLifecycleReportPath,
+    string PaperStateSnapshotPath,
     string ReportPath,
     string MarkdownPath,
     IReadOnlyList<string> Warnings);
@@ -62,6 +70,7 @@ public sealed class PaperTradeSummaryService
         var lifecycleService = new PaperPositionLifecycleService(_storagePaths, _runtimeRoot);
         var stepReport = stepService.LoadLatestReport();
         var lifecycleReport = lifecycleService.LoadLatestReport();
+        var snapshotSummary = LoadSnapshotSummary(stepReport.PaperStateSnapshotPath);
 
         var warnings = new List<string>();
         if (!stepReport.RuntimeReady)
@@ -84,10 +93,16 @@ public sealed class PaperTradeSummaryService
             PaperClosedTpCount: lifecycleReport.PaperClosedTpCount,
             PaperClosedSlCount: lifecycleReport.PaperClosedSlCount,
             PaperInvalidatedCount: lifecycleReport.PaperInvalidatedCount,
+            PaperClosedCount: snapshotSummary.ClosedCount,
+            GrossProfitR: snapshotSummary.GrossProfitR,
+            GrossLossR: snapshotSummary.GrossLossR,
+            NetR: snapshotSummary.NetR,
+            AverageRMultiple: snapshotSummary.AverageRMultiple,
             BrokerActionNone: string.Equals(stepReport.RuntimeStepResult.BrokerAction, "none", StringComparison.OrdinalIgnoreCase),
             PaperOnly: true,
             PaperRuntimeStepReportPath: stepService.ReportPath,
             PaperPositionLifecycleReportPath: lifecycleService.ReportPath,
+            PaperStateSnapshotPath: stepReport.PaperStateSnapshotPath,
             ReportPath: ReportPath,
             MarkdownPath: MarkdownPath,
             Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList());
@@ -116,10 +131,16 @@ public sealed class PaperTradeSummaryService
         sb.AppendLine($"- paper_closed_tp_count: {report.PaperClosedTpCount}");
         sb.AppendLine($"- paper_closed_sl_count: {report.PaperClosedSlCount}");
         sb.AppendLine($"- paper_invalidated_count: {report.PaperInvalidatedCount}");
+        sb.AppendLine($"- paper_closed_count: {report.PaperClosedCount}");
+        sb.AppendLine($"- gross_profit_r: {report.GrossProfitR:0.####}");
+        sb.AppendLine($"- gross_loss_r: {report.GrossLossR:0.####}");
+        sb.AppendLine($"- net_r: {report.NetR:0.####}");
+        sb.AppendLine($"- average_r_multiple: {report.AverageRMultiple:0.####}");
         sb.AppendLine($"- broker_action: {(report.BrokerActionNone ? "none" : "not_none")}");
         sb.AppendLine($"- paper_only: {report.PaperOnly.ToString().ToLowerInvariant()}");
         sb.AppendLine($"- paper_runtime_step_report_path: {report.PaperRuntimeStepReportPath}");
         sb.AppendLine($"- paper_position_lifecycle_report_path: {report.PaperPositionLifecycleReportPath}");
+        sb.AppendLine($"- paper_state_snapshot_path: {report.PaperStateSnapshotPath}");
 
         if (report.Warnings.Count > 0)
         {
@@ -132,5 +153,51 @@ public sealed class PaperTradeSummaryService
         }
 
         return sb.ToString();
+    }
+
+    private SnapshotSummary LoadSnapshotSummary(string snapshotPath)
+    {
+        if (string.IsNullOrWhiteSpace(snapshotPath))
+        {
+            return SnapshotSummary.Empty;
+        }
+
+        try
+        {
+            var restore = new HermesPaperBot.Services.PaperStateStore(snapshotPath).Load();
+            var positions = restore.PaperPortfolioState?.ClosedTrades ?? [];
+            var closedPositions = positions.Where(position => position.ClosedAtUtc.HasValue || position.Lifecycle != HermesPaperBot.Models.PaperTradeLifecycle.Open).ToArray();
+            if (closedPositions.Length == 0)
+            {
+                return SnapshotSummary.Empty;
+            }
+
+            var closedR = closedPositions.Select(position => position.RMultiple == 0m
+                ? ComputeRMultiple(position)
+                : position.RMultiple).ToArray();
+            var grossProfit = closedR.Where(r => r > 0m).Sum();
+            var grossLoss = Math.Abs(closedR.Where(r => r < 0m).Sum());
+            var net = closedR.Sum();
+            var average = closedR.Length == 0 ? 0m : Math.Round(closedR.Average(), 4);
+
+            return new SnapshotSummary(closedPositions.Length, Math.Round(grossProfit, 4), Math.Round(grossLoss, 4), Math.Round(net, 4), average);
+        }
+        catch
+        {
+            return SnapshotSummary.Empty;
+        }
+    }
+
+    private static decimal ComputeRMultiple(HermesPaperBot.Models.PaperPosition position)
+    {
+        var risk = Math.Max(Math.Abs(position.EntryPrice - position.StopLossPrice), 0.0001m);
+        return string.Equals(position.Direction, "short", StringComparison.OrdinalIgnoreCase)
+            ? (position.EntryPrice - position.ExitPrice) / risk
+            : (position.ExitPrice - position.EntryPrice) / risk;
+    }
+
+    private sealed record SnapshotSummary(int ClosedCount, decimal GrossProfitR, decimal GrossLossR, decimal NetR, decimal AverageRMultiple)
+    {
+        public static SnapshotSummary Empty { get; } = new(0, 0m, 0m, 0m, 0m);
     }
 }

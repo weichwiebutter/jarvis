@@ -601,6 +601,21 @@ public sealed class HermesPaperBot
             _ => !string.Equals(exitReason, "none", StringComparison.OrdinalIgnoreCase) ? $"paper_position_{exitReason}" : validationState,
         };
 
+    private static decimal ComputeResultPoints(PaperPosition previousActivePosition, decimal exitPrice)
+        => string.Equals(previousActivePosition.Direction, "short", StringComparison.OrdinalIgnoreCase)
+            ? previousActivePosition.EntryPrice - exitPrice
+            : exitPrice - previousActivePosition.EntryPrice;
+
+    private static string MapPaperOutcome(string positionStatus)
+        => positionStatus switch
+        {
+            "takeprofithit" => "tp",
+            "stoplosshit" => "sl",
+            "expired" => "expired",
+            "invalidated" => "invalidated",
+            _ => "active",
+        };
+
     private PaperPortfolioState BuildCloudPortfolioState(PaperPosition? activePosition, PaperPosition[] closedPositions)
     {
         var activeTrades = activePosition is null
@@ -631,9 +646,12 @@ public sealed class HermesPaperBot
             Timeframe = previousActivePosition.Timeframe,
             Direction = previousActivePosition.Direction,
             EntryPrice = previousActivePosition.EntryPrice,
+            ExitPrice = positionResult.ExitPrice,
             StopLossPrice = previousActivePosition.StopLossPrice,
             TakeProfitPrice = previousActivePosition.TakeProfitPrice,
             ProfitR = positionResult.ProfitR,
+            ResultPoints = ComputeResultPoints(previousActivePosition, positionResult.ExitPrice),
+            Outcome = MapPaperOutcome(positionResult.PaperPositionStatus),
             Lifecycle = positionResult.Lifecycle,
             Status = positionResult.PaperPositionStatus switch
             {
