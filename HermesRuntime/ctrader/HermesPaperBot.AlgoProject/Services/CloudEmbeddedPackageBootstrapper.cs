@@ -68,6 +68,7 @@ public sealed class CloudEmbeddedPackageBootstrapper
                 PackageJson = packageJson,
                 EmbeddedManifestJson = TryGetString(root, Key("embedded_", "manifest_", "json"), out var embeddedManifestJson) ? embeddedManifestJson : null,
                 EmbeddedStrategyJson = TryGetString(root, Key("embedded_", "strategy_", "json"), out var embeddedStrategyJson) ? embeddedStrategyJson : null,
+                ChartAnnotationSpecJson = TryGetString(root, Key("chart_", "annotation_", "spec_", "json"), out var chartAnnotationSpecJson) ? chartAnnotationSpecJson : null,
                 EmbeddedChecksum = embeddedChecksum,
             };
 

@@ -100,8 +100,9 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
 
         var embeddedManifestJson = BuildEmbeddedManifestJson(bundleManifest, sourcePackage, File.Exists(contractPath) ? File.ReadAllText(contractPath) : string.Empty);
         var embeddedStrategyJson = BuildEmbeddedStrategySnapshotJson(bundleManifest, sourcePackage);
+        var embeddedChartAnnotationSpecJson = BuildEmbeddedChartAnnotationSpecJson(sourcePackage);
         var embeddedSchemaJson = File.ReadAllText(schemaPath);
-        var embeddedChecksum = ComputeChecksum(embeddedManifestJson, embeddedStrategyJson, embeddedSchemaJson);
+        var embeddedChecksum = ComputeChecksum(embeddedManifestJson, embeddedStrategyJson, embeddedChartAnnotationSpecJson, embeddedSchemaJson);
 
         var payload = new
         {
@@ -114,6 +115,7 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
             forbidden_capabilities = ForbiddenCapabilities,
             embedded_manifest_json = embeddedManifestJson,
             embedded_strategy_json = embeddedStrategyJson,
+            chart_annotation_spec_json = embeddedChartAnnotationSpecJson,
             embedded_schema_json = embeddedSchemaJson,
             embedded_checksum = embeddedChecksum,
             generated_at_utc = DateTimeOffset.UtcNow,
@@ -127,7 +129,7 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         Directory.CreateDirectory(OutputDirectory);
         var json = JsonSerializer.Serialize(payload, JsonDefaults.WriteOptions);
         File.WriteAllText(OutputJsonPath, json);
-        File.WriteAllText(OutputMarkdownPath, BuildMarkdown(sourceDirectory, bundleManifest, sourcePackage, embeddedChecksum, embeddedManifestJson, embeddedStrategyJson, embeddedSchemaJson));
+        File.WriteAllText(OutputMarkdownPath, BuildMarkdown(sourceDirectory, bundleManifest, sourcePackage, embeddedChecksum, embeddedManifestJson, embeddedStrategyJson, embeddedChartAnnotationSpecJson, embeddedSchemaJson));
         WriteGeneratedSource(json, payload.bot_release_id, payload.bot_version, payload.strategy_package_version, payload.embedded_checksum);
 
         return new CloudEmbeddedReleasePackageGenerationResult(
@@ -195,6 +197,7 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
             source_status = sourcePackage.Status,
             source_package_id = sourcePackage.PackageId,
             source_package_assets = sourcePackage.Assets.Select(asset => asset.Asset).ToList(),
+            chart_annotation_spec_present = true,
         };
 
         return JsonSerializer.Serialize(manifest, JsonDefaults.WriteOptions);
@@ -221,9 +224,9 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         return JsonSerializer.Serialize(snapshot, JsonDefaults.WriteOptions);
     }
 
-    private static string ComputeChecksum(string embeddedManifestJson, string embeddedStrategyJson, string embeddedSchemaJson)
+    private static string ComputeChecksum(string embeddedManifestJson, string embeddedStrategyJson, string embeddedChartAnnotationSpecJson, string embeddedSchemaJson)
     {
-        var combined = string.Join("\n", [embeddedManifestJson, embeddedStrategyJson, embeddedSchemaJson]);
+        var combined = string.Join("\n", [embeddedManifestJson, embeddedStrategyJson, embeddedChartAnnotationSpecJson, embeddedSchemaJson]);
         using var sha = SHA256.Create();
         var bytes = Encoding.UTF8.GetBytes(combined);
         return Convert.ToHexString(sha.ComputeHash(bytes)).ToLowerInvariant();
@@ -268,6 +271,7 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         string embeddedChecksum,
         string embeddedManifestJson,
         string embeddedStrategyJson,
+        string embeddedChartAnnotationSpecJson,
         string embeddedSchemaJson) => $"""
 # Cloud Embedded Release Package
 
@@ -300,6 +304,9 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
 
 ## Embedded Strategy JSON
 {embeddedStrategyJson}
+
+## Embedded Chart Annotation Spec JSON
+{embeddedChartAnnotationSpecJson}
 
 ## Embedded Schema JSON
 {embeddedSchemaJson}
@@ -335,5 +342,24 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         });
 
         File.WriteAllText(generatedPath, source);
+    }
+
+    private string BuildEmbeddedChartAnnotationSpecJson(EnsembleSignalAgentPortfolioPackage sourcePackage)
+    {
+        var chartExport = new ChartAnnotationExportService(_storagePaths, _runtimeRoot).Run(dryRun: true);
+        var spec = new
+        {
+            generated_at_utc = DateTimeOffset.UtcNow,
+            generated_by = "HermesRuntime",
+            source_package_id = sourcePackage.PackageId,
+            source_package_version = sourcePackage.PackageVersion,
+            source_system = sourcePackage.SourceSystem,
+            source_status = sourcePackage.Status,
+            annotation_count = chartExport.AnnotationCount,
+            annotation_source_mode = chartExport.SourceMode,
+            annotations = chartExport.Annotations,
+        };
+
+        return JsonSerializer.Serialize(spec, JsonDefaults.WriteOptions);
     }
 }

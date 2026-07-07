@@ -13,6 +13,7 @@ public sealed class CloudEmbeddedReleasePackage
     public SafetyFlags SafetyFlags { get; init; } = new SafetyFlags();
     public ForbiddenCapabilities ForbiddenCapabilities { get; init; } = new ForbiddenCapabilities();
     public SignalDecision? SignalDecision { get; init; }
+    public string? ChartAnnotationSpecJson { get; init; }
     public string? PackageJson { get; init; }
     public string? EmbeddedManifestJson { get; init; }
     public string? EmbeddedStrategyJson { get; init; }

@@ -344,6 +344,10 @@ internal sealed class HermesCli
             "scalping-ensemble-member" => ShowScalpingEnsembleMember(),
             "export-scalping-ensemble-package" => ExportScalpingEnsemblePackage(),
             "scalping-ensemble-package" => ShowScalpingEnsemblePackage(),
+            "bot-development-status" => ShowBotDevelopmentStatus(),
+            "cbot-build-handoff-diagnostics" => ShowCbotBuildHandoffDiagnostics(),
+            "paperbot-runtime-self-check" => ShowPaperBotRuntimeSelfCheck(),
+            "paper-runtime-step" => ShowPaperRuntimeStep(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
             "cloud-embedded-release-package" => ShowCloudEmbeddedReleasePackage(),
@@ -358,6 +362,8 @@ internal sealed class HermesCli
             "generate-demo-signals" => GenerateDemoSignals(),
             "latest-demo-signals" => ShowLatestDemoSignals(),
             "demo-signal-feed-log" => ShowDemoSignalFeedLog(),
+            "chart-annotation-status" => ShowChartAnnotationStatus(),
+            "chart-annotation-export" => RunChartAnnotationExport(),
             "signal-watch-status" => ShowSignalWatchStatus(),
             "signal-watch-log" => ShowSignalWatchLog(),
             "export-missing-signal-agent-specs" => ExportMissingSignalAgentSpecs(),
@@ -712,6 +718,10 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes scalping-ensemble-member --id <ID> optimiertes Ensemble-Mitglied anzeigen");
         Console.WriteLine("  hermes export-scalping-ensemble-package Ensemble Export Package erzeugen");
         Console.WriteLine("  hermes scalping-ensemble-package Ensemble Export Package anzeigen");
+        Console.WriteLine("  hermes bot-development-status Bot-Entwicklungsstatus anzeigen");
+        Console.WriteLine("  hermes cbot-build-handoff-diagnostics cTrader Build-/Export-Diagnose anzeigen");
+        Console.WriteLine("  hermes paperbot-runtime-self-check PaperBot Runtime Selbsttest anzeigen");
+        Console.WriteLine("  hermes paper-runtime-step PaperBot Runtime Step ausfuehren");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
         Console.WriteLine("  hermes cloud-embedded-release-package Cloud-kompatibles Embedded Release Package erzeugen");
@@ -726,6 +736,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes generate-demo-signals read-only Demo-Signale erzeugen");
         Console.WriteLine("  hermes latest-demo-signals letzte Demo-Signale anzeigen");
         Console.WriteLine("  hermes demo-signal-feed-log Demo Signal Feed Log anzeigen");
+        Console.WriteLine("  hermes chart-annotation-status Chart Annotation Status anzeigen");
+        Console.WriteLine("  hermes chart-annotation-export [--dry-run|--apply] Chart Annotationen exportieren");
         Console.WriteLine("  hermes signal-watch-status read-only Signal-Watch-Lifecycle anzeigen");
         Console.WriteLine("  hermes signal-watch-log Signal-Watch-Log anzeigen");
         Console.WriteLine("  hermes export-missing-signal-agent-specs fehlende Ensemble-Signal-Agent-Specs exportieren");
@@ -5509,6 +5521,160 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowBotDevelopmentStatus()
+    {
+        WriteHeader("Hermes Bot Development Status");
+        var service = new BotDevelopmentStatusService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Overall Status", report.OverallStatus);
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Broker Orders Enabled", report.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("Live Trading Enabled", report.LiveTradingEnabled.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Recommendations", report.Recommendations);
+
+        foreach (var component in report.Components)
+        {
+            WriteSubHeader(component.Name);
+            WriteField("Status", component.Status);
+            WriteField("Readiness", component.Readiness);
+            WriteField("Summary", component.Summary);
+            if (!string.IsNullOrWhiteSpace(component.JsonPath))
+            {
+                WriteField("JSON", DisplayPath(component.JsonPath));
+            }
+            if (!string.IsNullOrWhiteSpace(component.MarkdownPath))
+            {
+                WriteField("Markdown", DisplayPath(component.MarkdownPath));
+            }
+            WriteMessages("Evidence", component.Evidence);
+            WriteMessages("Warnings", component.Warnings);
+            WriteMessages("Recommendations", component.Recommendations);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowCbotBuildHandoffDiagnostics()
+    {
+        WriteHeader("Hermes cTrader Build Handoff Diagnostics");
+        var service = new CbotBuildHandoffDiagnosticsService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Project Path", DisplayPath(report.ProjectPath));
+        WriteField("Project Exists", report.ProjectExists.ToString().ToLowerInvariant());
+        WriteField("Algo Project Exists", report.AlgoProjectExists.ToString().ToLowerInvariant());
+        WriteField("Bot Source Exists", report.CTraderBotSourceExists.ToString().ToLowerInvariant());
+        WriteField("Embedded Release Package Exists", report.EmbeddedReleasePackageExists.ToString().ToLowerInvariant());
+        WriteField("Signal Package Reader Exists", report.SignalPackageReaderExists.ToString().ToLowerInvariant());
+        WriteField("Chart Annotation Reader Exists", report.ChartAnnotationReaderExists.ToString().ToLowerInvariant());
+        WriteField("Compile Checklist Exists", report.CompileChecklistExists.ToString().ToLowerInvariant());
+        WriteField("Algo Artifact Exists", report.AlgoArtifactExists.ToString().ToLowerInvariant());
+        WriteField("Algo Metadata Exists", report.AlgoMetadataExists.ToString().ToLowerInvariant());
+        WriteField("Contains Embedded Release Package", report.ContainsEmbeddedReleasePackage.ToString().ToLowerInvariant());
+        WriteField("Contains Signal Package", report.ContainsSignalPackage.ToString().ToLowerInvariant());
+        WriteField("Contains Chart Annotation Spec", report.ContainsChartAnnotationSpec.ToString().ToLowerInvariant());
+        WriteField("Contains Safety Flags", report.ContainsSafetyFlags.ToString().ToLowerInvariant());
+        WriteField("Cloud Autonomous", report.CloudAutonomous.ToString().ToLowerInvariant());
+        WriteField("Local Runtime Path Dependency", report.HasLocalRuntimePathDependency.ToString().ToLowerInvariant());
+        WriteField("Embedded Provenance Contains Local Paths", report.EmbeddedProvenanceContainsLocalPaths.ToString().ToLowerInvariant());
+        WriteField("Uploadable", report.CBotUploadable.ToString().ToLowerInvariant());
+        WriteField("Source Less", report.CBotSourceLess.ToString().ToLowerInvariant());
+        WriteMessages("Required For Upload", report.RequiredForUpload);
+        WriteMessages("Not Required For Cloud Runtime", report.NotRequiredForCloudRuntime);
+        WriteMessages("Safety Findings", report.SafetyFindings);
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Recommendations", report.Recommendations);
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPaperBotRuntimeSelfCheck()
+    {
+        WriteHeader("Hermes PaperBot Runtime Self Check");
+        var service = new PaperBotRuntimeSelfCheckService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Runtime Ready", report.RuntimeReady.ToString().ToLowerInvariant());
+        WriteField("Embedded Release Package Present", report.EmbeddedReleasePackagePresent.ToString().ToLowerInvariant());
+        WriteField("Embedded Release Package Parseable", report.EmbeddedReleasePackageParseable.ToString().ToLowerInvariant());
+        WriteField("Signal Package Present", report.SignalPackagePresent.ToString().ToLowerInvariant());
+        WriteField("Signal Package Loaded", report.SignalPackageLoaded.ToString().ToLowerInvariant());
+        WriteField("Chart Annotation Spec Present", report.ChartAnnotationSpecPresent.ToString().ToLowerInvariant());
+        WriteField("Chart Annotation Spec Loaded", report.ChartAnnotationSpecLoaded.ToString().ToLowerInvariant());
+        WriteField("Safety Flags Active", report.SafetyFlagsActive.ToString().ToLowerInvariant());
+        WriteField("Cloud Mode", report.CloudMode.ToString().ToLowerInvariant());
+        WriteField("Broker Action None", report.BrokerActionNone.ToString().ToLowerInvariant());
+        WriteField("Bot Release Id", report.BotReleaseId ?? string.Empty);
+        WriteField("Bot Version", report.BotVersion ?? string.Empty);
+        WriteField("Strategy Package Version", report.StrategyPackageVersion ?? string.Empty);
+        WriteField("Release Mode", report.ReleaseMode ?? string.Empty);
+        WriteField("Embedded Checksum", report.EmbeddedChecksum ?? string.Empty);
+        WriteField("Embedded Release Package Path", DisplayPath(report.EmbeddedReleasePackagePath));
+        WriteField("Embedded Source Path", DisplayPath(report.EmbeddedSourcePath));
+        WriteField("Signal Reader Path", DisplayPath(report.SignalReaderPath));
+        WriteField("Chart Annotation Reader Path", DisplayPath(report.ChartAnnotationReaderPath));
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Recommendations", report.Recommendations);
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPaperRuntimeStep()
+    {
+        WriteHeader("Hermes PaperBot Runtime Step");
+        var service = new PaperRuntimeStepService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Logs", DisplayPath(service.LogsPath));
+        WriteField("Status", report.Status);
+        WriteField("Runtime Ready", report.RuntimeReady.ToString().ToLowerInvariant());
+        WriteField("Cloud Mode", report.CloudMode.ToString().ToLowerInvariant());
+        WriteField("Broker Action None", report.BrokerActionNone.ToString().ToLowerInvariant());
+        WriteField("Embedded Package Loaded", report.EmbeddedPackageLoaded.ToString().ToLowerInvariant());
+        WriteField("Signal Package Loaded", report.SignalPackageLoaded.ToString().ToLowerInvariant());
+        WriteField("Chart Annotation Spec Loaded", report.ChartAnnotationSpecLoaded.ToString().ToLowerInvariant());
+        WriteField("Safety Flags Active", report.SafetyFlagsActive.ToString().ToLowerInvariant());
+        WriteField("Market Context Loaded", report.MarketContextLoaded.ToString().ToLowerInvariant());
+        WriteField("Market Context Source", report.MarketContextSource);
+        WriteField("Market Symbol", report.MarketSymbol);
+        WriteField("Market Timeframe", report.MarketTimeframe);
+        WriteField("Market Bid", report.MarketBid.ToString());
+        WriteField("Market Ask", report.MarketAsk.ToString());
+        WriteField("Market Spread Pips", report.MarketSpreadPips?.ToString() ?? "n/a");
+        WriteField("Market Server Time Utc", report.MarketServerTimeUtc.ToString("O"));
+        WriteField("State", report.RuntimeStepResult.State);
+        WriteField("Success", report.RuntimeStepResult.Success.ToString().ToLowerInvariant());
+        WriteField("Paper Decision", report.RuntimeStepResult.PaperDecision);
+        WriteField("Broker Action", report.RuntimeStepResult.BrokerAction);
+        WriteField("Market Context Seen", report.RuntimeStepResult.MarketContextSeen.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Recommendations", report.Recommendations);
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ValidateEnsembleSignalPackage()
     {
         WriteHeader("Hermes Validate Ensemble Signal Package");
@@ -5859,6 +6025,36 @@ internal sealed class HermesCli
 
         Console.WriteLine();
         WriteDemoSignalFeedSafety();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowChartAnnotationStatus()
+    {
+        WriteHeader("Hermes Chart Annotation Status");
+        var service = new ChartAnnotationExportService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadLatestReport();
+        WriteChartAnnotationExportReport(report, service);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunChartAnnotationExport()
+    {
+        WriteHeader("Hermes Chart Annotation Export");
+        var service = new ChartAnnotationExportService(BuildStoragePaths(), _runtimeRoot);
+        var dryRun = HasArg("--dry-run") || !HasArg("--apply");
+        if (HasArg("--dry-run") && HasArg("--apply"))
+        {
+            WriteError("Error: use either --dry-run or --apply, not both.");
+            WriteSafety();
+            return 1;
+        }
+
+        var report = service.Run(dryRun);
+        WriteChartAnnotationExportReport(report, service);
+        Console.WriteLine();
         WriteSafety();
         return 0;
     }
@@ -12030,6 +12226,42 @@ internal sealed class HermesCli
         WriteField("Status", signal.Status);
         WriteField("Reason", signal.Reason);
         WriteMessages("Risk Notes", signal.RiskNotes);
+    }
+
+    private void WriteChartAnnotationExportReport(ChartAnnotationExportReport report, ChartAnnotationExportService service)
+    {
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Source Mode", report.SourceMode);
+        WriteField("Embedded Spec Available", report.EmbeddedSpecAvailable.ToString().ToLowerInvariant());
+        WriteMessages("Runtime Note", ["cloud bot draws annotations from embedded spec", "local export/review is optional only"]);
+        WriteField("Loaded Demo Signals", report.LoadedDemoSignals.ToString());
+        WriteField("Loaded Forward Test Observations", report.LoadedForwardTestObservations.ToString());
+        WriteField("Annotation Count", report.AnnotationCount.ToString());
+        WriteField("Research Only", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Broker Orders Enabled", report.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("Live Trading Enabled", report.LiveTradingEnabled.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+
+        foreach (var annotation in report.Annotations)
+        {
+            WriteSubHeader($"{annotation.Symbol} {annotation.Timeframe} / {annotation.SetupId}");
+            WriteField("Signal ID", annotation.SignalId);
+            WriteField("Direction", annotation.Direction);
+            WriteField("Entry Price", $"{annotation.EntryPrice:0.#####}");
+            WriteField("Stop Loss", $"{annotation.StopLoss:0.#####}");
+            WriteField("Take Profit 1", $"{annotation.TakeProfit1:0.#####}");
+            WriteField("Take Profit 2", annotation.TakeProfit2.HasValue ? $"{annotation.TakeProfit2.Value:0.#####}" : "n/a");
+            WriteField("Invalidation Level", $"{annotation.InvalidationLevel:0.#####}");
+            WriteField("Risk Reward", $"{annotation.RiskReward:0.###}");
+            WriteField("Annotation Style", annotation.AnnotationStyle);
+            WriteField("Signal Status", annotation.SignalStatus);
+            WriteField("Created At", annotation.CreatedAtUtc.ToString("O"));
+            WriteMessages("Labels", annotation.Labels);
+        }
     }
 
     private void WriteEnsembleSignalSpecValidationResult(EnsembleSignalSpecValidationResult result)

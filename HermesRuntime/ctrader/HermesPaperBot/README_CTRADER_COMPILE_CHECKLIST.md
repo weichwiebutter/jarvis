@@ -113,6 +113,12 @@ Beim erfolgreichen Start:
 - keine Live-Ausführung
 - hoher Spread blockiert nur die Paper-Entscheidung
 
+## Chart Annotation Spec
+
+Chart Annotationen werden im Cloud-Bot nicht aus einem lokalen Ordner wie `C:\Bot` oder `/mnt/d` zur Laufzeit geladen.
+Die Annotation-Spezifikation ist in das Embedded Release Package eingebettet und wird aus `EmbeddedReleasePackage.PackageJson` bzw. dem embedded manifest gelesen.
+Lokale Export-/Review-Ordner sind nur für manuelle Sichtprüfung gedacht.
+
 ## Troubleshooting
 
 ### Fehlender TimeFrame

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using HermesPaperBot.Models;
 using HermesPaperBot.Services;
 
@@ -43,6 +44,11 @@ public sealed class HermesPaperBot
     private readonly SignalPackageReader _signalPackageReader = new();
 
     /// <summary>
+    /// Embedded chart annotation spec reader for cloud runtime.
+    /// </summary>
+    private readonly EmbeddedChartAnnotationSpecReader _chartAnnotationSpecReader = new();
+
+    /// <summary>
     /// Last runtime configuration kept in memory only.
     /// </summary>
     private BotConfiguration? _lastConfiguration;
@@ -61,6 +67,11 @@ public sealed class HermesPaperBot
     /// Parsed signal candidates kept in memory only.
     /// </summary>
     private SignalCandidate[] _signalCandidates = [];
+
+    /// <summary>
+    /// Parsed embedded chart annotations kept in memory only.
+    /// </summary>
+    private ChartAnnotationSpec[] _embeddedChartAnnotations = [];
 
     /// <summary>
     /// Virtual paper portfolio kept in memory only.
@@ -173,7 +184,9 @@ public sealed class HermesPaperBot
                 ? _paperPortfolioState.ActiveTrades[0]
                 : null;
             _signalCandidates = _paperDecisionEngine.ParseSignalCandidates(currentConfiguration.CloudEmbeddedReleasePackage, out var signalWarnings);
-            _lastRuntimeStepResult = ExecutePaperRuntimeStep(context ?? new RuntimeMarketContext(), signalWarnings);
+            _embeddedChartAnnotations = _chartAnnotationSpecReader.Read(currentConfiguration.CloudEmbeddedReleasePackage, out var chartWarnings);
+            var combinedWarnings = signalWarnings.Concat(chartWarnings).ToArray();
+            _lastRuntimeStepResult = ExecutePaperRuntimeStep(context ?? new RuntimeMarketContext(), combinedWarnings);
             return _lastRuntimeStepResult.Success;
         }
         catch
@@ -246,6 +259,12 @@ public sealed class HermesPaperBot
     public void OnBar()
     {
     }
+
+    /// <summary>
+    /// Returns embedded chart annotations from the cloud manifest only.
+    /// </summary>
+    public ChartAnnotationSpec[] GetEmbeddedChartAnnotations()
+        => _embeddedChartAnnotations.ToArray();
 
     /// <summary>
     /// paper_only
