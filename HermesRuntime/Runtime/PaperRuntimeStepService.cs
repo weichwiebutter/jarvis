@@ -25,6 +25,13 @@ public sealed record PaperRuntimeStepReport(
     decimal MarketAsk,
     decimal? MarketSpreadPips,
     DateTimeOffset MarketServerTimeUtc,
+    PaperSignalEvaluationReport SignalEvaluation,
+    int EvaluatedSignals,
+    int ActionableSignals,
+    int SkippedSignals,
+    string PaperDecisionSummary,
+    string SignalEvaluationReportPath,
+    string SignalEvaluationMarkdownPath,
     RuntimeStepResult RuntimeStepResult,
     IReadOnlyList<string> Warnings,
     IReadOnlyList<string> Recommendations,
@@ -58,7 +65,12 @@ public sealed class PaperRuntimeStepService
         try
         {
             var report = JsonSerializer.Deserialize<PaperRuntimeStepReport>(File.ReadAllText(ReportPath), JsonDefaults.SnapshotReadOptions);
-            return report ?? Run();
+            if (report is null || report.SignalEvaluation is null)
+            {
+                return Run();
+            }
+
+            return report;
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
@@ -74,6 +86,7 @@ public sealed class PaperRuntimeStepService
         var selfCheckService = new PaperBotRuntimeSelfCheckService(_storagePaths, _runtimeRoot);
         var selfCheck = selfCheckService.Run();
         var bootstrapper = new CloudEmbeddedPackageBootstrapper();
+        var signalEvaluationService = new PaperSignalEvaluationService(_storagePaths, _runtimeRoot);
         var bootstrap = bootstrapper.CreateCloudConfiguration();
         var warnings = new List<string>(selfCheck.Warnings);
         var recommendations = new List<string>(selfCheck.Recommendations);
@@ -100,6 +113,9 @@ public sealed class PaperRuntimeStepService
                 MarketContext = new RuntimeMarketContext { Source = "unavailable" },
                 MarketContextSeen = false,
             };
+            var blockedSignalEvaluation = signalEvaluationService.Run(null, null);
+            warnings.AddRange(blockedSignalEvaluation.Warnings);
+            recommendations.AddRange(blockedSignalEvaluation.Recommendations);
 
             var blockedReport = BuildReport(
                 selfCheck,
@@ -111,6 +127,13 @@ public sealed class PaperRuntimeStepService
                 false,
                 false,
                 new RuntimeMarketContext { Source = "unavailable" },
+                blockedSignalEvaluation,
+                blockedSignalEvaluation.EvaluatedSignals,
+                blockedSignalEvaluation.ActionableSignals,
+                blockedSignalEvaluation.SkippedSignals,
+                blockedSignalEvaluation.PaperDecisionSummary,
+                blockedSignalEvaluation.ReportPath,
+                blockedSignalEvaluation.MarkdownPath,
                 false,
                 blockedResult,
                 warnings,
@@ -127,6 +150,10 @@ public sealed class PaperRuntimeStepService
         var marketContext = LoadMarketContext(_storagePaths, _runtimeRoot, embeddedPackage, out var marketContextLoaded, out var marketContextWarnings);
         warnings.AddRange(marketContextWarnings);
 
+        var signalEvaluation = signalEvaluationService.Run(configuration, marketContext);
+        warnings.AddRange(signalEvaluation.Warnings);
+        recommendations.AddRange(signalEvaluation.Recommendations);
+
         var orchestrator = new PaperRuntimeOrchestrator();
         var runtimeResult = orchestrator.RunStep(configuration, marketContext);
 
@@ -140,6 +167,13 @@ public sealed class PaperRuntimeStepService
             runtimeResult.SafetyAllowed,
             string.Equals(runtimeResult.BrokerAction, "none", StringComparison.OrdinalIgnoreCase),
             marketContext,
+            signalEvaluation,
+            signalEvaluation.EvaluatedSignals,
+            signalEvaluation.ActionableSignals,
+            signalEvaluation.SkippedSignals,
+            signalEvaluation.PaperDecisionSummary,
+            signalEvaluation.ReportPath,
+            signalEvaluation.MarkdownPath,
             runtimeResult.Success && !runtimeResult.KillSwitchActive && runtimeResult.BrokerAction.Equals("none", StringComparison.OrdinalIgnoreCase) && selfCheck.RuntimeReady,
             runtimeResult,
             warnings,
@@ -304,6 +338,13 @@ public sealed class PaperRuntimeStepService
         bool safetyFlagsActive,
         bool brokerActionNone,
         RuntimeMarketContext marketContext,
+        PaperSignalEvaluationReport signalEvaluation,
+        int evaluatedSignals,
+        int actionableSignals,
+        int skippedSignals,
+        string paperDecisionSummary,
+        string signalEvaluationReportPath,
+        string signalEvaluationMarkdownPath,
         bool runtimeReady,
         RuntimeStepResult runtimeResult,
         List<string> warnings,
@@ -335,6 +376,13 @@ public sealed class PaperRuntimeStepService
             MarketAsk: marketContext.Ask,
             MarketSpreadPips: marketContext.SpreadPips,
             MarketServerTimeUtc: marketContext.ServerTime,
+            SignalEvaluation: signalEvaluation,
+            EvaluatedSignals: evaluatedSignals,
+            ActionableSignals: actionableSignals,
+            SkippedSignals: skippedSignals,
+            PaperDecisionSummary: paperDecisionSummary,
+            SignalEvaluationReportPath: signalEvaluationReportPath,
+            SignalEvaluationMarkdownPath: signalEvaluationMarkdownPath,
             RuntimeStepResult: CloneRuntimeResult(runtimeResult, marketContext, marketContextLoaded),
             Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             Recommendations: recommendations.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
@@ -419,6 +467,20 @@ public sealed class PaperRuntimeStepService
         sb.AppendLine($"- chart_annotation_spec_loaded: {report.ChartAnnotationSpecLoaded.ToString().ToLowerInvariant()}");
         sb.AppendLine($"- safety_flags_active: {report.SafetyFlagsActive.ToString().ToLowerInvariant()}");
         sb.AppendLine($"- market_context_loaded: {report.MarketContextLoaded.ToString().ToLowerInvariant()}");
+        sb.AppendLine($"- evaluated_signals: {report.EvaluatedSignals}");
+        sb.AppendLine($"- actionable_signals: {report.ActionableSignals}");
+        sb.AppendLine($"- skipped_signals: {report.SkippedSignals}");
+        sb.AppendLine($"- paper_decision_summary: {report.PaperDecisionSummary}");
+        sb.AppendLine();
+        sb.AppendLine("## Signal Evaluation");
+        sb.AppendLine($"- report_path: {report.SignalEvaluationReportPath}");
+        sb.AppendLine($"- markdown_path: {report.SignalEvaluationMarkdownPath}");
+        sb.AppendLine($"- status: {report.SignalEvaluation.Status}");
+        sb.AppendLine($"- evaluated_signals: {report.SignalEvaluation.EvaluatedSignals}");
+        sb.AppendLine($"- actionable_signals: {report.SignalEvaluation.ActionableSignals}");
+        sb.AppendLine($"- skipped_signals: {report.SignalEvaluation.SkippedSignals}");
+        sb.AppendLine($"- waiting_signals: {report.SignalEvaluation.WaitingSignals}");
+        sb.AppendLine($"- paper_decision_summary: {report.SignalEvaluation.PaperDecisionSummary}");
         sb.AppendLine();
         sb.AppendLine("## Market Context");
         sb.AppendLine($"- source: {report.MarketContextSource}");

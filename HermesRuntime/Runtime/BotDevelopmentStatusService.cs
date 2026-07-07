@@ -71,6 +71,7 @@ public sealed class BotDevelopmentStatusService
             BuildCTraderBotExportStatus(),
             BuildChartAnnotationReadinessStatus(),
             BuildPaperBotRuntimeSelfCheckStatus(),
+            BuildPaperRuntimeStepStatus(),
             BuildPaperBotStatus(),
             BuildForwardTestStatus(),
             BuildCurrentMarketSnapshotStatus(),
@@ -239,6 +240,52 @@ public sealed class BotDevelopmentStatusService
             },
             Warnings: report.Warnings.ToList(),
             Recommendations: report.Recommendations.ToList());
+    }
+
+    private BotDevelopmentComponentStatus BuildPaperRuntimeStepStatus()
+    {
+        var stepService = new PaperRuntimeStepService(_storagePaths, _runtimeRoot);
+        var report = stepService.LoadLatestReport();
+        var runtimeResult = report.RuntimeStepResult;
+        var status = report.RuntimeReady ? "ready" : report.Status;
+        var readiness = report.RuntimeReady ? "paper_runtime_step_ready" : "paper_runtime_step_not_ready";
+        var warnings = new List<string>(report.Warnings);
+        var recommendations = new List<string>(report.Recommendations);
+
+        if (!report.RuntimeReady)
+        {
+            warnings.Add("paper_runtime_step_not_ready");
+            if (runtimeResult is null || !runtimeResult.Success)
+            {
+                recommendations.Add("run the paper runtime step and inspect the latest report for blockers");
+            }
+        }
+
+        return new BotDevelopmentComponentStatus(
+            Name: "Paper Runtime Step",
+            Status: status,
+            Readiness: readiness,
+            Summary: report.RuntimeReady
+                ? $"Paper Runtime Step ist bereit; Decision={runtimeResult.PaperDecision}; MarketContextLoaded={report.MarketContextLoaded}; EvaluatedSignals={report.EvaluatedSignals}."
+                : $"Paper Runtime Step ist nicht bereit; Status={report.Status}; MarketContextLoaded={report.MarketContextLoaded}; EvaluatedSignals={report.EvaluatedSignals}.",
+            JsonPath: report.ReportPath,
+            MarkdownPath: report.MarkdownPath,
+            Evidence: new[]
+            {
+                $"paper_runtime_step_status={report.Status}",
+                $"runtime_ready={report.RuntimeReady.ToString().ToLowerInvariant()}",
+                $"market_context_loaded={report.MarketContextLoaded.ToString().ToLowerInvariant()}",
+                $"evaluated_signals={report.EvaluatedSignals}",
+                $"actionable_signals={report.ActionableSignals}",
+                $"skipped_signals={report.SkippedSignals}",
+                $"paper_decision_summary={report.PaperDecisionSummary}",
+                $"last_signal_evaluation_report_path={report.SignalEvaluationReportPath}",
+                $"paper_decision={runtimeResult.PaperDecision}",
+                $"broker_action={runtimeResult.BrokerAction}",
+                $"last_runtime_step_report_path={report.ReportPath}",
+            },
+            Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            Recommendations: recommendations.Distinct(StringComparer.OrdinalIgnoreCase).ToList());
     }
 
     private BotDevelopmentComponentStatus BuildChartAnnotationReadinessStatus()

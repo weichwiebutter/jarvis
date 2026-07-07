@@ -77,7 +77,7 @@ public sealed class PaperDecisionEngine
                 return [];
             }
 
-            if (!TryGetString(root, "release_mode", out var releaseMode) || !string.Equals(releaseMode, "paper_only", StringComparison.OrdinalIgnoreCase))
+            if (TryGetString(root, "release_mode", out var releaseMode) && !string.Equals(releaseMode, "paper_only", StringComparison.OrdinalIgnoreCase))
             {
                 collectedWarnings.Add("embedded_strategy_json_rejected_release_mode");
                 warnings = collectedWarnings.ToArray();

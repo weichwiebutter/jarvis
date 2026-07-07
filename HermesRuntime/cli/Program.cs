@@ -5662,11 +5662,18 @@ internal sealed class HermesCli
         WriteField("Market Ask", report.MarketAsk.ToString());
         WriteField("Market Spread Pips", report.MarketSpreadPips?.ToString() ?? "n/a");
         WriteField("Market Server Time Utc", report.MarketServerTimeUtc.ToString("O"));
+        WriteField("Evaluated Signals", report.EvaluatedSignals.ToString());
+        WriteField("Actionable Signals", report.ActionableSignals.ToString());
+        WriteField("Skipped Signals", report.SkippedSignals.ToString());
+        WriteField("Paper Decision Summary", report.PaperDecisionSummary);
+        WriteField("Signal Evaluation Report", DisplayPath(report.SignalEvaluationReportPath));
+        WriteField("Signal Evaluation Markdown", DisplayPath(report.SignalEvaluationMarkdownPath));
         WriteField("State", report.RuntimeStepResult.State);
         WriteField("Success", report.RuntimeStepResult.Success.ToString().ToLowerInvariant());
         WriteField("Paper Decision", report.RuntimeStepResult.PaperDecision);
         WriteField("Broker Action", report.RuntimeStepResult.BrokerAction);
         WriteField("Market Context Seen", report.RuntimeStepResult.MarketContextSeen.ToString().ToLowerInvariant());
+        WriteField("Signal Evaluation Status", report.SignalEvaluation.Status);
         WriteMessages("Warnings", report.Warnings);
         WriteMessages("Recommendations", report.Recommendations);
 
