@@ -29,9 +29,18 @@ public sealed record PaperRuntimeStepReport(
     int EvaluatedSignals,
     int ActionableSignals,
     int SkippedSignals,
+    int WaitingSignals,
+    int WatchingSignals,
+    int WouldTriggerSignals,
+    int ActiveSignals,
+    int CompletedSignals,
+    int InvalidatedSignals,
+    int ExpiredSignals,
     string PaperDecisionSummary,
     string SignalEvaluationReportPath,
     string SignalEvaluationMarkdownPath,
+    string PaperPositionLifecycleReportPath,
+    string PaperPositionLifecycleMarkdownPath,
     RuntimeStepResult RuntimeStepResult,
     IReadOnlyList<string> Warnings,
     IReadOnlyList<string> Recommendations,
@@ -87,6 +96,7 @@ public sealed class PaperRuntimeStepService
         var selfCheck = selfCheckService.Run();
         var bootstrapper = new CloudEmbeddedPackageBootstrapper();
         var signalEvaluationService = new PaperSignalEvaluationService(_storagePaths, _runtimeRoot);
+        var positionLifecycleService = new PaperPositionLifecycleService(_storagePaths, _runtimeRoot);
         var bootstrap = bootstrapper.CreateCloudConfiguration();
         var warnings = new List<string>(selfCheck.Warnings);
         var recommendations = new List<string>(selfCheck.Recommendations);
@@ -114,6 +124,7 @@ public sealed class PaperRuntimeStepService
                 MarketContextSeen = false,
             };
             var blockedSignalEvaluation = signalEvaluationService.Run(null, null);
+            var blockedPositionLifecycle = positionLifecycleService.Run();
             warnings.AddRange(blockedSignalEvaluation.Warnings);
             recommendations.AddRange(blockedSignalEvaluation.Recommendations);
 
@@ -131,9 +142,18 @@ public sealed class PaperRuntimeStepService
                 blockedSignalEvaluation.EvaluatedSignals,
                 blockedSignalEvaluation.ActionableSignals,
                 blockedSignalEvaluation.SkippedSignals,
+                blockedSignalEvaluation.WaitingSignals,
+                blockedSignalEvaluation.WatchingSignals,
+                blockedSignalEvaluation.WouldTriggerSignals,
+                blockedSignalEvaluation.ActiveSignals,
+                blockedSignalEvaluation.CompletedSignals,
+                blockedSignalEvaluation.InvalidatedSignals,
+                blockedSignalEvaluation.ExpiredSignals,
                 blockedSignalEvaluation.PaperDecisionSummary,
                 blockedSignalEvaluation.ReportPath,
                 blockedSignalEvaluation.MarkdownPath,
+                blockedPositionLifecycle.ReportPath,
+                blockedPositionLifecycle.MarkdownPath,
                 false,
                 blockedResult,
                 warnings,
@@ -151,6 +171,7 @@ public sealed class PaperRuntimeStepService
         warnings.AddRange(marketContextWarnings);
 
         var signalEvaluation = signalEvaluationService.Run(configuration, marketContext);
+        var positionLifecycle = positionLifecycleService.Run();
         warnings.AddRange(signalEvaluation.Warnings);
         recommendations.AddRange(signalEvaluation.Recommendations);
 
@@ -171,9 +192,18 @@ public sealed class PaperRuntimeStepService
             signalEvaluation.EvaluatedSignals,
             signalEvaluation.ActionableSignals,
             signalEvaluation.SkippedSignals,
+            signalEvaluation.WaitingSignals,
+            signalEvaluation.WatchingSignals,
+            signalEvaluation.WouldTriggerSignals,
+            signalEvaluation.ActiveSignals,
+            signalEvaluation.CompletedSignals,
+            signalEvaluation.InvalidatedSignals,
+            signalEvaluation.ExpiredSignals,
             signalEvaluation.PaperDecisionSummary,
             signalEvaluation.ReportPath,
             signalEvaluation.MarkdownPath,
+            positionLifecycle.ReportPath,
+            positionLifecycle.MarkdownPath,
             runtimeResult.Success && !runtimeResult.KillSwitchActive && runtimeResult.BrokerAction.Equals("none", StringComparison.OrdinalIgnoreCase) && selfCheck.RuntimeReady,
             runtimeResult,
             warnings,
@@ -342,9 +372,18 @@ public sealed class PaperRuntimeStepService
         int evaluatedSignals,
         int actionableSignals,
         int skippedSignals,
+        int waitingSignals,
+        int watchingSignals,
+        int wouldTriggerSignals,
+        int activeSignals,
+        int completedSignals,
+        int invalidatedSignals,
+        int expiredSignals,
         string paperDecisionSummary,
         string signalEvaluationReportPath,
         string signalEvaluationMarkdownPath,
+        string paperPositionLifecycleReportPath,
+        string paperPositionLifecycleMarkdownPath,
         bool runtimeReady,
         RuntimeStepResult runtimeResult,
         List<string> warnings,
@@ -380,9 +419,18 @@ public sealed class PaperRuntimeStepService
             EvaluatedSignals: evaluatedSignals,
             ActionableSignals: actionableSignals,
             SkippedSignals: skippedSignals,
+            WaitingSignals: waitingSignals,
+            WatchingSignals: watchingSignals,
+            WouldTriggerSignals: wouldTriggerSignals,
+            ActiveSignals: activeSignals,
+            CompletedSignals: completedSignals,
+            InvalidatedSignals: invalidatedSignals,
+            ExpiredSignals: expiredSignals,
             PaperDecisionSummary: paperDecisionSummary,
             SignalEvaluationReportPath: signalEvaluationReportPath,
             SignalEvaluationMarkdownPath: signalEvaluationMarkdownPath,
+            PaperPositionLifecycleReportPath: paperPositionLifecycleReportPath,
+            PaperPositionLifecycleMarkdownPath: paperPositionLifecycleMarkdownPath,
             RuntimeStepResult: CloneRuntimeResult(runtimeResult, marketContext, marketContextLoaded),
             Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             Recommendations: recommendations.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
@@ -470,6 +518,13 @@ public sealed class PaperRuntimeStepService
         sb.AppendLine($"- evaluated_signals: {report.EvaluatedSignals}");
         sb.AppendLine($"- actionable_signals: {report.ActionableSignals}");
         sb.AppendLine($"- skipped_signals: {report.SkippedSignals}");
+        sb.AppendLine($"- waiting_signals: {report.WaitingSignals}");
+        sb.AppendLine($"- watching_signals: {report.WatchingSignals}");
+        sb.AppendLine($"- would_trigger_signals: {report.WouldTriggerSignals}");
+        sb.AppendLine($"- active_signals: {report.ActiveSignals}");
+        sb.AppendLine($"- completed_signals: {report.CompletedSignals}");
+        sb.AppendLine($"- invalidated_signals: {report.InvalidatedSignals}");
+        sb.AppendLine($"- expired_signals: {report.ExpiredSignals}");
         sb.AppendLine($"- paper_decision_summary: {report.PaperDecisionSummary}");
         sb.AppendLine();
         sb.AppendLine("## Signal Evaluation");
@@ -480,7 +535,15 @@ public sealed class PaperRuntimeStepService
         sb.AppendLine($"- actionable_signals: {report.SignalEvaluation.ActionableSignals}");
         sb.AppendLine($"- skipped_signals: {report.SignalEvaluation.SkippedSignals}");
         sb.AppendLine($"- waiting_signals: {report.SignalEvaluation.WaitingSignals}");
+        sb.AppendLine($"- watching_signals: {report.SignalEvaluation.WatchingSignals}");
+        sb.AppendLine($"- would_trigger_signals: {report.SignalEvaluation.WouldTriggerSignals}");
+        sb.AppendLine($"- active_signals: {report.SignalEvaluation.ActiveSignals}");
+        sb.AppendLine($"- completed_signals: {report.SignalEvaluation.CompletedSignals}");
+        sb.AppendLine($"- invalidated_signals: {report.SignalEvaluation.InvalidatedSignals}");
+        sb.AppendLine($"- expired_signals: {report.SignalEvaluation.ExpiredSignals}");
         sb.AppendLine($"- paper_decision_summary: {report.SignalEvaluation.PaperDecisionSummary}");
+        sb.AppendLine($"- paper_position_lifecycle_report_path: {report.PaperPositionLifecycleReportPath}");
+        sb.AppendLine($"- paper_position_lifecycle_markdown_path: {report.PaperPositionLifecycleMarkdownPath}");
         sb.AppendLine();
         sb.AppendLine("## Market Context");
         sb.AppendLine($"- source: {report.MarketContextSource}");

@@ -107,7 +107,10 @@ public sealed class PaperDecisionEngine
                 var setupName = TryGetString(assetElement, "setup_name", out var setupNameValue) ? setupNameValue : string.Empty;
                 var primaryCandidate = TryGetString(assetElement, "primary_candidate", out var primaryCandidateValue) ? primaryCandidateValue : string.Empty;
                 var readiness = TryGetString(assetElement, "readiness", out var readinessValue) ? readinessValue : string.Empty;
-                var paperEntryEnabled = TryGetBool(assetElement, "paper_entry_enabled", out var paperEntryEnabledValue) && paperEntryEnabledValue;
+                var hasExplicitPaperEntryEnabled = TryGetBool(assetElement, "paper_entry_enabled", out var paperEntryEnabledValue);
+                var paperEntryEnabled = hasExplicitPaperEntryEnabled
+                    ? paperEntryEnabledValue
+                    : IsSafePaperOnlySignal(package, assetElement);
                 var confidenceBaseline = TryGetDecimal(assetElement, "confidence_baseline", out var confidenceValue) ? confidenceValue : 0m;
                 var maxSpread = TryGetDecimal(assetElement, "max_spread", out var maxSpreadValue) ? maxSpreadValue : 0.25m;
                 var stopLossR = TryGetDecimal(assetElement, "stop_loss_r", out var stopLossValue) ? stopLossValue : 1m;
@@ -949,6 +952,57 @@ public sealed class PaperDecisionEngine
 
     private static string BuildSignalId(CloudEmbeddedReleasePackage package, string asset, string setupId)
         => string.Join(':', [package.BotReleaseId, asset, string.IsNullOrWhiteSpace(setupId) ? "signal" : setupId]);
+
+    private static bool IsSafePaperOnlySignal(CloudEmbeddedReleasePackage package, JsonElement assetElement)
+    {
+        if (package.ReleaseMode != ReleaseMode.PaperOnly)
+        {
+            return false;
+        }
+
+        if (!package.SafetyFlags.NoAutoTrading ||
+            !package.SafetyFlags.HumanReviewRequired ||
+            package.SafetyFlags.BrokerTradingEnabled ||
+            package.SafetyFlags.LiveTradingEnabled ||
+            package.SafetyFlags.OrderApiEnabled ||
+            !package.SafetyFlags.PaperMode ||
+            !string.Equals(package.SafetyFlags.BrokerAction, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!TryGetString(assetElement, "entry_logic", out _) &&
+            !(assetElement.ValueKind == JsonValueKind.Object &&
+              assetElement.TryGetProperty("entry_logic", out var entryLogicProperty) &&
+              entryLogicProperty.ValueKind == JsonValueKind.Array &&
+              entryLogicProperty.GetArrayLength() > 0))
+        {
+            return false;
+        }
+
+        if (!TryGetString(assetElement, "direction", out _))
+        {
+            return false;
+        }
+
+        if (!(assetElement.ValueKind == JsonValueKind.Object &&
+              assetElement.TryGetProperty("stop_loss_logic", out var stopLossLogicProperty) &&
+              stopLossLogicProperty.ValueKind == JsonValueKind.Array &&
+              stopLossLogicProperty.GetArrayLength() > 0))
+        {
+            return false;
+        }
+
+        if (!(assetElement.ValueKind == JsonValueKind.Object &&
+              assetElement.TryGetProperty("take_profit_logic", out var takeProfitLogicProperty) &&
+              takeProfitLogicProperty.ValueKind == JsonValueKind.Array &&
+              takeProfitLogicProperty.GetArrayLength() > 0))
+        {
+            return false;
+        }
+
+        return true;
+    }
 
     private static bool TryGetString(JsonElement element, string propertyName, out string value)
     {

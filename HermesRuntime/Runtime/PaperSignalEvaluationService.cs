@@ -13,6 +13,7 @@ public sealed record PaperSignalEvaluationItem(
     string SetupName,
     string Direction,
     string SignalStatus,
+    string SignalLifecycleStatus,
     string PaperDecision,
     string Reason,
     bool SessionAllowed,
@@ -35,6 +36,12 @@ public sealed record PaperSignalEvaluationReport(
     int ActionableSignals,
     int SkippedSignals,
     int WaitingSignals,
+    int WatchingSignals,
+    int WouldTriggerSignals,
+    int ActiveSignals,
+    int CompletedSignals,
+    int InvalidatedSignals,
+    int ExpiredSignals,
     string PaperDecisionSummary,
     IReadOnlyList<PaperSignalEvaluationItem> Signals,
     IReadOnlyList<string> Warnings,
@@ -91,7 +98,7 @@ public sealed class PaperSignalEvaluationService
             if (!bootstrap.Success || bootstrap.Configuration is null)
             {
                 warnings.Add(bootstrap.Reason ?? "cloud_bootstrap_failed");
-                var emptyReport = BuildReport(Array.Empty<PaperSignalEvaluationItem>(), warnings, recommendations, false, false, 0, 0, 0);
+                var emptyReport = BuildReport(Array.Empty<PaperSignalEvaluationItem>(), warnings, recommendations, false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0);
                 WriteReport(emptyReport);
                 return emptyReport;
             }
@@ -111,6 +118,12 @@ public sealed class PaperSignalEvaluationService
         var actionableSignals = 0;
         var skippedSignals = 0;
         var waitingSignals = 0;
+        var watchingSignals = 0;
+        var wouldTriggerSignals = 0;
+        var activeSignals = 0;
+        var completedSignals = 0;
+        var invalidatedSignals = 0;
+        var expiredSignals = 0;
 
         foreach (var candidate in candidates)
         {
@@ -123,24 +136,30 @@ public sealed class PaperSignalEvaluationService
             string signalStatus;
             string paperDecision;
             string reason;
+            string lifecycleStatus;
 
             if (invalidated)
             {
                 signalStatus = "invalidated";
                 paperDecision = "would_wait";
                 reason = "paper_entry_disabled";
+                lifecycleStatus = "invalidated";
+                invalidatedSignals += 1;
             }
             else if (expired)
             {
                 signalStatus = "expired";
                 paperDecision = "would_wait";
                 reason = "signal_expired";
+                lifecycleStatus = "expired";
+                expiredSignals += 1;
             }
             else if (!sessionResult.Allowed)
             {
                 signalStatus = "skipped_session";
                 paperDecision = "would_wait";
                 reason = sessionResult.Reason;
+                lifecycleStatus = "waiting";
                 skippedSignals += 1;
             }
             else if (!spreadResult.Allowed)
@@ -148,6 +167,7 @@ public sealed class PaperSignalEvaluationService
                 signalStatus = "skipped_spread";
                 paperDecision = "would_wait";
                 reason = spreadResult.Reason;
+                lifecycleStatus = "waiting";
                 skippedSignals += 1;
             }
             else if (!compatible)
@@ -155,13 +175,15 @@ public sealed class PaperSignalEvaluationService
                 signalStatus = "waiting";
                 paperDecision = "would_wait";
                 reason = "market_context_incompatible";
-                waitingSignals += 1;
+                lifecycleStatus = "waiting";
             }
             else if (!safetyAllowed)
             {
                 signalStatus = "invalidated";
                 paperDecision = "would_wait";
                 reason = "safety_gate_blocked";
+                lifecycleStatus = "invalidated";
+                invalidatedSignals += 1;
             }
             else
             {
@@ -169,9 +191,20 @@ public sealed class PaperSignalEvaluationService
                 paperDecision = "would_trigger";
                 reason = "signal_actionable";
                 actionableSignals += 1;
+                lifecycleStatus = candidate.Readiness.Equals("bot_ready", StringComparison.OrdinalIgnoreCase)
+                    ? "would_trigger"
+                    : "watching";
+                if (lifecycleStatus == "would_trigger")
+                {
+                    wouldTriggerSignals += 1;
+                }
+                else
+                {
+                    watchingSignals += 1;
+                }
             }
 
-            if (signalStatus is "waiting")
+            if (lifecycleStatus == "waiting")
             {
                 waitingSignals += 1;
             }
@@ -179,6 +212,19 @@ public sealed class PaperSignalEvaluationService
             if (signalStatus is "invalidated" or "expired")
             {
                 skippedSignals += 1;
+            }
+
+            if (lifecycleStatus == "active")
+            {
+                activeSignals += 1;
+            }
+            else if (lifecycleStatus == "completed")
+            {
+                completedSignals += 1;
+            }
+            else if (lifecycleStatus == "watching" && signalStatus is not "waiting")
+            {
+                watchingSignals += 1;
             }
 
             evaluationItems.Add(new PaperSignalEvaluationItem(
@@ -189,6 +235,7 @@ public sealed class PaperSignalEvaluationService
                 SetupName: candidate.SetupName,
                 Direction: candidate.Direction,
                 SignalStatus: signalStatus,
+                SignalLifecycleStatus: lifecycleStatus,
                 PaperDecision: paperDecision,
                 Reason: reason,
                 SessionAllowed: sessionResult.Allowed,
@@ -217,6 +264,12 @@ public sealed class PaperSignalEvaluationService
             actionableSignals > 0,
             skippedSignals,
             waitingSignals,
+            watchingSignals,
+            wouldTriggerSignals,
+            activeSignals,
+            completedSignals,
+            invalidatedSignals,
+            expiredSignals,
             actionableSignals);
         WriteReport(report);
         return report;
@@ -230,11 +283,17 @@ public sealed class PaperSignalEvaluationService
         bool hasActionableSignals,
         int skippedSignals,
         int waitingSignals,
+        int watchingSignals,
+        int wouldTriggerSignals,
+        int activeSignals,
+        int completedSignals,
+        int invalidatedSignals,
+        int expiredSignals,
         int actionableSignals)
     {
         var paperDecisionSummary = signals.Count == 0
             ? "no_signal_candidates"
-            : $"evaluated={signals.Count}; actionable={actionableSignals}; waiting={waitingSignals}; skipped={skippedSignals}";
+            : $"evaluated={signals.Count}; actionable={actionableSignals}; waiting={waitingSignals}; watching={watchingSignals}; would_trigger={wouldTriggerSignals}; active={activeSignals}; completed={completedSignals}; invalidated={invalidatedSignals}; expired={expiredSignals}; skipped={skippedSignals}";
 
         return new PaperSignalEvaluationReport(
             ReportVersion: "paper_signal_evaluation_v1",
@@ -244,6 +303,12 @@ public sealed class PaperSignalEvaluationService
             ActionableSignals: actionableSignals,
             SkippedSignals: skippedSignals,
             WaitingSignals: waitingSignals,
+            WatchingSignals: watchingSignals,
+            WouldTriggerSignals: wouldTriggerSignals,
+            ActiveSignals: activeSignals,
+            CompletedSignals: completedSignals,
+            InvalidatedSignals: invalidatedSignals,
+            ExpiredSignals: expiredSignals,
             PaperDecisionSummary: paperDecisionSummary,
             Signals: signals,
             Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
@@ -323,12 +388,18 @@ public sealed class PaperSignalEvaluationService
         sb.AppendLine($"- actionable_signals: {report.ActionableSignals}");
         sb.AppendLine($"- skipped_signals: {report.SkippedSignals}");
         sb.AppendLine($"- waiting_signals: {report.WaitingSignals}");
+        sb.AppendLine($"- watching_signals: {report.WatchingSignals}");
+        sb.AppendLine($"- would_trigger_signals: {report.WouldTriggerSignals}");
+        sb.AppendLine($"- active_signals: {report.ActiveSignals}");
+        sb.AppendLine($"- completed_signals: {report.CompletedSignals}");
+        sb.AppendLine($"- invalidated_signals: {report.InvalidatedSignals}");
+        sb.AppendLine($"- expired_signals: {report.ExpiredSignals}");
         sb.AppendLine($"- paper_decision_summary: {report.PaperDecisionSummary}");
         sb.AppendLine();
         sb.AppendLine("## Signals");
         foreach (var signal in report.Signals)
         {
-            sb.AppendLine($"- {signal.SignalId}: {signal.SignalStatus}; decision={signal.PaperDecision}; reason={signal.Reason}; asset={signal.Asset}; timeframe={signal.Timeframe}");
+            sb.AppendLine($"- {signal.SignalId}: {signal.SignalStatus}; lifecycle={signal.SignalLifecycleStatus}; decision={signal.PaperDecision}; reason={signal.Reason}; asset={signal.Asset}; timeframe={signal.Timeframe}");
         }
         if (report.Signals.Count == 0)
         {

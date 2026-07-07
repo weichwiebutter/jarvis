@@ -348,6 +348,7 @@ internal sealed class HermesCli
             "cbot-build-handoff-diagnostics" => ShowCbotBuildHandoffDiagnostics(),
             "paperbot-runtime-self-check" => ShowPaperBotRuntimeSelfCheck(),
             "paper-runtime-step" => ShowPaperRuntimeStep(),
+            "paper-signal-skip-diagnostics" => ShowPaperSignalSkipDiagnostics(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
             "cloud-embedded-release-package" => ShowCloudEmbeddedReleasePackage(),
@@ -5676,6 +5677,48 @@ internal sealed class HermesCli
         WriteField("Signal Evaluation Status", report.SignalEvaluation.Status);
         WriteMessages("Warnings", report.Warnings);
         WriteMessages("Recommendations", report.Recommendations);
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPaperSignalSkipDiagnostics()
+    {
+        WriteHeader("Hermes Paper Signal Skip Diagnostics");
+        var service = new PaperSignalSkipDiagnosticsService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Embedded Signal Count", report.EmbeddedSignalCount.ToString());
+        WriteField("Skipped Signal Count", report.SkippedSignalCount.ToString());
+        WriteField("Paper Entry Disabled Count", report.PaperEntryDisabledCount.ToString());
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Recommendations", report.Recommendations);
+
+        foreach (var signal in report.Signals)
+        {
+            WriteSubHeader(signal.SignalId);
+            WriteField("Asset", signal.Asset);
+            WriteField("Timeframe", signal.Timeframe);
+            WriteField("Setup Id", signal.SetupId);
+            WriteField("Setup Name", signal.SetupName);
+            WriteField("Direction", signal.Direction);
+            WriteField("Entry Present", signal.EntryPresent.ToString().ToLowerInvariant());
+            WriteField("Direction Present", signal.DirectionPresent.ToString().ToLowerInvariant());
+            WriteField("Stop Loss Present", signal.StopLossPresent.ToString().ToLowerInvariant());
+            WriteField("Take Profit Present", signal.TakeProfitPresent.ToString().ToLowerInvariant());
+            WriteField("Paper Entry Enabled Present", signal.PaperEntryEnabledPresent.ToString().ToLowerInvariant());
+            WriteField("Paper Entry Enabled Value", signal.PaperEntryEnabledValue.ToString().ToLowerInvariant());
+            WriteField("Release Mode", signal.ReleaseMode);
+            WriteField("Safety Flags", signal.SafetyFlagsSummary);
+            WriteField("Mapping Status", signal.MappingStatus);
+            WriteField("Skip Reason", signal.SkipReason);
+            WriteMessages("Missing Fields", signal.MissingFields);
+            WriteMessages("Warnings", signal.Warnings);
+        }
 
         Console.WriteLine();
         WriteSafety();

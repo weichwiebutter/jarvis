@@ -72,6 +72,7 @@ public sealed class BotDevelopmentStatusService
             BuildChartAnnotationReadinessStatus(),
             BuildPaperBotRuntimeSelfCheckStatus(),
             BuildPaperRuntimeStepStatus(),
+            BuildPaperPositionLifecycleStatus(),
             BuildPaperBotStatus(),
             BuildForwardTestStatus(),
             BuildCurrentMarketSnapshotStatus(),
@@ -278,6 +279,13 @@ public sealed class BotDevelopmentStatusService
                 $"evaluated_signals={report.EvaluatedSignals}",
                 $"actionable_signals={report.ActionableSignals}",
                 $"skipped_signals={report.SkippedSignals}",
+                $"waiting_signals={report.WaitingSignals}",
+                $"watching_signals={report.WatchingSignals}",
+                $"would_trigger_signals={report.WouldTriggerSignals}",
+                $"active_signals={report.ActiveSignals}",
+                $"completed_signals={report.CompletedSignals}",
+                $"invalidated_signals={report.InvalidatedSignals}",
+                $"expired_signals={report.ExpiredSignals}",
                 $"paper_decision_summary={report.PaperDecisionSummary}",
                 $"last_signal_evaluation_report_path={report.SignalEvaluationReportPath}",
                 $"paper_decision={runtimeResult.PaperDecision}",
@@ -286,6 +294,33 @@ public sealed class BotDevelopmentStatusService
             },
             Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             Recommendations: recommendations.Distinct(StringComparer.OrdinalIgnoreCase).ToList());
+    }
+
+    private BotDevelopmentComponentStatus BuildPaperPositionLifecycleStatus()
+    {
+        var lifecycleService = new PaperPositionLifecycleService(_storagePaths, _runtimeRoot);
+        var report = lifecycleService.LoadLatestReport();
+
+        return new BotDevelopmentComponentStatus(
+            Name: "Paper Position Lifecycle",
+            Status: report.Status,
+            Readiness: string.Equals(report.Status, "ready", StringComparison.OrdinalIgnoreCase) ? "paper_position_lifecycle_ready" : "paper_position_lifecycle_partial",
+            Summary: $"Paper Position Lifecycle ist {report.Status}; None={report.NoneCount}; Open={report.PaperOpenCount}; TP={report.PaperClosedTpCount}; SL={report.PaperClosedSlCount}; Expired={report.PaperClosedExpiredCount}; Invalidated={report.PaperInvalidatedCount}.",
+            JsonPath: report.ReportPath,
+            MarkdownPath: report.MarkdownPath,
+            Evidence: new[]
+            {
+                $"paper_position_lifecycle_status={report.Status}",
+                $"none_count={report.NoneCount}",
+                $"paper_open_count={report.PaperOpenCount}",
+                $"paper_closed_tp_count={report.PaperClosedTpCount}",
+                $"paper_closed_sl_count={report.PaperClosedSlCount}",
+                $"paper_closed_expired_count={report.PaperClosedExpiredCount}",
+                $"paper_invalidated_count={report.PaperInvalidatedCount}",
+                $"last_position_lifecycle_report_path={report.ReportPath}",
+            },
+            Warnings: report.Warnings.ToList(),
+            Recommendations: Array.Empty<string>());
     }
 
     private BotDevelopmentComponentStatus BuildChartAnnotationReadinessStatus()
