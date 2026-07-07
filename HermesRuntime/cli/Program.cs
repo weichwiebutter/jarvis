@@ -48,6 +48,11 @@ internal sealed class HermesCli
             "ctrader-auth-url" => ShowCTraderAuthUrl(),
             "ctrader-auth-code" => ExchangeCTraderAuthCode(),
             "ctrader-auth-status" => ShowCTraderAuthStatus(),
+            "bridge-status" => ShowBridgeStatus(),
+            "bridge-health" => ShowBridgeHealth(),
+            "bridge-diagnostics" => RunBridgeDiagnostics(),
+            "bridge-stop" => StopReadOnlyBridge(),
+            "bridge-restart" => RestartReadOnlyBridge(),
             "download-history" or "import-ctrader-history" => DownloadCTraderHistory(),
             "import-csv" => ImportCsv(),
             "market-data-status" => ShowMarketDataStatus(),
@@ -66,7 +71,8 @@ internal sealed class HermesCli
             "time-control-status" => ShowTimeControlStatus(),
             "time-control-update" => UpdateTimeControl(),
             "startup-status" => ShowStartupStatus(),
-            "readonly-bridge" or "bridge-start" => StartReadOnlyBridge(),
+            "readonly-bridge" => StartReadOnlyBridge(),
+            "bridge-start" => StartBridgeBackground(),
             "supervisor-start" => StartSupervisor(),
             "supervisor-status" => ShowSupervisorStatus(),
             "supervisor-stop-request" => RequestSupervisorStop(),
@@ -457,6 +463,12 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes time-control-update zentrale Arbeitszeit-/Window-Konfiguration aktualisieren");
         Console.WriteLine("  hermes startup-status    Bridge-/Scheduler-Startstatus und Start-Hilfe anzeigen");
         Console.WriteLine("  hermes readonly-bridge   localhost Read-only Bridge fuer Jarvis Control Center starten");
+        Console.WriteLine("  hermes bridge-status     Read-only Bridge Status anzeigen");
+        Console.WriteLine("  hermes bridge-health     Read-only Bridge Health anzeigen");
+        Console.WriteLine("  hermes bridge-diagnostics Bridge Diagnosebericht erzeugen");
+        Console.WriteLine("  hermes bridge-start      Read-only Bridge starten");
+        Console.WriteLine("  hermes bridge-stop       Read-only Bridge stoppen");
+        Console.WriteLine("  hermes bridge-restart    Read-only Bridge neu starten");
         Console.WriteLine("  hermes supervisor-start  langlebigen Hermes Supervisor starten");
         Console.WriteLine("  hermes supervisor-status Supervisor Heartbeat/State anzeigen");
         Console.WriteLine("  hermes supervisor-stop-request sicheren Supervisor Stop Request setzen");
@@ -1626,6 +1638,85 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int StartBridgeBackground()
+    {
+        var service = BuildBridgeDiagnosticsService();
+        var host = GetBridgeHost();
+        var port = GetBridgePort();
+        var started = service.Start(host, port, out var message);
+        WriteHeader("Hermes Bridge Start");
+        WriteField("Status", started ? "started" : "not_started");
+        WriteField("Message", message);
+        WriteSafety();
+        return started ? 0 : 1;
+    }
+
+    private int ShowBridgeStatus()
+    {
+        var service = BuildBridgeDiagnosticsService();
+        var report = service.Diagnose(GetBridgeHost(), GetBridgePort());
+        WriteBridgeDiagnostics(report);
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowBridgeHealth()
+    {
+        var service = BuildBridgeDiagnosticsService();
+        var report = service.Diagnose(GetBridgeHost(), GetBridgePort());
+        WriteHeader("Hermes Bridge Health");
+        WriteField("Bridge", report.BridgeName);
+        WriteField("Health Endpoint", report.HealthEndpoint);
+        WriteField("Status", report.Status);
+        WriteField("Process Running", report.ProcessRunning.ToString().ToLowerInvariant());
+        WriteField("Process Id", report.ProcessId?.ToString() ?? "-");
+        WriteField("Last Successful Heartbeat", report.LastSuccessfulHeartbeatUtc?.ToString("O") ?? "-");
+        WriteField("Failure Count", report.FailureCount.ToString());
+        WriteField("Recommended Action", report.RecommendedAction);
+        WriteMessages("Bridge Hinweise", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunBridgeDiagnostics()
+    {
+        var service = BuildBridgeDiagnosticsService();
+        var report = service.Diagnose(GetBridgeHost(), GetBridgePort());
+        WriteBridgeDiagnostics(report);
+        Console.WriteLine();
+        Console.WriteLine($"Report: {DisplayPath(report.ReportPath)}");
+        Console.WriteLine($"Markdown: {DisplayPath(report.MarkdownPath)}");
+        WriteSafety();
+        return 0;
+    }
+
+    private int StopReadOnlyBridge()
+    {
+        var service = BuildBridgeDiagnosticsService();
+        var host = GetBridgeHost();
+        var port = GetBridgePort();
+        var stopped = service.Stop(host, port, out var message);
+        WriteHeader("Hermes Bridge Stop");
+        WriteField("Status", stopped ? "stopped" : "not_stopped");
+        WriteField("Message", message);
+        WriteSafety();
+        return stopped ? 0 : 1;
+    }
+
+    private int RestartReadOnlyBridge()
+    {
+        var service = BuildBridgeDiagnosticsService();
+        var host = GetBridgeHost();
+        var port = GetBridgePort();
+        var restarted = service.Restart(host, port, out var message);
+        WriteHeader("Hermes Bridge Restart");
+        WriteField("Status", restarted ? "restarted" : "not_restarted");
+        WriteField("Message", message);
+        WriteSafety();
+        return restarted ? 0 : 1;
+    }
+
     private int ShowHealth()
     {
         WriteHeader("Hermes Runtime Health");
@@ -1653,6 +1744,41 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private BridgeDiagnosticsService BuildBridgeDiagnosticsService()
+        => new(_runtimeRoot);
+
+    private string GetBridgeHost()
+        => ReadOption(_args, "--host") ?? "127.0.0.1";
+
+    private int GetBridgePort()
+    {
+        var value = ReadOption(_args, "--port");
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port) ? port : 8787;
+    }
+
+    private void WriteBridgeDiagnostics(BridgeDiagnosticsReport report)
+    {
+        WriteHeader("Hermes Bridge Diagnostics");
+        WriteField("Bridge Name", report.BridgeName);
+        WriteField("Process Expected", report.ProcessExpected);
+        WriteField("Process Running", report.ProcessRunning.ToString().ToLowerInvariant());
+        WriteField("Process Id", report.ProcessId?.ToString() ?? "-");
+        WriteField("Configured Host", report.ConfiguredHost);
+        WriteField("Configured Port", report.ConfiguredPort.ToString());
+        WriteField("Health Endpoint", report.HealthEndpoint);
+        WriteField("Last Successful Heartbeat", report.LastSuccessfulHeartbeatUtc?.ToString("O") ?? "-");
+        WriteField("Last Failure", report.LastFailure ?? "-");
+        WriteField("Failure Count", report.FailureCount.ToString());
+        WriteField("Recommended Action", report.RecommendedAction);
+        WriteField("Can Start", report.CanStart.ToString().ToLowerInvariant());
+        WriteField("Can Stop", report.CanStop.ToString().ToLowerInvariant());
+        WriteField("Can Restart", report.CanRestart.ToString().ToLowerInvariant());
+        WriteField("Status", report.Status);
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteMessages("Bridge Hinweise", report.Warnings);
     }
 
     private int ShowSetupWatch()
@@ -5809,12 +5935,14 @@ internal sealed class HermesCli
     private int RunCTraderBotExport()
     {
         WriteHeader("Hermes cTrader Bot Export");
-        var service = new CTraderBotExportService(_runtimeRoot);
+        var service = new CTraderBotExportService(_runtimeRoot, _dataRoot);
         var report = service.Run();
 
         WriteField("Report", DisplayPath(report.ReportPath));
         WriteField("Markdown", DisplayPath(report.MarkdownPath));
         WriteField("Status", report.Status);
+        WriteField("Export Id", report.ExportId);
+        WriteField("Timestamp", report.TimestampUtc.ToString("O"));
         WriteField("Export Root", report.ExportRoot);
         WriteField("Algo Source Path", DisplayPath(report.AlgoSourcePath));
         WriteField("Algo Metadata Source Path", DisplayPath(report.AlgoMetadataSourcePath));
@@ -5822,8 +5950,16 @@ internal sealed class HermesCli
         WriteField("Readiness Markdown Source Path", DisplayPath(report.ReadinessMarkdownSourcePath));
         WriteField("Algo Target Path", report.AlgoTargetPath);
         WriteField("Algo Metadata Target Path", report.AlgoMetadataTargetPath);
+        WriteField("Indexed Algo Path", report.IndexedAlgoPath);
+        WriteField("Indexed Algo Metadata Path", report.IndexedAlgoMetadataPath);
+        WriteField("Latest Algo Path", report.LatestAlgoPath);
+        WriteField("Latest Algo Metadata Path", report.LatestAlgoMetadataPath);
         WriteField("Readiness JSON Target Path", report.ReadinessJsonTargetPath);
         WriteField("Readiness Markdown Target Path", report.ReadinessMarkdownTargetPath);
+        WriteField("Manifest Path", report.ManifestPath);
+        WriteField("Build Stamp", report.BuildStamp);
+        WriteField("File Size Bytes", report.FileSizeBytes.ToString());
+        WriteField("SHA256", report.Sha256);
         WriteField("Export Root Created", report.ExportRootCreated.ToString().ToLowerInvariant());
         WriteField("Algo Copied", report.AlgoCopied.ToString().ToLowerInvariant());
         WriteField("Algo Metadata Copied", report.AlgoMetadataCopied.ToString().ToLowerInvariant());

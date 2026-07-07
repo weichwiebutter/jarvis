@@ -1,6 +1,7 @@
 namespace HermesPaperBot.Services;
 
 using System.Collections.Generic;
+using System.Text.Json;
 using HermesPaperBot.Models;
 
 /// <summary>
@@ -186,9 +187,92 @@ public sealed class PaperRuntimeOrchestrator
             Reasons = reasons.ToArray(),
             MarketContext = runtimeMarketContext,
             MarketContextSeen = marketContextSeen,
+            PackageLoaded = embeddedPackage is not null,
+            SignalPackageLoaded = HasSignalPackageJson(embeddedPackage),
+            SignalCount = GetEmbeddedSignalCount(embeddedPackage),
+            SignalPackageJsonLength = GetEmbeddedSignalPackageJsonLength(embeddedPackage),
+            SignalPackageParseStatus = GetEmbeddedSignalParseStatus(embeddedPackage),
+            FirstSignalId = GetFirstEmbeddedSignalId(embeddedPackage),
+            ChartAnnotationLoaded = embeddedPackage is not null && !string.IsNullOrWhiteSpace(embeddedPackage.ChartAnnotationSpecJson),
         };
 
         return FinalizeResult(config, runtimeResult);
+    }
+
+
+    private static bool HasSignalPackageJson(CloudEmbeddedReleasePackage? package)
+        => !string.IsNullOrWhiteSpace(package?.SignalPackageJson);
+
+    private static int GetEmbeddedSignalCount(CloudEmbeddedReleasePackage? package)
+    {
+        var signalPackageJson = package?.SignalPackageJson;
+        if (string.IsNullOrWhiteSpace(signalPackageJson))
+        {
+            return 0;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(signalPackageJson);
+            var root = document.RootElement;
+            if (root.TryGetProperty("signal_count", out var signalCount) && signalCount.ValueKind == JsonValueKind.Number && signalCount.TryGetInt32(out var parsedCount))
+            {
+                return parsedCount;
+            }
+
+            if (root.TryGetProperty("signals", out var signals) && signals.ValueKind == JsonValueKind.Array)
+            {
+                return signals.GetArrayLength();
+            }
+
+            return root.TryGetProperty("signal_decision", out var signalDecision) && signalDecision.ValueKind == JsonValueKind.Object ? 1 : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static string GetEmbeddedSignalPackageJsonLength(CloudEmbeddedReleasePackage? package)
+        => (package?.SignalPackageJson?.Length ?? 0).ToString();
+
+    private static string GetEmbeddedSignalParseStatus(CloudEmbeddedReleasePackage? package)
+        => package is null
+            ? "package_missing"
+            : HasSignalPackageJson(package) ? "ok" : "signal_missing";
+
+    private static string GetFirstEmbeddedSignalId(CloudEmbeddedReleasePackage? package)
+    {
+        var signalPackageJson = package?.SignalPackageJson;
+        if (string.IsNullOrWhiteSpace(signalPackageJson))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(signalPackageJson);
+            var root = document.RootElement;
+            if (root.TryGetProperty("signals", out var signals) && signals.ValueKind == JsonValueKind.Array && signals.GetArrayLength() > 0)
+            {
+                var first = signals[0];
+                if (first.TryGetProperty("signal_id", out var signalId) && signalId.ValueKind == JsonValueKind.String)
+                {
+                    return signalId.GetString() ?? string.Empty;
+                }
+            }
+
+            if (root.TryGetProperty("signal_decision", out var signalDecision) && signalDecision.ValueKind == JsonValueKind.Object &&
+                signalDecision.TryGetProperty("strategy_id", out var strategyId) && strategyId.ValueKind == JsonValueKind.String)
+            {
+                return strategyId.GetString() ?? string.Empty;
+            }
+        }
+        catch
+        {
+        }
+
+        return string.Empty;
     }
 
     private static RuntimeStepResult FinalizeResult(BotConfiguration config, RuntimeStepResult runtimeResult)
@@ -226,6 +310,13 @@ public sealed class PaperRuntimeOrchestrator
                 LoggingStatus = "logging_failed",
                 MarketContext = runtimeResult.MarketContext,
                 MarketContextSeen = runtimeResult.MarketContextSeen,
+                PackageLoaded = runtimeResult.PackageLoaded,
+                SignalPackageLoaded = runtimeResult.SignalPackageLoaded,
+                SignalCount = runtimeResult.SignalCount,
+                SignalPackageJsonLength = runtimeResult.SignalPackageJsonLength,
+                SignalPackageParseStatus = runtimeResult.SignalPackageParseStatus,
+                FirstSignalId = runtimeResult.FirstSignalId,
+                ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded,
             };
         }
 
@@ -249,6 +340,13 @@ public sealed class PaperRuntimeOrchestrator
             LoggingStatus = "ok",
             MarketContext = runtimeResult.MarketContext,
             MarketContextSeen = runtimeResult.MarketContextSeen,
+            PackageLoaded = runtimeResult.PackageLoaded,
+            SignalPackageLoaded = runtimeResult.SignalPackageLoaded,
+            SignalCount = runtimeResult.SignalCount,
+            SignalPackageJsonLength = runtimeResult.SignalPackageJsonLength,
+            SignalPackageParseStatus = runtimeResult.SignalPackageParseStatus,
+            FirstSignalId = runtimeResult.FirstSignalId,
+            ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded,
         };
     }
 }

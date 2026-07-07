@@ -31,6 +31,16 @@ public sealed class RuntimeStepResult
     public string[] PaperWarnings { get; init; } = [];
     public RuntimeMarketContext? MarketContext { get; init; }
     public bool MarketContextSeen { get; init; } = false;
+    public string CloudStepStage { get; init; } = "none";
+    public string CloudStepExceptionType { get; init; } = "none";
+    public string CloudStepExceptionMessage { get; init; } = "none";
+    public bool PackageLoaded { get; init; } = false;
+    public bool SignalPackageLoaded { get; init; } = false;
+    public int SignalCount { get; init; } = 0;
+    public string SignalPackageJsonLength { get; init; } = "0";
+    public string SignalPackageParseStatus { get; init; } = "unknown";
+    public string FirstSignalId { get; init; } = string.Empty;
+    public bool ChartAnnotationLoaded { get; init; } = false;
     public bool PaperPositionOpen { get; init; } = false;
     public string PaperPositionStatus { get; init; } = "none";
     public string PaperExitReason { get; init; } = "none";

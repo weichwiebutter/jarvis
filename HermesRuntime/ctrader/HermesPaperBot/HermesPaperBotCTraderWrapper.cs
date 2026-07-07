@@ -7,6 +7,9 @@ using HermesPaperBot.Services;
 using cAlgo.API;
 #endif
 
+[assembly: System.Reflection.AssemblyMetadata("build_stamp", "20260707_timer_diag_v2")]
+[assembly: System.Reflection.AssemblyMetadata("log_format_version", "timer_diag_v2")]
+
 namespace HermesPaperBot.Bot;
 
 /// <summary>
@@ -27,6 +30,16 @@ namespace HermesPaperBot.Bot;
 [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
 public class HermesPaperBotCTraderWrapper : Robot
 {
+    /// <summary>
+    /// Visible diagnostic stamp for the cBot build.
+    /// </summary>
+    private const string BuildStamp = "20260707_timer_diag_v2";
+
+    /// <summary>
+    /// Visible diagnostic log format version.
+    /// </summary>
+    private const string LogFormatVersion = "timer_diag_v2";
+
     /// <summary>
     /// Safe paper host delegate.
     /// </summary>
@@ -49,7 +62,9 @@ public class HermesPaperBotCTraderWrapper : Robot
         _marketContextProvider.Update(context);
         _host.OnStart();
         Timer.Start(30);
-        Print($"HermesPaperBot OnStart; paper_mode=true; broker_action=none; market_context_seen=true; symbol={context.CurrentSymbol}; timeframe={context.CurrentTimeframe}; spread={context.Spread}; decision=starting");
+        Print(
+            $"HermesPaperBot OnStart; build_stamp={BuildStamp}; log_format_version={LogFormatVersion}; assembly_version={GetAssemblyVersion()}; " +
+            $"paper_mode=true; broker_action=none; market_context_seen=true; symbol={context.CurrentSymbol}; timeframe={context.CurrentTimeframe}; spread={context.Spread}; decision=starting");
     }
 
     /// <summary>
@@ -67,10 +82,14 @@ public class HermesPaperBotCTraderWrapper : Robot
         var marketContextSeen = HasReadableMarketContext(currentContext);
         var safetyBlockReason = GetSafetyBlockReason(result);
         Print(
-            $"HermesPaperBot OnTimer; paper_mode=true; broker_action={result?.BrokerAction ?? "none"}; market_context_seen={marketContextSeen}; " +
+            $"HermesPaperBot OnTimer; build_stamp={BuildStamp}; log_format_version={LogFormatVersion}; assembly_version={GetAssemblyVersion()}; " +
+            $"paper_mode=true; broker_action={result?.BrokerAction ?? "none"}; market_context_seen={marketContextSeen}; " +
             $"state={result?.State ?? "unknown"}; decision={result?.PaperDecision ?? "unknown"}; symbol={currentContext.CurrentSymbol}; timeframe={currentContext.CurrentTimeframe}; " +
             $"market_context_bid={currentContext.Bid}; market_context_ask={currentContext.Ask}; market_context_mid={GetMidPrice(currentContext)}; spread={currentContext.Spread}; " +
-            $"server_time_seen={currentContext.ServerTime != default}; spread_source={GetSpreadSource(currentContext)}; kill_switch_active={result?.KillSwitchActive ?? true}; safety_block_reason={safetyBlockReason}");
+            $"server_time_seen={currentContext.ServerTime != default}; spread_source={GetSpreadSource(currentContext)}; " +
+            $"kill_switch_active={result?.KillSwitchActive ?? true}; safety_block_reason={safetyBlockReason}; " +
+            $"cloud_step_stage={result?.CloudStepStage ?? "none"}; cloud_step_exception_type={result?.CloudStepExceptionType ?? "none"}; cloud_step_exception_message={result?.CloudStepExceptionMessage ?? "none"}; " +
+            $"package_loaded={result?.PackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_package_loaded={result?.SignalPackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_count={result?.SignalCount ?? 0}; signal_package_json_length={result?.SignalPackageJsonLength ?? "0"}; signal_package_parse_status={result?.SignalPackageParseStatus ?? "unknown"}; first_signal_id={result?.FirstSignalId ?? "none"}; chart_annotation_loaded={result?.ChartAnnotationLoaded.ToString().ToLowerInvariant() ?? "false"}");
     }
 
     /// <summary>
@@ -171,9 +190,20 @@ public class HermesPaperBotCTraderWrapper : Robot
             return "runtime_result_missing";
         }
 
+        if (!result.KillSwitchActive)
+        {
+            return "ok";
+        }
+
         var reason = result.Reasons?.FirstOrDefault(entry => !string.IsNullOrWhiteSpace(entry)) ?? string.Empty;
         return string.IsNullOrWhiteSpace(reason) ? "none" : reason;
     }
+
+    /// <summary>
+    /// Returns the runtime assembly version when available.
+    /// </summary>
+    private static string GetAssemblyVersion()
+        => typeof(HermesPaperBotCTraderWrapper).Assembly.GetName().Version?.ToString() ?? "n/a";
 }
 #else
 /// <summary>

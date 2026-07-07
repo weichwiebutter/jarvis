@@ -26,7 +26,7 @@ public sealed class SignalPackageReader
             return null;
         }
 
-        return Read(package.PackageJson, out warnings);
+        return Read(package.SignalPackageJson ?? package.PackageJson, out warnings);
     }
 
     /// <summary>

@@ -165,7 +165,7 @@ public sealed class PaperRuntimeStepService
 
         var configuration = bootstrap.Configuration;
         var embeddedPackage = configuration.CloudEmbeddedReleasePackage;
-        var signalPackageLoaded = embeddedPackage is not null && !string.IsNullOrWhiteSpace(embeddedPackage.EmbeddedStrategyJson) && TryParseJson(embeddedPackage.EmbeddedStrategyJson);
+        var signalPackageLoaded = embeddedPackage is not null && !string.IsNullOrWhiteSpace(embeddedPackage.SignalPackageJson) && TryParseJson(embeddedPackage.SignalPackageJson);
         var chartAnnotationSpecLoaded = embeddedPackage is not null && !string.IsNullOrWhiteSpace(embeddedPackage.ChartAnnotationSpecJson) && TryParseJson(embeddedPackage.ChartAnnotationSpecJson);
         var marketContext = LoadMarketContext(_storagePaths, _runtimeRoot, embeddedPackage, out var marketContextLoaded, out var marketContextWarnings);
         warnings.AddRange(marketContextWarnings);

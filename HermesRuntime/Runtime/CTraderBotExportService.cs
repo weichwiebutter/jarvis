@@ -1,9 +1,12 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
 namespace Hermes.Runtime;
 
 public sealed record CTraderBotExportReport(
+    string ExportId,
+    DateTimeOffset TimestampUtc,
     string ExportRoot,
     string AlgoSourcePath,
     string AlgoMetadataSourcePath,
@@ -11,8 +14,16 @@ public sealed record CTraderBotExportReport(
     string ReadinessMarkdownSourcePath,
     string AlgoTargetPath,
     string AlgoMetadataTargetPath,
+    string IndexedAlgoPath,
+    string IndexedAlgoMetadataPath,
+    string LatestAlgoPath,
+    string LatestAlgoMetadataPath,
     string ReadinessJsonTargetPath,
     string ReadinessMarkdownTargetPath,
+    string ManifestPath,
+    string BuildStamp,
+    long FileSizeBytes,
+    string Sha256,
     bool ExportRootCreated,
     bool AlgoCopied,
     bool AlgoMetadataCopied,
@@ -28,10 +39,12 @@ public sealed record CTraderBotExportReport(
 public sealed class CTraderBotExportService
 {
     private readonly string _runtimeRoot;
+    private readonly string _storageRoot;
 
-    public CTraderBotExportService(string runtimeRoot)
+    public CTraderBotExportService(string runtimeRoot, string storageRoot)
     {
         _runtimeRoot = runtimeRoot;
+        _storageRoot = storageRoot;
     }
 
     public string Root => Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "ctrader_bot_export");
@@ -42,27 +55,47 @@ public sealed class CTraderBotExportService
     {
         Directory.CreateDirectory(Root);
 
+        var embeddedPackageGenerator = new CloudEmbeddedReleasePackageGeneratorService(BuildStoragePaths(_storageRoot), _runtimeRoot);
+        var embeddedPackageGeneration = embeddedPackageGenerator.Generate();
+
         var algoProjectDirectory = Path.Combine(_runtimeRoot, "ctrader", "HermesPaperBot.AlgoProject", "bin", "Debug", "net6.0");
         var algoSourcePath = Path.Combine(algoProjectDirectory, "HermesPaperBot.algo");
         var algoMetadataSourcePath = Path.Combine(algoProjectDirectory, "HermesPaperBot.algo.metadata");
         var readinessJsonSourcePath = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "ctrader_upload_readiness", "ctrader_upload_readiness.json");
         var readinessMarkdownSourcePath = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "ctrader_upload_readiness", "ctrader_upload_readiness.md");
         var readinessReport = LoadReadinessReport(readinessJsonSourcePath);
+        var timestampUtc = DateTimeOffset.UtcNow;
+        var exportId = timestampUtc.ToString("yyyyMMdd_HHmmss");
+        var buildStamp = "20260707_timer_diag_v2";
 
         var exportRoot = ResolveExportRoot();
         Directory.CreateDirectory(exportRoot);
         var exportRootCreated = true;
 
+        var indexedAlgoPath = Path.Combine(exportRoot, $"HermesPaperBot_{exportId}.algo");
+        var indexedAlgoMetadataPath = Path.Combine(exportRoot, $"HermesPaperBot_{exportId}.algo.metadata");
+        var latestAlgoPath = Path.Combine(exportRoot, "HermesPaperBot_latest.algo");
+        var latestAlgoMetadataPath = Path.Combine(exportRoot, "HermesPaperBot_latest.algo.metadata");
         var algoTargetPath = Path.Combine(exportRoot, "HermesPaperBot.algo");
         var algoMetadataTargetPath = Path.Combine(exportRoot, "HermesPaperBot.algo.metadata");
         var readinessJsonTargetPath = Path.Combine(exportRoot, "ctrader_upload_readiness.json");
         var readinessMarkdownTargetPath = Path.Combine(exportRoot, "ctrader_upload_readiness.md");
+        var manifestPath = Path.Combine(exportRoot, "ctrader_export_manifest.json");
 
         var missingSources = new List<string>();
         var warnings = new List<string>();
 
-        var algoCopied = CopyIfExists(algoSourcePath, algoTargetPath, missingSources, "HermesPaperBot.algo");
-        var algoMetadataCopied = CopyIfExists(algoMetadataSourcePath, algoMetadataTargetPath, missingSources, "HermesPaperBot.algo.metadata");
+        if (!string.Equals(embeddedPackageGeneration.Status, "generated", StringComparison.OrdinalIgnoreCase))
+        {
+            warnings.Add($"embedded_release_package_generation_{embeddedPackageGeneration.Status}");
+        }
+
+        var algoCopied = CopyIfExists(algoSourcePath, algoTargetPath, missingSources, "HermesPaperBot.algo")
+            & CopyIfExists(algoSourcePath, indexedAlgoPath, missingSources, $"HermesPaperBot_{exportId}.algo")
+            & CopyIfExists(algoSourcePath, latestAlgoPath, missingSources, "HermesPaperBot_latest.algo");
+        var algoMetadataCopied = CopyIfExists(algoMetadataSourcePath, algoMetadataTargetPath, missingSources, "HermesPaperBot.algo.metadata")
+            & CopyIfExists(algoMetadataSourcePath, indexedAlgoMetadataPath, missingSources, $"HermesPaperBot_{exportId}.algo.metadata")
+            & CopyIfExists(algoMetadataSourcePath, latestAlgoMetadataPath, missingSources, "HermesPaperBot_latest.algo.metadata");
         var readinessJsonCopied = CopyIfExists(readinessJsonSourcePath, readinessJsonTargetPath, missingSources, "ctrader_upload_readiness.json");
         var readinessMarkdownCopied = CopyIfExists(readinessMarkdownSourcePath, readinessMarkdownTargetPath, missingSources, "ctrader_upload_readiness.md");
 
@@ -83,7 +116,28 @@ public sealed class CTraderBotExportService
             ? "exported"
             : "partial";
 
+        var fileSizeBytes = File.Exists(indexedAlgoPath) ? new FileInfo(indexedAlgoPath).Length : 0L;
+        var sha256 = File.Exists(indexedAlgoPath) ? ComputeSha256(indexedAlgoPath) : string.Empty;
+        var manifest = new
+        {
+            export_id = exportId,
+            timestamp = timestampUtc,
+            source_algo_path = algoSourcePath,
+            indexed_algo_path = indexedAlgoPath,
+            indexed_algo_metadata_path = indexedAlgoMetadataPath,
+            latest_algo_path = latestAlgoPath,
+            latest_algo_metadata_path = latestAlgoMetadataPath,
+            build_stamp = buildStamp,
+            file_size = fileSizeBytes,
+            sha256,
+            readiness_json_path = readinessJsonTargetPath,
+            readiness_markdown_path = readinessMarkdownTargetPath,
+        };
+        File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest, JsonDefaults.WriteOptions));
+
         var report = new CTraderBotExportReport(
+            ExportId: exportId,
+            TimestampUtc: timestampUtc,
             ExportRoot: exportRoot,
             AlgoSourcePath: algoSourcePath,
             AlgoMetadataSourcePath: algoMetadataSourcePath,
@@ -91,8 +145,16 @@ public sealed class CTraderBotExportService
             ReadinessMarkdownSourcePath: readinessMarkdownSourcePath,
             AlgoTargetPath: algoTargetPath,
             AlgoMetadataTargetPath: algoMetadataTargetPath,
+            IndexedAlgoPath: indexedAlgoPath,
+            IndexedAlgoMetadataPath: indexedAlgoMetadataPath,
+            LatestAlgoPath: latestAlgoPath,
+            LatestAlgoMetadataPath: latestAlgoMetadataPath,
             ReadinessJsonTargetPath: readinessJsonTargetPath,
             ReadinessMarkdownTargetPath: readinessMarkdownTargetPath,
+            ManifestPath: manifestPath,
+            BuildStamp: buildStamp,
+            FileSizeBytes: fileSizeBytes,
+            Sha256: sha256,
             ExportRootCreated: exportRootCreated,
             AlgoCopied: algoCopied,
             AlgoMetadataCopied: algoMetadataCopied,
@@ -102,7 +164,7 @@ public sealed class CTraderBotExportService
             Warnings: warnings,
             ReportPath: ReportPath,
             MarkdownPath: MarkdownPath,
-            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            UpdatedAtUtc: timestampUtc,
             Status: status);
 
         File.WriteAllText(ReportPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
@@ -122,6 +184,13 @@ public sealed class CTraderBotExportService
         return true;
     }
 
+    private static string ComputeSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        var hash = SHA256.HashData(stream);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
     private static string ResolveExportRoot()
     {
         var wslDrive = Path.Combine(Path.DirectorySeparatorChar.ToString(), "mnt", "d", "Bot");
@@ -136,6 +205,19 @@ public sealed class CTraderBotExportService
         }
 
         return wslDrive;
+    }
+
+    private static StoragePaths BuildStoragePaths(string root)
+    {
+        var normalizedRoot = Path.GetFullPath(root);
+        return new StoragePaths(
+            normalizedRoot,
+            Path.Combine(normalizedRoot, "events"),
+            Path.Combine(normalizedRoot, "snapshots"),
+            Path.Combine(normalizedRoot, "logs"),
+            Path.Combine(normalizedRoot, "cache"),
+            Path.Combine(normalizedRoot, "jobs"),
+            Path.Combine(normalizedRoot, "archive"));
     }
 
     private static CTraderUploadReadinessReport LoadReadinessReport(string readinessJsonSourcePath)
@@ -208,14 +290,24 @@ public sealed class CTraderBotExportService
         sb.AppendLine($"- updated_at_utc: {report.UpdatedAtUtc:O}");
         sb.AppendLine($"- status: {report.Status}");
         sb.AppendLine($"- export_root: {report.ExportRoot}");
+        sb.AppendLine($"- export_id: {report.ExportId}");
+        sb.AppendLine($"- timestamp_utc: {report.TimestampUtc:O}");
         sb.AppendLine($"- algo_source_path: {report.AlgoSourcePath}");
         sb.AppendLine($"- algo_metadata_source_path: {report.AlgoMetadataSourcePath}");
         sb.AppendLine($"- readiness_json_source_path: {report.ReadinessJsonSourcePath}");
         sb.AppendLine($"- readiness_markdown_source_path: {report.ReadinessMarkdownSourcePath}");
         sb.AppendLine($"- algo_target_path: {report.AlgoTargetPath}");
         sb.AppendLine($"- algo_metadata_target_path: {report.AlgoMetadataTargetPath}");
+        sb.AppendLine($"- indexed_algo_path: {report.IndexedAlgoPath}");
+        sb.AppendLine($"- indexed_algo_metadata_path: {report.IndexedAlgoMetadataPath}");
+        sb.AppendLine($"- latest_algo_path: {report.LatestAlgoPath}");
+        sb.AppendLine($"- latest_algo_metadata_path: {report.LatestAlgoMetadataPath}");
         sb.AppendLine($"- readiness_json_target_path: {report.ReadinessJsonTargetPath}");
         sb.AppendLine($"- readiness_markdown_target_path: {report.ReadinessMarkdownTargetPath}");
+        sb.AppendLine($"- manifest_path: {report.ManifestPath}");
+        sb.AppendLine($"- build_stamp: {report.BuildStamp}");
+        sb.AppendLine($"- file_size_bytes: {report.FileSizeBytes}");
+        sb.AppendLine($"- sha256: {report.Sha256}");
         sb.AppendLine($"- export_root_created: {report.ExportRootCreated.ToString().ToLowerInvariant()}");
         sb.AppendLine($"- algo_copied: {report.AlgoCopied.ToString().ToLowerInvariant()}");
         sb.AppendLine($"- algo_metadata_copied: {report.AlgoMetadataCopied.ToString().ToLowerInvariant()}");

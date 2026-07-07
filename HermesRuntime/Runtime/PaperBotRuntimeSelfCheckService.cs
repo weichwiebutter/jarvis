@@ -80,8 +80,8 @@ public sealed class PaperBotRuntimeSelfCheckService
         var signalReaderExists = File.Exists(signalReaderPath);
         var chartAnnotationReaderExists = File.Exists(chartAnnotationReaderPath);
 
-        var signalPackagePresent = embeddedReleasePackageParseable && !string.IsNullOrWhiteSpace(package?.EmbeddedStrategyJson);
-        var signalPackageLoaded = signalPackagePresent && TryParseJson(package?.EmbeddedStrategyJson);
+        var signalPackagePresent = embeddedReleasePackageParseable && !string.IsNullOrWhiteSpace(package?.SignalPackageJson);
+        var signalPackageLoaded = signalPackagePresent && TryParseJson(package?.SignalPackageJson);
         var chartAnnotationSpecPresent = embeddedReleasePackageParseable && !string.IsNullOrWhiteSpace(package?.ChartAnnotationSpecJson);
         var chartAnnotationSpecLoaded = chartAnnotationSpecPresent && TryParseJson(package?.ChartAnnotationSpecJson);
 
@@ -135,7 +135,7 @@ public sealed class PaperBotRuntimeSelfCheckService
         var recommendations = new List<string>();
         if (!runtimeReady)
         {
-            recommendations.Add("ensure the cloud embedded release package includes embedded_strategy_json, chart_annotation_spec_json, and safety flags");
+            recommendations.Add("ensure the cloud embedded release package includes signal_package_json, chart_annotation_spec_json, and safety flags");
             recommendations.Add("regenerate the embedded package and verify the generated cTrader source before startup");
         }
 
@@ -191,6 +191,7 @@ public sealed class PaperBotRuntimeSelfCheckService
                 EmbeddedChecksum: ReadString(document.RootElement, "embedded_checksum"),
                 SafetyFlags: ReadSafetyFlags(document.RootElement),
                 EmbeddedStrategyJson: ReadString(document.RootElement, "embedded_strategy_json"),
+                SignalPackageJson: ReadString(document.RootElement, "signal_package_json"),
                 ChartAnnotationSpecJson: ReadString(document.RootElement, "chart_annotation_spec_json"));
             return true;
         }
@@ -252,6 +253,7 @@ public sealed class PaperBotRuntimeSelfCheckService
         string? EmbeddedChecksum,
         EmbeddedSafetyFlags SafetyFlags,
         string? EmbeddedStrategyJson,
+        string? SignalPackageJson,
         string? ChartAnnotationSpecJson);
 
     private sealed record EmbeddedSafetyFlags(

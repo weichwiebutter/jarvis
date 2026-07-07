@@ -20,131 +20,150 @@ public sealed class PaperLogger
     /// </summary>
     public bool Write(string logsPath, RuntimeStepResult result)
     {
-        if (string.IsNullOrWhiteSpace(logsPath))
+        try
         {
-            return false;
-        }
+            if (string.IsNullOrWhiteSpace(logsPath))
+            {
+                return false;
+            }
 
-        Directory.CreateDirectory(logsPath);
-        var stepLogPath = Path.Combine(logsPath, "paper_runtime_step_log.jsonl");
-        var decisionLogPath = Path.Combine(logsPath, "paper_decision_log.jsonl");
-        var killSwitchLogPath = Path.Combine(logsPath, "kill_switch_events.jsonl");
+            Directory.CreateDirectory(logsPath);
+            var stepLogPath = Path.Combine(logsPath, "paper_runtime_step_log.jsonl");
+            var decisionLogPath = Path.Combine(logsPath, "paper_decision_log.jsonl");
+            var killSwitchLogPath = Path.Combine(logsPath, "kill_switch_events.jsonl");
 
-        var stepEntry = new
-        {
-            timestamp_utc = DateTime.UtcNow.ToString("O"),
-            result.State,
-            result.Success,
-            config_valid = result.ConfigValid,
-            import_valid = result.ImportValid,
-            bundle_valid = result.BundleValid,
-            checksum_valid = result.ChecksumValid,
-            safety_allowed = result.SafetyAllowed,
-            drift_allowed = result.DriftAllowed,
-            kill_switch_active = result.KillSwitchActive,
-            fallback_possible = result.FallbackPossible,
-            disabled_until_valid_bundle = result.DisabledUntilValidBundle,
-            paper_decision = result.PaperDecision,
-            broker_action = result.BrokerAction,
-            signal_seen = result.SignalSeen,
-            signal_direction = result.SignalDirection,
-            signal_confidence = result.SignalConfidence,
-            signal_expired = result.SignalExpired,
-            paper_position_open = result.PaperPositionOpen,
-            paper_position_status = result.PaperPositionStatus,
-            paper_exit_reason = result.PaperExitReason,
-            r_multiple = result.RMultiple,
-            position_id = result.PositionId,
-            reasons = result.Reasons,
-            warnings = result.PaperWarnings,
-            market_context = result.MarketContext,
-        };
-
-        var decisionEntry = new
-        {
-            timestamp_utc = DateTime.UtcNow.ToString("O"),
-            result.State,
-            paper_decision = result.PaperDecision,
-            broker_action = result.BrokerAction,
-            signal_seen = result.SignalSeen,
-            signal_direction = result.SignalDirection,
-            signal_confidence = result.SignalConfidence,
-            signal_expired = result.SignalExpired,
-            paper_position_open = result.PaperPositionOpen,
-            paper_position_status = result.PaperPositionStatus,
-            paper_exit_reason = result.PaperExitReason,
-            r_multiple = result.RMultiple,
-            position_id = result.PositionId,
-            reasons = result.Reasons,
-            warnings = result.PaperWarnings,
-            market_context = result.MarketContext,
-        };
-
-        File.AppendAllText(stepLogPath, JsonSerializer.Serialize(stepEntry, JsonOptions) + Environment.NewLine);
-        File.AppendAllText(decisionLogPath, JsonSerializer.Serialize(decisionEntry, JsonOptions) + Environment.NewLine);
-
-        if (result.KillSwitchActive)
-        {
-            var killEntry = new
+            var stepEntry = new
             {
                 timestamp_utc = DateTime.UtcNow.ToString("O"),
                 result.State,
-                result.Reasons,
-                broker_action = "none",
+                result.Success,
+                config_valid = result.ConfigValid,
+                import_valid = result.ImportValid,
+                bundle_valid = result.BundleValid,
+                checksum_valid = result.ChecksumValid,
+                safety_allowed = result.SafetyAllowed,
+                drift_allowed = result.DriftAllowed,
+                kill_switch_active = result.KillSwitchActive,
+                fallback_possible = result.FallbackPossible,
+                disabled_until_valid_bundle = result.DisabledUntilValidBundle,
+                paper_decision = result.PaperDecision,
+                broker_action = result.BrokerAction,
+                signal_seen = result.SignalSeen,
+                signal_direction = result.SignalDirection,
+                signal_confidence = result.SignalConfidence,
+                signal_expired = result.SignalExpired,
+                cloud_step_stage = result.CloudStepStage,
+                cloud_step_exception_type = result.CloudStepExceptionType,
+                cloud_step_exception_message = result.CloudStepExceptionMessage,
+                package_loaded = result.PackageLoaded,
+                signal_package_loaded = result.SignalPackageLoaded,
+                chart_annotation_loaded = result.ChartAnnotationLoaded,
+                paper_position_open = result.PaperPositionOpen,
+                paper_position_status = result.PaperPositionStatus,
+                paper_exit_reason = result.PaperExitReason,
+                r_multiple = result.RMultiple,
+                position_id = result.PositionId,
+                reasons = result.Reasons,
+                warnings = result.PaperWarnings,
+                market_context = result.MarketContext,
             };
 
-            File.AppendAllText(killSwitchLogPath, JsonSerializer.Serialize(killEntry, JsonOptions) + Environment.NewLine);
-        }
-
-        if (result.PaperTr\u0061deResult is not null)
-        {
-            var tradeResultLogPath = Path.Combine(logsPath, "paper_trade_result_log.jsonl");
-            var tradeEntry = new
+            var decisionEntry = new
             {
                 timestamp_utc = DateTime.UtcNow.ToString("O"),
-                result.PaperTr\u0061deResult.SignalId,
-                result.PaperTr\u0061deResult.Asset,
-                result.PaperTr\u0061deResult.Timeframe,
-                result.PaperTr\u0061deResult.Direction,
-                result.PaperTr\u0061deResult.Decision,
-                result.PaperTr\u0061deResult.BrokerAction,
-                result.PaperTr\u0061deResult.Lifecycle,
-                result.PaperTr\u0061deResult.Reason,
-                result.PaperTr\u0061deResult.EntryPrice,
-                result.PaperTr\u0061deResult.ExitPrice,
-                result.PaperTr\u0061deResult.ProfitR,
-                result.PaperPositionOpen,
-                result.PaperPositionStatus,
-                result.PaperExitReason,
-                result.RMultiple,
-                result.PositionId,
+                result.State,
+                paper_decision = result.PaperDecision,
+                broker_action = result.BrokerAction,
+                signal_seen = result.SignalSeen,
+                signal_direction = result.SignalDirection,
+                signal_confidence = result.SignalConfidence,
+                signal_expired = result.SignalExpired,
+                cloud_step_stage = result.CloudStepStage,
+                cloud_step_exception_type = result.CloudStepExceptionType,
+                cloud_step_exception_message = result.CloudStepExceptionMessage,
+                package_loaded = result.PackageLoaded,
+                signal_package_loaded = result.SignalPackageLoaded,
+                chart_annotation_loaded = result.ChartAnnotationLoaded,
+                paper_position_open = result.PaperPositionOpen,
+                paper_position_status = result.PaperPositionStatus,
+                paper_exit_reason = result.PaperExitReason,
+                r_multiple = result.RMultiple,
+                position_id = result.PositionId,
+                reasons = result.Reasons,
+                warnings = result.PaperWarnings,
+                market_context = result.MarketContext,
             };
 
-            File.AppendAllText(tradeResultLogPath, JsonSerializer.Serialize(tradeEntry, JsonOptions) + Environment.NewLine);
-        }
+            File.AppendAllText(stepLogPath, JsonSerializer.Serialize(stepEntry, JsonOptions) + Environment.NewLine);
+            File.AppendAllText(decisionLogPath, JsonSerializer.Serialize(decisionEntry, JsonOptions) + Environment.NewLine);
 
-        if (result.PaperPortfolioState is not null)
-        {
-            var positionLogPath = Path.Combine(logsPath, "paper_position_log.jsonl");
-            var portfolioEntry = new
+            if (result.KillSwitchActive)
             {
-                timestamp_utc = DateTime.UtcNow.ToString("O"),
-                active_trade_count = result.PaperPortfolioState.ActiveTrades.Length,
-                result.PaperPortfolioState.OpenTradeCountToday,
-                result.PaperPortfolioState.OpenTradeCountThisHour,
-                result.PaperPortfolioState.ConsecutiveLosses,
-                result.PaperPortfolioState.DailyPaperLossR,
-                trades = result.PaperPortfolioState.ActiveTrades,
-                result.PaperPositionOpen,
-                result.PaperPositionStatus,
-                result.PaperExitReason,
-                result.RMultiple,
-                result.PositionId,
-            };
+                var killEntry = new
+                {
+                    timestamp_utc = DateTime.UtcNow.ToString("O"),
+                    result.State,
+                    result.Reasons,
+                    broker_action = "none",
+                };
 
-            File.AppendAllText(positionLogPath, JsonSerializer.Serialize(portfolioEntry, JsonOptions) + Environment.NewLine);
+                File.AppendAllText(killSwitchLogPath, JsonSerializer.Serialize(killEntry, JsonOptions) + Environment.NewLine);
+            }
+
+            if (result.PaperTr\u0061deResult is not null)
+            {
+                var tradeResultLogPath = Path.Combine(logsPath, "paper_trade_result_log.jsonl");
+                var tradeEntry = new
+                {
+                    timestamp_utc = DateTime.UtcNow.ToString("O"),
+                    result.PaperTr\u0061deResult.SignalId,
+                    result.PaperTr\u0061deResult.Asset,
+                    result.PaperTr\u0061deResult.Timeframe,
+                    result.PaperTr\u0061deResult.Direction,
+                    result.PaperTr\u0061deResult.Decision,
+                    result.PaperTr\u0061deResult.BrokerAction,
+                    result.PaperTr\u0061deResult.Lifecycle,
+                    result.PaperTr\u0061deResult.Reason,
+                    result.PaperTr\u0061deResult.EntryPrice,
+                    result.PaperTr\u0061deResult.ExitPrice,
+                    result.PaperTr\u0061deResult.ProfitR,
+                    result.PaperPositionOpen,
+                    result.PaperPositionStatus,
+                    result.PaperExitReason,
+                    result.RMultiple,
+                    result.PositionId,
+                };
+
+                File.AppendAllText(tradeResultLogPath, JsonSerializer.Serialize(tradeEntry, JsonOptions) + Environment.NewLine);
+            }
+
+            if (result.PaperPortfolioState is not null)
+            {
+                var positionLogPath = Path.Combine(logsPath, "paper_position_log.jsonl");
+                var portfolioEntry = new
+                {
+                    timestamp_utc = DateTime.UtcNow.ToString("O"),
+                    active_trade_count = result.PaperPortfolioState.ActiveTrades.Length,
+                    result.PaperPortfolioState.OpenTradeCountToday,
+                    result.PaperPortfolioState.OpenTradeCountThisHour,
+                    result.PaperPortfolioState.ConsecutiveLosses,
+                    result.PaperPortfolioState.DailyPaperLossR,
+                    trades = result.PaperPortfolioState.ActiveTrades,
+                    result.PaperPositionOpen,
+                    result.PaperPositionStatus,
+                    result.PaperExitReason,
+                    result.RMultiple,
+                    result.PositionId,
+                };
+
+                File.AppendAllText(positionLogPath, JsonSerializer.Serialize(portfolioEntry, JsonOptions) + Environment.NewLine);
+            }
+
+            return true;
         }
-
-        return true;
+        catch
+        {
+            return false;
+        }
     }
 }

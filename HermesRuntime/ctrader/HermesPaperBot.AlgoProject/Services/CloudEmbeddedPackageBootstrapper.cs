@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Reflection;
 using HermesPaperBot.Models;
 
 namespace HermesPaperBot.Services;
@@ -19,12 +20,12 @@ public sealed class CloudEmbeddedPackageBootstrapper
     /// Creates a cloud configuration from the generated embedded package.
     /// </summary>
     public CloudBootstrapResult CreateCloudConfiguration()
-        => CreateCloudConfiguration(EmbeddedReleasePackage.PackageJson);
+        => CreateCloudConfiguration(EmbeddedReleasePackage.PackageJson, ReadEmbeddedSignalPackageJson());
 
     /// <summary>
     /// Creates a cloud configuration from the provided embedded package JSON.
     /// </summary>
-    public CloudBootstrapResult CreateCloudConfiguration(string? packageJson)
+    public CloudBootstrapResult CreateCloudConfiguration(string? packageJson, string? signalPackageJson = null)
     {
         try
         {
@@ -64,7 +65,8 @@ public sealed class CloudEmbeddedPackageBootstrapper
                 ReleaseMode = ReleaseMode.PaperOnly,
                 SafetyFlags = BuildSafetyFlags(safetyFlags),
                 ForbiddenCapabilities = BuildForbiddenCapabilities(forbiddenCapabilities),
-                SignalDecision = new SignalPackageReader().Read(packageJson, out _),
+                SignalPackageJson = signalPackageJson,
+                SignalDecision = new SignalPackageReader().Read(signalPackageJson ?? packageJson, out _),
                 PackageJson = packageJson,
                 EmbeddedManifestJson = TryGetString(root, Key("embedded_", "manifest_", "json"), out var embeddedManifestJson) ? embeddedManifestJson : null,
                 EmbeddedStrategyJson = TryGetString(root, Key("embedded_", "strategy_", "json"), out var embeddedStrategyJson) ? embeddedStrategyJson : null,
@@ -131,6 +133,11 @@ public sealed class CloudEmbeddedPackageBootstrapper
             PaperMode = true,
             CloudEmbeddedReleasePackage = null,
         };
+
+    private static string? ReadEmbeddedSignalPackageJson()
+        => typeof(EmbeddedReleasePackage)
+            .GetField("SignalPackageJson", BindingFlags.Public | BindingFlags.Static)
+            ?.GetRawConstantValue() as string;
 
     private static SafetyFlags BuildSafetyFlags(JsonElement safetyFlags) =>
         new()

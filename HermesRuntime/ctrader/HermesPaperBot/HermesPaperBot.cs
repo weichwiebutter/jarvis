@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using HermesPaperBot.Models;
 using HermesPaperBot.Services;
 
@@ -254,9 +255,9 @@ public sealed class HermesPaperBot
         {
             return _lastRuntimeStepResult = ExecutePaperRuntimeStep(context ?? new RuntimeMarketContext(), []);
         }
-        catch
+        catch (Exception ex)
         {
-            _lastRuntimeStepResult = CreateBlockedResult("cloud_runtime_step_failed");
+            _lastRuntimeStepResult = CreateCloudRuntimeFailureResult("cloud_runtime_step", ex, context ?? new RuntimeMarketContext());
             return _lastRuntimeStepResult;
         }
     }
@@ -465,6 +466,13 @@ public sealed class HermesPaperBot
             PositionId = string.Empty,
             MarketContext = context,
             MarketContextSeen = true,
+            PackageLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
+            SignalPackageLoaded = HasEmbeddedSignalPackage(),
+            SignalCount = GetEmbeddedSignalCount(),
+            SignalPackageJsonLength = GetEmbeddedSignalPackageJsonLength(),
+            SignalPackageParseStatus = GetEmbeddedSignalParseStatus(),
+            FirstSignalId = GetFirstEmbeddedSignalId(),
+            ChartAnnotationLoaded = _embeddedChartAnnotations.Length > 0,
         };
 
     private RuntimeStepResult BuildSignalRuntimeResult(
@@ -617,6 +625,13 @@ public sealed class HermesPaperBot
             PaperTr\u0061deResult = positionResult,
             MarketContext = context,
             MarketContextSeen = true,
+            PackageLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
+            SignalPackageLoaded = HasEmbeddedSignalPackage(),
+            SignalCount = GetEmbeddedSignalCount(),
+            SignalPackageJsonLength = GetEmbeddedSignalPackageJsonLength(),
+            SignalPackageParseStatus = GetEmbeddedSignalParseStatus(),
+            FirstSignalId = GetFirstEmbeddedSignalId(),
+            ChartAnnotationLoaded = _embeddedChartAnnotations.Length > 0,
         };
     }
 
@@ -724,6 +739,13 @@ public sealed class HermesPaperBot
                 PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
                 MarketContext = runtimeResult.MarketContext,
                 MarketContextSeen = runtimeResult.MarketContextSeen,
+                PackageLoaded = runtimeResult.PackageLoaded || _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
+                SignalPackageLoaded = runtimeResult.SignalPackageLoaded || _signalCandidates.Length > 0,
+                SignalCount = runtimeResult.SignalCount > 0 ? runtimeResult.SignalCount : GetEmbeddedSignalCount(),
+                SignalPackageJsonLength = runtimeResult.SignalPackageJsonLength != "0" ? runtimeResult.SignalPackageJsonLength : GetEmbeddedSignalPackageJsonLength(),
+                SignalPackageParseStatus = runtimeResult.SignalPackageParseStatus == "unknown" ? GetEmbeddedSignalParseStatus() : runtimeResult.SignalPackageParseStatus,
+                FirstSignalId = string.IsNullOrWhiteSpace(runtimeResult.FirstSignalId) ? GetFirstEmbeddedSignalId() : runtimeResult.FirstSignalId,
+                ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded || _embeddedChartAnnotations.Length > 0,
             };
         }
 
@@ -760,6 +782,13 @@ public sealed class HermesPaperBot
             PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
             MarketContext = runtimeResult.MarketContext,
             MarketContextSeen = runtimeResult.MarketContextSeen,
+            PackageLoaded = runtimeResult.PackageLoaded || _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
+            SignalPackageLoaded = runtimeResult.SignalPackageLoaded || _signalCandidates.Length > 0,
+            SignalCount = runtimeResult.SignalCount > 0 ? runtimeResult.SignalCount : GetEmbeddedSignalCount(),
+            SignalPackageJsonLength = runtimeResult.SignalPackageJsonLength != "0" ? runtimeResult.SignalPackageJsonLength : GetEmbeddedSignalPackageJsonLength(),
+            SignalPackageParseStatus = runtimeResult.SignalPackageParseStatus == "unknown" ? GetEmbeddedSignalParseStatus() : runtimeResult.SignalPackageParseStatus,
+            FirstSignalId = string.IsNullOrWhiteSpace(runtimeResult.FirstSignalId) ? GetFirstEmbeddedSignalId() : runtimeResult.FirstSignalId,
+            ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded || _embeddedChartAnnotations.Length > 0,
         };
     }
 
@@ -803,6 +832,13 @@ public sealed class HermesPaperBot
                 PaperPortfolioState = runtimeResult.PaperPortfolioState,
                 PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
                 MarketContext = runtimeResult.MarketContext,
+                PackageLoaded = runtimeResult.PackageLoaded || _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
+                SignalPackageLoaded = runtimeResult.SignalPackageLoaded || _signalCandidates.Length > 0,
+                SignalCount = runtimeResult.SignalCount > 0 ? runtimeResult.SignalCount : GetEmbeddedSignalCount(),
+                SignalPackageJsonLength = runtimeResult.SignalPackageJsonLength != "0" ? runtimeResult.SignalPackageJsonLength : GetEmbeddedSignalPackageJsonLength(),
+                SignalPackageParseStatus = runtimeResult.SignalPackageParseStatus == "unknown" ? GetEmbeddedSignalParseStatus() : runtimeResult.SignalPackageParseStatus,
+                FirstSignalId = string.IsNullOrWhiteSpace(runtimeResult.FirstSignalId) ? GetFirstEmbeddedSignalId() : runtimeResult.FirstSignalId,
+                ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded || _embeddedChartAnnotations.Length > 0,
             };
         }
     }
@@ -829,6 +865,197 @@ public sealed class HermesPaperBot
         return reasons.ToArray();
     }
 
+    private bool HasEmbeddedSignalPackage()
+        => TryGetEmbeddedSignalDecision(out _);
+
+    private int GetEmbeddedSignalCount()
+        => TryGetEmbeddedSignalCount(out var count) ? count : 0;
+
+    private string GetEmbeddedSignalPackageJsonLength()
+        => (_lastConfiguration?.CloudEmbeddedReleasePackage?.SignalPackageJson?.Length ?? 0).ToString();
+
+    private string GetEmbeddedSignalParseStatus()
+        => _lastConfiguration?.CloudEmbeddedReleasePackage is null
+            ? "package_missing"
+            : TryGetEmbeddedSignalDecision(out _) ? "ok" : "signal_missing";
+
+    private string GetFirstEmbeddedSignalId()
+        => TryGetEmbeddedSignalDecision(out var decision) ? decision.StrategyId : string.Empty;
+
+    private bool TryGetEmbeddedSignalDecision(out SignalDecision decision)
+    {
+        decision = null!;
+        var signalPackageJson = _lastConfiguration?.CloudEmbeddedReleasePackage?.SignalPackageJson;
+        if (string.IsNullOrWhiteSpace(signalPackageJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(signalPackageJson);
+            var root = document.RootElement;
+            if (root.TryGetProperty("signal_decision", out var signalDecision) && signalDecision.ValueKind == JsonValueKind.Object)
+            {
+                var direction = ReadSignalDirection(signalDecision);
+                if (direction is null)
+                {
+                    return false;
+                }
+
+                decision = new SignalDecision
+                {
+                    Direction = direction.Value,
+                    Confidence = ReadOptionalDecimal(signalDecision, "confidence") ?? 0m,
+                    StrategyId = ReadString(signalDecision, "strategy_id") ?? string.Empty,
+                    SignalTimestampUtc = ReadDateTime(signalDecision, "signal_timestamp_utc") ?? DateTimeOffset.UtcNow,
+                    ExpiryUtc = ReadDateTime(signalDecision, "expiry_utc") ?? DateTimeOffset.UtcNow,
+                    Reason = ReadString(signalDecision, "reason") ?? "signal_package_loaded",
+                    StopLossPrice = ReadOptionalDecimal(signalDecision, "stop_loss_price"),
+                    TakeProfitPrice = ReadOptionalDecimal(signalDecision, "take_profit_price"),
+                    MaxHoldingSeconds = ReadOptionalInt(signalDecision, "max_holding_seconds"),
+                    RiskR = ReadOptionalDecimal(signalDecision, "risk_r"),
+                };
+                return true;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    private bool TryGetEmbeddedSignalCount(out int count)
+    {
+        count = 0;
+        var signalPackageJson = _lastConfiguration?.CloudEmbeddedReleasePackage?.SignalPackageJson;
+        if (string.IsNullOrWhiteSpace(signalPackageJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(signalPackageJson);
+            var root = document.RootElement;
+            if (root.TryGetProperty("signal_count", out var signalCount) && signalCount.ValueKind == JsonValueKind.Number && signalCount.TryGetInt32(out var parsedCount))
+            {
+                count = parsedCount;
+                return true;
+            }
+
+            if (root.TryGetProperty("signals", out var signals) && signals.ValueKind == JsonValueKind.Array)
+            {
+                count = signals.GetArrayLength();
+                return true;
+            }
+
+            count = root.TryGetProperty("signal_decision", out var signalDecision) && signalDecision.ValueKind == JsonValueKind.Object ? 1 : 0;
+            return count > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static SignalDirection? ReadSignalDirection(JsonElement element)
+    {
+        if (!ReadString(element, "direction", out var text))
+        {
+            return null;
+        }
+
+        if (Enum.TryParse<SignalDirection>(text, ignoreCase: true, out var parsed))
+        {
+            return parsed;
+        }
+
+        if (text.Contains("long", StringComparison.OrdinalIgnoreCase) && text.Contains("short", StringComparison.OrdinalIgnoreCase))
+        {
+            return SignalDirection.Flat;
+        }
+
+        if (string.Equals(text, "long", StringComparison.OrdinalIgnoreCase))
+        {
+            return SignalDirection.Long;
+        }
+
+        if (string.Equals(text, "short", StringComparison.OrdinalIgnoreCase))
+        {
+            return SignalDirection.Short;
+        }
+
+        return SignalDirection.Flat;
+    }
+
+    private static bool ReadString(JsonElement element, string propertyName, out string? value)
+    {
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String)
+        {
+            value = property.GetString();
+            return !string.IsNullOrWhiteSpace(value);
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static string? ReadString(JsonElement element, string propertyName)
+        => ReadString(element, propertyName, out var value) ? value : null;
+
+    private static decimal? ReadOptionalDecimal(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propertyName, out var property))
+        {
+            if (property.ValueKind == JsonValueKind.Number && property.TryGetDecimal(out var value))
+            {
+                return value;
+            }
+
+            if (property.ValueKind == JsonValueKind.String && decimal.TryParse(property.GetString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private static int? ReadOptionalInt(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propertyName, out var property))
+        {
+            if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var value))
+            {
+                return value;
+            }
+
+            if (property.ValueKind == JsonValueKind.String && int.TryParse(property.GetString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private static DateTimeOffset? ReadDateTime(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String)
+        {
+            var text = property.GetString();
+            if (!string.IsNullOrWhiteSpace(text) && DateTimeOffset.TryParse(text, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
     private static string[] MergeWarnings(params string[][] warningGroups)
     {
         var warnings = new List<string>();
@@ -851,7 +1078,7 @@ public sealed class HermesPaperBot
         return warnings.ToArray();
     }
 
-    private static RuntimeStepResult CreateBlockedResult(string reason) => new()
+    private RuntimeStepResult CreateBlockedResult(string reason) => new()
     {
         Success = false,
         State = "blocked_by_safety",
@@ -881,6 +1108,56 @@ public sealed class HermesPaperBot
         SignalCandidates = [],
         PaperPortfolioState = new PaperPortfolioState(),
         MarketContextSeen = false,
+        PackageLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
+        SignalPackageLoaded = HasEmbeddedSignalPackage(),
+            SignalCount = GetEmbeddedSignalCount(),
+            SignalPackageJsonLength = GetEmbeddedSignalPackageJsonLength(),
+            SignalPackageParseStatus = GetEmbeddedSignalParseStatus(),
+            FirstSignalId = GetFirstEmbeddedSignalId(),
+        ChartAnnotationLoaded = _embeddedChartAnnotations.Length > 0,
+    };
+
+    private RuntimeStepResult CreateCloudRuntimeFailureResult(string stage, Exception ex, RuntimeMarketContext context) => new()
+    {
+        Success = false,
+        State = "blocked_by_safety",
+        ConfigValid = false,
+        ImportAttempted = false,
+        ImportValid = false,
+        BundleValid = false,
+        ChecksumValid = false,
+        SafetyAllowed = false,
+        DriftAllowed = false,
+        KillSwitchActive = true,
+        FallbackPossible = false,
+        DisabledUntilValidBundle = true,
+        PaperDecision = "would_block_by_safety",
+        BrokerAction = "none",
+        Reasons = [$"cloud_runtime_step_failed", $"cloud_step_stage={stage}", $"cloud_step_exception_type={ex.GetType().Name}", $"cloud_step_exception_message={ex.Message}"],
+        PaperWarnings = [$"cloud_runtime_step_failed"],
+        SignalSeen = false,
+        SignalDirection = "flat",
+        SignalConfidence = null,
+        SignalExpired = false,
+        PaperPositionOpen = false,
+        PaperPositionStatus = "none",
+        PaperExitReason = "none",
+        RMultiple = null,
+        PositionId = string.Empty,
+        SignalCandidates = [],
+        PaperPortfolioState = new PaperPortfolioState(),
+        MarketContext = context,
+        MarketContextSeen = context is not null && !string.IsNullOrWhiteSpace(context.Symbol),
+        CloudStepStage = stage,
+        CloudStepExceptionType = ex.GetType().Name,
+        CloudStepExceptionMessage = ex.Message,
+        PackageLoaded = _lastConfiguration?.CloudEmbeddedReleasePackage is not null,
+        SignalPackageLoaded = HasEmbeddedSignalPackage(),
+            SignalCount = GetEmbeddedSignalCount(),
+            SignalPackageJsonLength = GetEmbeddedSignalPackageJsonLength(),
+            SignalPackageParseStatus = GetEmbeddedSignalParseStatus(),
+            FirstSignalId = GetFirstEmbeddedSignalId(),
+        ChartAnnotationLoaded = _embeddedChartAnnotations.Length > 0,
     };
 
     private static string ResolvePaperStateSnapshotPath(BotConfiguration configuration)
