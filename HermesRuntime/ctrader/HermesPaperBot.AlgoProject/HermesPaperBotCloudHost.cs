@@ -90,4 +90,28 @@ public sealed class HermesPaperBotCloudHost
     /// </summary>
     public RuntimeStepResult? GetLastRuntimeStepResult()
         => _bot.GetLastRuntimeStepResult();
+
+    /// <summary>
+    /// Returns the embedded signal count from the current bot state.
+    /// </summary>
+    public int GetEmbeddedSignalCount()
+        => _bot.GetEmbeddedSignalCount();
+
+    /// <summary>
+    /// Returns the embedded signal package JSON length from the current bot state.
+    /// </summary>
+    public string GetEmbeddedSignalPackageJsonLength()
+        => _bot.GetEmbeddedSignalPackageJsonLength();
+
+    /// <summary>
+    /// Returns the embedded signal package parse status from the current bot state.
+    /// </summary>
+    public string GetEmbeddedSignalParseStatus()
+        => _bot.GetEmbeddedSignalParseStatus();
+
+    /// <summary>
+    /// Returns the first embedded signal identifier from the current bot state.
+    /// </summary>
+    public string GetFirstEmbeddedSignalId()
+        => _bot.GetFirstEmbeddedSignalId();
 }

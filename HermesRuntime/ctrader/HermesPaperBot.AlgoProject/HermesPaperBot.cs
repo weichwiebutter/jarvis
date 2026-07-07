@@ -772,18 +772,18 @@ public sealed class HermesPaperBot
     private bool HasEmbeddedSignalPackage()
         => TryGetEmbeddedSignalDecision(out _);
 
-    private int GetEmbeddedSignalCount()
+    internal int GetEmbeddedSignalCount()
         => TryGetEmbeddedSignalCount(out var count) ? count : 0;
 
-    private string GetEmbeddedSignalPackageJsonLength()
+    internal string GetEmbeddedSignalPackageJsonLength()
         => (_lastConfiguration?.CloudEmbeddedReleasePackage?.SignalPackageJson?.Length ?? 0).ToString();
 
-    private string GetEmbeddedSignalParseStatus()
+    internal string GetEmbeddedSignalParseStatus()
         => _lastConfiguration?.CloudEmbeddedReleasePackage is null
             ? "package_missing"
             : TryGetEmbeddedSignalDecision(out _) ? "ok" : "signal_missing";
 
-    private string GetFirstEmbeddedSignalId()
+    internal string GetFirstEmbeddedSignalId()
         => TryGetEmbeddedSignalDecision(out var decision) ? decision.StrategyId : string.Empty;
 
     private bool TryGetEmbeddedSignalDecision(out SignalDecision decision)

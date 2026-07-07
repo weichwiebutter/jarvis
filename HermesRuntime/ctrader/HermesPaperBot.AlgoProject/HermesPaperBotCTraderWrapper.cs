@@ -81,6 +81,10 @@ public class HermesPaperBotCTraderWrapper : Robot
         var currentContext = result?.MarketContext ?? context;
         var marketContextSeen = HasReadableMarketContext(currentContext);
         var safetyBlockReason = GetSafetyBlockReason(result);
+        var signalCount = _host?.GetEmbeddedSignalCount() ?? 0;
+        var signalPackageJsonLength = _host?.GetEmbeddedSignalPackageJsonLength() ?? "0";
+        var signalPackageParseStatus = _host?.GetEmbeddedSignalParseStatus() ?? "unknown";
+        var firstSignalId = _host?.GetFirstEmbeddedSignalId() ?? "none";
         Print(
             $"HermesPaperBot OnTimer; build_stamp={BuildStamp}; log_format_version={LogFormatVersion}; assembly_version={GetAssemblyVersion()}; " +
             $"paper_mode=true; broker_action={result?.BrokerAction ?? "none"}; market_context_seen={marketContextSeen}; " +
@@ -89,7 +93,7 @@ public class HermesPaperBotCTraderWrapper : Robot
             $"server_time_seen={currentContext.ServerTime != default}; spread_source={GetSpreadSource(currentContext)}; " +
             $"kill_switch_active={result?.KillSwitchActive ?? true}; safety_block_reason={safetyBlockReason}; " +
             $"cloud_step_stage={result?.CloudStepStage ?? "none"}; cloud_step_exception_type={result?.CloudStepExceptionType ?? "none"}; cloud_step_exception_message={result?.CloudStepExceptionMessage ?? "none"}; " +
-            $"package_loaded={result?.PackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_package_loaded={result?.SignalPackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_count={result?.SignalCount ?? 0}; signal_package_json_length={result?.SignalPackageJsonLength ?? "0"}; signal_package_parse_status={result?.SignalPackageParseStatus ?? "unknown"}; first_signal_id={result?.FirstSignalId ?? "none"}; chart_annotation_loaded={result?.ChartAnnotationLoaded.ToString().ToLowerInvariant() ?? "false"}");
+            $"package_loaded={result?.PackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_package_loaded={result?.SignalPackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_count={signalCount}; signal_package_json_length={signalPackageJsonLength}; signal_package_parse_status={signalPackageParseStatus}; first_signal_id={firstSignalId}; chart_annotation_loaded={result?.ChartAnnotationLoaded.ToString().ToLowerInvariant() ?? "false"}");
     }
 
     /// <summary>
