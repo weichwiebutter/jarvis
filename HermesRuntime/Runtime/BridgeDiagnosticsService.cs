@@ -126,10 +126,18 @@ public sealed class BridgeDiagnosticsService
             };
 
             var process = Process.Start(startInfo);
-            message = process is null
-                ? "Bridge-Prozess konnte nicht gestartet werden."
-                : $"Bridge-Startprozess mit PID {process.Id} gestartet.";
-            return process is not null;
+            if (process is null)
+            {
+                message = "Bridge-Prozess konnte nicht gestartet werden.";
+                return false;
+            }
+
+            var healthEndpoint = $"http://{host}:{port}/bridge/health";
+            var ready = WaitForHealth(healthEndpoint, TimeSpan.FromSeconds(5), out var readinessMessage);
+            message = ready
+                ? $"Bridge-Startprozess mit PID {process.Id} gestartet und bereit."
+                : $"Bridge-Startprozess mit PID {process.Id} gestartet, aber noch nicht bereit: {readinessMessage}";
+            return true;
         }
         catch (Exception ex)
         {
@@ -176,6 +184,24 @@ public sealed class BridgeDiagnosticsService
         var started = Start(host, port, out var startMessage);
         message = $"stop={stopMessage}; start={startMessage}";
         return stopped && started;
+    }
+
+    private bool WaitForHealth(string healthEndpoint, TimeSpan timeout, out string message)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (TryProbeHealth(healthEndpoint, out _, out _, out var warning))
+            {
+                message = string.IsNullOrWhiteSpace(warning) ? "available" : warning!;
+                return true;
+            }
+
+            Thread.Sleep(250);
+        }
+
+        message = "timeout";
+        return false;
     }
 
     private bool TryProbeHealth(string url, out string healthStatus, out DateTimeOffset? heartbeatUtc, out string? warning)

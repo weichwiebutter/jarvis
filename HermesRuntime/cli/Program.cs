@@ -53,6 +53,8 @@ internal sealed class HermesCli
             "bridge-diagnostics" => RunBridgeDiagnostics(),
             "bridge-stop" => StopReadOnlyBridge(),
             "bridge-restart" => RestartReadOnlyBridge(),
+            "paperbot-duplicate-source-diagnostics" => ShowPaperBotDuplicateSourceDiagnostics(),
+            "paperbot-source-sync-guard" => ShowPaperBotSourceSyncGuard(),
             "download-history" or "import-ctrader-history" => DownloadCTraderHistory(),
             "import-csv" => ImportCsv(),
             "market-data-status" => ShowMarketDataStatus(),
@@ -5737,6 +5739,71 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private int ShowPaperBotDuplicateSourceDiagnostics()
+    {
+        WriteHeader("Hermes PaperBot Duplicate Source Diagnostics");
+        var service = new DuplicateSourceDiagnosticsService(_runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Root Path", DisplayPath(report.RootPath));
+        WriteField("Algo Project Path", DisplayPath(report.AlgoProjectPath));
+        WriteField("Project Path", DisplayPath(report.ProjectPath));
+        WriteField("Duplicate Files", report.DuplicateFiles.Count.ToString());
+        WriteField("Differing Files", report.DifferingFiles.Count.ToString());
+        WriteField("Compiled By AlgoProject", report.CompiledByAlgoProject.Count.ToString());
+        WriteField("Not Compiled By AlgoProject", report.NotCompiledByAlgoProject.Count.ToString());
+        WriteMessages("Risks", report.Risks);
+        WriteMessages("Recommendations", report.Recommendations);
+
+        if (report.DuplicateFiles.Count > 0)
+        {
+            WriteSubHeader("Duplicate Files");
+            foreach (var file in report.DuplicateFiles)
+            {
+                WriteField(file.RelativePath, $"same_content={file.SameContent.ToString().ToLowerInvariant()}; compiled_by_algo_project={file.CompiledByAlgoProject.ToString().ToLowerInvariant()}; risk={file.Risk}");
+            }
+        }
+
+        if (report.DifferingFiles.Count > 0)
+        {
+            WriteSubHeader("Differing Files");
+            foreach (var file in report.DifferingFiles)
+            {
+                WriteField(file.RelativePath, $"root_sha256={file.RootSha256}; algo_sha256={file.AlgoProjectSha256}");
+            }
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPaperBotSourceSyncGuard()
+    {
+        WriteHeader("Hermes PaperBot Source Sync Guard");
+        var service = new PaperBotSourceSyncGuardService(_runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteMessages("Drift Files", report.DriftFiles);
+        WriteMessages("Missing Files", report.MissingFiles);
+        WriteMessages("Recommendations", report.Recommendations);
+
+        foreach (var file in report.CriticalFiles)
+        {
+            WriteField(file.RelativePath, $"status={file.Status}; root_exists={file.RootExists.ToString().ToLowerInvariant()}; algo_project_exists={file.AlgoProjectExists.ToString().ToLowerInvariant()}; same_content={file.SameContent.ToString().ToLowerInvariant()}");
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return string.Equals(report.Status, "ready", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
     }
 
     private int ShowPaperBotRuntimeSelfCheck()

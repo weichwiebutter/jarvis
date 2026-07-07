@@ -2270,25 +2270,25 @@ function BridgeRuntimeControl({ operatorState }) {
   const actions = [
     {
       key: 'start',
-      label: 'Start',
+      label: 'Start command kopieren',
       command: BRIDGE_RUNTIME_COMMANDS.start,
       disabled: !canStart,
     },
     {
       key: 'stop',
-      label: 'Stop',
+      label: 'Stop command kopieren',
       command: BRIDGE_RUNTIME_COMMANDS.stop,
       disabled: !canStop,
     },
     {
       key: 'restart',
-      label: 'Restart',
+      label: 'Restart command kopieren',
       command: BRIDGE_RUNTIME_COMMANDS.restart,
       disabled: !canRestart,
     },
     {
       key: 'refresh',
-      label: 'Refresh',
+      label: 'Health command kopieren',
       command: BRIDGE_RUNTIME_COMMANDS.refresh,
       disabled: bridgeState.loading,
     },
@@ -2350,7 +2350,7 @@ function BridgeRuntimeControl({ operatorState }) {
       {message ? <p className="control-view-note">{message}</p> : null}
       {error ? <p className="control-view-note is-danger">Bridge Runtime Control Fehler: {error}</p> : null}
       <p className="control-view-note">
-        Hinweis: In der aktuellen Browser-Variante werden die Commands bereitgestellt und in die Zwischenablage kopiert. Eine echte lokale Command-Ausführung benötigt einen vorhandenen Desktop-/Backend-Runner.
+        Hinweis: Dieser Button führt nichts aus. Command im Terminal einfügen. Eine echte lokale Command-Ausführung benötigt einen vorhandenen Desktop-/Backend-Runner.
       </p>
     </section>
   );
