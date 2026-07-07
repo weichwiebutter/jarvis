@@ -358,6 +358,7 @@ internal sealed class HermesCli
             "paperbot-runtime-self-check" => ShowPaperBotRuntimeSelfCheck(),
             "paper-runtime-step" => ShowPaperRuntimeStep(),
             "paper-signal-skip-diagnostics" => ShowPaperSignalSkipDiagnostics(),
+            "paper-signal-explain" => ShowPaperSignalExplain(),
             "paper-trigger-harness" => ShowPaperTriggerHarness(),
             "paper-exit-harness" => ShowPaperExitHarness(),
             "paper-closed-trade-harness" => ShowPaperClosedTradeHarness(),
@@ -751,6 +752,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes paper-trade-summary PaperBot Trade Summary anzeigen");
         Console.WriteLine("  hermes paper-trade-history PaperBot Trade History anzeigen");
         Console.WriteLine("  hermes paper-forward-session-report PaperBot Forward Session Report anzeigen");
+        Console.WriteLine("  hermes paper-signal-explain PaperBot Signal Explainability anzeigen");
         Console.WriteLine("  hermes ctrader-upload-readiness cTrader Upload Readiness anzeigen");
         Console.WriteLine("  hermes ctrader-export cTrader Bot Export nach D:\\Bot");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
@@ -5928,6 +5930,40 @@ internal sealed class HermesCli
             WriteMessages("Missing Fields", signal.MissingFields);
             WriteMessages("Warnings", signal.Warnings);
         }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowPaperSignalExplain()
+    {
+        WriteHeader("Hermes Paper Signal Explainability");
+        var service = new PaperSignalExplainService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(service.ReportPath));
+        WriteField("Markdown", DisplayPath(service.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Explained Signals", report.ExplainedSignals.ToString(CultureInfo.InvariantCulture));
+        WriteField("Signal Evaluation Report", DisplayPath(report.SignalEvaluationReportPath));
+
+        foreach (var signal in report.Signals)
+        {
+            WriteSubHeader(signal.SignalId);
+            WriteField("Confidence", signal.Confidence.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Confidence Threshold", signal.ConfidenceThreshold.ToString("0.###", CultureInfo.InvariantCulture));
+            WriteField("Session Allowed", signal.SessionAllowed.ToString().ToLowerInvariant());
+            WriteField("Spread Allowed", signal.SpreadAllowed.ToString().ToLowerInvariant());
+            WriteField("Direction", signal.Direction);
+            WriteField("Entry Condition Met", signal.EntryConditionMet.ToString().ToLowerInvariant());
+            WriteField("Stop Loss Ready", signal.StopLossReady.ToString().ToLowerInvariant());
+            WriteField("Take Profit Ready", signal.TakeProfitReady.ToString().ToLowerInvariant());
+            WriteField("Decision Reason", signal.DecisionReason);
+            WriteField("Lifecycle State", signal.LifecycleState);
+        }
+
+        WriteMessages("Warnings", report.Warnings);
 
         Console.WriteLine();
         WriteSafety();
