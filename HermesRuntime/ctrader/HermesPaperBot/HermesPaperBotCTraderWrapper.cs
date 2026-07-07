@@ -64,9 +64,13 @@ public class HermesPaperBotCTraderWrapper : Robot
         _host?.OnTimer();
         var result = _host?.GetLastRuntimeStepResult();
         var currentContext = result?.MarketContext ?? context;
-        var marketContextSeen = result?.MarketContextSeen ?? HasReadableMarketContext(currentContext);
+        var marketContextSeen = HasReadableMarketContext(currentContext);
         var safetyBlockReason = GetSafetyBlockReason(result);
-        Print($"HermesPaperBot OnTimer; paper_mode=true; broker_action={result?.BrokerAction ?? "none"}; market_context_seen={marketContextSeen}; state={result?.State ?? "unknown"}; decision={result?.PaperDecision ?? "unknown"}; symbol={currentContext.CurrentSymbol}; timeframe={currentContext.CurrentTimeframe}; spread={currentContext.Spread}; kill_switch_active={result?.KillSwitchActive ?? true}; safety_block_reason={safetyBlockReason}");
+        Print(
+            $"HermesPaperBot OnTimer; paper_mode=true; broker_action={result?.BrokerAction ?? "none"}; market_context_seen={marketContextSeen}; " +
+            $"state={result?.State ?? "unknown"}; decision={result?.PaperDecision ?? "unknown"}; symbol={currentContext.CurrentSymbol}; timeframe={currentContext.CurrentTimeframe}; " +
+            $"market_context_bid={currentContext.Bid}; market_context_ask={currentContext.Ask}; market_context_mid={GetMidPrice(currentContext)}; spread={currentContext.Spread}; " +
+            $"server_time_seen={currentContext.ServerTime != default}; spread_source={GetSpreadSource(currentContext)}; kill_switch_active={result?.KillSwitchActive ?? true}; safety_block_reason={safetyBlockReason}");
     }
 
     /// <summary>
@@ -132,6 +136,30 @@ public class HermesPaperBotCTraderWrapper : Robot
             && context.Bid > 0m
             && context.Ask > 0m
             && context.ServerTime != default;
+
+    /// <summary>
+    /// Returns the mid price if bid/ask are available.
+    /// </summary>
+    private static decimal GetMidPrice(RuntimeMarketContext context)
+        => context.Bid > 0m && context.Ask > 0m ? (context.Bid + context.Ask) / 2m : 0m;
+
+    /// <summary>
+    /// Describes how the spread value was obtained.
+    /// </summary>
+    private static string GetSpreadSource(RuntimeMarketContext context)
+    {
+        if (context.SpreadPips.HasValue)
+        {
+            return "spread_pips";
+        }
+
+        if (context.PipSize > 0m)
+        {
+            return "spread_from_bid_ask";
+        }
+
+        return "spread_unknown";
+    }
 
     /// <summary>
     /// Extracts the most relevant safety block reason from the latest runtime result.
