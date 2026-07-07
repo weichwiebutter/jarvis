@@ -21,6 +21,11 @@ public sealed class PaperStateSnapshot
     public PaperPortfolioState PaperPortfolioState { get; init; } = new();
 
     /// <summary>
+    /// Closed paper positions snapshot.
+    /// </summary>
+    public PaperPosition[] ClosedPaperPositions { get; init; } = [];
+
+    /// <summary>
     /// Last runtime state.
     /// </summary>
     public string LastState { get; init; } = "unknown";

@@ -6,6 +6,7 @@ namespace HermesPaperBot.Models;
 public sealed class PaperPortfolioState
 {
     public PaperPosition[] ActiveTrades { get; init; } = [];
+    public PaperPosition[] ClosedTrades { get; init; } = [];
     public int OpenTradeCountToday { get; init; } = 0;
     public int OpenTradeCountThisHour { get; init; } = 0;
     public int ConsecutiveLosses { get; init; } = 0;

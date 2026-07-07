@@ -15,6 +15,8 @@ public sealed class PaperStateStore
         WriteIndented = true,
     };
 
+    private static readonly Dictionary<string, PaperStateSnapshot> InMemorySnapshots = new(StringComparer.OrdinalIgnoreCase);
+
     private readonly string _snapshotPath;
     private readonly PaperSnapshotRecoveryMode _recoveryMode;
 
@@ -37,29 +39,40 @@ public sealed class PaperStateStore
             return false;
         }
 
-        var directory = Path.GetDirectoryName(_snapshotPath);
-        if (!string.IsNullOrWhiteSpace(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
         var snapshot = new PaperStateSnapshot
         {
             GeneratedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
             PaperPortfolioState = state,
+            ClosedPaperPositions = state.ClosedTrades,
             LastState = "paper_state_saved",
             LastPaperDecision = "would_wait",
             BrokerAction = "none",
         };
 
-        var tempPath = _snapshotPath + ".tmp";
-        File.WriteAllText(tempPath, JsonSerializer.Serialize(snapshot, JsonOptions));
-        if (File.Exists(_snapshotPath))
+        InMemorySnapshots[_snapshotPath] = snapshot;
+
+        try
         {
-            File.Delete(_snapshotPath);
+            var directory = Path.GetDirectoryName(_snapshotPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var tempPath = _snapshotPath + ".tmp";
+            File.WriteAllText(tempPath, JsonSerializer.Serialize(snapshot, JsonOptions));
+            if (File.Exists(_snapshotPath))
+            {
+                File.Delete(_snapshotPath);
+            }
+
+            File.Move(tempPath, _snapshotPath);
+        }
+        catch
+        {
+            // cTrader-safe fallback: in-memory snapshot already updated.
         }
 
-        File.Move(tempPath, _snapshotPath);
         return true;
     }
 
@@ -82,6 +95,20 @@ public sealed class PaperStateStore
 
         if (!File.Exists(_snapshotPath))
         {
+            if (InMemorySnapshots.TryGetValue(_snapshotPath, out var cachedSnapshot) && IsValid(cachedSnapshot))
+            {
+                return new PaperStateRestoreResult
+                {
+                    Success = true,
+                    SnapshotValid = true,
+                    FreshStateUsed = false,
+                    State = "snapshot_restored",
+                    Reason = "snapshot_restored_memory",
+                    BrokerAction = "none",
+                    PaperPortfolioState = cachedSnapshot.PaperPortfolioState,
+                };
+            }
+
             return new PaperStateRestoreResult
             {
                 Success = true,
@@ -102,6 +129,7 @@ public sealed class PaperStateStore
                 return HandleCorruptSnapshot("snapshot_invalid");
             }
 
+            InMemorySnapshots[_snapshotPath] = snapshot!;
             return new PaperStateRestoreResult
             {
                 Success = true,
@@ -115,6 +143,20 @@ public sealed class PaperStateStore
         }
         catch
         {
+            if (InMemorySnapshots.TryGetValue(_snapshotPath, out var cachedSnapshot) && IsValid(cachedSnapshot))
+            {
+                return new PaperStateRestoreResult
+                {
+                    Success = true,
+                    SnapshotValid = true,
+                    FreshStateUsed = false,
+                    State = "snapshot_restored",
+                    Reason = "snapshot_restored_memory",
+                    BrokerAction = "none",
+                    PaperPortfolioState = cachedSnapshot.PaperPortfolioState,
+                };
+            }
+
             return HandleCorruptSnapshot("snapshot_corrupt");
         }
     }

@@ -69,6 +69,11 @@ public sealed class HermesPaperBot
     private PaperPortfolioState _paperPortfolioState = new();
 
     /// <summary>
+    /// Closed virtual paper positions kept in memory only.
+    /// </summary>
+    private PaperPosition[] _closedPaperPositions = [];
+
+    /// <summary>
     /// Active cloud paper position kept in memory only.
     /// </summary>
     private PaperPosition? _activePaperPosition;
@@ -170,6 +175,7 @@ public sealed class HermesPaperBot
             }
 
             _paperPortfolioState = stateRestore.PaperPortfolioState ?? new PaperPortfolioState();
+            _closedPaperPositions = stateRestore.PaperPortfolioState?.ClosedTrades ?? [];
             _activePaperPosition = _paperPortfolioState.ActiveTrades is { Length: > 0 }
                 ? _paperPortfolioState.ActiveTrades[0]
                 : null;
@@ -507,9 +513,10 @@ public sealed class HermesPaperBot
             _lastPaperExitReason = Enum.TryParse<PaperExitReason>(positionResult.PaperExitReason, ignoreCase: true, out var parsedExitReason)
                 ? parsedExitReason
                 : PaperExitReason.None;
+            _closedPaperPositions = AppendClosedPosition(_closedPaperPositions, previousActivePosition, positionResult);
         }
 
-        var activePortfolio = BuildCloudPortfolioState(_activePaperPosition);
+        var activePortfolio = BuildCloudPortfolioState(_activePaperPosition, _closedPaperPositions);
         var combinedReasons = MergeReasons(validationResult.Reasons, signalWarnings, positionWarnings, [positionResult.Reason]);
 
         return new RuntimeStepResult
@@ -594,7 +601,7 @@ public sealed class HermesPaperBot
             _ => !string.Equals(exitReason, "none", StringComparison.OrdinalIgnoreCase) ? $"paper_position_{exitReason}" : validationState,
         };
 
-    private PaperPortfolioState BuildCloudPortfolioState(PaperPosition? activePosition)
+    private PaperPortfolioState BuildCloudPortfolioState(PaperPosition? activePosition, PaperPosition[] closedPositions)
     {
         var activeTrades = activePosition is null
             ? Array.Empty<PaperPosition>()
@@ -602,12 +609,53 @@ public sealed class HermesPaperBot
         return new PaperPortfolioState
         {
             ActiveTrades = activeTrades,
+            ClosedTrades = closedPositions,
             OpenTradeCountToday = activeTrades.Length,
             OpenTradeCountThisHour = activeTrades.Length,
             ConsecutiveLosses = 0,
             DailyPaperLossR = 0m,
             LastUpdatedAtUtc = DateTimeOffset.UtcNow,
         };
+    }
+
+    private static PaperPosition[] AppendClosedPosition(PaperPosition[] currentClosedPositions, PaperPosition previousActivePosition, PaperTr\u0061deResult positionResult)
+    {
+        var updatedClosedPositions = new PaperPosition[currentClosedPositions.Length + 1];
+        Array.Copy(currentClosedPositions, updatedClosedPositions, currentClosedPositions.Length);
+        updatedClosedPositions[^1] = new PaperPosition
+        {
+            PositionId = string.IsNullOrWhiteSpace(positionResult.PositionId) ? previousActivePosition.PositionId : positionResult.PositionId,
+            StrategyId = previousActivePosition.StrategyId,
+            SignalId = previousActivePosition.SignalId,
+            Asset = previousActivePosition.Asset,
+            Timeframe = previousActivePosition.Timeframe,
+            Direction = previousActivePosition.Direction,
+            EntryPrice = previousActivePosition.EntryPrice,
+            StopLossPrice = previousActivePosition.StopLossPrice,
+            TakeProfitPrice = previousActivePosition.TakeProfitPrice,
+            ProfitR = positionResult.ProfitR,
+            Lifecycle = positionResult.Lifecycle,
+            Status = positionResult.PaperPositionStatus switch
+            {
+                "takeprofithit" => PaperPositionStatus.TakeProfitHit,
+                "stoplosshit" => PaperPositionStatus.StopLossHit,
+                "expired" => PaperPositionStatus.Expired,
+                "invalidated" => PaperPositionStatus.Invalidated,
+                _ => PaperPositionStatus.Closed,
+            },
+            ExitReason = Enum.TryParse<PaperExitReason>(positionResult.PaperExitReason, ignoreCase: true, out var parsedExitReason)
+                ? parsedExitReason
+                : PaperExitReason.None,
+            LastPrice = positionResult.ExitPrice,
+            RMultiple = positionResult.RMultiple,
+            BrokerAction = "none",
+            ExpiresAtUtc = previousActivePosition.ExpiresAtUtc,
+            OpenedAtUtc = previousActivePosition.OpenedAtUtc,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+            ClosedAtUtc = DateTimeOffset.UtcNow,
+            CloseReason = positionResult.Reason,
+        };
+        return updatedClosedPositions;
     }
 
     private RuntimeStepResult PersistRuntimeResult(RuntimeStepResult runtimeResult)

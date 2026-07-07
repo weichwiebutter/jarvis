@@ -2836,6 +2836,7 @@ timestamp,open,high,low,close,spread
             package_id = "paper_trigger_harness_package",
             package_version = "1.0.0",
             source_system = "HermesRuntime",
+            release_mode = "paper_only",
             status = "paper_only",
             assets = new[]
             {
@@ -2856,7 +2857,7 @@ timestamp,open,high,low,close,spread
                     take_profit_logic = new[] { "fixed paper target" },
                     invalidation_logic = new[] { "paper runtime invalidation" },
                     market_regime_tags = new[] { "paper", "trigger" },
-                    session_tags = Array.Empty<string>(),
+                    session_tags = new[] { "paper", "bot_ready" },
                     risk_notes = new[] { "paper_only", "human_review_required", "no_auto_trading", "bot_ready" },
                     readiness = "bot_ready",
                     human_review_required = true,
