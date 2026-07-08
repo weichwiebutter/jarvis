@@ -210,8 +210,10 @@ public sealed class PaperLogger
     /// <summary>
     /// Writes a compact per-timer entry and falls back to memory if file IO is not available.
     /// </summary>
-    public bool WriteTimer(string logsPath, RuntimeStepResult result)
+    public (bool Written, string Path, string Fallback) WriteTimer(string logsPath, RuntimeStepResult result)
     {
+        var timerLogPath = string.IsNullOrWhiteSpace(logsPath) ? "paper_runtime_step_log.jsonl" : Path.Combine(logsPath, "paper_runtime_step_log.jsonl");
+
         try
         {
             var entry = new Dictionary<string, object?>
@@ -243,25 +245,24 @@ public sealed class PaperLogger
             if (string.IsNullOrWhiteSpace(logsPath))
             {
                 AppendInMemory("paper_runtime_step_log.jsonl", line);
-                return true;
+                return (true, "paper_runtime_step_log.jsonl", "in_memory");
             }
 
             try
             {
                 Directory.CreateDirectory(logsPath);
-                var timerLogPath = Path.Combine(logsPath, "paper_runtime_step_log.jsonl");
                 File.AppendAllText(timerLogPath, line + Environment.NewLine);
-                return true;
+                return (true, timerLogPath, "file");
             }
             catch
             {
                 AppendInMemory(logsPath, line);
-                return true;
+                return (true, timerLogPath, "in_memory");
             }
         }
         catch
         {
-            return false;
+            return (false, timerLogPath, "error");
         }
     }
 

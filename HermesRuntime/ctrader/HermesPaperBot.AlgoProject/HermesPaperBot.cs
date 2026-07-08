@@ -700,7 +700,8 @@ public sealed class HermesPaperBot
         var logger = new PaperLogger();
         var summaryWriter = new RuntimeSummaryWriter();
         var loggingOk = logger.Write(logsPath, runtimeResult);
-        var timerLoggingOk = logger.WriteTimer(logsPath, runtimeResult);
+        var timerLogging = logger.WriteTimer(logsPath, runtimeResult);
+        var timerLoggingOk = timerLogging.Written;
         var summaryOk = summaryWriter.Write(logsPath, runtimeResult, _lastConfiguration ?? new BotConfiguration());
 
         if (!loggingOk || !timerLoggingOk || !summaryOk)
@@ -727,7 +728,10 @@ public sealed class HermesPaperBot
                 PaperDecision = runtimeResult.PaperDecision,
                 BrokerAction = "none",
                 Reasons = loggingReasons.ToArray(),
-                LoggingStatus = "logging_failed",
+                LoggingStatus = $"logging_failed; timer_log_written={timerLoggingOk.ToString().ToLowerInvariant()}; timer_log_path={timerLogging.Path}; timer_log_fallback={timerLogging.Fallback}",
+                TimerLogWritten = timerLoggingOk,
+                TimerLogPath = timerLogging.Path,
+                TimerLogFallback = timerLogging.Fallback,
                 PaperWarnings = runtimeResult.PaperWarnings,
                 SignalSeen = runtimeResult.SignalSeen,
                 SignalDirection = runtimeResult.SignalDirection,
@@ -775,7 +779,10 @@ public sealed class HermesPaperBot
             PaperDecision = runtimeResult.PaperDecision,
             BrokerAction = "none",
             Reasons = runtimeResult.Reasons,
-            LoggingStatus = "ok",
+            LoggingStatus = $"ok; timer_log_written={timerLoggingOk.ToString().ToLowerInvariant()}; timer_log_path={timerLogging.Path}; timer_log_fallback={timerLogging.Fallback}",
+            TimerLogWritten = timerLoggingOk,
+            TimerLogPath = timerLogging.Path,
+            TimerLogFallback = timerLogging.Fallback,
             PaperWarnings = runtimeResult.PaperWarnings,
             SignalSeen = runtimeResult.SignalSeen,
             SignalDirection = runtimeResult.SignalDirection,

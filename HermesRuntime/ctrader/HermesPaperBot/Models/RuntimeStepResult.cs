@@ -21,6 +21,9 @@ public sealed class RuntimeStepResult
     public string BrokerAction { get; init; } = "none";
     public string[] Reasons { get; init; } = [];
     public string? LoggingStatus { get; init; } = null;
+    public bool TimerLogWritten { get; init; } = false;
+    public string TimerLogPath { get; init; } = string.Empty;
+    public string TimerLogFallback { get; init; } = string.Empty;
     public bool SignalSeen { get; init; } = false;
     public string SignalDirection { get; init; } = "flat";
     public decimal? SignalConfidence { get; init; }
