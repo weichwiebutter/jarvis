@@ -385,6 +385,7 @@ internal sealed class HermesCli
             "chart-annotation-export" => RunChartAnnotationExport(),
             "chart-annotation-candidate-generator" => RunChartAnnotationCandidateGenerator(),
             "chart-annotation-review-queue" => ShowChartAnnotationReviewQueue(),
+            "chart-annotation-review" => RunChartAnnotationReviewDecision(),
             "signal-watch-status" => ShowSignalWatchStatus(),
             "signal-watch-log" => ShowSignalWatchLog(),
             "export-missing-signal-agent-specs" => ExportMissingSignalAgentSpecs(),
@@ -775,6 +776,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes chart-annotation-export [--dry-run|--apply] Chart Annotationen exportieren");
         Console.WriteLine("  hermes chart-annotation-candidate-generator Chart Annotation Kandidaten generieren");
         Console.WriteLine("  hermes chart-annotation-review-queue Chart Annotation Review Queue anzeigen");
+        Console.WriteLine("  hermes chart-annotation-review --asset <ASSET> --setup-id <SETUP> --decision approve|reject --reviewer <NAME> --comment \"<TEXT>\" Chart Annotation Review ausführen");
         Console.WriteLine("  hermes signal-watch-status read-only Signal-Watch-Lifecycle anzeigen");
         Console.WriteLine("  hermes signal-watch-log Signal-Watch-Log anzeigen");
         Console.WriteLine("  hermes export-missing-signal-agent-specs fehlende Ensemble-Signal-Agent-Specs exportieren");
@@ -7061,6 +7063,57 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunChartAnnotationReviewDecision()
+    {
+        WriteHeader("Hermes Chart Annotation Review Decision");
+        if (HasArg("--help") || HasArg("-h"))
+        {
+            Console.WriteLine("Usage: hermes chart-annotation-review --asset <ASSET> --setup-id <SETUP> --decision approve|reject --reviewer <NAME> --comment \"<TEXT>\"");
+            Console.WriteLine();
+            Console.WriteLine("Parameters:");
+            Console.WriteLine("  --asset       Asset symbol, e.g. XAUUSD or GER40");
+            Console.WriteLine("  --setup-id    Chart annotation setup id");
+            Console.WriteLine("  --decision    approve|reject");
+            Console.WriteLine("  --reviewer    Reviewer name");
+            Console.WriteLine("  --comment     Review comment");
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+
+        var asset = ReadOption(_args, "--asset");
+        var setupId = ReadOption(_args, "--setup-id");
+        var decision = ReadOption(_args, "--decision");
+        var reviewer = ReadOption(_args, "--reviewer") ?? Environment.UserName;
+        var comment = ReadOption(_args, "--comment") ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(asset) || string.IsNullOrWhiteSpace(setupId) || string.IsNullOrWhiteSpace(decision))
+        {
+            WriteError("Error: --asset, --setup-id and --decision approve|reject are required.");
+            Console.WriteLine("Usage: hermes chart-annotation-review --asset <ASSET> --setup-id <SETUP> --decision approve|reject --reviewer <NAME> --comment \"<TEXT>\"");
+            Console.WriteLine();
+            WriteSafety();
+            return 1;
+        }
+
+        var service = new ChartAnnotationReviewDecisionWorkflowService(BuildStoragePaths(), _runtimeRoot);
+        try
+        {
+            var report = service.Decide(asset!, setupId!, decision!, reviewer, comment);
+            WriteChartAnnotationReviewDecisionReport(report);
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            WriteError($"Error: {ex.Message}");
+            Console.WriteLine();
+            WriteSafety();
+            return 1;
+        }
+    }
+
     private int ShowSignalWatchStatus()
     {
         WriteHeader("Hermes Signal Watch Status");
@@ -13327,6 +13380,32 @@ internal sealed class HermesCli
             WriteField("Promoted To Embedded", item.PromotedToEmbedded.ToString().ToLowerInvariant());
             WriteMessages("Missing Fields", item.MissingFields);
             WriteField("Source Path", DisplayPath(item.SourcePath));
+        }
+    }
+
+    private void WriteChartAnnotationReviewDecisionReport(ChartAnnotationReviewDecisionReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Audit Trail", DisplayPath(report.AuditTrailPath));
+        WriteField("Status", report.Status);
+        WriteField("Decisions Total", report.DecisionsTotal.ToString());
+        WriteField("Approved Count", report.ApprovedCount.ToString());
+        WriteField("Rejected Count", report.RejectedCount.ToString());
+        WriteField("Pending Count", report.PendingCount.ToString());
+        WriteMessages("Warnings", report.Warnings);
+
+        foreach (var item in report.Decisions)
+        {
+            WriteSubHeader($"{item.Asset} / {item.SetupId}");
+            WriteField("Decision ID", item.DecisionId);
+            WriteField("Review Timestamp UTC", item.ReviewTimestampUtc.ToString("O"));
+            WriteField("Decision", item.Decision);
+            WriteField("Reviewer", item.Reviewer);
+            WriteField("Comment", item.Comment);
+            WriteField("Approved", item.Approved.ToString().ToLowerInvariant());
+            WriteField("Promoted To Embedded", item.PromotedToEmbedded.ToString().ToLowerInvariant());
+            WriteField("Artifact Path", DisplayPath(item.ArtifactPath));
         }
     }
 
