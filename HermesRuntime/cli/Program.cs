@@ -368,6 +368,7 @@ internal sealed class HermesCli
             "ctrader-upload-readiness" => ShowCTraderUploadReadiness(),
             "ctrader-export" => RunCTraderBotExport(),
             "bot-evolution-score" => ShowBotEvolutionScore(),
+            "bot-evolution-baseline" => SaveBotEvolutionBaseline(),
             "bot-version-recommendation" => ShowBotVersionRecommendation(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
@@ -764,6 +765,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes ctrader-upload-readiness cTrader Upload Readiness anzeigen");
         Console.WriteLine("  hermes ctrader-export cTrader Bot Export nach D:\\Bot");
         Console.WriteLine("  hermes bot-evolution-score PaperBot-Evolutionsscore anzeigen");
+        Console.WriteLine("  hermes bot-evolution-baseline --save PaperBot-Evolutionsbaseline speichern");
         Console.WriteLine("  hermes bot-version-recommendation PaperBot-Export-Empfehlung anzeigen");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
@@ -6744,6 +6746,28 @@ internal sealed class HermesCli
         WriteField("paper_trade_history_report_path", DisplayPath(report.PaperTradeHistoryReportPath));
         WriteField("paper_forward_session_report_path", DisplayPath(report.PaperForwardSessionReportPath));
         WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int SaveBotEvolutionBaseline()
+    {
+        WriteHeader("Hermes Bot Evolution Baseline");
+        var service = new BotEvolutionBaselineService(BuildStoragePaths(), _runtimeRoot);
+        var notes = ReadOption(_args, "--notes");
+        var report = service.Save(notes);
+
+        WriteField("report_version", report.ReportVersion);
+        WriteField("saved_at_utc", report.SavedAtUtc.ToString("O"));
+        WriteField("score", report.Score.ToString("0.0", CultureInfo.InvariantCulture));
+        WriteField("export_id", report.ExportId);
+        WriteField("embedded_checksum", report.EmbeddedChecksum ?? "-");
+        WriteField("signal_package_version", report.SignalPackageVersion ?? "-");
+        WriteField("notes", report.Notes);
+        WriteField("source_report_path", DisplayPath(report.SourceReportPath));
+        WriteField("report_path", DisplayPath(report.ReportPath));
+        WriteField("markdown_path", DisplayPath(report.MarkdownPath));
         Console.WriteLine();
         WriteSafety();
         return 0;

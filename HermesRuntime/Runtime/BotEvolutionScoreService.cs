@@ -54,7 +54,7 @@ public sealed class BotEvolutionScoreService
     {
         Directory.CreateDirectory(Root);
 
-        var previousReport = LoadLatestReport();
+        var baseline = new BotEvolutionBaselineService(_storagePaths, _runtimeRoot).LoadLatest();
         var stepService = new PaperRuntimeStepService(_storagePaths, _runtimeRoot);
         var signalExplainService = new PaperSignalExplainService(_storagePaths, _runtimeRoot);
         var summaryService = new PaperTradeSummaryService(_storagePaths, _runtimeRoot);
@@ -95,7 +95,7 @@ public sealed class BotEvolutionScoreService
 
         var metrics = BuildMetrics(stepReport, signalExplainReport, summaryReport, historyReport, forwardSessionReport);
         var evolutionScore = ComputeEvolutionScore(metrics);
-        var previousScore = previousReport?.EvolutionScore;
+        var previousScore = baseline?.Score;
         var improvementDelta = previousScore.HasValue ? Math.Round(evolutionScore - previousScore.Value, 1) : (decimal?)null;
         var recommendation = DetermineRecommendation(evolutionScore, improvementDelta, metrics.SafetyStatus);
         var confidenceLevel = DetermineConfidenceLevel(stepReport, signalExplainReport, summaryReport, historyReport, forwardSessionReport, warnings);
