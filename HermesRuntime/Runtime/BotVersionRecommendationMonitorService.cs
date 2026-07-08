@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -19,6 +20,11 @@ public sealed record BotVersionRecommendationReport(
     DateTimeOffset UpdatedAtUtc,
     string Status,
     string BotVersionRecommendationStatus,
+    decimal? BotEvolutionScore,
+    decimal? PreviousBotEvolutionScore,
+    decimal? BotEvolutionImprovementDelta,
+    string? BotEvolutionRecommendation,
+    string? BotEvolutionConfidenceLevel,
     string CurrentExportId,
     DateTimeOffset? CurrentExportTimestampUtc,
     string? CurrentExportPath,
@@ -42,6 +48,7 @@ public sealed record BotVersionRecommendationReport(
     string CurrentCloudEmbeddedPackageReportPath,
     string CurrentApprovedAnnotationRegistryPath,
     string CurrentExportManifestPath,
+    string CurrentBotEvolutionScoreReportPath,
     IReadOnlyList<BotVersionRecommendationApprovedAnnotation> ApprovedAnnotations,
     IReadOnlyList<string> Warnings,
     IReadOnlyList<string> Recommendations,
@@ -74,9 +81,29 @@ public sealed class BotVersionRecommendationMonitorService
 
         var currentCloudEmbeddedPackageReportPath = Path.Combine(_storagePaths.Root, "reports", "cloud_embedded_release_package", "cloud_embedded_release_package.json");
         var currentApprovedRegistryPath = Path.Combine(_storagePaths.Root, "reports", "approved_chart_annotations", "approved_chart_annotations.json");
+        var currentBotEvolutionScoreReportPath = Path.Combine(_storagePaths.Root, "reports", "bot_evolution_score", "bot_evolution_score.json");
         var currentExportManifestPath = ResolveCurrentExportManifestPath();
         var currentExportManifest = LoadCurrentExportManifest(currentExportManifestPath);
         var cloudEmbeddedPackage = LoadCloudEmbeddedPackage(currentCloudEmbeddedPackageReportPath);
+        var botEvolutionScore = LoadBotEvolutionScore(currentBotEvolutionScoreReportPath) ?? new BotEvolutionScoreReport(
+            ReportVersion: "bot_evolution_score_v1",
+            UpdatedAtUtc: DateTimeOffset.MinValue,
+            Status: "missing",
+            EvolutionScore: 0m,
+            PreviousScore: null,
+            ImprovementDelta: null,
+            Recommendation: "do_not_recommend",
+            ConfidenceLevel: "low",
+            Metrics: new BotEvolutionMetricBreakdown(0m, 0m, 0m, 0m, 0m, 0m, 0, "partial", 0m),
+            PaperRuntimeStepReportPath: string.Empty,
+            PaperSignalExplainReportPath: string.Empty,
+            PaperTradeSummaryReportPath: string.Empty,
+            PaperTradeHistoryReportPath: string.Empty,
+            PaperForwardSessionReportPath: string.Empty,
+            CurrentBotVersionRecommendationReportPath: null,
+            Warnings: [],
+            ReportPath: currentBotEvolutionScoreReportPath,
+            MarkdownPath: Path.ChangeExtension(currentBotEvolutionScoreReportPath, ".md"));
         var approvedAnnotations = LoadApprovedAnnotations(currentApprovedRegistryPath);
 
         var currentAlgoSourcePath = currentExportManifest?.SourceAlgoPath
@@ -149,22 +176,40 @@ public sealed class BotVersionRecommendationMonitorService
             recommendationReasons.Add("approved_annotation_confidence_improved");
         }
 
-        var recommendedExportAvailable = recommendationReasons.Count > 0;
+        var botEvolutionAllowsRecommendation = botEvolutionScore.Recommendation is "recommend_new_version" or "hold_current_version"
+            && botEvolutionScore.EvolutionScore >= 60m;
+        if (!botEvolutionAllowsRecommendation)
+        {
+            warnings.Add($"bot_evolution_score_suppressed:{botEvolutionScore.Recommendation}:{botEvolutionScore.EvolutionScore:0.0}");
+        }
+        else if (botEvolutionScore.ImprovementDelta.HasValue)
+        {
+            recommendationReasons.Add("bot_evolution_score_supports_export");
+        }
+
+        var recommendedExportAvailable = recommendationReasons.Count > 0 && botEvolutionAllowsRecommendation;
         var recommendationReason = recommendedExportAvailable
             ? string.Join("; ", recommendationReasons.Distinct(StringComparer.OrdinalIgnoreCase))
-            : "current_export_is_up_to_date";
+            : botEvolutionAllowsRecommendation
+                ? "current_export_is_up_to_date"
+                : "bot_evolution_score_does_not_support_new_version";
         var manualActionRequired = recommendedExportAvailable;
         var suggestedNextCommand = pendingPromotionCount > 0
             ? "dotnet run --project ./cli/Hermes.Cli.csproj -- chart-annotation-promote"
             : recommendedExportAvailable
                 ? "dotnet run --project ./cli/Hermes.Cli.csproj -- ctrader-export"
-                : "dotnet run --project ./cli/Hermes.Cli.csproj -- bot-development-status";
+                : "dotnet run --project ./cli/Hermes.Cli.csproj -- bot-evolution-score";
 
         var report = new BotVersionRecommendationReport(
             ReportVersion: "bot_version_recommendation_v1",
             UpdatedAtUtc: DateTimeOffset.UtcNow,
             Status: recommendedExportAvailable ? "recommendation_available" : "up_to_date",
             BotVersionRecommendationStatus: recommendedExportAvailable ? "recommended_export_available" : "current_export_up_to_date",
+            BotEvolutionScore: botEvolutionScore.EvolutionScore,
+            PreviousBotEvolutionScore: botEvolutionScore.PreviousScore,
+            BotEvolutionImprovementDelta: botEvolutionScore.ImprovementDelta,
+            BotEvolutionRecommendation: botEvolutionScore.Recommendation,
+            BotEvolutionConfidenceLevel: botEvolutionScore.ConfidenceLevel,
             CurrentExportId: currentExportId,
             CurrentExportTimestampUtc: currentExportTimestampUtc,
             CurrentExportPath: currentExportManifest?.IndexedAlgoPath ?? currentAlgoSourcePath,
@@ -188,6 +233,7 @@ public sealed class BotVersionRecommendationMonitorService
             CurrentCloudEmbeddedPackageReportPath: currentCloudEmbeddedPackageReportPath,
             CurrentApprovedAnnotationRegistryPath: currentApprovedRegistryPath,
             CurrentExportManifestPath: currentExportManifestPath,
+            CurrentBotEvolutionScoreReportPath: currentBotEvolutionScoreReportPath,
             ApprovedAnnotations: approvedAnnotations,
             Warnings: warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             Recommendations: BuildRecommendations(recommendedExportAvailable, pendingPromotionCount, currentExportManifest, currentAlgoSha256, cloudEmbeddedPackage),
@@ -229,6 +275,23 @@ public sealed class BotVersionRecommendationMonitorService
         }
 
         return recommendations.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static BotEvolutionScoreReport? LoadBotEvolutionScore(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<BotEvolutionScoreReport>(File.ReadAllText(path), JsonDefaults.SnapshotReadOptions);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string ResolveCurrentExportManifestPath()
@@ -482,6 +545,7 @@ public sealed class BotVersionRecommendationMonitorService
         sb.AppendLine($"- current_export_manifest_path: {report.CurrentExportManifestPath}");
         sb.AppendLine($"- current_cloud_embedded_package_path: {report.CurrentCloudEmbeddedPackagePath}");
         sb.AppendLine($"- current_approved_annotation_registry_path: {report.CurrentApprovedAnnotationRegistryPath}");
+        sb.AppendLine($"- current_bot_evolution_score_report_path: {report.CurrentBotEvolutionScoreReportPath}");
         sb.AppendLine();
         sb.AppendLine("## Counts");
         sb.AppendLine($"- approved_annotation_count: {report.ApprovedAnnotationCount}");
@@ -493,6 +557,11 @@ public sealed class BotVersionRecommendationMonitorService
         sb.AppendLine($"- current_signal_package_version: {report.CurrentSignalPackageVersion ?? "-"}");
         sb.AppendLine($"- current_signal_strategy_id: {report.CurrentSignalStrategyId ?? "-"}");
         sb.AppendLine($"- current_signal_confidence: {(report.CurrentSignalConfidence is null ? "-" : report.CurrentSignalConfidence.Value.ToString("0.####"))}");
+        sb.AppendLine($"- bot_evolution_score: {(report.BotEvolutionScore is null ? "-" : report.BotEvolutionScore.Value.ToString("0.0", CultureInfo.InvariantCulture))}");
+        sb.AppendLine($"- previous_bot_evolution_score: {(report.PreviousBotEvolutionScore is null ? "-" : report.PreviousBotEvolutionScore.Value.ToString("0.0", CultureInfo.InvariantCulture))}");
+        sb.AppendLine($"- bot_evolution_improvement_delta: {(report.BotEvolutionImprovementDelta is null ? "-" : report.BotEvolutionImprovementDelta.Value.ToString("0.0", CultureInfo.InvariantCulture))}");
+        sb.AppendLine($"- bot_evolution_recommendation: {report.BotEvolutionRecommendation ?? "-"}");
+        sb.AppendLine($"- bot_evolution_confidence_level: {report.BotEvolutionConfidenceLevel ?? "-"}");
         sb.AppendLine($"- current_embedded_checksum: {report.CurrentEmbeddedChecksum ?? "-"}");
         sb.AppendLine($"- current_export_sha256: {report.CurrentExportSha256 ?? "-"}");
         sb.AppendLine();

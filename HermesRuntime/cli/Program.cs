@@ -367,6 +367,7 @@ internal sealed class HermesCli
             "paper-forward-session-report" => ShowPaperForwardSessionReport(),
             "ctrader-upload-readiness" => ShowCTraderUploadReadiness(),
             "ctrader-export" => RunCTraderBotExport(),
+            "bot-evolution-score" => ShowBotEvolutionScore(),
             "bot-version-recommendation" => ShowBotVersionRecommendation(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
@@ -762,6 +763,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes paper-signal-explain PaperBot Signal Explainability anzeigen");
         Console.WriteLine("  hermes ctrader-upload-readiness cTrader Upload Readiness anzeigen");
         Console.WriteLine("  hermes ctrader-export cTrader Bot Export nach D:\\Bot");
+        Console.WriteLine("  hermes bot-evolution-score PaperBot-Evolutionsscore anzeigen");
         Console.WriteLine("  hermes bot-version-recommendation PaperBot-Export-Empfehlung anzeigen");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
@@ -6692,6 +6694,11 @@ internal sealed class HermesCli
         WriteField("current_signal_package_version", report.CurrentSignalPackageVersion ?? "-");
         WriteField("current_signal_strategy_id", report.CurrentSignalStrategyId ?? "-");
         WriteField("current_signal_confidence", report.CurrentSignalConfidence?.ToString("0.####") ?? "-");
+        WriteField("bot_evolution_score", report.BotEvolutionScore?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("previous_bot_evolution_score", report.PreviousBotEvolutionScore?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("bot_evolution_improvement_delta", report.BotEvolutionImprovementDelta?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("bot_evolution_recommendation", report.BotEvolutionRecommendation ?? "-");
+        WriteField("bot_evolution_confidence_level", report.BotEvolutionConfidenceLevel ?? "-");
         WriteField("approved_annotation_count", report.ApprovedAnnotationCount.ToString(CultureInfo.InvariantCulture));
         WriteField("promoted_annotation_count", report.PromotedAnnotationCount.ToString(CultureInfo.InvariantCulture));
         WriteField("pending_promotion_count", report.PendingPromotionCount.ToString(CultureInfo.InvariantCulture));
@@ -6701,11 +6708,45 @@ internal sealed class HermesCli
         WriteField("current_cloud_embedded_package_report_path", DisplayPath(report.CurrentCloudEmbeddedPackageReportPath));
         WriteField("current_approved_annotation_registry_path", DisplayPath(report.CurrentApprovedAnnotationRegistryPath));
         WriteField("current_export_manifest_path", DisplayPath(report.CurrentExportManifestPath));
+        WriteField("current_bot_evolution_score_report_path", DisplayPath(report.CurrentBotEvolutionScoreReportPath));
         WriteMessages("Warnings", report.Warnings);
         WriteMessages("Recommendations", report.Recommendations);
         Console.WriteLine();
         WriteSafety();
         return report.RecommendedExportAvailable ? 1 : 0;
+    }
+
+    private int ShowBotEvolutionScore()
+    {
+        WriteHeader("Hermes Bot Evolution Score");
+        var service = new BotEvolutionScoreService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("report_version", report.ReportVersion);
+        WriteField("status", report.Status);
+        WriteField("evolution_score", report.EvolutionScore.ToString("0.0", CultureInfo.InvariantCulture));
+        WriteField("previous_score", report.PreviousScore?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("improvement_delta", report.ImprovementDelta?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("recommendation", report.Recommendation);
+        WriteField("confidence_level", report.ConfidenceLevel);
+        WriteField("net_r", report.Metrics.NetR.ToString("0.####"));
+        WriteField("win_rate", report.Metrics.WinRate.ToString("0.####"));
+        WriteField("average_r", report.Metrics.AverageR.ToString("0.####"));
+        WriteField("profit_factor", report.Metrics.ProfitFactor.ToString("0.####"));
+        WriteField("signal_quality", report.Metrics.SignalQuality.ToString("0.####"));
+        WriteField("confidence", report.Metrics.Confidence.ToString("0.####"));
+        WriteField("completed_forward_tests", report.Metrics.CompletedForwardTests.ToString(CultureInfo.InvariantCulture));
+        WriteField("safety_status", report.Metrics.SafetyStatus);
+        WriteField("explainability_score", report.Metrics.ExplainabilityScore.ToString("0.####"));
+        WriteField("paper_runtime_step_report_path", DisplayPath(report.PaperRuntimeStepReportPath));
+        WriteField("paper_signal_explain_report_path", DisplayPath(report.PaperSignalExplainReportPath));
+        WriteField("paper_trade_summary_report_path", DisplayPath(report.PaperTradeSummaryReportPath));
+        WriteField("paper_trade_history_report_path", DisplayPath(report.PaperTradeHistoryReportPath));
+        WriteField("paper_forward_session_report_path", DisplayPath(report.PaperForwardSessionReportPath));
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
     }
 
     private int ValidateEnsembleSignalPackage()
