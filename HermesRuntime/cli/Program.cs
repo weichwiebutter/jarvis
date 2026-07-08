@@ -384,6 +384,7 @@ internal sealed class HermesCli
             "chart-annotation-status" => ShowChartAnnotationStatus(),
             "chart-annotation-export" => RunChartAnnotationExport(),
             "chart-annotation-candidate-generator" => RunChartAnnotationCandidateGenerator(),
+            "chart-annotation-review-queue" => ShowChartAnnotationReviewQueue(),
             "signal-watch-status" => ShowSignalWatchStatus(),
             "signal-watch-log" => ShowSignalWatchLog(),
             "export-missing-signal-agent-specs" => ExportMissingSignalAgentSpecs(),
@@ -773,6 +774,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes chart-annotation-status Chart Annotation Status anzeigen");
         Console.WriteLine("  hermes chart-annotation-export [--dry-run|--apply] Chart Annotationen exportieren");
         Console.WriteLine("  hermes chart-annotation-candidate-generator Chart Annotation Kandidaten generieren");
+        Console.WriteLine("  hermes chart-annotation-review-queue Chart Annotation Review Queue anzeigen");
         Console.WriteLine("  hermes signal-watch-status read-only Signal-Watch-Lifecycle anzeigen");
         Console.WriteLine("  hermes signal-watch-log Signal-Watch-Log anzeigen");
         Console.WriteLine("  hermes export-missing-signal-agent-specs fehlende Ensemble-Signal-Agent-Specs exportieren");
@@ -7048,6 +7050,17 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowChartAnnotationReviewQueue()
+    {
+        WriteHeader("Hermes Chart Annotation Review Queue");
+        var service = new ChartAnnotationReviewQueueService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadLatestReport();
+        WriteChartAnnotationReviewQueueReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowSignalWatchStatus()
     {
         WriteHeader("Hermes Signal Watch Status");
@@ -13285,6 +13298,35 @@ internal sealed class HermesCli
             WriteField("Requires Human Review", candidate.RequiresHumanReview.ToString().ToLowerInvariant());
             WriteField("Status", candidate.Status);
             WriteMessages("Missing Fields", candidate.MissingFields);
+        }
+    }
+
+    private void WriteChartAnnotationReviewQueueReport(ChartAnnotationReviewQueueReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Total Candidates", report.TotalCandidates.ToString());
+        WriteField("Ready For Review", report.ReadyForReview.ToString());
+        WriteField("Needs Price Review", report.NeedsPriceReview.ToString());
+        WriteField("Approved Count", report.ApprovedCount.ToString());
+        WriteField("Pending Count", report.PendingCount.ToString());
+        WriteMessages("Warnings", report.Warnings);
+
+        foreach (var item in report.Items)
+        {
+            WriteSubHeader($"{item.Asset} / {item.SetupId}");
+            WriteField("Asset", item.Asset);
+            WriteField("Setup ID", item.SetupId);
+            WriteField("Confidence Baseline", item.ConfidenceBaseline.ToString("0.####", CultureInfo.InvariantCulture));
+            WriteField("Status", item.Status);
+            WriteField("Requires Human Review", item.RequiresHumanReview.ToString().ToLowerInvariant());
+            WriteField("Can Generate Annotation", item.CanGenerateAnnotation.ToString().ToLowerInvariant());
+            WriteField("Review Decision", item.ReviewDecision);
+            WriteField("Approved", item.Approved.ToString().ToLowerInvariant());
+            WriteField("Promoted To Embedded", item.PromotedToEmbedded.ToString().ToLowerInvariant());
+            WriteMessages("Missing Fields", item.MissingFields);
+            WriteField("Source Path", DisplayPath(item.SourcePath));
         }
     }
 
