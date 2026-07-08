@@ -54,6 +54,8 @@ public sealed class BotEvolutionBaselineService
 
         File.WriteAllText(ReportPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
         File.WriteAllText(MarkdownPath, BuildMarkdown(report));
+
+        new BotEvolutionHistoryService(_storagePaths, _runtimeRoot).AppendFromCurrentBaseline(report.Notes);
         return report;
     }
 

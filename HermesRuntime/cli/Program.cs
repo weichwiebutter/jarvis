@@ -369,6 +369,7 @@ internal sealed class HermesCli
             "ctrader-export" => RunCTraderBotExport(),
             "bot-evolution-score" => ShowBotEvolutionScore(),
             "bot-evolution-baseline" => SaveBotEvolutionBaseline(),
+            "bot-evolution-history" => ShowBotEvolutionHistory(),
             "bot-version-recommendation" => ShowBotVersionRecommendation(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
@@ -766,6 +767,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes ctrader-export cTrader Bot Export nach D:\\Bot");
         Console.WriteLine("  hermes bot-evolution-score PaperBot-Evolutionsscore anzeigen");
         Console.WriteLine("  hermes bot-evolution-baseline --save PaperBot-Evolutionsbaseline speichern");
+        Console.WriteLine("  hermes bot-evolution-history Bot-Evolutionsverlauf anzeigen");
         Console.WriteLine("  hermes bot-version-recommendation PaperBot-Export-Empfehlung anzeigen");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
@@ -6768,6 +6770,47 @@ internal sealed class HermesCli
         WriteField("source_report_path", DisplayPath(report.SourceReportPath));
         WriteField("report_path", DisplayPath(report.ReportPath));
         WriteField("markdown_path", DisplayPath(report.MarkdownPath));
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowBotEvolutionHistory()
+    {
+        WriteHeader("Hermes Bot Evolution History");
+        var service = new BotEvolutionHistoryService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadLatestReport() ?? service.Run();
+
+        WriteField("report_version", report.ReportVersion);
+        WriteField("status", report.Status);
+        WriteField("entry_count", report.EntryCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("best_score", report.BestScore?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("worst_score", report.WorstScore?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("average_score", report.AverageScore?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("biggest_improvement", report.BiggestImprovement?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("biggest_regression", report.BiggestRegression?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("trend", report.Trend);
+        WriteField("report_path", DisplayPath(report.ReportPath));
+        WriteField("markdown_path", DisplayPath(report.MarkdownPath));
+
+        if (report.Entries.Count > 0)
+        {
+            WriteSubHeader("Entries");
+            foreach (var entry in report.Entries.OrderByDescending(item => item.TimestampUtc))
+            {
+                WriteField("export_id", entry.ExportId);
+                WriteField("timestamp", entry.TimestampUtc.ToString("O"));
+                WriteField("evolution_score", entry.EvolutionScore.ToString("0.0", CultureInfo.InvariantCulture));
+                WriteField("previous_score", entry.PreviousScore?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+                WriteField("improvement_delta", entry.ImprovementDelta?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+                WriteField("recommendation", entry.Recommendation);
+                WriteField("confidence_level", entry.ConfidenceLevel);
+                WriteField("embedded_checksum", entry.EmbeddedChecksum ?? "-");
+                WriteField("signal_package_version", entry.SignalPackageVersion ?? "-");
+            }
+        }
+
+        WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();
         return 0;
