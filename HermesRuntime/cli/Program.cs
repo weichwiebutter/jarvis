@@ -371,6 +371,7 @@ internal sealed class HermesCli
             "bot-evolution-score" => ShowBotEvolutionScore(),
             "bot-evolution-baseline" => SaveBotEvolutionBaseline(),
             "bot-evolution-history" => ShowBotEvolutionHistory(),
+            "bot-evolution-recommendation" => ShowBotEvolutionRecommendation(),
             "bot-version-recommendation" => ShowBotVersionRecommendation(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
@@ -770,6 +771,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes bot-evolution-score PaperBot-Evolutionsscore anzeigen");
         Console.WriteLine("  hermes bot-evolution-baseline --save PaperBot-Evolutionsbaseline speichern");
         Console.WriteLine("  hermes bot-evolution-history Bot-Evolutionsverlauf anzeigen");
+        Console.WriteLine("  hermes bot-evolution-recommendation Bot-Evolutionsempfehlungen anzeigen");
         Console.WriteLine("  hermes bot-version-recommendation PaperBot-Export-Empfehlung anzeigen");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
@@ -6846,6 +6848,52 @@ internal sealed class HermesCli
             }
         }
 
+        WriteMessages("Warnings", report.Warnings);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowBotEvolutionRecommendation()
+    {
+        WriteHeader("Hermes Bot Evolution Recommendation");
+        var service = new BotEvolutionRecommendationService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("report_version", report.ReportVersion);
+        WriteField("status", report.Status);
+        WriteField("evolution_score", report.EvolutionScore.ToString("0.0", CultureInfo.InvariantCulture));
+        WriteField("previous_score", report.PreviousScore?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("improvement_delta", report.ImprovementDelta?.ToString("0.0", CultureInfo.InvariantCulture) ?? "-");
+        WriteField("trend", report.Trend);
+        WriteField("evaluated_signals", report.EvaluatedSignals.ToString(CultureInfo.InvariantCulture));
+        WriteField("invalidated_signals", report.InvalidatedSignals.ToString(CultureInfo.InvariantCulture));
+        WriteField("expired_signals", report.ExpiredSignals.ToString(CultureInfo.InvariantCulture));
+        WriteField("approved_annotation_count", report.ApprovedAnnotationCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("pending_review_count", report.PendingReviewCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("top_improvement_opportunities", report.TopImprovementOpportunities.Count.ToString(CultureInfo.InvariantCulture));
+
+        if (report.TopImprovementOpportunities.Count > 0)
+        {
+            WriteSubHeader("Top Improvement Opportunities");
+            foreach (var opportunity in report.TopImprovementOpportunities)
+            {
+                WriteField("priority", opportunity.Priority);
+                WriteField("affected_asset", opportunity.AffectedAsset);
+                WriteField("root_cause", opportunity.RootCause);
+                WriteField("expected_score_gain", $"+{opportunity.ExpectedScoreGain:0.0}");
+                WriteField("required_manual_action", opportunity.RequiredManualAction);
+                WriteField("blocking_dependency", opportunity.BlockingDependency);
+            }
+        }
+
+        WriteField("evolution_history_report_path", DisplayPath(report.EvolutionHistoryReportPath));
+        WriteField("bot_evolution_score_report_path", DisplayPath(report.BotEvolutionScoreReportPath));
+        WriteField("forward_evaluation_report_path", DisplayPath(report.ForwardEvaluationReportPath));
+        WriteField("signal_explain_report_path", DisplayPath(report.SignalExplainReportPath));
+        WriteField("signal_evaluation_report_path", DisplayPath(report.SignalEvaluationReportPath));
+        WriteField("approved_chart_annotations_report_path", DisplayPath(report.ApprovedChartAnnotationsReportPath));
+        WriteField("chart_annotation_review_queue_report_path", DisplayPath(report.ChartAnnotationReviewQueueReportPath));
         WriteMessages("Warnings", report.Warnings);
         Console.WriteLine();
         WriteSafety();
