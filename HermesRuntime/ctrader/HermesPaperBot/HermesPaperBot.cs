@@ -837,68 +837,51 @@ public sealed class HermesPaperBot
     }
 
     private bool HasEmbeddedSignalPackage()
-        => TryGetEmbeddedSignalDecision(out _);
+        => TryGetEmbeddedSignalDecision(null, out _);
 
     internal int GetEmbeddedSignalCount()
-        => TryGetEmbeddedSignalCount(out var count) ? count : 0;
+        => GetEmbeddedSignalCount(null);
+
+    internal int GetEmbeddedSignalCount(string? symbol)
+        => TryGetEmbeddedSignalCount(symbol, out var count) ? count : 0;
 
     internal string GetEmbeddedSignalPackageJsonLength()
         => (_lastConfiguration?.CloudEmbeddedReleasePackage?.SignalPackageJson?.Length ?? 0).ToString();
 
     internal string GetEmbeddedSignalParseStatus()
-        => _lastConfiguration?.CloudEmbeddedReleasePackage is null
-            ? "package_missing"
-            : TryGetEmbeddedSignalDecision(out _) ? "ok" : "signal_missing";
+        => GetEmbeddedSignalParseStatus(null);
 
     internal string GetFirstEmbeddedSignalId()
-        => TryGetEmbeddedSignalDecision(out var decision) ? decision.StrategyId : string.Empty;
+        => GetFirstEmbeddedSignalId(null);
 
-    private bool TryGetEmbeddedSignalDecision(out SignalDecision decision)
+    internal string GetEmbeddedSignalParseStatus(string? symbol)
+        => _lastConfiguration?.CloudEmbeddedReleasePackage is null
+            ? "package_missing"
+            : TryGetEmbeddedSignalDecision(symbol, out _) ? "ok" : "no_matching_signal";
+
+    internal string GetFirstEmbeddedSignalId(string? symbol)
+        => TryGetEmbeddedSignalDecision(symbol, out var decision) ? decision.StrategyId : string.Empty;
+
+    private bool TryGetEmbeddedSignalDecision(string? symbol, out SignalDecision decision)
     {
         decision = null!;
-        var signalPackageJson = _lastConfiguration?.CloudEmbeddedReleasePackage?.SignalPackageJson;
-        if (string.IsNullOrWhiteSpace(signalPackageJson))
+        var package = _lastConfiguration?.CloudEmbeddedReleasePackage;
+        if (package is null)
         {
             return false;
         }
 
-        try
-        {
-            using var document = JsonDocument.Parse(signalPackageJson);
-            var root = document.RootElement;
-            if (root.TryGetProperty("signal_decision", out var signalDecision) && signalDecision.ValueKind == JsonValueKind.Object)
-            {
-                var direction = ReadSignalDirection(signalDecision);
-                if (direction is null)
-                {
-                    return false;
-                }
-
-                decision = new SignalDecision
-                {
-                    Direction = direction.Value,
-                    Confidence = ReadOptionalDecimal(signalDecision, "confidence") ?? 0m,
-                    StrategyId = ReadString(signalDecision, "strategy_id") ?? string.Empty,
-                    SignalTimestampUtc = ReadDateTime(signalDecision, "signal_timestamp_utc") ?? DateTimeOffset.UtcNow,
-                    ExpiryUtc = ReadDateTime(signalDecision, "expiry_utc") ?? DateTimeOffset.UtcNow,
-                    Reason = ReadString(signalDecision, "reason") ?? "signal_package_loaded",
-                    StopLossPrice = ReadOptionalDecimal(signalDecision, "stop_loss_price"),
-                    TakeProfitPrice = ReadOptionalDecimal(signalDecision, "take_profit_price"),
-                    MaxHoldingSeconds = ReadOptionalInt(signalDecision, "max_holding_seconds"),
-                    RiskR = ReadOptionalDecimal(signalDecision, "risk_r"),
-                };
-                return true;
-            }
-        }
-        catch
+        var selected = _signalPackageReader.Read(package, symbol, out _);
+        if (selected is null)
         {
             return false;
         }
 
-        return false;
+        decision = selected;
+        return true;
     }
 
-    private bool TryGetEmbeddedSignalCount(out int count)
+    private bool TryGetEmbeddedSignalCount(string? symbol, out int count)
     {
         count = 0;
         var signalPackageJson = _lastConfiguration?.CloudEmbeddedReleasePackage?.SignalPackageJson;

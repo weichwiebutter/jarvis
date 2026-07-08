@@ -83,8 +83,8 @@ public class HermesPaperBotCTraderWrapper : Robot
         var safetyBlockReason = GetSafetyBlockReason(result);
         var signalCount = _host?.GetEmbeddedSignalCount() ?? 0;
         var signalPackageJsonLength = _host?.GetEmbeddedSignalPackageJsonLength() ?? "0";
-        var signalPackageParseStatus = _host?.GetEmbeddedSignalParseStatus() ?? "unknown";
-        var firstSignalId = _host?.GetFirstEmbeddedSignalId() ?? "none";
+        var signalPackageParseStatus = _host?.GetEmbeddedSignalParseStatus(context.CurrentSymbol) ?? "unknown";
+        var firstSignalId = _host?.GetFirstEmbeddedSignalId(context.CurrentSymbol) ?? "none";
         Print(
             $"HermesPaperBot OnTimer; build_stamp={BuildStamp}; log_format_version={LogFormatVersion}; assembly_version={GetAssemblyVersion()}; " +
             $"paper_mode=true; broker_action={result?.BrokerAction ?? "none"}; market_context_seen={marketContextSeen}; " +

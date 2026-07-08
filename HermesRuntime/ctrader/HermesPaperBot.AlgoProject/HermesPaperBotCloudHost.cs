@@ -98,6 +98,12 @@ public sealed class HermesPaperBotCloudHost
         => _bot.GetEmbeddedSignalCount();
 
     /// <summary>
+    /// Returns the embedded signal count for a symbol from the current bot state.
+    /// </summary>
+    public int GetEmbeddedSignalCount(string? symbol)
+        => _bot.GetEmbeddedSignalCount(symbol);
+
+    /// <summary>
     /// Returns the embedded signal package JSON length from the current bot state.
     /// </summary>
     public string GetEmbeddedSignalPackageJsonLength()
@@ -110,8 +116,20 @@ public sealed class HermesPaperBotCloudHost
         => _bot.GetEmbeddedSignalParseStatus();
 
     /// <summary>
+    /// Returns the embedded signal parse status for a symbol from the current bot state.
+    /// </summary>
+    public string GetEmbeddedSignalParseStatus(string? symbol)
+        => _bot.GetEmbeddedSignalParseStatus(symbol);
+
+    /// <summary>
     /// Returns the first embedded signal identifier from the current bot state.
     /// </summary>
     public string GetFirstEmbeddedSignalId()
         => _bot.GetFirstEmbeddedSignalId();
+
+    /// <summary>
+    /// Returns the first embedded signal identifier for a symbol from the current bot state.
+    /// </summary>
+    public string GetFirstEmbeddedSignalId(string? symbol)
+        => _bot.GetFirstEmbeddedSignalId(symbol);
 }
