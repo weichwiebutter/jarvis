@@ -387,6 +387,7 @@ internal sealed class HermesCli
             "chart-annotation-review-queue" => ShowChartAnnotationReviewQueue(),
             "chart-annotation-review" => RunChartAnnotationReviewDecision(),
             "approved-chart-annotations" => ShowApprovedChartAnnotations(),
+            "chart-annotation-promotion-plan" => ShowChartAnnotationPromotionPlan(),
             "signal-watch-status" => ShowSignalWatchStatus(),
             "signal-watch-log" => ShowSignalWatchLog(),
             "export-missing-signal-agent-specs" => ExportMissingSignalAgentSpecs(),
@@ -7127,6 +7128,17 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int ShowChartAnnotationPromotionPlan()
+    {
+        WriteHeader("Approved Chart Annotation Promotion Plan");
+        var service = new ApprovedChartAnnotationPromotionPlanService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.LoadLatestReport();
+        WriteApprovedChartAnnotationPromotionPlanReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowSignalWatchStatus()
     {
         WriteHeader("Hermes Signal Watch Status");
@@ -13442,6 +13454,33 @@ internal sealed class HermesCli
             WriteField("Review Timestamp", item.ReviewTimestampUtc.ToString("O"));
             WriteField("Comment", item.Comment);
             WriteField("Promoted To Embedded", item.PromotedToEmbedded.ToString().ToLowerInvariant());
+        }
+    }
+
+    private void WriteApprovedChartAnnotationPromotionPlanReport(ApprovedChartAnnotationPromotionPlanReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Audit Trail", DisplayPath(report.AuditTrailPath));
+        WriteField("Status", report.Status);
+        WriteField("Approved Count", report.ApprovedCount.ToString());
+        WriteField("Promotable Count", report.PromotableCount.ToString());
+        WriteField("Already Promoted Count", report.AlreadyPromotedCount.ToString());
+        WriteMessages("Warnings", report.Warnings);
+
+        foreach (var item in report.Items)
+        {
+            WriteSubHeader($"{item.Asset} / {item.SetupId}");
+            WriteField("Asset", item.Asset);
+            WriteField("Setup ID", item.SetupId);
+            WriteField("Approved", item.Approved.ToString().ToLowerInvariant());
+            WriteField("Reviewer", item.Reviewer);
+            WriteField("Review Timestamp", item.ReviewTimestampUtc.ToString("O"));
+            WriteField("Comment", item.Comment);
+            WriteField("Promoted To Embedded", item.PromotedToEmbedded.ToString().ToLowerInvariant());
+            WriteField("Missing Fields", item.MissingFields.Count == 0 ? "none" : string.Join(", ", item.MissingFields));
+            WriteField("Is Promotable", item.IsPromotable.ToString().ToLowerInvariant());
+            WriteField("Target Embedded Action", item.TargetEmbeddedAction);
         }
     }
 
