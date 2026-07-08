@@ -227,7 +227,11 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
             status = sourcePackage.Status,
             assets = sourcePackage.Assets.Select(asset =>
             {
-                if (!IsPlaceholderAsset(asset))
+                var fallback = chartFallbacks.TryGetValue(asset.Asset, out var chartAnnotation) ? chartAnnotation : null;
+                var hasChartFallback = fallback is not null;
+                var botReadyWithAnnotation = IsBotReady(asset) && hasChartFallback;
+
+                if (!IsPlaceholderAsset(asset) && !botReadyWithAnnotation)
                 {
                     var directPaperEntryEnabled = DeterminePaperEntryEnabled((double)asset.ConfidenceBaseline, null, paperEntryConfidenceThreshold);
                     return new
@@ -264,7 +268,6 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
                     };
                 }
 
-                var fallback = chartFallbacks.TryGetValue(asset.Asset, out var chartAnnotation) ? chartAnnotation : null;
                 var fallbackConfidence = fallback is null ? asset.ConfidenceBaseline : TryParseConfidenceLabel(fallback.Labels) ?? asset.ConfidenceBaseline;
                 var paperEntryEnabled = DeterminePaperEntryEnabled(fallbackConfidence, fallback, paperEntryConfidenceThreshold);
                 return new
@@ -329,6 +332,10 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
 
         return true;
     }
+
+    private static bool IsBotReady(EnsembleSignalAgentPackageEntry asset)
+        => asset.Readiness.Equals("bot_ready", StringComparison.OrdinalIgnoreCase)
+           || asset.Readiness.Equals("signal_ready", StringComparison.OrdinalIgnoreCase);
 
     private PaperSignalEvaluationReport BuildEmbeddedSignalEvaluation(
         EnsembleSignalAgentPortfolioPackage sourcePackage,
