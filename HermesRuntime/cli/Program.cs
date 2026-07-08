@@ -367,6 +367,7 @@ internal sealed class HermesCli
             "paper-forward-session-report" => ShowPaperForwardSessionReport(),
             "ctrader-upload-readiness" => ShowCTraderUploadReadiness(),
             "ctrader-export" => RunCTraderBotExport(),
+            "bot-version-recommendation" => ShowBotVersionRecommendation(),
             "validate-ensemble-signal-package" => ValidateEnsembleSignalPackage(),
             "system-b-handoff-bundle" => ShowSystemBHandoffBundle(),
             "cloud-embedded-release-package" => ShowCloudEmbeddedReleasePackage(),
@@ -761,6 +762,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes paper-signal-explain PaperBot Signal Explainability anzeigen");
         Console.WriteLine("  hermes ctrader-upload-readiness cTrader Upload Readiness anzeigen");
         Console.WriteLine("  hermes ctrader-export cTrader Bot Export nach D:\\Bot");
+        Console.WriteLine("  hermes bot-version-recommendation PaperBot-Export-Empfehlung anzeigen");
         Console.WriteLine("  hermes validate-ensemble-signal-package Ensemble Signal-Agent Package validieren");
         Console.WriteLine("  hermes system-b-handoff-bundle System-B Uebergabepaket erzeugen");
         Console.WriteLine("  hermes cloud-embedded-release-package Cloud-kompatibles Embedded Release Package erzeugen");
@@ -6667,6 +6669,43 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private int ShowBotVersionRecommendation()
+    {
+        WriteHeader("Hermes Bot Version Recommendation Monitor");
+        var service = new BotVersionRecommendationMonitorService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("bot_version_recommendation_status", report.BotVersionRecommendationStatus);
+        WriteField("current_export_id", report.CurrentExportId);
+        WriteField("recommended_export_available", report.RecommendedExportAvailable.ToString().ToLowerInvariant());
+        WriteField("recommendation_reason", report.RecommendationReason);
+        WriteField("manual_action_required", report.ManualActionRequired.ToString().ToLowerInvariant());
+        WriteField("suggested_next_command", report.SuggestedNextCommand);
+        WriteField("current_export_timestamp_utc", report.CurrentExportTimestampUtc?.ToString("O") ?? "-");
+        WriteField("current_export_path", DisplayOptionalPath(report.CurrentExportPath));
+        WriteField("current_export_metadata_path", DisplayOptionalPath(report.CurrentExportMetadataPath));
+        WriteField("current_export_sha256", report.CurrentExportSha256 ?? "-");
+        WriteField("current_embedded_checksum", report.CurrentEmbeddedChecksum ?? "-");
+        WriteField("current_strategy_package_version", report.CurrentStrategyPackageVersion ?? "-");
+        WriteField("current_signal_package_version", report.CurrentSignalPackageVersion ?? "-");
+        WriteField("current_signal_strategy_id", report.CurrentSignalStrategyId ?? "-");
+        WriteField("current_signal_confidence", report.CurrentSignalConfidence?.ToString("0.####") ?? "-");
+        WriteField("approved_annotation_count", report.ApprovedAnnotationCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("promoted_annotation_count", report.PromotedAnnotationCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("pending_promotion_count", report.PendingPromotionCount.ToString(CultureInfo.InvariantCulture));
+        WriteField("best_approved_confidence", report.BestApprovedConfidence?.ToString("0.####") ?? "-");
+        WriteField("best_promoted_confidence", report.BestPromotedConfidence?.ToString("0.####") ?? "-");
+        WriteField("current_cloud_embedded_package_path", DisplayPath(report.CurrentCloudEmbeddedPackagePath));
+        WriteField("current_cloud_embedded_package_report_path", DisplayPath(report.CurrentCloudEmbeddedPackageReportPath));
+        WriteField("current_approved_annotation_registry_path", DisplayPath(report.CurrentApprovedAnnotationRegistryPath));
+        WriteField("current_export_manifest_path", DisplayPath(report.CurrentExportManifestPath));
+        WriteMessages("Warnings", report.Warnings);
+        WriteMessages("Recommendations", report.Recommendations);
+        Console.WriteLine();
+        WriteSafety();
+        return report.RecommendedExportAvailable ? 1 : 0;
     }
 
     private int ValidateEnsembleSignalPackage()

@@ -23,6 +23,8 @@ public sealed record CloudEmbeddedReleasePackageGenerationResult(
 
 public sealed class CloudEmbeddedReleasePackageGeneratorService
 {
+    private static readonly TimeSpan DefaultPaperSignalValidityWindow = TimeSpan.FromHours(4);
+
     private static readonly JsonSerializerOptions ReadOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -748,6 +750,9 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
     private static string BuildEmbeddedSignalPackageJson(PaperSignalEvaluationReport? signalEvaluation, IReadOnlyList<ChartAnnotation> chartAnnotations)
     {
         var updatedAtUtc = signalEvaluation?.UpdatedAtUtc ?? DateTimeOffset.UtcNow;
+        var signalValidityWindow = DefaultPaperSignalValidityWindow;
+        var expiryUtc = updatedAtUtc.Add(signalValidityWindow);
+        var maxHoldingSeconds = (int)signalValidityWindow.TotalSeconds;
         var signals = signalEvaluation?.Signals ?? [];
         var (representativeSignal, representativeAnnotation) = SelectRepresentativeSignal(signals, chartAnnotations);
         var signalDecision = representativeSignal is null
@@ -757,11 +762,11 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
                 confidence = 0m,
                 strategy_id = "embedded_signal_missing",
                 signal_timestamp_utc = updatedAtUtc,
-                expiry_utc = updatedAtUtc,
+                expiry_utc = expiryUtc,
                 reason = "signal_package_missing",
                 stop_loss_price = (decimal?)null,
                 take_profit_price = (decimal?)null,
-                max_holding_seconds = (int?)null,
+                max_holding_seconds = maxHoldingSeconds,
                 risk_r = (decimal?)null,
             }
             : new
@@ -770,11 +775,11 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
                 confidence = representativeSignal.ConfidenceBaseline,
                 strategy_id = representativeAnnotation?.SetupId ?? representativeSignal.SetupId,
                 signal_timestamp_utc = updatedAtUtc,
-                expiry_utc = updatedAtUtc.AddHours(1),
+                expiry_utc = expiryUtc,
                 reason = representativeSignal.Reason,
                 stop_loss_price = representativeAnnotation is null ? (decimal?)null : (decimal?)representativeAnnotation.StopLoss,
                 take_profit_price = representativeAnnotation is null ? (decimal?)null : (decimal?)representativeAnnotation.TakeProfit1,
-                max_holding_seconds = (int?)null,
+                max_holding_seconds = maxHoldingSeconds,
                 risk_r = representativeAnnotation is null ? (decimal?)null : (decimal?)representativeAnnotation.RiskReward,
             };
 

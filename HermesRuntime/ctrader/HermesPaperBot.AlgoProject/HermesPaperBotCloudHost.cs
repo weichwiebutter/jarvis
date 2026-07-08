@@ -132,4 +132,28 @@ public sealed class HermesPaperBotCloudHost
     /// </summary>
     public string GetFirstEmbeddedSignalId(string? symbol)
         => _bot.GetFirstEmbeddedSignalId(symbol);
+
+    /// <summary>
+    /// Returns the selected embedded signal identifier for a symbol from the current bot state.
+    /// </summary>
+    public string GetSelectedEmbeddedSignalId(string? symbol)
+        => _bot.GetSelectedEmbeddedSignalId(symbol);
+
+    /// <summary>
+    /// Returns the selected embedded signal timestamp for a symbol from the current bot state.
+    /// </summary>
+    public string GetSelectedEmbeddedSignalTimestampUtc(string? symbol)
+        => _bot.GetSelectedEmbeddedSignalTimestampUtc(symbol);
+
+    /// <summary>
+    /// Returns the selected embedded signal expiry for a symbol from the current bot state.
+    /// </summary>
+    public string GetSelectedEmbeddedSignalExpiryUtc(string? symbol)
+        => _bot.GetSelectedEmbeddedSignalExpiryUtc(symbol);
+
+    /// <summary>
+    /// Returns the selected embedded signal expiry source for a symbol from the current bot state.
+    /// </summary>
+    public string GetSelectedEmbeddedSignalExpirySource(string? symbol)
+        => _bot.GetSelectedEmbeddedSignalExpirySource(symbol);
 }

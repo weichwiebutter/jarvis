@@ -7,7 +7,7 @@ using HermesPaperBot.Services;
 using cAlgo.API;
 #endif
 
-[assembly: System.Reflection.AssemblyMetadata("build_stamp", "20260707_timer_diag_v2")]
+[assembly: System.Reflection.AssemblyMetadata("build_stamp", "20260708_expiry_diag_v1")]
 [assembly: System.Reflection.AssemblyMetadata("log_format_version", "timer_diag_v2")]
 
 namespace HermesPaperBot.Bot;
@@ -33,7 +33,7 @@ public class HermesPaperBotCTraderWrapper : Robot
     /// <summary>
     /// Visible diagnostic stamp for the cBot build.
     /// </summary>
-    private const string BuildStamp = "20260707_timer_diag_v2";
+    private const string BuildStamp = "20260708_expiry_diag_v1";
 
     /// <summary>
     /// Visible diagnostic log format version.
@@ -85,6 +85,11 @@ public class HermesPaperBotCTraderWrapper : Robot
         var signalPackageJsonLength = _host?.GetEmbeddedSignalPackageJsonLength() ?? "0";
         var signalPackageParseStatus = _host?.GetEmbeddedSignalParseStatus(context.CurrentSymbol) ?? "unknown";
         var firstSignalId = _host?.GetFirstEmbeddedSignalId(context.CurrentSymbol) ?? "none";
+        var selectedSignalId = _host?.GetSelectedEmbeddedSignalId(context.CurrentSymbol) ?? "no_matching_signal";
+        var selectedSignalTimestampUtc = _host?.GetSelectedEmbeddedSignalTimestampUtc(context.CurrentSymbol) ?? "n/a";
+        var selectedSignalExpiryUtc = _host?.GetSelectedEmbeddedSignalExpiryUtc(context.CurrentSymbol) ?? "n/a";
+        var selectedSignalExpirySource = _host?.GetSelectedEmbeddedSignalExpirySource(context.CurrentSymbol) ?? "no_matching_signal";
+        var signalExpired = TryParseDateTimeOffset(selectedSignalExpiryUtc, out var expiryUtc) && currentContext.ServerTime != default && currentContext.ServerTime >= expiryUtc;
         Print(
             $"HermesPaperBot OnTimer; build_stamp={BuildStamp}; log_format_version={LogFormatVersion}; assembly_version={GetAssemblyVersion()}; " +
             $"paper_mode=true; broker_action={result?.BrokerAction ?? "none"}; market_context_seen={marketContextSeen}; " +
@@ -93,7 +98,8 @@ public class HermesPaperBotCTraderWrapper : Robot
             $"server_time_seen={currentContext.ServerTime != default}; spread_source={GetSpreadSource(currentContext)}; " +
             $"kill_switch_active={result?.KillSwitchActive ?? true}; safety_block_reason={safetyBlockReason}; " +
             $"cloud_step_stage={result?.CloudStepStage ?? "none"}; cloud_step_exception_type={result?.CloudStepExceptionType ?? "none"}; cloud_step_exception_message={result?.CloudStepExceptionMessage ?? "none"}; " +
-            $"package_loaded={result?.PackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_package_loaded={result?.SignalPackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_count={signalCount}; signal_package_json_length={signalPackageJsonLength}; signal_package_parse_status={signalPackageParseStatus}; first_signal_id={firstSignalId}; chart_annotation_loaded={result?.ChartAnnotationLoaded.ToString().ToLowerInvariant() ?? "false"}");
+            $"package_loaded={result?.PackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_package_loaded={result?.SignalPackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_count={signalCount}; signal_package_json_length={signalPackageJsonLength}; signal_package_parse_status={signalPackageParseStatus}; first_signal_id={firstSignalId}; chart_annotation_loaded={result?.ChartAnnotationLoaded.ToString().ToLowerInvariant() ?? "false"}; " +
+            $"selected_signal_id={selectedSignalId}; signal_timestamp_utc={selectedSignalTimestampUtc}; expiry_utc={selectedSignalExpiryUtc}; server_time_utc={currentContext.ServerTime:O}; signal_expired={signalExpired.ToString().ToLowerInvariant()}; expiry_source={selectedSignalExpirySource}");
     }
 
     /// <summary>
@@ -208,6 +214,21 @@ public class HermesPaperBotCTraderWrapper : Robot
     /// </summary>
     private static string GetAssemblyVersion()
         => typeof(HermesPaperBotCTraderWrapper).Assembly.GetName().Version?.ToString() ?? "n/a";
+
+    /// <summary>
+    /// Parses a UTC date-time from a string.
+    /// </summary>
+    private static bool TryParseDateTimeOffset(string? text, out DateTimeOffset value)
+    {
+        if (!string.IsNullOrWhiteSpace(text) &&
+            DateTimeOffset.TryParse(text, out value))
+        {
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
 }
 #else
 /// <summary>

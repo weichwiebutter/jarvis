@@ -907,6 +907,23 @@ public sealed class HermesPaperBot
     internal string GetFirstEmbeddedSignalId(string? symbol)
         => TryGetEmbeddedSignalDecision(symbol, out var decision) ? decision.StrategyId : string.Empty;
 
+    internal string GetSelectedEmbeddedSignalId(string? symbol)
+    {
+        var diagnostics = GetSelectedEmbeddedSignalDiagnostics(symbol);
+        return !string.IsNullOrWhiteSpace(diagnostics.SignalId)
+            ? diagnostics.SignalId
+            : (!string.IsNullOrWhiteSpace(diagnostics.StrategyId) ? diagnostics.StrategyId : "no_matching_signal");
+    }
+
+    internal string GetSelectedEmbeddedSignalTimestampUtc(string? symbol)
+        => GetSelectedEmbeddedSignalDiagnostics(symbol).SignalTimestampUtc;
+
+    internal string GetSelectedEmbeddedSignalExpiryUtc(string? symbol)
+        => GetSelectedEmbeddedSignalDiagnostics(symbol).ExpiryUtc;
+
+    internal string GetSelectedEmbeddedSignalExpirySource(string? symbol)
+        => GetSelectedEmbeddedSignalDiagnostics(symbol).ExpirySource;
+
     private bool TryGetEmbeddedSignalDecision(string? symbol, out SignalDecision decision)
     {
         decision = null!;
@@ -924,6 +941,124 @@ public sealed class HermesPaperBot
 
         decision = selected;
         return true;
+    }
+
+    private SelectedEmbeddedSignalDiagnostics GetSelectedEmbeddedSignalDiagnostics(string? symbol)
+    {
+        var packageJson = _lastConfiguration?.CloudEmbeddedReleasePackage?.SignalPackageJson ?? _lastConfiguration?.CloudEmbeddedReleasePackage?.PackageJson;
+        if (string.IsNullOrWhiteSpace(packageJson))
+        {
+            return SelectedEmbeddedSignalDiagnostics.Empty("embedded_package_json_missing");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(packageJson);
+            var root = document.RootElement;
+            if (!string.IsNullOrWhiteSpace(symbol))
+            {
+                if (root.TryGetProperty("signal_decision", out var signalDecision) &&
+                    signalDecision.ValueKind == JsonValueKind.Object &&
+                    IsSignalSymbolMatch(signalDecision, symbol))
+                {
+                    return SelectedEmbeddedSignalDiagnostics.FromSignalElement(signalDecision, symbol);
+                }
+
+                if (root.TryGetProperty("signals", out var signals) && signals.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var candidate in signals.EnumerateArray())
+                    {
+                        if (candidate.ValueKind != JsonValueKind.Object)
+                        {
+                            continue;
+                        }
+
+                        if (IsSignalSymbolMatch(candidate, symbol))
+                        {
+                            return SelectedEmbeddedSignalDiagnostics.FromSignalElement(candidate, symbol);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                if (root.TryGetProperty("signal_decision", out var defaultSignal) && defaultSignal.ValueKind == JsonValueKind.Object)
+                {
+                    return SelectedEmbeddedSignalDiagnostics.FromSignalElement(defaultSignal, symbol);
+                }
+
+                if (root.TryGetProperty("signals", out var defaultSignals) && defaultSignals.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var candidate in defaultSignals.EnumerateArray())
+                    {
+                        if (candidate.ValueKind == JsonValueKind.Object)
+                        {
+                            return SelectedEmbeddedSignalDiagnostics.FromSignalElement(candidate, symbol);
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return SelectedEmbeddedSignalDiagnostics.Empty("no_matching_signal");
+    }
+
+    private static bool IsSignalSymbolMatch(JsonElement signalElement, string? symbol)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return true;
+        }
+
+        if (ReadString(signalElement, "asset", out var asset) && asset.Equals(symbol, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (ReadString(signalElement, "strategy_id", out var strategyId) && strategyId.Contains(symbol, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (ReadString(signalElement, "setup_id", out var setupId) && setupId.Contains(symbol, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (ReadString(signalElement, "signal_id", out var signalId) && signalId.Contains(symbol, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private sealed record SelectedEmbeddedSignalDiagnostics(
+        string SignalId,
+        string StrategyId,
+        string SignalTimestampUtc,
+        string ExpiryUtc,
+        string ExpirySource)
+    {
+        public static SelectedEmbeddedSignalDiagnostics Empty(string reason)
+            => new(string.Empty, string.Empty, "n/a", "n/a", reason);
+
+        public static SelectedEmbeddedSignalDiagnostics FromSignalElement(JsonElement signalElement, string? symbol)
+        {
+            var signalId = ReadString(signalElement, "signal_id") ?? string.Empty;
+            var strategyId = ReadString(signalElement, "strategy_id") ?? ReadString(signalElement, "setup_id") ?? signalId;
+            var signalTimestampUtc = ReadDateTime(signalElement, "signal_timestamp_utc")?.ToString("O")
+                ?? ReadDateTime(signalElement, "created_at_utc")?.ToString("O")
+                ?? ReadDateTime(signalElement, "generated_at_utc")?.ToString("O")
+                ?? "n/a";
+            var expiryValue = ReadDateTime(signalElement, "expiry_utc");
+            var expiryUtc = expiryValue?.ToString("O") ?? "n/a";
+            var expirySource = expiryValue.HasValue ? "signal_element.expiry_utc" : "signal_timestamp_utc_plus_1h";
+            return new SelectedEmbeddedSignalDiagnostics(signalId, strategyId, signalTimestampUtc, expiryUtc, expirySource);
+        }
     }
 
     private bool TryGetEmbeddedSignalCount(string? symbol, out int count)
