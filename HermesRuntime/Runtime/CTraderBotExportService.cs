@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Diagnostics;
 
 namespace Hermes.Runtime;
 
@@ -57,6 +58,10 @@ public sealed class CTraderBotExportService
 
         var embeddedPackageGenerator = new CloudEmbeddedReleasePackageGeneratorService(BuildStoragePaths(_storageRoot), _runtimeRoot);
         var embeddedPackageGeneration = embeddedPackageGenerator.Generate();
+        var algoProjectBuild = BuildAlgoProject();
+        var timestampUtc = DateTimeOffset.UtcNow;
+        var exportId = timestampUtc.ToString("yyyyMMdd_HHmmss");
+        var buildStamp = "20260707_timer_diag_v2";
 
         var algoProjectDirectory = Path.Combine(_runtimeRoot, "ctrader", "HermesPaperBot.AlgoProject", "bin", "Debug", "net6.0");
         var algoSourcePath = Path.Combine(algoProjectDirectory, "HermesPaperBot.algo");
@@ -64,9 +69,6 @@ public sealed class CTraderBotExportService
         var readinessJsonSourcePath = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "ctrader_upload_readiness", "ctrader_upload_readiness.json");
         var readinessMarkdownSourcePath = Path.Combine(_runtimeRoot, ".codex_artifacts", "reports", "ctrader_upload_readiness", "ctrader_upload_readiness.md");
         var readinessReport = LoadReadinessReport(readinessJsonSourcePath);
-        var timestampUtc = DateTimeOffset.UtcNow;
-        var exportId = timestampUtc.ToString("yyyyMMdd_HHmmss");
-        var buildStamp = "20260707_timer_diag_v2";
 
         var exportRoot = ResolveExportRoot();
         Directory.CreateDirectory(exportRoot);
@@ -88,6 +90,50 @@ public sealed class CTraderBotExportService
         if (!string.Equals(embeddedPackageGeneration.Status, "generated", StringComparison.OrdinalIgnoreCase))
         {
             warnings.Add($"embedded_release_package_generation_{embeddedPackageGeneration.Status}");
+        }
+        if (!algoProjectBuild.Success)
+        {
+            warnings.AddRange(algoProjectBuild.Warnings);
+            warnings.Add("algo_project_build_failed");
+        }
+
+        if (!algoProjectBuild.Success)
+        {
+            var failureReport = new CTraderBotExportReport(
+                ExportId: exportId,
+                TimestampUtc: timestampUtc,
+                ExportRoot: exportRoot,
+                AlgoSourcePath: algoSourcePath,
+                AlgoMetadataSourcePath: algoMetadataSourcePath,
+                ReadinessJsonSourcePath: readinessJsonSourcePath,
+                ReadinessMarkdownSourcePath: readinessMarkdownSourcePath,
+                AlgoTargetPath: Path.Combine(exportRoot, "HermesPaperBot.algo"),
+                AlgoMetadataTargetPath: Path.Combine(exportRoot, "HermesPaperBot.algo.metadata"),
+                IndexedAlgoPath: Path.Combine(exportRoot, $"HermesPaperBot_{exportId}.algo"),
+                IndexedAlgoMetadataPath: Path.Combine(exportRoot, $"HermesPaperBot_{exportId}.algo.metadata"),
+                LatestAlgoPath: Path.Combine(exportRoot, "HermesPaperBot_latest.algo"),
+                LatestAlgoMetadataPath: Path.Combine(exportRoot, "HermesPaperBot_latest.algo.metadata"),
+                ReadinessJsonTargetPath: Path.Combine(exportRoot, "ctrader_upload_readiness.json"),
+                ReadinessMarkdownTargetPath: Path.Combine(exportRoot, "ctrader_upload_readiness.md"),
+                ManifestPath: Path.Combine(exportRoot, "ctrader_export_manifest.json"),
+                BuildStamp: buildStamp,
+                FileSizeBytes: 0L,
+                Sha256: string.Empty,
+                ExportRootCreated: exportRootCreated,
+                AlgoCopied: false,
+                AlgoMetadataCopied: false,
+                ReadinessJsonCopied: false,
+                ReadinessMarkdownCopied: false,
+                MissingSources: ["HermesPaperBot.algo_build_failed"],
+                Warnings: warnings,
+                ReportPath: ReportPath,
+                MarkdownPath: MarkdownPath,
+                UpdatedAtUtc: timestampUtc,
+                Status: "partial");
+
+            File.WriteAllText(ReportPath, JsonSerializer.Serialize(failureReport, JsonDefaults.WriteOptions));
+            File.WriteAllText(MarkdownPath, BuildMarkdown(failureReport));
+            return failureReport;
         }
 
         var algoCopied = CopyIfExists(algoSourcePath, algoTargetPath, missingSources, "HermesPaperBot.algo")
@@ -170,6 +216,97 @@ public sealed class CTraderBotExportService
         File.WriteAllText(ReportPath, JsonSerializer.Serialize(report, JsonDefaults.WriteOptions));
         File.WriteAllText(MarkdownPath, BuildMarkdown(report));
         return report;
+    }
+
+    private BuildOutcome BuildAlgoProject()
+    {
+        var started = DateTimeOffset.UtcNow;
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = "build ./ctrader/HermesPaperBot.AlgoProject/HermesPaperBot.AlgoProject.csproj",
+            WorkingDirectory = _runtimeRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        try
+        {
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return new BuildOutcome(false, 0, ["failed_to_start_algo_project_build"]);
+            }
+
+            var output = new StringBuilder();
+            var error = new StringBuilder();
+            process.OutputDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) output.AppendLine(e.Data); };
+            process.ErrorDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) error.AppendLine(e.Data); };
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            var timeout = TimeSpan.FromMinutes(2);
+            if (!process.WaitForExit((int)timeout.TotalMilliseconds))
+            {
+                TryKill(process);
+                return new BuildOutcome(false, (long)timeout.TotalMilliseconds, ["algo_project_build_timeout"])
+                {
+                    OutputPath = WriteBuildOutput(output.ToString(), error.ToString())
+                };
+            }
+
+            var duration = Math.Max(0, (long)(DateTimeOffset.UtcNow - started).TotalMilliseconds);
+            var succeeded = process.ExitCode == 0;
+            var warnings = new List<string>();
+            if (!succeeded)
+            {
+                warnings.Add("algo_project_build_failed");
+            }
+
+            return new BuildOutcome(succeeded, duration, warnings)
+            {
+                OutputPath = WriteBuildOutput(output.ToString(), error.ToString())
+            };
+        }
+        catch (Exception ex)
+        {
+            return new BuildOutcome(false, 0, [$"algo_project_build_exception:{ex.GetType().Name}"]);
+        }
+    }
+
+    private static void TryKill(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // defensive no-op
+        }
+    }
+
+    private string WriteBuildOutput(string standardOutput, string standardError)
+    {
+        var outputRoot = Path.Combine(Root, "build-output");
+        Directory.CreateDirectory(outputRoot);
+        var filePath = Path.Combine(outputRoot, $"algo_project_build_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmssfff}.log");
+        File.WriteAllText(filePath, string.Join(Environment.NewLine, new[]
+        {
+            standardOutput,
+            string.Empty,
+            standardError,
+        }));
+        return filePath;
+    }
+
+    private sealed record BuildOutcome(bool Success, long DurationMs, IReadOnlyList<string> Warnings)
+    {
+        public string? OutputPath { get; init; }
     }
 
     private static bool CopyIfExists(string sourcePath, string targetPath, ICollection<string> missingSources, string label)
