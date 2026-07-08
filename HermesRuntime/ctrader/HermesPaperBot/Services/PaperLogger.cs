@@ -214,29 +214,29 @@ public sealed class PaperLogger
     {
         try
         {
-            var entry = new
+            var entry = new Dictionary<string, object?>
             {
-                entry_type = "timer",
-                timestamp_utc = DateTime.UtcNow.ToString("O"),
-                symbol = result.MarketContext?.Symbol ?? string.Empty,
-                timeframe = result.MarketContext?.Timeframe ?? string.Empty,
-                decision = result.PaperDecision,
-                state = result.State,
-                signal_count = result.SignalCount,
-                open_positions = result.PaperPortfolioState?.ActiveTrades.Length ?? 0,
-                closed_trades = result.PaperPortfolioState?.ClosedTrades.Length ?? 0,
-                net_r = ComputeNetR(result),
-                safety_status = BuildSafetyStatus(result),
-                broker_action = result.BrokerAction,
-                restore_state = result.RestoreState,
-                restore_reason = result.RestoreReason,
-                snapshot_valid = result.RestoreSnapshotValid,
-                fresh_state_used = result.RestoreFreshStateUsed,
-                active_trade_count = result.RestoreActiveTradeCount,
-                first_active_signal_id = result.RestoreFirstActiveSignalId,
-                first_active_entry = result.RestoreFirstActiveEntry,
-                first_active_sl = result.RestoreFirstActiveSl,
-                first_active_tp = result.RestoreFirstActiveTp,
+                ["entry_type"] = "timer",
+                ["timestamp_utc"] = DateTime.UtcNow.ToString("O"),
+                ["symbol"] = result.MarketContext?.Symbol ?? string.Empty,
+                ["timeframe"] = result.MarketContext?.Timeframe ?? string.Empty,
+                ["decision"] = result.PaperDecision,
+                ["state"] = result.State,
+                ["signal_count"] = result.SignalCount,
+                ["open_positions"] = result.PaperPortfolioState?.ActiveTrades.Length ?? 0,
+                ["closed_trades"] = result.PaperPortfolioState?.ClosedTrades.Length ?? 0,
+                ["net_r"] = ComputeNetR(result),
+                ["safety_status"] = BuildSafetyStatus(result),
+                ["broker_action"] = result.BrokerAction,
+                ["restore_state"] = result.RestoreState,
+                ["restore_reason"] = result.RestoreReason,
+                ["snapshot_valid"] = result.RestoreSnapshotValid,
+                ["fresh_state_used"] = result.RestoreFreshStateUsed,
+                ["active_trade_count"] = result.RestoreActiveTradeCount,
+                ["first_active_signal_id"] = result.RestoreFirstActiveSignalId,
+                ["first_active_entry"] = result.RestoreFirstActiveEntry,
+                ["first_active_sl"] = result.RestoreFirstActiveSl,
+                ["first_active_tp"] = result.RestoreFirstActiveTp,
             };
 
             var line = JsonSerializer.Serialize(entry, JsonOptions);
