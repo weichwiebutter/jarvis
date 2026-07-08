@@ -11,6 +11,8 @@ using HermesPaperBot.Models;
 /// </summary>
 public sealed class PaperLogger
 {
+    private sealed record TimerTimelineState(int Count, DateTimeOffset FirstAtUtc, DateTimeOffset LastAtUtc);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false,
@@ -18,6 +20,7 @@ public sealed class PaperLogger
 
     private static readonly object InMemoryLock = new();
     private static readonly Dictionary<string, List<string>> InMemoryTimerEntries = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, TimerTimelineState> TimerTimelineStates = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Writes a paper runtime step entry and decision log.
@@ -210,16 +213,19 @@ public sealed class PaperLogger
     /// <summary>
     /// Writes a compact per-timer entry and falls back to memory if file IO is not available.
     /// </summary>
-    public (bool Written, string Path, string Fallback) WriteTimer(string logsPath, RuntimeStepResult result)
+    public (bool Written, string Path, string Fallback, int TickCount, DateTimeOffset? SessionStartedAtUtc, DateTimeOffset? LastTimerAtUtc) WriteTimer(string logsPath, RuntimeStepResult result)
     {
         var timerLogPath = string.IsNullOrWhiteSpace(logsPath) ? "paper_runtime_step_log.jsonl" : Path.Combine(logsPath, "paper_runtime_step_log.jsonl");
+        var timerTimestamp = DateTimeOffset.UtcNow;
+        var timerKey = string.IsNullOrWhiteSpace(logsPath) ? "paper_runtime_step_log.jsonl" : logsPath;
+        var timeline = GetOrCreateTimerTimeline(timerKey, timerTimestamp);
 
         try
         {
             var entry = new Dictionary<string, object?>
             {
                 ["entry_type"] = "timer",
-                ["timestamp_utc"] = DateTime.UtcNow.ToString("O"),
+                ["timestamp_utc"] = timerTimestamp.ToString("O"),
                 ["symbol"] = result.MarketContext?.Symbol ?? string.Empty,
                 ["timeframe"] = result.MarketContext?.Timeframe ?? string.Empty,
                 ["decision"] = result.PaperDecision,
@@ -244,25 +250,42 @@ public sealed class PaperLogger
             var line = JsonSerializer.Serialize(entry, JsonOptions);
             if (string.IsNullOrWhiteSpace(logsPath))
             {
-                AppendInMemory("paper_runtime_step_log.jsonl", line);
-                return (true, "paper_runtime_step_log.jsonl", "in_memory");
+                AppendInMemory(timerKey, line);
+                return (true, timerLogPath, "in_memory", timeline.Count, timeline.FirstAtUtc, timeline.LastAtUtc);
             }
 
             try
             {
                 Directory.CreateDirectory(logsPath);
                 File.AppendAllText(timerLogPath, line + Environment.NewLine);
-                return (true, timerLogPath, "file");
+                return (true, timerLogPath, "file", timeline.Count, timeline.FirstAtUtc, timeline.LastAtUtc);
             }
             catch
             {
-                AppendInMemory(logsPath, line);
-                return (true, timerLogPath, "in_memory");
+                AppendInMemory(timerKey, line);
+                return (true, timerLogPath, "in_memory", timeline.Count, timeline.FirstAtUtc, timeline.LastAtUtc);
             }
         }
         catch
         {
-            return (false, timerLogPath, "error");
+            return (false, timerLogPath, "error", timeline.Count, timeline.FirstAtUtc, timeline.LastAtUtc);
+        }
+    }
+
+    private static TimerTimelineState GetOrCreateTimerTimeline(string timerKey, DateTimeOffset timestampUtc)
+    {
+        lock (InMemoryLock)
+        {
+            if (TimerTimelineStates.TryGetValue(timerKey, out var existing))
+            {
+                var updated = new TimerTimelineState(existing.Count + 1, existing.FirstAtUtc, timestampUtc);
+                TimerTimelineStates[timerKey] = updated;
+                return updated;
+            }
+
+            var created = new TimerTimelineState(1, timestampUtc, timestampUtc);
+            TimerTimelineStates[timerKey] = created;
+            return created;
         }
     }
 

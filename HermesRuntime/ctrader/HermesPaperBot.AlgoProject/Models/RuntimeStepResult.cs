@@ -24,6 +24,9 @@ public sealed class RuntimeStepResult
     public bool TimerLogWritten { get; init; } = false;
     public string TimerLogPath { get; init; } = string.Empty;
     public string TimerLogFallback { get; init; } = string.Empty;
+    public int TimerTickCount { get; init; } = 0;
+    public DateTimeOffset? SessionStartedAt { get; init; }
+    public DateTimeOffset? LastTimerAt { get; init; }
     public bool SignalSeen { get; init; } = false;
     public string SignalDirection { get; init; } = "flat";
     public decimal? SignalConfidence { get; init; }

@@ -100,7 +100,7 @@ public class HermesPaperBotCTraderWrapper : Robot
             $"cloud_step_stage={result?.CloudStepStage ?? "none"}; cloud_step_exception_type={result?.CloudStepExceptionType ?? "none"}; cloud_step_exception_message={result?.CloudStepExceptionMessage ?? "none"}; " +
             $"package_loaded={result?.PackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_package_loaded={result?.SignalPackageLoaded.ToString().ToLowerInvariant() ?? "false"}; signal_count={signalCount}; signal_package_json_length={signalPackageJsonLength}; signal_package_parse_status={signalPackageParseStatus}; first_signal_id={firstSignalId}; chart_annotation_loaded={result?.ChartAnnotationLoaded.ToString().ToLowerInvariant() ?? "false"}; " +
             $"selected_signal_id={selectedSignalId}; signal_timestamp_utc={selectedSignalTimestampUtc}; expiry_utc={selectedSignalExpiryUtc}; server_time_utc={currentContext.ServerTime:O}; signal_expired={signalExpired.ToString().ToLowerInvariant()}; expiry_source={selectedSignalExpirySource}; " +
-            $"timer_log_written={result?.TimerLogWritten.ToString().ToLowerInvariant() ?? "false"}; timer_log_path={result?.TimerLogPath ?? ""}; timer_log_fallback={result?.TimerLogFallback ?? "unknown"}");
+            $"timer_log_written={result?.TimerLogWritten.ToString().ToLowerInvariant() ?? "false"}; timer_log_path={result?.TimerLogPath ?? ""}; timer_log_fallback={result?.TimerLogFallback ?? "unknown"}; timer_tick_count={result?.TimerTickCount ?? 0}; session_started_at={result?.SessionStartedAt?.ToString("O") ?? ""}; last_timer_at={result?.LastTimerAt?.ToString("O") ?? ""}");
     }
 
     /// <summary>
