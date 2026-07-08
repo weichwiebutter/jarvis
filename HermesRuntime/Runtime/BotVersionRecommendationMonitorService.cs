@@ -176,23 +176,24 @@ public sealed class BotVersionRecommendationMonitorService
             recommendationReasons.Add("approved_annotation_confidence_improved");
         }
 
+        var exportRecommendationAvailable = recommendationReasons.Count > 0;
         var botEvolutionAllowsRecommendation = botEvolutionScore.Recommendation is "recommend_new_version" or "hold_current_version"
             && botEvolutionScore.EvolutionScore >= 60m;
         if (!botEvolutionAllowsRecommendation)
         {
             warnings.Add($"bot_evolution_score_suppressed:{botEvolutionScore.Recommendation}:{botEvolutionScore.EvolutionScore:0.0}");
         }
-        else if (botEvolutionScore.ImprovementDelta.HasValue)
+        else if (exportRecommendationAvailable && botEvolutionScore.ImprovementDelta.HasValue)
         {
             recommendationReasons.Add("bot_evolution_score_supports_export");
         }
 
-        var recommendedExportAvailable = recommendationReasons.Count > 0 && botEvolutionAllowsRecommendation;
+        var recommendedExportAvailable = exportRecommendationAvailable && botEvolutionAllowsRecommendation;
         var recommendationReason = recommendedExportAvailable
             ? string.Join("; ", recommendationReasons.Distinct(StringComparer.OrdinalIgnoreCase))
-            : botEvolutionAllowsRecommendation
-                ? "current_export_is_up_to_date"
-                : "bot_evolution_score_does_not_support_new_version";
+            : exportRecommendationAvailable
+                ? "bot_evolution_score_does_not_support_new_version"
+                : "current_export_is_up_to_date";
         var manualActionRequired = recommendedExportAvailable;
         var suggestedNextCommand = pendingPromotionCount > 0
             ? "dotnet run --project ./cli/Hermes.Cli.csproj -- chart-annotation-promote"
