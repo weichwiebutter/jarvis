@@ -118,33 +118,56 @@ public sealed class PaperForwardSessionReportService
 
     private static (DateTimeOffset? sessionStart, DateTimeOffset? lastTimerSeen, int timerTicks) LoadTimerTimeline(PaperRuntimeStepReport stepReport, List<string> warnings)
     {
-        var logFile = Path.Combine(stepReport.LogsPath, "paper_runtime_step_log.jsonl");
-        if (!File.Exists(logFile))
+        var logFiles = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(stepReport.LogsPath))
         {
-            warnings.Add("timer_log_missing");
-            return (null, null, 0);
+            logFiles.Add(Path.Combine(stepReport.LogsPath, "paper_runtime_step_log.jsonl"));
+        }
+
+        var ctraderTempRoot = "/tmp/ctrader-paper-bot-cloud-logs";
+        var ctraderTempLog = Path.Combine(ctraderTempRoot, "paper_runtime_step_log.jsonl");
+        if (!logFiles.Any(path => string.Equals(path, ctraderTempLog, StringComparison.OrdinalIgnoreCase)))
+        {
+            logFiles.Add(ctraderTempLog);
         }
 
         var timestamps = new List<DateTimeOffset>();
+        var usedFallback = false;
+        var foundAnyLog = false;
         try
         {
-            foreach (var line in File.ReadLines(logFile))
+            foreach (var logFile in logFiles)
             {
-                if (string.IsNullOrWhiteSpace(line))
+                if (!File.Exists(logFile))
                 {
                     continue;
                 }
 
-                using var document = JsonDocument.Parse(line);
-                if (!document.RootElement.TryGetProperty("entry_type", out var entryType)
-                    || !string.Equals(entryType.GetString(), "timer", StringComparison.OrdinalIgnoreCase))
+                foundAnyLog = true;
+                if (string.Equals(logFile, ctraderTempLog, StringComparison.OrdinalIgnoreCase))
                 {
-                    continue;
+                    usedFallback = true;
                 }
 
-                if (document.RootElement.TryGetProperty("timestamp_utc", out var timestamp) && DateTimeOffset.TryParse(timestamp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+                foreach (var line in File.ReadLines(logFile))
                 {
-                    timestamps.Add(parsed);
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
+
+                    using var document = JsonDocument.Parse(line);
+                    if (!document.RootElement.TryGetProperty("entry_type", out var entryType)
+                        || !string.Equals(entryType.GetString(), "timer", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (document.RootElement.TryGetProperty("timestamp_utc", out var timestamp) && DateTimeOffset.TryParse(timestamp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+                    {
+                        timestamps.Add(parsed);
+                    }
                 }
             }
         }
@@ -156,8 +179,13 @@ public sealed class PaperForwardSessionReportService
 
         if (timestamps.Count == 0)
         {
-            warnings.Add("timer_log_no_timer_entries");
+            warnings.Add(foundAnyLog ? "timer_log_no_timer_entries" : "timer_log_missing");
             return (null, null, 0);
+        }
+
+        if (usedFallback)
+        {
+            warnings.Add("used_ctrader_temp_log_path");
         }
 
         timestamps.Sort();
