@@ -65,6 +65,7 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
     public string OutputJsonPath => Path.Combine(OutputDirectory, "cloud_embedded_release_package.json");
     public string OutputMarkdownPath => Path.Combine(OutputDirectory, "cloud_embedded_release_package.md");
     public string OutputSourcePath => Path.Combine(_runtimeRoot, "ctrader", "HermesPaperBot", "Generated", "EmbeddedReleasePackage.g.cs");
+    public string AlgoProjectOutputSourcePath => Path.Combine(_runtimeRoot, "ctrader", "HermesPaperBot.AlgoProject", "Generated", "EmbeddedReleasePackage.g.cs");
 
     public CloudEmbeddedReleasePackageGenerationResult Generate(string? sourceBundleDirectory = null)
     {
@@ -583,7 +584,9 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
     private void WriteGeneratedSource(string packageJson, string signalPackageJson, string botReleaseId, string botVersion, string strategyPackageVersion, string embeddedChecksum)
     {
         var generatedPath = OutputSourcePath;
+        var algoProjectGeneratedPath = AlgoProjectOutputSourcePath;
         Directory.CreateDirectory(Path.GetDirectoryName(generatedPath) ?? _runtimeRoot);
+        Directory.CreateDirectory(Path.GetDirectoryName(algoProjectGeneratedPath) ?? _runtimeRoot);
         var escapedJson = packageJson.Replace("\"", "\"\"");
         var escapedSignalJson = signalPackageJson.Replace("\"", "\"\"");
         var source = string.Join(Environment.NewLine, new[]
@@ -608,6 +611,7 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         });
 
         File.WriteAllText(generatedPath, source);
+        File.WriteAllText(algoProjectGeneratedPath, source);
     }
 
     private IReadOnlyList<ChartAnnotation> LoadEmbeddedChartAnnotations(EnsembleSignalAgentPortfolioPackage sourcePackage)
