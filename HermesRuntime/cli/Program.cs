@@ -386,6 +386,7 @@ internal sealed class HermesCli
             "chart-annotation-candidate-generator" => RunChartAnnotationCandidateGenerator(),
             "chart-annotation-review-queue" => ShowChartAnnotationReviewQueue(),
             "chart-annotation-review" => RunChartAnnotationReviewDecision(),
+            "approved-chart-annotations" => ShowApprovedChartAnnotations(),
             "signal-watch-status" => ShowSignalWatchStatus(),
             "signal-watch-log" => ShowSignalWatchLog(),
             "export-missing-signal-agent-specs" => ExportMissingSignalAgentSpecs(),
@@ -777,6 +778,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes chart-annotation-candidate-generator Chart Annotation Kandidaten generieren");
         Console.WriteLine("  hermes chart-annotation-review-queue Chart Annotation Review Queue anzeigen");
         Console.WriteLine("  hermes chart-annotation-review --asset <ASSET> --setup-id <SETUP> --decision approve|reject --reviewer <NAME> --comment \"<TEXT>\" Chart Annotation Review ausführen");
+        Console.WriteLine("  hermes approved-chart-annotations genehmigte Chart Annotationen anzeigen");
         Console.WriteLine("  hermes signal-watch-status read-only Signal-Watch-Lifecycle anzeigen");
         Console.WriteLine("  hermes signal-watch-log Signal-Watch-Log anzeigen");
         Console.WriteLine("  hermes export-missing-signal-agent-specs fehlende Ensemble-Signal-Agent-Specs exportieren");
@@ -7114,6 +7116,17 @@ internal sealed class HermesCli
         }
     }
 
+    private int ShowApprovedChartAnnotations()
+    {
+        WriteHeader("Approved Chart Annotations");
+        var service = new ApprovedChartAnnotationRegistryService(BuildStoragePaths());
+        var report = service.LoadLatestReport();
+        WriteApprovedChartAnnotationRegistryReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowSignalWatchStatus()
     {
         WriteHeader("Hermes Signal Watch Status");
@@ -13406,6 +13419,29 @@ internal sealed class HermesCli
             WriteField("Approved", item.Approved.ToString().ToLowerInvariant());
             WriteField("Promoted To Embedded", item.PromotedToEmbedded.ToString().ToLowerInvariant());
             WriteField("Artifact Path", DisplayPath(item.ArtifactPath));
+        }
+    }
+
+    private void WriteApprovedChartAnnotationRegistryReport(ApprovedChartAnnotationRegistryReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Audit Trail", DisplayPath(report.AuditTrailPath));
+        WriteField("Status", report.Status);
+        WriteField("Approved Count", report.ApprovedCount.ToString());
+        WriteField("Total Count", report.TotalCount.ToString());
+        WriteMessages("Warnings", report.Warnings);
+
+        foreach (var item in report.Items)
+        {
+            WriteSubHeader($"{item.Asset} / {item.SetupId}");
+            WriteField("Asset", item.Asset);
+            WriteField("Setup ID", item.SetupId);
+            WriteField("Approved", item.Approved.ToString().ToLowerInvariant());
+            WriteField("Reviewer", item.Reviewer);
+            WriteField("Review Timestamp", item.ReviewTimestampUtc.ToString("O"));
+            WriteField("Comment", item.Comment);
+            WriteField("Promoted To Embedded", item.PromotedToEmbedded.ToString().ToLowerInvariant());
         }
     }
 
