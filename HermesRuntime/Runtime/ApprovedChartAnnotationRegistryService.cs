@@ -28,10 +28,12 @@ public sealed record ApprovedChartAnnotationRegistryReport(
 public sealed class ApprovedChartAnnotationRegistryService
 {
     private readonly StoragePaths _storagePaths;
+    private readonly string _runtimeRoot;
 
-    public ApprovedChartAnnotationRegistryService(StoragePaths storagePaths)
+    public ApprovedChartAnnotationRegistryService(StoragePaths storagePaths, string runtimeRoot)
     {
         _storagePaths = storagePaths;
+        _runtimeRoot = runtimeRoot;
     }
 
     public string Root => Path.Combine(_storagePaths.Root, "reports", "approved_chart_annotations");
@@ -94,6 +96,25 @@ public sealed class ApprovedChartAnnotationRegistryService
                     continue;
                 }
 
+                var promotedToEmbedded = entry.PromotedToEmbedded;
+                var artifactPath = ResolveArtifactPath(entry.Asset, entry.SetupId);
+                if (artifactPath is not null)
+                {
+                    try
+                    {
+                        using var artifactDoc = JsonDocument.Parse(File.ReadAllText(artifactPath));
+                        var artifactRoot = artifactDoc.RootElement;
+                        if (artifactRoot.TryGetProperty("promoted_to_embedded", out var promotedElement) && (promotedElement.ValueKind == JsonValueKind.True || promotedElement.ValueKind == JsonValueKind.False))
+                        {
+                            promotedToEmbedded = promotedElement.GetBoolean();
+                        }
+                    }
+                    catch
+                    {
+                        // keep audit trail state if artifact is unreadable
+                    }
+                }
+
                 items.Add(new ApprovedChartAnnotationRegistryItem(
                     Asset: entry.Asset,
                     SetupId: entry.SetupId,
@@ -101,7 +122,7 @@ public sealed class ApprovedChartAnnotationRegistryService
                     Reviewer: entry.Reviewer,
                     ReviewTimestampUtc: entry.ReviewTimestampUtc,
                     Comment: entry.Comment,
-                    PromotedToEmbedded: entry.PromotedToEmbedded,
+                    PromotedToEmbedded: promotedToEmbedded,
                     DecisionId: entry.DecisionId));
             }
             catch (JsonException)
@@ -111,6 +132,37 @@ public sealed class ApprovedChartAnnotationRegistryService
         }
 
         return items;
+    }
+
+
+    private string? ResolveArtifactPath(string asset, string setupId)
+    {
+        var docRoot = Path.Combine(_runtimeRoot, "docs", "trading");
+        if (!Directory.Exists(docRoot))
+        {
+            return null;
+        }
+
+        foreach (var path in Directory.EnumerateFiles(docRoot, "*chart_annotation_review_artifact.json", SearchOption.TopDirectoryOnly))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(path));
+                var root = document.RootElement;
+                var artifactAsset = root.TryGetProperty("asset", out var assetElement) && assetElement.ValueKind == JsonValueKind.String ? assetElement.GetString() ?? string.Empty : string.Empty;
+                var artifactSetup = root.TryGetProperty("setup_id", out var setupElement) && setupElement.ValueKind == JsonValueKind.String ? setupElement.GetString() ?? string.Empty : string.Empty;
+                if (artifactAsset.Equals(asset, StringComparison.OrdinalIgnoreCase) && artifactSetup.Equals(setupId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return path;
+                }
+            }
+            catch
+            {
+                // ignore and let audit entry data stand
+            }
+        }
+
+        return null;
     }
 
     private static string BuildMarkdown(ApprovedChartAnnotationRegistryReport report)

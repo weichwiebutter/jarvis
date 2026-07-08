@@ -388,6 +388,7 @@ internal sealed class HermesCli
             "chart-annotation-review" => RunChartAnnotationReviewDecision(),
             "approved-chart-annotations" => ShowApprovedChartAnnotations(),
             "chart-annotation-promotion-plan" => ShowChartAnnotationPromotionPlan(),
+            "chart-annotation-promote" => PromoteChartAnnotation(),
             "signal-watch-status" => ShowSignalWatchStatus(),
             "signal-watch-log" => ShowSignalWatchLog(),
             "export-missing-signal-agent-specs" => ExportMissingSignalAgentSpecs(),
@@ -7120,7 +7121,7 @@ internal sealed class HermesCli
     private int ShowApprovedChartAnnotations()
     {
         WriteHeader("Approved Chart Annotations");
-        var service = new ApprovedChartAnnotationRegistryService(BuildStoragePaths());
+        var service = new ApprovedChartAnnotationRegistryService(BuildStoragePaths(), _runtimeRoot);
         var report = service.LoadLatestReport();
         WriteApprovedChartAnnotationRegistryReport(report);
         Console.WriteLine();
@@ -7137,6 +7138,38 @@ internal sealed class HermesCli
         Console.WriteLine();
         WriteSafety();
         return 0;
+    }
+
+    private int PromoteChartAnnotation()
+    {
+        var asset = ReadOption(_args, "--asset");
+        var setupId = ReadOption(_args, "--setup-id");
+        var reviewer = ReadOption(_args, "--reviewer") ?? Environment.UserName;
+        if (string.IsNullOrWhiteSpace(asset) || string.IsNullOrWhiteSpace(setupId) || string.IsNullOrWhiteSpace(reviewer))
+        {
+            WriteError("Error: --asset, --setup-id and --reviewer are required.");
+            Console.WriteLine();
+            WriteSafety();
+            return 1;
+        }
+
+        WriteHeader("Chart Annotation Promotion");
+        var service = new ChartAnnotationPromotionService(BuildStoragePaths(), _runtimeRoot);
+        try
+        {
+            var report = service.Promote(asset!, setupId!, reviewer!);
+            WriteChartAnnotationPromotionReport(report);
+            Console.WriteLine();
+            WriteSafety();
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            WriteError($"Error: {ex.Message}");
+            Console.WriteLine();
+            WriteSafety();
+            return 1;
+        }
     }
 
     private int ShowSignalWatchStatus()
@@ -13482,6 +13515,25 @@ internal sealed class HermesCli
             WriteField("Is Promotable", item.IsPromotable.ToString().ToLowerInvariant());
             WriteField("Target Embedded Action", item.TargetEmbeddedAction);
         }
+    }
+
+    private void WriteChartAnnotationPromotionReport(ChartAnnotationPromotionReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Audit Trail", DisplayPath(report.PromotionAuditTrailPath));
+        WriteField("Embedded Package", DisplayPath(report.EmbeddedPackageJsonPath));
+        WriteField("Embedded Generator", DisplayPath(report.EmbeddedPackageGeneratorPath));
+        WriteField("Status", report.Status);
+        WriteField("Asset", report.Asset);
+        WriteField("Setup ID", report.SetupId);
+        WriteField("Approved", report.Approved.ToString().ToLowerInvariant());
+        WriteField("Promotable", report.Promotable.ToString().ToLowerInvariant());
+        WriteField("Promoted To Embedded", report.PromotedToEmbedded.ToString().ToLowerInvariant());
+        WriteField("Reviewer", report.Reviewer);
+        WriteField("Comment", report.Comment);
+        WriteField("Source Artifact", DisplayPath(report.SourceArtifactPath));
+        WriteMessages("Warnings", report.Warnings);
     }
 
     private void WriteEnsembleSignalSpecValidationResult(EnsembleSignalSpecValidationResult result)
