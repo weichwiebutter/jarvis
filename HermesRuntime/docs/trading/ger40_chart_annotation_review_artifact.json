@@ -1,0 +1,20 @@
+{
+  "artifact_type": "ger40_chart_annotation_review_artifact",
+  "status": "needs_price_review",
+  "source": "internal_spec_review",
+  "requires_human_review": true,
+  "asset": "GER40",
+  "setup_id": "ger40_range_breakout_m5",
+  "confidence_baseline": 0.8046,
+  "proposed_entry": null,
+  "proposed_sl": null,
+  "proposed_tp1": null,
+  "proposed_tp2": null,
+  "invalidation": null,
+  "risk_reward": null,
+  "notes": [
+    "Derived from the existing internal GER40 spec in the system_b_handoff_bundle.",
+    "No price levels were invented.",
+    "Entry/SL/TP/Invalidation/RR remain null until a price review source is supplied."
+  ]
+}
