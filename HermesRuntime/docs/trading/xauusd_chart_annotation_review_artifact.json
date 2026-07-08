@@ -1,0 +1,15 @@
+{
+  "artifact_type": "xauusd_chart_annotation_review_artifact",
+  "asset": "XAUUSD",
+  "setup_id": "scalp_xauusd_1070720f16",
+  "confidence_baseline": 0.896,
+  "entry": 2325,
+  "sl": 2312.5,
+  "tp1": 2343.75,
+  "tp2": 2300,
+  "invalidation": 2312.5,
+  "risk_reward": 1.5,
+  "source": "embedded_spec_review",
+  "requires_human_review": true,
+  "status": "ready_for_review"
+}
