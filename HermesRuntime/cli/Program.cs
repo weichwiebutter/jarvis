@@ -383,6 +383,7 @@ internal sealed class HermesCli
             "demo-signal-feed-log" => ShowDemoSignalFeedLog(),
             "chart-annotation-status" => ShowChartAnnotationStatus(),
             "chart-annotation-export" => RunChartAnnotationExport(),
+            "chart-annotation-candidate-generator" => RunChartAnnotationCandidateGenerator(),
             "signal-watch-status" => ShowSignalWatchStatus(),
             "signal-watch-log" => ShowSignalWatchLog(),
             "export-missing-signal-agent-specs" => ExportMissingSignalAgentSpecs(),
@@ -771,6 +772,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes demo-signal-feed-log Demo Signal Feed Log anzeigen");
         Console.WriteLine("  hermes chart-annotation-status Chart Annotation Status anzeigen");
         Console.WriteLine("  hermes chart-annotation-export [--dry-run|--apply] Chart Annotationen exportieren");
+        Console.WriteLine("  hermes chart-annotation-candidate-generator Chart Annotation Kandidaten generieren");
         Console.WriteLine("  hermes signal-watch-status read-only Signal-Watch-Lifecycle anzeigen");
         Console.WriteLine("  hermes signal-watch-log Signal-Watch-Log anzeigen");
         Console.WriteLine("  hermes export-missing-signal-agent-specs fehlende Ensemble-Signal-Agent-Specs exportieren");
@@ -7034,6 +7036,18 @@ internal sealed class HermesCli
         return 0;
     }
 
+    private int RunChartAnnotationCandidateGenerator()
+    {
+        WriteHeader("Hermes Chart Annotation Candidate Generator");
+        var service = new ChartAnnotationCandidateGeneratorService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteChartAnnotationCandidateReport(report);
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
     private int ShowSignalWatchStatus()
     {
         WriteHeader("Hermes Signal Watch Status");
@@ -13236,6 +13250,41 @@ internal sealed class HermesCli
             WriteField("Signal Status", annotation.SignalStatus);
             WriteField("Created At", annotation.CreatedAtUtc.ToString("O"));
             WriteMessages("Labels", annotation.Labels);
+        }
+    }
+
+    private void WriteChartAnnotationCandidateReport(ChartAnnotationCandidateReport report)
+    {
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Source Mode", report.SourceMode);
+        WriteField("Embedded Spec Available", report.EmbeddedSpecAvailable.ToString().ToLowerInvariant());
+        WriteField("Candidate Count", report.CandidateCount.ToString());
+        WriteField("Ready Candidate Count", report.ReadyCandidateCount.ToString());
+        WriteField("Needs Price Review Count", report.NeedsPriceReviewCount.ToString());
+        WriteField("Research Only", report.ResearchOnly.ToString().ToLowerInvariant());
+        WriteField("No Auto Trading", report.NoAutoTrading.ToString().ToLowerInvariant());
+        WriteField("Human Review Required", report.HumanReviewRequired.ToString().ToLowerInvariant());
+        WriteField("Broker Orders Enabled", report.BrokerOrdersEnabled.ToString().ToLowerInvariant());
+        WriteField("Live Trading Enabled", report.LiveTradingEnabled.ToString().ToLowerInvariant());
+        WriteMessages("Warnings", report.Warnings);
+
+        foreach (var candidate in report.Candidates)
+        {
+            WriteSubHeader($"{candidate.Asset} / {candidate.SetupId}");
+            WriteField("Asset", candidate.Asset);
+            WriteField("Setup ID", candidate.SetupId);
+            WriteField("Confidence Baseline", candidate.ConfidenceBaseline.ToString("0.####", CultureInfo.InvariantCulture));
+            WriteField("Readiness", candidate.Readiness);
+            WriteField("Entry Source Available", candidate.EntrySourceAvailable.ToString().ToLowerInvariant());
+            WriteField("SL Source Available", candidate.SlSourceAvailable.ToString().ToLowerInvariant());
+            WriteField("TP Source Available", candidate.TpSourceAvailable.ToString().ToLowerInvariant());
+            WriteField("Invalidation Source Available", candidate.InvalidationSourceAvailable.ToString().ToLowerInvariant());
+            WriteField("Can Generate Annotation", candidate.CanGenerateAnnotation.ToString().ToLowerInvariant());
+            WriteField("Requires Human Review", candidate.RequiresHumanReview.ToString().ToLowerInvariant());
+            WriteField("Status", candidate.Status);
+            WriteMessages("Missing Fields", candidate.MissingFields);
         }
     }
 
