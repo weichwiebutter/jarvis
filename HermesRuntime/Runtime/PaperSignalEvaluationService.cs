@@ -127,7 +127,7 @@ public sealed class PaperSignalEvaluationService
 
         foreach (var candidate in candidates)
         {
-            var sessionResult = new SessionFilter().Evaluate(context);
+            var sessionResult = new SessionFilter().Evaluate(context, candidate);
             var spreadResult = new SpreadFilter().Evaluate(context, candidate.MaxSpread);
             var compatible = IsContextCompatible(candidate, context);
             var expired = candidate.ExpiresAtUtc.HasValue && candidate.ExpiresAtUtc.Value <= DateTimeOffset.UtcNow;
