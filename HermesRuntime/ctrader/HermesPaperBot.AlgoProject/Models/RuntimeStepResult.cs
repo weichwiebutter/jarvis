@@ -41,6 +41,15 @@ public sealed class RuntimeStepResult
     public string SignalPackageParseStatus { get; init; } = "unknown";
     public string FirstSignalId { get; init; } = string.Empty;
     public bool ChartAnnotationLoaded { get; init; } = false;
+    public string RestoreState { get; init; } = "unknown";
+    public string RestoreReason { get; init; } = string.Empty;
+    public bool RestoreSnapshotValid { get; init; } = false;
+    public bool RestoreFreshStateUsed { get; init; } = false;
+    public int RestoreActiveTradeCount { get; init; } = 0;
+    public string RestoreFirstActiveSignalId { get; init; } = string.Empty;
+    public decimal? RestoreFirstActiveEntry { get; init; }
+    public decimal? RestoreFirstActiveSl { get; init; }
+    public decimal? RestoreFirstActiveTp { get; init; }
     public bool PaperPositionOpen { get; init; } = false;
     public string PaperPositionStatus { get; init; } = "none";
     public string PaperExitReason { get; init; } = "none";

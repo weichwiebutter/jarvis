@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace HermesPaperBot.Models;
 
 /// <summary>
@@ -49,4 +51,49 @@ public sealed class PaperStateRestoreResult
     /// Restored portfolio state if available.
     /// </summary>
     public PaperPortfolioState? PaperPortfolioState { get; init; }
+
+    /// <summary>
+    /// Restored state label for diagnostics.
+    /// </summary>
+    public string RestoreState => State;
+
+    /// <summary>
+    /// Restored reason label for diagnostics.
+    /// </summary>
+    public string RestoreReason => Reason;
+
+    /// <summary>
+    /// Whether the restored snapshot was valid.
+    /// </summary>
+    public bool RestoreSnapshotValid => SnapshotValid;
+
+    /// <summary>
+    /// Whether a fresh state was used instead of restoring the snapshot.
+    /// </summary>
+    public bool RestoreFreshStateUsed => FreshStateUsed;
+
+    /// <summary>
+    /// Number of active trades in the restored snapshot.
+    /// </summary>
+    public int RestoreActiveTradeCount => PaperPortfolioState?.ActiveTrades.Length ?? 0;
+
+    /// <summary>
+    /// First active trade signal identifier in the restored snapshot.
+    /// </summary>
+    public string RestoreFirstActiveSignalId => PaperPortfolioState?.ActiveTrades.FirstOrDefault()?.SignalId ?? string.Empty;
+
+    /// <summary>
+    /// First active trade entry price in the restored snapshot.
+    /// </summary>
+    public decimal? RestoreFirstActiveEntry => PaperPortfolioState?.ActiveTrades.FirstOrDefault()?.EntryPrice;
+
+    /// <summary>
+    /// First active trade stop loss in the restored snapshot.
+    /// </summary>
+    public decimal? RestoreFirstActiveSl => PaperPortfolioState?.ActiveTrades.FirstOrDefault()?.StopLossPrice;
+
+    /// <summary>
+    /// First active trade take profit in the restored snapshot.
+    /// </summary>
+    public decimal? RestoreFirstActiveTp => PaperPortfolioState?.ActiveTrades.FirstOrDefault()?.TakeProfitPrice;
 }

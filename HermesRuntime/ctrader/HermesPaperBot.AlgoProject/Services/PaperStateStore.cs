@@ -117,6 +117,7 @@ public sealed class PaperStateStore
                 State = "fresh_state",
                 Reason = "snapshot_missing",
                 BrokerAction = "none",
+                PaperPortfolioState = new PaperPortfolioState(),
             };
         }
 
@@ -175,6 +176,7 @@ public sealed class PaperStateStore
                 State = "blocked_by_snapshot",
                 Reason = reason,
                 BrokerAction = "none",
+                PaperPortfolioState = new PaperPortfolioState(),
             };
         }
 
@@ -188,6 +190,7 @@ public sealed class PaperStateStore
             State = "fresh_state",
             Reason = reason,
             BrokerAction = "none",
+            PaperPortfolioState = new PaperPortfolioState(),
         };
     }
 

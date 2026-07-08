@@ -23,6 +23,7 @@ public sealed class PaperRuntimeOrchestrator
         var runtimeMarketContext = marketContext ?? new RuntimeMarketContext();
         var marketContextSeen = marketContext is not null;
         var reasons = new List<string>();
+        var restoreResult = new PaperStateStore(config.PaperStateSnapshotPath, config.PaperSnapshotRecoveryMode).Load();
         var configValidation = new ConfigurationValidator().Validate(config);
         reasons.Add(configValidation.Reason);
 
@@ -50,6 +51,15 @@ public sealed class PaperRuntimeOrchestrator
                 Reasons = reasons.ToArray(),
                 MarketContext = runtimeMarketContext,
                 MarketContextSeen = marketContextSeen,
+                RestoreState = restoreResult.RestoreState,
+                RestoreReason = restoreResult.RestoreReason,
+                RestoreSnapshotValid = restoreResult.RestoreSnapshotValid,
+                RestoreFreshStateUsed = restoreResult.RestoreFreshStateUsed,
+                RestoreActiveTradeCount = restoreResult.RestoreActiveTradeCount,
+                RestoreFirstActiveSignalId = restoreResult.RestoreFirstActiveSignalId,
+                RestoreFirstActiveEntry = restoreResult.RestoreFirstActiveEntry,
+                RestoreFirstActiveSl = restoreResult.RestoreFirstActiveSl,
+                RestoreFirstActiveTp = restoreResult.RestoreFirstActiveTp,
             };
 
             return FinalizeResult(config, earlyResult);
@@ -194,6 +204,15 @@ public sealed class PaperRuntimeOrchestrator
             SignalPackageParseStatus = GetEmbeddedSignalParseStatus(embeddedPackage),
             FirstSignalId = GetFirstEmbeddedSignalId(embeddedPackage),
             ChartAnnotationLoaded = embeddedPackage is not null && !string.IsNullOrWhiteSpace(embeddedPackage.ChartAnnotationSpecJson),
+            RestoreState = restoreResult.RestoreState,
+            RestoreReason = restoreResult.RestoreReason,
+            RestoreSnapshotValid = restoreResult.RestoreSnapshotValid,
+            RestoreFreshStateUsed = restoreResult.RestoreFreshStateUsed,
+            RestoreActiveTradeCount = restoreResult.RestoreActiveTradeCount,
+            RestoreFirstActiveSignalId = restoreResult.RestoreFirstActiveSignalId,
+            RestoreFirstActiveEntry = restoreResult.RestoreFirstActiveEntry,
+            RestoreFirstActiveSl = restoreResult.RestoreFirstActiveSl,
+            RestoreFirstActiveTp = restoreResult.RestoreFirstActiveTp,
         };
 
         return FinalizeResult(config, runtimeResult);
@@ -317,6 +336,15 @@ public sealed class PaperRuntimeOrchestrator
                 SignalPackageParseStatus = runtimeResult.SignalPackageParseStatus,
                 FirstSignalId = runtimeResult.FirstSignalId,
                 ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded,
+                RestoreState = runtimeResult.RestoreState,
+                RestoreReason = runtimeResult.RestoreReason,
+                RestoreSnapshotValid = runtimeResult.RestoreSnapshotValid,
+                RestoreFreshStateUsed = runtimeResult.RestoreFreshStateUsed,
+                RestoreActiveTradeCount = runtimeResult.RestoreActiveTradeCount,
+                RestoreFirstActiveSignalId = runtimeResult.RestoreFirstActiveSignalId,
+                RestoreFirstActiveEntry = runtimeResult.RestoreFirstActiveEntry,
+                RestoreFirstActiveSl = runtimeResult.RestoreFirstActiveSl,
+                RestoreFirstActiveTp = runtimeResult.RestoreFirstActiveTp,
             };
         }
 
@@ -347,6 +375,15 @@ public sealed class PaperRuntimeOrchestrator
             SignalPackageParseStatus = runtimeResult.SignalPackageParseStatus,
             FirstSignalId = runtimeResult.FirstSignalId,
             ChartAnnotationLoaded = runtimeResult.ChartAnnotationLoaded,
+            RestoreState = runtimeResult.RestoreState,
+            RestoreReason = runtimeResult.RestoreReason,
+            RestoreSnapshotValid = runtimeResult.RestoreSnapshotValid,
+            RestoreFreshStateUsed = runtimeResult.RestoreFreshStateUsed,
+            RestoreActiveTradeCount = runtimeResult.RestoreActiveTradeCount,
+            RestoreFirstActiveSignalId = runtimeResult.RestoreFirstActiveSignalId,
+            RestoreFirstActiveEntry = runtimeResult.RestoreFirstActiveEntry,
+            RestoreFirstActiveSl = runtimeResult.RestoreFirstActiveSl,
+            RestoreFirstActiveTp = runtimeResult.RestoreFirstActiveTp,
         };
     }
 }

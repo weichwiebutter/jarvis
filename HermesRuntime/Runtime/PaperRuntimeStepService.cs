@@ -25,6 +25,15 @@ public sealed record PaperRuntimeStepReport(
     decimal MarketAsk,
     decimal? MarketSpreadPips,
     DateTimeOffset MarketServerTimeUtc,
+    string RestoreState,
+    string RestoreReason,
+    bool RestoreSnapshotValid,
+    bool RestoreFreshStateUsed,
+    int RestoreActiveTradeCount,
+    string RestoreFirstActiveSignalId,
+    decimal? RestoreFirstActiveEntry,
+    decimal? RestoreFirstActiveSl,
+    decimal? RestoreFirstActiveTp,
     PaperSignalEvaluationReport SignalEvaluation,
     int EvaluatedSignals,
     int ActionableSignals,
@@ -419,6 +428,15 @@ public sealed class PaperRuntimeStepService
             MarketAsk: marketContext.Ask,
             MarketSpreadPips: marketContext.SpreadPips,
             MarketServerTimeUtc: marketContext.ServerTime,
+            RestoreState: runtimeResult.RestoreState,
+            RestoreReason: runtimeResult.RestoreReason,
+            RestoreSnapshotValid: runtimeResult.RestoreSnapshotValid,
+            RestoreFreshStateUsed: runtimeResult.RestoreFreshStateUsed,
+            RestoreActiveTradeCount: runtimeResult.RestoreActiveTradeCount,
+            RestoreFirstActiveSignalId: runtimeResult.RestoreFirstActiveSignalId,
+            RestoreFirstActiveEntry: runtimeResult.RestoreFirstActiveEntry,
+            RestoreFirstActiveSl: runtimeResult.RestoreFirstActiveSl,
+            RestoreFirstActiveTp: runtimeResult.RestoreFirstActiveTp,
             SignalEvaluation: signalEvaluation,
             EvaluatedSignals: evaluatedSignals,
             ActionableSignals: actionableSignals,
@@ -467,6 +485,15 @@ public sealed class PaperRuntimeStepService
             SignalDirection = runtimeResult.SignalDirection,
             SignalConfidence = runtimeResult.SignalConfidence,
             SignalExpired = runtimeResult.SignalExpired,
+            RestoreState = runtimeResult.RestoreState,
+            RestoreReason = runtimeResult.RestoreReason,
+            RestoreSnapshotValid = runtimeResult.RestoreSnapshotValid,
+            RestoreFreshStateUsed = runtimeResult.RestoreFreshStateUsed,
+            RestoreActiveTradeCount = runtimeResult.RestoreActiveTradeCount,
+            RestoreFirstActiveSignalId = runtimeResult.RestoreFirstActiveSignalId,
+            RestoreFirstActiveEntry = runtimeResult.RestoreFirstActiveEntry,
+            RestoreFirstActiveSl = runtimeResult.RestoreFirstActiveSl,
+            RestoreFirstActiveTp = runtimeResult.RestoreFirstActiveTp,
             SignalCandidates = runtimeResult.SignalCandidates,
             PaperPortfolioState = runtimeResult.PaperPortfolioState,
             PaperTr\u0061deResult = runtimeResult.PaperTr\u0061deResult,
@@ -520,6 +547,15 @@ public sealed class PaperRuntimeStepService
         sb.AppendLine($"- chart_annotation_spec_loaded: {report.ChartAnnotationSpecLoaded.ToString().ToLowerInvariant()}");
         sb.AppendLine($"- safety_flags_active: {report.SafetyFlagsActive.ToString().ToLowerInvariant()}");
         sb.AppendLine($"- market_context_loaded: {report.MarketContextLoaded.ToString().ToLowerInvariant()}");
+        sb.AppendLine($"- restore_state: {report.RestoreState}");
+        sb.AppendLine($"- restore_reason: {report.RestoreReason}");
+        sb.AppendLine($"- snapshot_valid: {report.RestoreSnapshotValid.ToString().ToLowerInvariant()}");
+        sb.AppendLine($"- fresh_state_used: {report.RestoreFreshStateUsed.ToString().ToLowerInvariant()}");
+        sb.AppendLine($"- active_trade_count: {report.RestoreActiveTradeCount}");
+        sb.AppendLine($"- first_active_signal_id: {report.RestoreFirstActiveSignalId}");
+        sb.AppendLine($"- first_active_entry: {(report.RestoreFirstActiveEntry.HasValue ? report.RestoreFirstActiveEntry.Value.ToString("0.#####") : "n/a")}");
+        sb.AppendLine($"- first_active_sl: {(report.RestoreFirstActiveSl.HasValue ? report.RestoreFirstActiveSl.Value.ToString("0.#####") : "n/a")}");
+        sb.AppendLine($"- first_active_tp: {(report.RestoreFirstActiveTp.HasValue ? report.RestoreFirstActiveTp.Value.ToString("0.#####") : "n/a")}");
         sb.AppendLine($"- evaluated_signals: {report.EvaluatedSignals}");
         sb.AppendLine($"- actionable_signals: {report.ActionableSignals}");
         sb.AppendLine($"- skipped_signals: {report.SkippedSignals}");
