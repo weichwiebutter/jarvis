@@ -100,12 +100,13 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         }
 
         var embeddedManifestJson = BuildEmbeddedManifestJson(bundleManifest, sourcePackage, File.Exists(contractPath) ? File.ReadAllText(contractPath) : string.Empty);
-        var embeddedChartAnnotationSpecJson = BuildEmbeddedChartAnnotationSpecJson(sourcePackage);
+        var embeddedChartAnnotations = LoadEmbeddedChartAnnotations(sourcePackage);
+        var embeddedChartAnnotationSpecJson = BuildEmbeddedChartAnnotationSpecJson(sourcePackage, embeddedChartAnnotations);
         var chartAnnotationSpec = TryReadEmbeddedChartAnnotationSpec(embeddedChartAnnotationSpecJson);
         var embeddedStrategyJson = BuildEmbeddedStrategySnapshotJson(bundleManifest, sourcePackage, chartAnnotationSpec);
         var embeddedSchemaJson = File.ReadAllText(schemaPath);
         var signalEvaluation = BuildEmbeddedSignalEvaluation(sourcePackage, embeddedManifestJson, embeddedStrategyJson, embeddedChartAnnotationSpecJson, embeddedSchemaJson);
-        var signalPackageJson = BuildEmbeddedSignalPackageJson(signalEvaluation);
+        var signalPackageJson = BuildEmbeddedSignalPackageJson(signalEvaluation, chartAnnotationSpec);
         var embeddedChecksum = ComputeChecksum(embeddedManifestJson, embeddedStrategyJson, embeddedChartAnnotationSpecJson, embeddedSchemaJson, signalPackageJson);
 
         var payload = new
@@ -429,8 +430,15 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
                 var direction = annotation.TryGetProperty("direction", out var directionElement) ? directionElement.GetString() ?? string.Empty : string.Empty;
                 var entryPrice = annotation.TryGetProperty("entry_price", out var entryPriceElement) && entryPriceElement.TryGetDouble(out var entryValue) ? entryValue : 0d;
                 var stopLoss = annotation.TryGetProperty("stop_loss", out var stopLossElement) && stopLossElement.TryGetDouble(out var stopLossValue) ? stopLossValue : 0d;
-                var takeProfit1 = annotation.TryGetProperty("take_profit_1", out var takeProfit1Element) && takeProfit1Element.TryGetDouble(out var takeProfit1Value) ? takeProfit1Value : 0d;
-                double? takeProfit2 = annotation.TryGetProperty("take_profit_2", out var takeProfit2Element) && takeProfit2Element.TryGetDouble(out var takeProfit2Value) ? takeProfit2Value : (double?)null;
+                var takeProfit1 = (annotation.TryGetProperty("take_profit_1", out var takeProfit1Element) && takeProfit1Element.TryGetDouble(out var takeProfit1Value))
+                    || (annotation.TryGetProperty("take_profit1", out var takeProfit1AltElement) && takeProfit1AltElement.TryGetDouble(out takeProfit1Value))
+                    ? takeProfit1Value
+                    : 0d;
+                double? takeProfit2 = annotation.TryGetProperty("take_profit_2", out var takeProfit2Element) && takeProfit2Element.TryGetDouble(out var takeProfit2Value)
+                    ? takeProfit2Value
+                    : annotation.TryGetProperty("take_profit2", out var takeProfit2AltElement) && takeProfit2AltElement.TryGetDouble(out var takeProfit2AltValue)
+                        ? takeProfit2AltValue
+                        : (double?)null;
                 var invalidationLevel = annotation.TryGetProperty("invalidation_level", out var invalidationElement) && invalidationElement.TryGetDouble(out var invalidationValue) ? invalidationValue : 0d;
                 var riskReward = annotation.TryGetProperty("risk_reward", out var riskRewardElement) && riskRewardElement.TryGetDouble(out var riskRewardValue) ? riskRewardValue : 0d;
                 var labels = annotation.TryGetProperty("labels", out var labelsElement) && labelsElement.ValueKind == JsonValueKind.Array
@@ -600,9 +608,42 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         File.WriteAllText(generatedPath, source);
     }
 
-    private string BuildEmbeddedChartAnnotationSpecJson(EnsembleSignalAgentPortfolioPackage sourcePackage)
+    private IReadOnlyList<ChartAnnotation> LoadEmbeddedChartAnnotations(EnsembleSignalAgentPortfolioPackage sourcePackage)
     {
-        var chartExport = new ChartAnnotationExportService(_storagePaths, _runtimeRoot).Run(dryRun: true);
+        var annotations = new List<ChartAnnotation>();
+
+        try
+        {
+            var chartExport = new ChartAnnotationExportService(_storagePaths, _runtimeRoot).Run(dryRun: true);
+            if (chartExport.Annotations.Count > 0)
+            {
+                annotations.AddRange(chartExport.Annotations);
+            }
+        }
+        catch
+        {
+            // Ignore chart export loading issues and fall back to promoted review artifacts.
+        }
+
+        annotations.AddRange(LoadPromotedChartAnnotationArtifacts(sourcePackage));
+
+        return annotations
+            .GroupBy(annotation => new
+            {
+                annotation.Symbol,
+                annotation.SetupId,
+                annotation.Timeframe,
+                annotation.EntryPrice,
+                annotation.StopLoss,
+                annotation.TakeProfit1,
+                annotation.TakeProfit2,
+            })
+            .Select(group => group.First())
+            .ToList();
+    }
+
+    private string BuildEmbeddedChartAnnotationSpecJson(EnsembleSignalAgentPortfolioPackage sourcePackage, IReadOnlyList<ChartAnnotation> annotations)
+    {
         var spec = new
         {
             generated_at_utc = DateTimeOffset.UtcNow,
@@ -611,19 +652,104 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
             source_package_version = sourcePackage.PackageVersion,
             source_system = sourcePackage.SourceSystem,
             source_status = sourcePackage.Status,
-            annotation_count = chartExport.AnnotationCount,
-            annotation_source_mode = chartExport.SourceMode,
-            annotations = chartExport.Annotations,
+            annotation_count = annotations.Count,
+            annotation_source_mode = annotations.Count > 0 ? "embedded_promoted_review_artifacts" : "local_demo_forward_test",
+            annotations = annotations,
         };
 
         return JsonSerializer.Serialize(spec, JsonDefaults.WriteOptions);
     }
 
-    private static string BuildEmbeddedSignalPackageJson(PaperSignalEvaluationReport? signalEvaluation)
+    private IReadOnlyList<ChartAnnotation> LoadPromotedChartAnnotationArtifacts(EnsembleSignalAgentPortfolioPackage sourcePackage)
+    {
+        var annotations = new List<ChartAnnotation>();
+        var docRoot = Path.Combine(_runtimeRoot, "docs", "trading");
+        if (!Directory.Exists(docRoot))
+        {
+            return annotations;
+        }
+
+        foreach (var path in Directory.EnumerateFiles(docRoot, "*chart_annotation_review_artifact.json", SearchOption.TopDirectoryOnly))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(path));
+                var root = document.RootElement;
+                if (!ReadBool(root, "approved") || !ReadBool(root, "promoted_to_embedded"))
+                {
+                    continue;
+                }
+
+                var asset = ReadString(root, "asset");
+                var setupId = ReadString(root, "setup_id");
+                if (string.IsNullOrWhiteSpace(asset) || string.IsNullOrWhiteSpace(setupId))
+                {
+                    continue;
+                }
+
+                if (!ReadDouble(root, "entry", out var entryPrice) ||
+                    !ReadDouble(root, "sl", out var stopLoss) ||
+                    !ReadDouble(root, "tp1", out var takeProfit1) ||
+                    !ReadDouble(root, "risk_reward", out var riskReward))
+                {
+                    continue;
+                }
+
+                var takeProfit2 = ReadNullableDouble(root, "tp2");
+                var invalidation = ReadNullableDouble(root, "invalidation");
+                var sourceAsset = sourcePackage.Assets.FirstOrDefault(candidate => candidate.Asset.Equals(asset, StringComparison.OrdinalIgnoreCase));
+                var timeframe = sourceAsset?.Timeframe ?? ReadString(root, "timeframe") ?? string.Empty;
+                var direction = ReadString(root, "direction");
+                if (string.IsNullOrWhiteSpace(direction))
+                {
+                    direction = InferDirection(entryPrice, stopLoss, takeProfit1, sourceAsset?.Direction);
+                }
+
+                var signalId = $"chart_annotation:{asset}:{setupId}";
+                var labels = new List<string>
+                {
+                    "approved",
+                    "promoted_to_embedded",
+                    "source:review_artifact",
+                };
+
+                var confidence = ReadNullableDouble(root, "confidence_baseline");
+                if (confidence is not null)
+                {
+                    labels.Add($"confidence:{confidence.Value:0.####}");
+                }
+
+                annotations.Add(new ChartAnnotation(
+                    SignalId: signalId,
+                    Symbol: asset,
+                    Timeframe: timeframe,
+                    SetupId: setupId,
+                    Direction: direction,
+                    EntryPrice: entryPrice,
+                    StopLoss: stopLoss,
+                    TakeProfit1: takeProfit1,
+                    TakeProfit2: takeProfit2,
+                    InvalidationLevel: invalidation ?? stopLoss,
+                    RiskReward: riskReward,
+                    AnnotationStyle: "promoted_review_artifact",
+                    Labels: labels,
+                    CreatedAtUtc: ReadDateTime(root, "review_timestamp") ?? DateTimeOffset.UtcNow,
+                    SignalStatus: ReadString(root, "status") ?? "promoted_to_embedded"));
+            }
+            catch
+            {
+                // Ignore unreadable artifacts.
+            }
+        }
+
+        return annotations;
+    }
+
+    private static string BuildEmbeddedSignalPackageJson(PaperSignalEvaluationReport? signalEvaluation, IReadOnlyList<ChartAnnotation> chartAnnotations)
     {
         var updatedAtUtc = signalEvaluation?.UpdatedAtUtc ?? DateTimeOffset.UtcNow;
         var signals = signalEvaluation?.Signals ?? [];
-        var representativeSignal = signals.FirstOrDefault();
+        var (representativeSignal, representativeAnnotation) = SelectRepresentativeSignal(signals, chartAnnotations);
         var signalDecision = representativeSignal is null
             ? new
             {
@@ -642,14 +768,14 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
             {
                 direction = MapSignalDirection(representativeSignal.Direction),
                 confidence = representativeSignal.ConfidenceBaseline,
-                strategy_id = representativeSignal.SetupId,
+                strategy_id = representativeAnnotation?.SetupId ?? representativeSignal.SetupId,
                 signal_timestamp_utc = updatedAtUtc,
                 expiry_utc = updatedAtUtc.AddHours(1),
                 reason = representativeSignal.Reason,
-                stop_loss_price = (decimal?)null,
-                take_profit_price = (decimal?)null,
+                stop_loss_price = representativeAnnotation is null ? (decimal?)null : (decimal?)representativeAnnotation.StopLoss,
+                take_profit_price = representativeAnnotation is null ? (decimal?)null : (decimal?)representativeAnnotation.TakeProfit1,
                 max_holding_seconds = (int?)null,
-                risk_r = (decimal?)null,
+                risk_r = representativeAnnotation is null ? (decimal?)null : (decimal?)representativeAnnotation.RiskReward,
             };
 
         var payload = new
@@ -685,5 +811,85 @@ public sealed class CloudEmbeddedReleasePackageGeneratorService
         }
 
         return "flat";
+    }
+
+    private static (PaperSignalEvaluationItem? Signal, ChartAnnotation? Annotation) SelectRepresentativeSignal(
+        IReadOnlyList<PaperSignalEvaluationItem> signals,
+        IReadOnlyList<ChartAnnotation> chartAnnotations)
+    {
+        if (signals.Count == 0)
+        {
+            return (null, null);
+        }
+
+        var promotedAnnotations = chartAnnotations
+            .OrderByDescending(annotation => annotation.CreatedAtUtc)
+            .ThenBy(annotation => annotation.Symbol, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(annotation => annotation.SetupId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var annotation in promotedAnnotations)
+        {
+            var exactMatch = signals.FirstOrDefault(signal =>
+                signal.Asset.Equals(annotation.Symbol, StringComparison.OrdinalIgnoreCase) &&
+                signal.SetupId.Equals(annotation.SetupId, StringComparison.OrdinalIgnoreCase));
+            if (exactMatch is not null)
+            {
+                return (exactMatch, annotation);
+            }
+
+            var assetMatch = signals.FirstOrDefault(signal => signal.Asset.Equals(annotation.Symbol, StringComparison.OrdinalIgnoreCase));
+            if (assetMatch is not null)
+            {
+                return (assetMatch, annotation);
+            }
+        }
+
+        return (signals.FirstOrDefault(), null);
+    }
+
+    private static string InferDirection(double entry, double stopLoss, double takeProfit1, string? fallbackDirection)
+    {
+        if (takeProfit1 > entry && stopLoss < entry)
+        {
+            return "long";
+        }
+
+        if (takeProfit1 < entry && stopLoss > entry)
+        {
+            return "short";
+        }
+
+        return fallbackDirection ?? "flat";
+    }
+
+    private static bool ReadBool(JsonElement element, string propertyName)
+        => element.TryGetProperty(propertyName, out var property) && property.ValueKind is JsonValueKind.True or JsonValueKind.False && property.GetBoolean();
+
+    private static string? ReadString(JsonElement element, string propertyName)
+        => element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String ? property.GetString() : null;
+
+    private static bool ReadDouble(JsonElement element, string propertyName, out double value)
+    {
+        if (element.TryGetProperty(propertyName, out var property) && property.TryGetDouble(out value))
+        {
+            return true;
+        }
+
+        value = 0d;
+        return false;
+    }
+
+    private static double? ReadNullableDouble(JsonElement element, string propertyName)
+        => element.TryGetProperty(propertyName, out var property) && property.TryGetDouble(out var value) ? value : null;
+
+    private static DateTimeOffset? ReadDateTime(JsonElement element, string propertyName)
+    {
+        if (element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(property.GetString(), out var value))
+        {
+            return value;
+        }
+
+        return null;
     }
 }
