@@ -40,6 +40,7 @@ internal sealed class HermesCli
             "runtime-stability-audit" => ShowRuntimeStabilityAudit(),
             "retention-cleanup-preview" => RunRetentionCleanupPreview(),
             "retention-cleanup-review" => RunRetentionCleanupReview(),
+            "retention-cleanup-approve" => RunRetentionCleanupApprove(),
             "health" => ShowHealth(),
             "setup-watch" => ShowSetupWatch(),
             "events" => ShowEvents(),
@@ -157,6 +158,7 @@ internal sealed class HermesCli
             "strategy-mutation-analyzer" => ShowStrategyMutationAnalyzer(),
             "strategy-parameter-research-planner" => ShowStrategyParameterResearchPlanner(),
             "trading-research-synthesizer" => ShowTradingResearchSynthesizer(),
+            "trading-pattern-learning" => ShowTradingPatternLearning(),
             "strategy-mutation-validation-planner" => ShowStrategyMutationValidationPlanner(),
             "strategy-validation-queue-export" => ShowStrategyValidationQueueExport(),
             "strategy-validation-readiness-analyzer" => ShowStrategyValidationReadinessAnalyzer(),
@@ -456,6 +458,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes runtime-stability-audit Stabilitaets-Audit anzeigen");
         Console.WriteLine("  hermes retention-cleanup-preview [--full] Retention Cleanup Preview anzeigen");
         Console.WriteLine("  hermes retention-cleanup-review Retention Cleanup Review erzeugen");
+        Console.WriteLine("  hermes retention-cleanup-approve --reviewer NAME --comment TEXT Review genehmigen");
         Console.WriteLine("  hermes health             RuntimeHealth anzeigen");
         Console.WriteLine("  hermes setup-watch        Setup-Watch-Kandidaten anzeigen");
         Console.WriteLine("  hermes events recent      letzte Runtime-Events anzeigen");
@@ -568,6 +571,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-mutation-analyzer Strategy Mutation Kandidaten anzeigen");
         Console.WriteLine("  hermes strategy-parameter-research-planner Strategy Parameter Research Planner anzeigen");
         Console.WriteLine("  hermes trading-research-synthesizer Trading Research Synthesizer anzeigen");
+        Console.WriteLine("  hermes trading-pattern-learning Trading Pattern Learning anzeigen");
         Console.WriteLine("  hermes strategy-mutation-validation-planner Strategy Mutation Validierung planen");
         Console.WriteLine("  hermes strategy-validation-queue-export Strategy Validation Queue exportieren");
         Console.WriteLine("  hermes strategy-validation-readiness-analyzer Strategy Validation Readiness analysieren");
@@ -1042,6 +1046,32 @@ internal sealed class HermesCli
         WriteMessages("sample_candidates", report.SampleCandidates
             .Select(item => $"{item.Path} | retention={item.RetentionClass} | age_days={item.AgeDays:0.##} | reason={item.Reason} | protected_reason={item.ProtectedReason ?? "-"}")
             .ToList());
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunRetentionCleanupApprove()
+    {
+        WriteHeader("Hermes Retention Cleanup Approval");
+        var reviewer = ReadOption(_args, "--reviewer");
+        var comment = ReadOption(_args, "--comment");
+        if (string.IsNullOrWhiteSpace(reviewer) || string.IsNullOrWhiteSpace(comment))
+        {
+            Console.WriteLine("Fehlende Parameter: --reviewer und --comment sind erforderlich.");
+            return 1;
+        }
+
+        var service = new RetentionCleanupApprovalService(BuildStoragePaths());
+        var approval = service.Approve(reviewer, comment);
+
+        WriteField("Audit", DisplayPath(service.AuditPath));
+        WriteField("review_id", approval.ReviewId);
+        WriteField("approved", approval.Approved.ToString().ToLowerInvariant());
+        WriteField("reviewer", approval.Reviewer);
+        WriteField("approved_at", approval.ApprovedAtUtc.ToString("O"));
+        WriteField("comment", approval.Comment);
+        WriteField("candidate_count", approval.CandidateCount.ToString());
+        WriteField("estimated_reclaimable_bytes", approval.EstimatedReclaimableBytes.ToString());
         WriteSafety();
         return 0;
     }
@@ -8682,6 +8712,38 @@ internal sealed class HermesCli
             report.Hypotheses.FirstOrDefault()?.Hypothesis,
             string.Join(" ", report.InternalSources.Take(8)),
             string.Join(" ", report.ExternalSources.Take(8))));
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowTradingPatternLearning()
+    {
+        WriteHeader("Hermes Trading Pattern Learning");
+        var service = new TradingPatternLearningService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Closed Trades", report.ClosedTradeCount.ToString());
+        WriteField("Evaluated Signals", report.EvaluatedSignalCount.ToString());
+        WriteField("Forward Signals", report.ForwardSignalCount.ToString());
+        WriteField("Bot Evolution Entries", report.BotEvolutionEntryCount.ToString());
+        WriteField("Pattern Count", report.PatternCount.ToString());
+        WriteMessages("Source Reports", report.SourceReportPaths);
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Pattern Summary");
+        foreach (var pattern in report.Patterns.Take(12))
+        {
+            WriteSubHeader(pattern.PatternId);
+            WriteField("Confidence", $"{pattern.Confidence} · n={pattern.SampleSize}");
+            WriteField("Observation", pattern.Observation);
+            WriteField("Supporting Metrics", string.Join("; ", pattern.SupportingMetrics));
+            WriteField("Recommendation", pattern.Recommendation);
+            WriteField("Requires Validation", pattern.RequiresValidation ? "true" : "false");
+        }
+
         Console.WriteLine();
         WriteSafety();
         return 0;
