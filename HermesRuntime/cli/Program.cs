@@ -39,6 +39,7 @@ internal sealed class HermesCli
             "runtime-health-history" => ShowRuntimeHealthHistory(),
             "runtime-stability-audit" => ShowRuntimeStabilityAudit(),
             "retention-cleanup-preview" => RunRetentionCleanupPreview(),
+            "retention-cleanup-review" => RunRetentionCleanupReview(),
             "health" => ShowHealth(),
             "setup-watch" => ShowSetupWatch(),
             "events" => ShowEvents(),
@@ -453,7 +454,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes runtime-health-summary kompakten Betreiberstatus anzeigen");
         Console.WriteLine("  hermes runtime-health-history Betriebs-Historie schreiben und anzeigen");
         Console.WriteLine("  hermes runtime-stability-audit Stabilitaets-Audit anzeigen");
-        Console.WriteLine("  hermes retention-cleanup-preview Retention Cleanup Preview anzeigen");
+        Console.WriteLine("  hermes retention-cleanup-preview [--full] Retention Cleanup Preview anzeigen");
+        Console.WriteLine("  hermes retention-cleanup-review Retention Cleanup Review erzeugen");
         Console.WriteLine("  hermes health             RuntimeHealth anzeigen");
         Console.WriteLine("  hermes setup-watch        Setup-Watch-Kandidaten anzeigen");
         Console.WriteLine("  hermes events recent      letzte Runtime-Events anzeigen");
@@ -997,22 +999,49 @@ internal sealed class HermesCli
     private int RunRetentionCleanupPreview()
     {
         WriteHeader("Hermes Retention Cleanup Preview");
+        var full = _args.Any(arg => arg.Equals("--full", StringComparison.OrdinalIgnoreCase));
         var service = new RetentionCleanupPreviewService(BuildStoragePaths());
-        var report = service.Run();
+        var report = service.Run(full);
         WriteField("Retention Cleanup Preview", DisplayPath(report.ReportPath));
         WriteField("keep_count", report.KeepCount.ToString());
         WriteField("retain_30d_count", report.Retain30dCount.ToString());
         WriteField("retain_7d_count", report.Retain7dCount.ToString());
         WriteField("deletable_count", report.DeletableCount.ToString());
+        WriteField("estimated_reclaimable_files", report.EstimatedReclaimableFiles.ToString());
+        WriteField("estimated_reclaimable_bytes", report.EstimatedReclaimableBytes.ToString());
+        WriteField("preview_limited", report.PreviewLimited.ToString().ToLowerInvariant());
         WriteField("candidate_paths", report.CandidatePaths.Count.ToString());
         WriteMessages("candidate_paths", report.CandidatePaths
-            .Take(25)
+            .Take(full ? 500 : 25)
             .Select(item => $"{item.Path} | retention={item.RetentionClass} | age_days={item.AgeDays:0.##} | reason={item.Reason} | protected_reason={item.ProtectedReason ?? "-"}")
             .ToList());
         WriteMessages("reasons", report.Reasons.ToList());
         WriteMessages("protected_paths", report.ProtectedPaths.ToList());
         WriteField("operator_summary", report.OperatorSummary);
         Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int RunRetentionCleanupReview()
+    {
+        WriteHeader("Hermes Retention Cleanup Review");
+        var service = new RetentionCleanupReviewService(BuildStoragePaths());
+        var report = service.Run();
+
+        WriteField("Retention Cleanup Review", DisplayPath(report.ReviewPath));
+        WriteField("review_id", report.ReviewId);
+        WriteField("generated_at", report.GeneratedAtUtc.ToString("O"));
+        WriteField("candidate_count", report.CandidateCount.ToString());
+        WriteField("estimated_reclaimable_files", report.EstimatedReclaimableFiles.ToString());
+        WriteField("estimated_reclaimable_bytes", report.EstimatedReclaimableBytes.ToString());
+        WriteField("protected_count", report.ProtectedCount.ToString());
+        WriteField("requires_approval", report.RequiresApproval.ToString().ToLowerInvariant());
+        WriteField("approved", report.Approved.ToString().ToLowerInvariant());
+        WriteField("sample_candidates", report.SampleCandidates.Count.ToString());
+        WriteMessages("sample_candidates", report.SampleCandidates
+            .Select(item => $"{item.Path} | retention={item.RetentionClass} | age_days={item.AgeDays:0.##} | reason={item.Reason} | protected_reason={item.ProtectedReason ?? "-"}")
+            .ToList());
         WriteSafety();
         return 0;
     }
