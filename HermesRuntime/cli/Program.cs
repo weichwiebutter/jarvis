@@ -159,6 +159,7 @@ internal sealed class HermesCli
             "strategy-parameter-research-planner" => ShowStrategyParameterResearchPlanner(),
             "trading-research-synthesizer" => ShowTradingResearchSynthesizer(),
             "trading-pattern-learning" => ShowTradingPatternLearning(),
+            "trading-hypotheses" => ShowTradingHypotheses(),
             "strategy-mutation-validation-planner" => ShowStrategyMutationValidationPlanner(),
             "strategy-validation-queue-export" => ShowStrategyValidationQueueExport(),
             "strategy-validation-readiness-analyzer" => ShowStrategyValidationReadinessAnalyzer(),
@@ -572,6 +573,7 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes strategy-parameter-research-planner Strategy Parameter Research Planner anzeigen");
         Console.WriteLine("  hermes trading-research-synthesizer Trading Research Synthesizer anzeigen");
         Console.WriteLine("  hermes trading-pattern-learning Trading Pattern Learning anzeigen");
+        Console.WriteLine("  hermes trading-hypotheses Trading Hypotheses anzeigen");
         Console.WriteLine("  hermes strategy-mutation-validation-planner Strategy Mutation Validierung planen");
         Console.WriteLine("  hermes strategy-validation-queue-export Strategy Validation Queue exportieren");
         Console.WriteLine("  hermes strategy-validation-readiness-analyzer Strategy Validation Readiness analysieren");
@@ -8742,6 +8744,49 @@ internal sealed class HermesCli
             WriteField("Supporting Metrics", string.Join("; ", pattern.SupportingMetrics));
             WriteField("Recommendation", pattern.Recommendation);
             WriteField("Requires Validation", pattern.RequiresValidation ? "true" : "false");
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowTradingHypotheses()
+    {
+        WriteHeader("Hermes Trading Hypotheses");
+        var service = new TradingHypothesisService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Pattern Count", report.PatternCount.ToString());
+        WriteField("Hypothesis Count", report.HypothesisCount.ToString());
+        WriteField("High Priority", report.HighPriorityCount.ToString());
+        WriteField("Medium Priority", report.MediumPriorityCount.ToString());
+        WriteField("Low Priority", report.LowPriorityCount.ToString());
+        WriteField("Trading Pattern Learning Report", DisplayPath(report.TradingPatternLearningReportPath));
+        WriteField("Bot Evolution History Report", DisplayPath(report.BotEvolutionHistoryReportPath));
+        WriteField("Bot Evolution Recommendation Report", DisplayPath(report.BotEvolutionRecommendationReportPath));
+        WriteField("Paper Forward Evaluation Report", DisplayPath(report.PaperForwardEvaluationReportPath));
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Hypotheses");
+        foreach (var hypothesis in report.Hypotheses.Take(12))
+        {
+            WriteSubHeader(hypothesis.HypothesisId);
+            WriteField("Source Pattern", hypothesis.SourcePattern);
+            WriteField("Confidence", hypothesis.Confidence);
+            WriteField("Expected Benefit", hypothesis.ExpectedBenefit);
+            WriteField("Validation Required", hypothesis.ValidationRequired ? "true" : "false");
+            WriteField("Required Sample Size", hypothesis.RequiredSampleSize.ToString());
+            WriteField("Current Sample Size", hypothesis.CurrentSampleSize.ToString());
+            WriteField("Status", hypothesis.Status);
+            WriteField("Priority", hypothesis.Priority);
+            WriteField("Recommendation", hypothesis.Recommendation);
+            WriteField("Basis", hypothesis.Basis);
+            WriteField("Supporting Metrics", string.Join("; ", hypothesis.SupportingMetrics));
+            WriteField("Required Manual Actions", string.Join("; ", hypothesis.RequiredManualActions));
+            WriteField("Blocking Dependencies", string.Join("; ", hypothesis.BlockingDependencies));
         }
 
         Console.WriteLine();
