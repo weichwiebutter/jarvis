@@ -160,6 +160,8 @@ internal sealed class HermesCli
             "trading-research-synthesizer" => ShowTradingResearchSynthesizer(),
             "trading-pattern-learning" => ShowTradingPatternLearning(),
             "trading-hypotheses" => ShowTradingHypotheses(),
+            "trading-hypothesis-readiness" => ShowTradingHypothesisReadiness(),
+            "hermes-learning-status" => ShowHermesLearningStatus(),
             "strategy-mutation-validation-planner" => ShowStrategyMutationValidationPlanner(),
             "strategy-validation-queue-export" => ShowStrategyValidationQueueExport(),
             "strategy-validation-readiness-analyzer" => ShowStrategyValidationReadinessAnalyzer(),
@@ -574,6 +576,8 @@ internal sealed class HermesCli
         Console.WriteLine("  hermes trading-research-synthesizer Trading Research Synthesizer anzeigen");
         Console.WriteLine("  hermes trading-pattern-learning Trading Pattern Learning anzeigen");
         Console.WriteLine("  hermes trading-hypotheses Trading Hypotheses anzeigen");
+        Console.WriteLine("  hermes trading-hypothesis-readiness Trading Hypothesis Readiness anzeigen");
+        Console.WriteLine("  hermes hermes-learning-status Hermes Learning Status anzeigen");
         Console.WriteLine("  hermes strategy-mutation-validation-planner Strategy Mutation Validierung planen");
         Console.WriteLine("  hermes strategy-validation-queue-export Strategy Validation Queue exportieren");
         Console.WriteLine("  hermes strategy-validation-readiness-analyzer Strategy Validation Readiness analysieren");
@@ -8788,6 +8792,70 @@ internal sealed class HermesCli
             WriteField("Required Manual Actions", string.Join("; ", hypothesis.RequiredManualActions));
             WriteField("Blocking Dependencies", string.Join("; ", hypothesis.BlockingDependencies));
         }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowTradingHypothesisReadiness()
+    {
+        WriteHeader("Hermes Trading Hypothesis Readiness");
+        var service = new TradingHypothesisReadinessService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Total Hypotheses", report.TotalHypotheses.ToString());
+        WriteField("Ready For Validation", report.ReadyForValidationCount.ToString());
+        WriteField("Insufficient Data", report.InsufficientDataCount.ToString());
+        WriteField("Trading Hypotheses Report", DisplayPath(report.TradingHypothesesReportPath));
+        WriteMessages("Warnings", report.Warnings);
+        WriteSubHeader("Readiness");
+        foreach (var item in report.Items.Take(20))
+        {
+            WriteSubHeader(item.HypothesisId);
+            WriteField("Status", item.Status);
+            WriteField("Current Sample Size", item.CurrentSampleSize.ToString());
+            WriteField("Required Sample Size", item.RequiredSampleSize.ToString());
+            WriteField("Readiness", item.Readiness);
+            WriteField("Next Required Data", item.NextRequiredData);
+        }
+
+        Console.WriteLine();
+        WriteSafety();
+        return 0;
+    }
+
+    private int ShowHermesLearningStatus()
+    {
+        WriteHeader("Hermes Learning Status");
+        var service = new HermesLearningStatusService(BuildStoragePaths(), _runtimeRoot);
+        var report = service.Run();
+
+        WriteField("Report", DisplayPath(report.ReportPath));
+        WriteField("Markdown", DisplayPath(report.MarkdownPath));
+        WriteField("Status", report.Status);
+        WriteField("Learning Maturity Percent", report.LearningMaturityPercent.ToString());
+        WriteField("Learning Confidence", report.LearningConfidence);
+        WriteField("Evolution Score", report.EvolutionScore.ToString("0.0", CultureInfo.InvariantCulture));
+        WriteField("Evolution Trend", report.EvolutionTrend);
+        WriteField("Pattern Count", report.PatternCount.ToString());
+        WriteField("Hypothesis Count", report.HypothesisCount.ToString());
+        WriteField("Ready For Validation", report.ReadyForValidationCount.ToString());
+        WriteField("Collecting Data", report.CollectingDataCount.ToString());
+        WriteField("Forward Status", report.ForwardStatus);
+        WriteField("Last Forward Result", report.LastForwardResult);
+        WriteField("Last Trade Outcome", report.LastTradeOutcome);
+        WriteField("Broker Action", report.BrokerAction);
+        WriteField("Safety Status", report.SafetyStatus);
+        WriteField("Highest Priority Improvement", report.HighestPriorityImprovement);
+        WriteField("Current Blocker", report.CurrentBlocker);
+        WriteField("Recommended Next Action", report.RecommendedNextAction);
+        WriteField("Approved Annotations", report.ApprovedAnnotations.ToString());
+        WriteField("Pending Reviews", report.PendingReviews.ToString());
+        WriteMessages("Warnings", report.Warnings);
 
         Console.WriteLine();
         WriteSafety();
