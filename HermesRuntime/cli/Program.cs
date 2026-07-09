@@ -1005,7 +1005,10 @@ internal sealed class HermesCli
         WriteField("retain_7d_count", report.Retain7dCount.ToString());
         WriteField("deletable_count", report.DeletableCount.ToString());
         WriteField("candidate_paths", report.CandidatePaths.Count.ToString());
-        WriteMessages("candidate_paths", report.CandidatePaths.Select(item => $"{item.Path} | retention={item.RetentionClass} | age_days={item.AgeDays:0.##} | reason={item.Reason} | protected_reason={item.ProtectedReason ?? "-"}").ToList());
+        WriteMessages("candidate_paths", report.CandidatePaths
+            .Take(25)
+            .Select(item => $"{item.Path} | retention={item.RetentionClass} | age_days={item.AgeDays:0.##} | reason={item.Reason} | protected_reason={item.ProtectedReason ?? "-"}")
+            .ToList());
         WriteMessages("reasons", report.Reasons.ToList());
         WriteMessages("protected_paths", report.ProtectedPaths.ToList());
         WriteField("operator_summary", report.OperatorSummary);

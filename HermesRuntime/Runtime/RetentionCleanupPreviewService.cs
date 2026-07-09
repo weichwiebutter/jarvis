@@ -19,6 +19,8 @@ public sealed record RetentionCleanupPreviewReport(
     int Retain30dCount,
     int Retain7dCount,
     int DeletableCount,
+    int EstimatedReclaimableFiles,
+    long EstimatedReclaimableBytes,
     IReadOnlyList<RetentionCleanupPreviewEntry> CandidatePaths,
     IReadOnlyList<string> Reasons,
     IReadOnlyList<string> ProtectedPaths,
@@ -69,6 +71,10 @@ public sealed class RetentionCleanupPreviewService
         var retain30dCount = uniqueEntries.Count(entry => entry.RetentionClass.Equals("retain_30d", StringComparison.OrdinalIgnoreCase));
         var retain7dCount = uniqueEntries.Count(entry => entry.RetentionClass.Equals("retain_7d", StringComparison.OrdinalIgnoreCase));
         var deletableCount = uniqueEntries.Count(entry => entry.RetentionClass.Equals("deletable", StringComparison.OrdinalIgnoreCase));
+        var estimatedReclaimableFiles = deletableCount;
+        var estimatedReclaimableBytes = uniqueEntries
+            .Where(entry => entry.RetentionClass.Equals("deletable", StringComparison.OrdinalIgnoreCase))
+            .Sum(entry => EstimateSizeBytes(entry.Path));
         var reasons = uniqueEntries.Select(entry => entry.Reason).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value, StringComparer.OrdinalIgnoreCase).Take(20).ToList();
         var protectedPaths = uniqueEntries
             .Where(entry => !string.IsNullOrWhiteSpace(entry.ProtectedReason))
@@ -84,6 +90,8 @@ public sealed class RetentionCleanupPreviewService
             Retain30dCount: retain30dCount,
             Retain7dCount: retain7dCount,
             DeletableCount: deletableCount,
+            EstimatedReclaimableFiles: estimatedReclaimableFiles,
+            EstimatedReclaimableBytes: estimatedReclaimableBytes,
             CandidatePaths: uniqueEntries,
             Reasons: reasons,
             ProtectedPaths: protectedPaths,
@@ -235,6 +243,21 @@ public sealed class RetentionCleanupPreviewService
             return "keep";
         }
 
+        if ((IsSimulationReport(path) || reason.Contains("old_detailed_simulation_report_summary_exists", StringComparison.OrdinalIgnoreCase)) && ageDays > 30)
+        {
+            return "deletable";
+        }
+
+        if (IsTempDiagnostics(path) && ageDays > 14)
+        {
+            return "deletable";
+        }
+
+        if (IsFailedOrStaleIntermediate(path, reason) && ageDays > 7)
+        {
+            return "deletable";
+        }
+
         if (ageDays > 90)
         {
             return "deletable";
@@ -251,6 +274,51 @@ public sealed class RetentionCleanupPreviewService
         }
 
         return "keep";
+    }
+
+    private static bool IsSimulationReport(string path)
+    {
+        return path.Contains("simulation", StringComparison.OrdinalIgnoreCase)
+            && path.Contains("report", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsTempDiagnostics(string path)
+    {
+        return path.Contains("temp", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("diagnostic", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("debug", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("trace", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsFailedOrStaleIntermediate(string path, string reason)
+    {
+        return reason.Contains("failed", StringComparison.OrdinalIgnoreCase)
+            || reason.Contains("stale", StringComparison.OrdinalIgnoreCase)
+            || reason.Contains("intermediate", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("intermediate", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("stale", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("failed", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static long EstimateSizeBytes(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                return new FileInfo(path).Length;
+            }
+
+            if (Directory.Exists(path))
+            {
+                return Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Sum(file => new FileInfo(file).Length);
+            }
+        }
+        catch
+        {
+        }
+
+        return 0L;
     }
 
     private static double TryGetAgeDays(string path)
@@ -341,6 +409,8 @@ public sealed class RetentionCleanupPreviewService
         sb.AppendLine($"- retain_30d_count: {report.Retain30dCount}");
         sb.AppendLine($"- retain_7d_count: {report.Retain7dCount}");
         sb.AppendLine($"- deletable_count: {report.DeletableCount}");
+        sb.AppendLine($"- estimated_reclaimable_files: {report.EstimatedReclaimableFiles}");
+        sb.AppendLine($"- estimated_reclaimable_bytes: {report.EstimatedReclaimableBytes}");
         sb.AppendLine();
         sb.AppendLine("## Candidate Paths");
         foreach (var item in report.CandidatePaths)
