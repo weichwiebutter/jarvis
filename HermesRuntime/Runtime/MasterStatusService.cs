@@ -95,6 +95,8 @@ public sealed class MasterStatusService
         var knowledgeQuality = Measure("knowledge_quality", knowledgeQualityEngine.LoadReport);
         var canonicalState = new KnowledgeCanonicalStateService(_storagePaths).BuildFromQualityItems(knowledgeQuality.Items);
         var knowledgeValidation = new KnowledgeValidationStrategy(_storagePaths).LoadStatus();
+        var plannedTaskDiagnosisService = new PlannedTaskExecutorDiagnosisService(_storagePaths);
+        var plannedTaskDiagnosis = plannedTaskDiagnosisService.Build();
         var domainValidation = SafeBuildDomainValidation(statusBuildWarnings);
         var humanReview = SafeBuildHumanReview(statusBuildWarnings);
         var promotionStatus = SafeBuildPromotionStatus(statusBuildWarnings);
@@ -573,6 +575,17 @@ public sealed class MasterStatusService
                     ["invalid_validation_tasks"] = knowledgeValidation?.InvalidValidationTasks ?? 0,
                     ["validation_tasks_cleaned"] = knowledgeValidation?.ValidationTasksCleaned ?? 0,
                     ["validation_routing_health"] = knowledgeValidation?.ValidationRoutingHealth ?? "unknown",
+                    ["total_tasks"] = plannedTaskDiagnosis.TotalCount,
+                    ["active_tasks"] = plannedTaskDiagnosis.ActiveCount,
+                    ["blocked_tasks"] = plannedTaskDiagnosis.BlockedCount,
+                    ["review_tasks"] = plannedTaskDiagnosis.ReviewCount,
+                    ["done_tasks"] = plannedTaskDiagnosis.DoneCount,
+                    ["archived_tasks"] = plannedTaskDiagnosis.ArchivedCount,
+                    ["deletable_tasks"] = plannedTaskDiagnosis.DeletableRetentionCount,
+                    ["retention_keep_tasks"] = plannedTaskDiagnosis.KeepRetentionCount,
+                    ["retention_7d_tasks"] = plannedTaskDiagnosis.Retain7dRetentionCount,
+                    ["retention_30d_tasks"] = plannedTaskDiagnosis.Retain30dRetentionCount,
+                    ["retention_deletable_tasks"] = plannedTaskDiagnosis.DeletableRetentionCount,
                     ["domain_validation_health"] = domainValidation.DomainValidationHealth,
                     ["documentation_validation_pending"] = domainValidation.DocumentationValidationPending,
                     ["software_validation_pending"] = domainValidation.SoftwareValidationPending,

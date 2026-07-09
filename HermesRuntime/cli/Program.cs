@@ -1079,6 +1079,9 @@ internal sealed class HermesCli
 
     private void PrintMasterStatusSnapshot(MasterStatusSnapshot snapshot, string reportPath)
     {
+        var metrics = snapshot.CognitiveStatus?.Metrics ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var plannedTaskDiagnosisService = new PlannedTaskExecutorDiagnosisService(BuildStoragePaths());
+        var plannedTaskDiagnosis = plannedTaskDiagnosisService.Load() ?? plannedTaskDiagnosisService.Build();
         WriteField("overall_status", snapshot.OverallStatus);
         WriteField("current_focus", snapshot.CurrentFocus);
         var sectionTimings = snapshot.SectionTimingsMs ?? new Dictionary<string, long>();
@@ -1086,7 +1089,29 @@ internal sealed class HermesCli
         WriteField("master_status_section_timings", sectionTimings.Count == 0 ? "-" : string.Join(", ", sectionTimings.OrderByDescending(item => item.Value).Select(item => $"{item.Key}={item.Value}ms")));
         WriteMessages("slow_sections", slowSections);
         WriteField("active_domains", string.Join(", ", snapshot.ActiveDomains));
-        WriteField("queued_tasks", snapshot.QueuedTasks.ToString());
+        var knownTasks = GetMetric(metrics, "total_tasks", plannedTaskDiagnosis.TotalCount);
+        var activeTasks = GetMetric(metrics, "active_tasks", plannedTaskDiagnosis.ActiveCount);
+        var blockedTasks = GetMetric(metrics, "blocked_tasks", plannedTaskDiagnosis.BlockedCount);
+        var reviewTasks = GetMetric(metrics, "review_tasks", plannedTaskDiagnosis.ReviewCount);
+        var doneTasks = GetMetric(metrics, "done_tasks", plannedTaskDiagnosis.DoneCount);
+        var archivedTasks = GetMetric(metrics, "archived_tasks", plannedTaskDiagnosis.ArchivedCount);
+        var deletableTasks = GetMetric(metrics, "deletable_tasks", plannedTaskDiagnosis.DeletableRetentionCount);
+        var retentionKeepTasks = GetMetric(metrics, "retention_keep_tasks", plannedTaskDiagnosis.KeepRetentionCount);
+        var retention7dTasks = GetMetric(metrics, "retention_7d_tasks", plannedTaskDiagnosis.Retain7dRetentionCount);
+        var retention30dTasks = GetMetric(metrics, "retention_30d_tasks", plannedTaskDiagnosis.Retain30dRetentionCount);
+        var retentionDeletableTasks = GetMetric(metrics, "retention_deletable_tasks", plannedTaskDiagnosis.DeletableRetentionCount);
+        WriteField("bekannte Aufgaben", knownTasks.ToString());
+        WriteField("task_summary", $"aktiv: {activeTasks} / blockiert: {blockedTasks} / löschbar: {deletableTasks}");
+        WriteField("retention_summary", $"keep: {retentionKeepTasks} / retain_30d: {retention30dTasks} / retain_7d: {retention7dTasks} / deletable: {retentionDeletableTasks}");
+        WriteField("active_tasks", activeTasks.ToString());
+        WriteField("blocked_tasks", blockedTasks.ToString());
+        WriteField("review_tasks", reviewTasks.ToString());
+        WriteField("done_tasks", doneTasks.ToString());
+        WriteField("archived_tasks", archivedTasks.ToString());
+        WriteField("deletable_tasks", deletableTasks.ToString());
+        WriteField("retention_keep_tasks", retentionKeepTasks.ToString());
+        WriteField("retention_7d_tasks", retention7dTasks.ToString());
+        WriteField("retention_30d_tasks", retention30dTasks.ToString());
         WriteField("last_nightly_run", snapshot.LastNightlyRun ?? "-");
         WriteField("last_autonomous_loop", snapshot.LastAutonomousLoop ?? "-");
         WriteField("last_meta_review", snapshot.LastMetaReview ?? "-");
@@ -1108,10 +1133,10 @@ internal sealed class HermesCli
         WriteField("trusted_knowledge", snapshot.TrustedKnowledge.ToString());
         if (snapshot.CognitiveStatus?.Metrics is not null)
         {
-            WriteField("trusted_knowledge_external", snapshot.CognitiveStatus.Metrics.TryGetValue("trusted_knowledge_external", out var trustedExternal) ? trustedExternal?.ToString() ?? "-" : "-");
-            WriteField("trusted_knowledge_internal", snapshot.CognitiveStatus.Metrics.TryGetValue("trusted_knowledge_internal", out var trustedInternal) ? trustedInternal?.ToString() ?? "-" : "-");
-            WriteField("implementation_verified_knowledge", snapshot.CognitiveStatus.Metrics.TryGetValue("implementation_verified_knowledge", out var implementationVerified) ? implementationVerified?.ToString() ?? "-" : "-");
-            WriteField("trusted_knowledge_total", snapshot.CognitiveStatus.Metrics.TryGetValue("trusted_knowledge_total", out var trustedTotal) ? trustedTotal?.ToString() ?? "-" : "-");
+            WriteField("trusted_knowledge_external", metrics.TryGetValue("trusted_knowledge_external", out var trustedExternal) ? trustedExternal?.ToString() ?? "-" : "-");
+            WriteField("trusted_knowledge_internal", metrics.TryGetValue("trusted_knowledge_internal", out var trustedInternal) ? trustedInternal?.ToString() ?? "-" : "-");
+            WriteField("implementation_verified_knowledge", metrics.TryGetValue("implementation_verified_knowledge", out var implementationVerified) ? implementationVerified?.ToString() ?? "-" : "-");
+            WriteField("trusted_knowledge_total", metrics.TryGetValue("trusted_knowledge_total", out var trustedTotal) ? trustedTotal?.ToString() ?? "-" : "-");
         }
         WriteField("weak_knowledge", snapshot.WeakKnowledge.ToString());
         WriteField("deprecated_knowledge", snapshot.DeprecatedKnowledge.ToString());
@@ -12139,11 +12164,24 @@ internal sealed class HermesCli
         WriteHeader("Hermes Planned Task Execution Status");
         var executor = new PlannedTaskExecutor(BuildStoragePaths());
         var state = executor.BuildStatus();
+        var diagnosisService = new PlannedTaskExecutorDiagnosisService(BuildStoragePaths());
+        var diagnosis = diagnosisService.Load();
+        if (diagnosis is null || (diagnosis.TotalCount == 0 && state.PendingTasks > 0))
+        {
+            diagnosis = diagnosisService.Build();
+        }
 
         WriteField("State", DisplayPath(executor.ExecutionStatePath));
         WriteField("Execution Log", DisplayPath(executor.ExecutionLogPath));
         WriteField("Updated UTC", state.UpdatedAtUtc.ToString("O"));
-        WriteField("Pending", state.PendingTasks.ToString());
+        WriteField("bekannte Aufgaben", diagnosis.TotalCount.ToString());
+        WriteField("aktiv", diagnosis.ActiveCount.ToString());
+        WriteField("blockiert", diagnosis.BlockedCount.ToString());
+        WriteField("review", diagnosis.ReviewCount.ToString());
+        WriteField("done", diagnosis.DoneCount.ToString());
+        WriteField("archived", diagnosis.ArchivedCount.ToString());
+        WriteField("löschbar", diagnosis.DeletableRetentionCount.ToString());
+        WriteField("Pending (legacy)", state.PendingTasks.ToString());
         WriteField("Running", state.RunningTasks.ToString());
         WriteField("Completed", state.CompletedTasks.ToString());
         WriteField("Skipped", state.SkippedTasks.ToString());
@@ -12151,6 +12189,8 @@ internal sealed class HermesCli
         WriteField("Running Task", state.RunningTaskId ?? "-");
         WriteField("Last Task", state.LastTaskId ?? "-");
         WriteField("Last Status", state.LastStatus);
+        WriteField("Task Summary", $"aktiv: {diagnosis.ActiveCount} / blockiert: {diagnosis.BlockedCount} / löschbar: {diagnosis.DeletableRetentionCount}");
+        WriteMessages("Retention Classes", diagnosis.Entries.Take(10).Select(entry => $"{entry.TaskId}: {entry.RetentionClass} ({entry.LifecycleClass})").ToList());
         foreach (var result in state.RecentResults.Take(10))
         {
             WritePlannedTaskExecutionResult(result);
@@ -16579,6 +16619,30 @@ internal sealed class HermesCli
         }
 
         return int.TryParse(GetString(root, names), out var parsed) ? parsed : 0;
+    }
+
+    private static int GetMetric(IReadOnlyDictionary<string, object?> metrics, string key, int fallback)
+    {
+        if (!metrics.TryGetValue(key, out var value) || value is null)
+        {
+            return fallback;
+        }
+
+        return value switch
+        {
+            int intValue => intValue,
+            long longValue => checked((int)longValue),
+            short shortValue => shortValue,
+            byte byteValue => byteValue,
+            double doubleValue => checked((int)doubleValue),
+            float floatValue => checked((int)floatValue),
+            JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var elementInt) => elementInt,
+            JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out var elementDouble) => checked((int)elementDouble),
+            JsonElement element when element.ValueKind == JsonValueKind.String && int.TryParse(element.GetString(), out var elementParsed) => elementParsed,
+            string stringValue when int.TryParse(stringValue, out var parsed) => parsed,
+            _ when int.TryParse(value.ToString(), out var parsed) => parsed,
+            _ => fallback
+        };
     }
 
     private static double GetDouble(JsonElement root, params string[] names)

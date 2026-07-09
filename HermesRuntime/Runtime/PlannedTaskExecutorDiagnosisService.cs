@@ -6,9 +6,19 @@ namespace Hermes.Runtime;
 public sealed record PlannedTaskExecutorDiagnosis(
     string ReportVersion,
     DateTimeOffset GeneratedAtUtc,
+    int TotalCount,
     int PendingCount,
+    int ActiveCount,
     int ExecutableCount,
     int BlockedCount,
+    int ReviewCount,
+    int DoneCount,
+    int ArchivedCount,
+    int DeletableCount,
+    int KeepRetentionCount,
+    int Retain7dRetentionCount,
+    int Retain30dRetentionCount,
+    int DeletableRetentionCount,
     int UnsupportedCount,
     int WaitingForEvidenceCount,
     int SkippedCount,
@@ -27,7 +37,10 @@ public sealed record PlannedTaskDiagnosisEntry(
     string TaskType,
     string Status,
     bool Executable,
-    string Reason);
+    string Reason,
+    string LifecycleClass,
+    string RetentionClass,
+    double AgeDays);
 
 public sealed class PlannedTaskExecutorDiagnosisService
 {
@@ -43,6 +56,25 @@ public sealed class PlannedTaskExecutorDiagnosisService
     public string ReportJsonPath => Path.Combine(Root, "planned_task_executor_diagnosis.json");
 
     public string ReportMarkdownPath => Path.Combine(Root, "planned_task_executor_diagnosis.md");
+
+    public PlannedTaskExecutorDiagnosis? Load()
+    {
+        if (!File.Exists(ReportJsonPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<PlannedTaskExecutorDiagnosis>(
+                File.ReadAllText(ReportJsonPath),
+                JsonDefaults.SnapshotReadOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
 
     public PlannedTaskExecutorDiagnosis Build()
     {
@@ -66,22 +98,42 @@ public sealed class PlannedTaskExecutorDiagnosisService
             .Select(task =>
             {
                 var (executable, reason) = EvaluateExecutability(task);
-                return new PlannedTaskDiagnosisEntry(task.TaskId, task.TaskType, task.Status, executable, reason);
+                var ageDays = Math.Max(0d, (DateTimeOffset.UtcNow - task.CreatedAtUtc).TotalDays);
+                var lifecycleClass = ClassifyLifecycle(task, ageDays);
+                var retentionClass = ClassifyRetention(lifecycleClass, ageDays);
+                return new PlannedTaskDiagnosisEntry(
+                    task.TaskId,
+                    task.TaskType,
+                    task.Status,
+                    executable,
+                    reason,
+                    lifecycleClass,
+                    retentionClass,
+                    ageDays);
             })
             .ToList();
 
         var activeEntries = entries.Where(entry => IsActivePlannedStatus(entry.Status)).ToList();
+        var keepRetentionCount = entries.Count(entry => entry.RetentionClass.Equals("keep", StringComparison.OrdinalIgnoreCase));
+        var retain7dRetentionCount = entries.Count(entry => entry.RetentionClass.Equals("retain_7d", StringComparison.OrdinalIgnoreCase));
+        var retain30dRetentionCount = entries.Count(entry => entry.RetentionClass.Equals("retain_30d", StringComparison.OrdinalIgnoreCase));
+        var deletableRetentionCount = entries.Count(entry => entry.RetentionClass.Equals("deletable", StringComparison.OrdinalIgnoreCase));
         var diagnosis = new PlannedTaskExecutorDiagnosis(
             ReportVersion: "planned_task_executor_diagnosis_v1",
             GeneratedAtUtc: DateTimeOffset.UtcNow,
+            TotalCount: tasks.Count,
             PendingCount: activeEntries.Count,
+            ActiveCount: entries.Count(entry => entry.LifecycleClass.Equals("active", StringComparison.OrdinalIgnoreCase)),
             ExecutableCount: activeEntries.Count(entry => entry.Executable),
-            BlockedCount: activeEntries.Count(entry =>
-                !entry.Executable
-                && !entry.Reason.Equals("unsupported_task_type", StringComparison.OrdinalIgnoreCase)
-                && !entry.Reason.Equals("not_allowed_task_type", StringComparison.OrdinalIgnoreCase)
-                && !entry.Reason.Equals("blocked_waiting_for_evidence", StringComparison.OrdinalIgnoreCase)
-                && !entry.Reason.Equals("completed_with_missing_evidence", StringComparison.OrdinalIgnoreCase)),
+            BlockedCount: entries.Count(entry => entry.LifecycleClass.Equals("blocked", StringComparison.OrdinalIgnoreCase)),
+            ReviewCount: entries.Count(entry => entry.LifecycleClass.Equals("review", StringComparison.OrdinalIgnoreCase)),
+            DoneCount: entries.Count(entry => entry.LifecycleClass.Equals("done", StringComparison.OrdinalIgnoreCase)),
+            ArchivedCount: entries.Count(entry => entry.LifecycleClass.Equals("archived", StringComparison.OrdinalIgnoreCase)),
+            DeletableCount: entries.Count(entry => entry.LifecycleClass.Equals("deletable", StringComparison.OrdinalIgnoreCase)),
+            KeepRetentionCount: keepRetentionCount,
+            Retain7dRetentionCount: retain7dRetentionCount,
+            Retain30dRetentionCount: retain30dRetentionCount,
+            DeletableRetentionCount: deletableRetentionCount,
             UnsupportedCount: activeEntries.Count(entry =>
                 entry.Reason.Equals("unsupported_task_type", StringComparison.OrdinalIgnoreCase)
                 || entry.Reason.Equals("not_allowed_task_type", StringComparison.OrdinalIgnoreCase)),
@@ -120,9 +172,19 @@ public sealed class PlannedTaskExecutorDiagnosisService
         var sb = new StringBuilder();
         sb.AppendLine("# Planned Task Executor Diagnosis");
         sb.AppendLine();
-        sb.AppendLine($"- Pending: {diagnosis.PendingCount}");
-        sb.AppendLine($"- Executable: {diagnosis.ExecutableCount}");
+        sb.AppendLine($"- Known Tasks: {diagnosis.TotalCount}");
+        sb.AppendLine($"- Active: {diagnosis.ActiveCount}");
         sb.AppendLine($"- Blocked: {diagnosis.BlockedCount}");
+        sb.AppendLine($"- Review: {diagnosis.ReviewCount}");
+        sb.AppendLine($"- Done: {diagnosis.DoneCount}");
+        sb.AppendLine($"- Archived: {diagnosis.ArchivedCount}");
+        sb.AppendLine($"- Deletable: {diagnosis.DeletableCount}");
+        sb.AppendLine($"- Retention Keep: {diagnosis.KeepRetentionCount}");
+        sb.AppendLine($"- Retention 30d: {diagnosis.Retain30dRetentionCount}");
+        sb.AppendLine($"- Retention 7d: {diagnosis.Retain7dRetentionCount}");
+        sb.AppendLine($"- Retention Deletable: {diagnosis.DeletableRetentionCount}");
+        sb.AppendLine($"- Pending (legacy): {diagnosis.PendingCount}");
+        sb.AppendLine($"- Executable: {diagnosis.ExecutableCount}");
         sb.AppendLine($"- Unsupported: {diagnosis.UnsupportedCount}");
         sb.AppendLine($"- Waiting for evidence: {diagnosis.WaitingForEvidenceCount}");
         sb.AppendLine($"- Skipped: {diagnosis.SkippedCount}");
@@ -134,13 +196,64 @@ public sealed class PlannedTaskExecutorDiagnosisService
         sb.AppendLine("## Entries");
         foreach (var entry in diagnosis.Entries)
         {
-            sb.AppendLine($"- {entry.TaskId} | {entry.TaskType} | {entry.Status} | executable={entry.Executable} | {entry.Reason}");
+            sb.AppendLine($"- {entry.TaskId} | {entry.TaskType} | {entry.Status} | executable={entry.Executable} | lifecycle={entry.LifecycleClass} | retention={entry.RetentionClass} | age_days={entry.AgeDays:0.##} | {entry.Reason}");
         }
 
         sb.AppendLine();
         sb.AppendLine("Safety: no_trading_execution=true, no_broker_action=true, no_auto_trading=true, human_review_required=true.");
         return sb.ToString();
     }
+
+    private static string ClassifyLifecycle(PlannedTask task, double ageDays)
+    {
+        if (task.Status.Equals("running", StringComparison.OrdinalIgnoreCase)
+            || task.Status.Equals("open", StringComparison.OrdinalIgnoreCase))
+        {
+            return "active";
+        }
+
+        if (task.Status.Equals("failed", StringComparison.OrdinalIgnoreCase))
+        {
+            return "blocked";
+        }
+
+        if (task.Status.Equals("skipped", StringComparison.OrdinalIgnoreCase))
+        {
+            return IsReviewLike(task) ? "review" : "blocked";
+        }
+
+        if (task.Status.Equals("completed", StringComparison.OrdinalIgnoreCase))
+        {
+            return ageDays > 90 ? "deletable"
+                : ageDays > 30 ? "archived"
+                : "done";
+        }
+
+        if (task.Status.Equals("archived", StringComparison.OrdinalIgnoreCase))
+        {
+            return ageDays > 90 ? "deletable" : "archived";
+        }
+
+        return IsReviewLike(task) ? "review" : "blocked";
+    }
+
+    private static string ClassifyRetention(string lifecycleClass, double ageDays)
+    {
+        return lifecycleClass switch
+        {
+            "active" => "keep",
+            "blocked" or "review" => ageDays > 30 ? "deletable" : "retain_7d",
+            "done" or "archived" => ageDays > 90 ? "deletable" : "retain_30d",
+            "deletable" => "deletable",
+            _ => "retain_30d"
+        };
+    }
+
+    private static bool IsReviewLike(PlannedTask task) =>
+        task.Reason.Contains("review", StringComparison.OrdinalIgnoreCase)
+        || task.Reason.Contains("evidence", StringComparison.OrdinalIgnoreCase)
+        || task.GoalReason.Contains("review", StringComparison.OrdinalIgnoreCase)
+        || task.GoalReason.Contains("evidence", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsTerminalStatus(string status) =>
         PlannedTaskExecutor.TerminalStatuses.Contains(status);
